@@ -1,10 +1,17 @@
 import React from 'react';
+import { redirect } from 'next/navigation';
+import { auth } from '@clerk/nextjs/server';
 
-export default function AuthLayout({
+export default async function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { userId } = await auth();
+  if (userId) {
+    redirect('/dashboard');
+  }
+
   return (
     <div className="flex min-h-screen w-full">
       {/* Form Section */}
