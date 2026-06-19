@@ -32,3 +32,23 @@ export const saveUpload = mutation({
     });
   },
 });
+
+export const clearAll = mutation({
+  handler: async (ctx) => {
+    const all = await ctx.db.query("cvUploads").collect();
+    for (const doc of all) {
+      await ctx.db.delete(doc._id);
+    }
+    return all.length;
+  },
+});
+
+export const deleteStorageFiles = mutation({
+  args: { storageIds: v.array(v.id("_storage")) },
+  handler: async (ctx, args) => {
+    for (const id of args.storageIds) {
+      await ctx.storage.delete(id);
+    }
+    return args.storageIds.length;
+  },
+});

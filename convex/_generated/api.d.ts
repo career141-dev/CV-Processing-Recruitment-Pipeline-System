@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as candidates from "../candidates.js";
+import type * as cvExtraction from "../cvExtraction.js";
 import type * as cvUploads from "../cvUploads.js";
 
 import type {
@@ -17,6 +19,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  candidates: typeof candidates;
+  cvExtraction: typeof cvExtraction;
   cvUploads: typeof cvUploads;
 }>;
 

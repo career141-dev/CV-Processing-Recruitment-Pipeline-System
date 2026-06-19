@@ -13,6 +13,8 @@ export default defineSchema({
     assignToJob: v.optional(v.string()),
     uploadedBy: v.string(),
     status: v.string(),
+    errorMessage: v.optional(v.string()),
+    candidateId: v.optional(v.id("candidates")),
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
@@ -51,12 +53,15 @@ export default defineSchema({
     sourceChannel: v.optional(v.string()),
     fileHash: v.optional(v.string()),
     summary: v.optional(v.string()),
+    cvUploadId: v.optional(v.id("cvUploads")),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
     .index("by_status", ["status"])
     .index("by_workableCandidateId", ["workableCandidateId"])
-    .index("by_fullName", ["fullName"]),
+    .index("by_fullName", ["fullName"])
+    .index("by_fileHash", ["fileHash"])
+    .index("by_cvUploadId", ["cvUploadId"]),
 
   documents: defineTable({
     fileHash: v.optional(v.string()),
