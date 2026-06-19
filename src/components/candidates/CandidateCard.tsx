@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Badge, AvatarBadge } from '@/components/ui/Badge';
+import { MessageCircle } from 'lucide-react';
 
 interface CandidateCardProps {
   id: string;
@@ -18,6 +19,7 @@ interface CandidateCardProps {
   scoreColorClass?: string;
   isSelected: boolean;
   onToggle: () => void;
+  onMessage?: () => void;
   profileHref?: string;
 }
 
@@ -36,12 +38,13 @@ export function CandidateCard({
   scoreColorClass = 'text-[#006E1C]',
   isSelected,
   onToggle,
+  onMessage,
   profileHref = '/dashboard/candidates/kasun'
 }: CandidateCardProps) {
   return (
     <Card 
       noPadding 
-      className={`flex flex-row items-center self-stretch py-[17px] px-4 hover:border-[#1B5E20] transition-colors cursor-default ${isSelected ? 'border-[#1B5E20] bg-green-50/10' : ''}`}
+      className={`flex flex-row items-center self-stretch py-[17px] px-4 hover:border-[#1B5E20] transition-colors cursor-default !bg-[#F2F5EC] ${isSelected ? 'border-[#1B5E20] !bg-[#E8EDE1]' : ''}`}
     >
       <input 
         type="checkbox" 
@@ -90,9 +93,20 @@ export function CandidateCard({
         >
           <span className={`${scoreColorClass} text-sm font-bold`}>{score}</span>
         </div>
-        <Link href={profileHref} className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-[#E0E0E0] hover:bg-gray-50 no-underline">
-          <span className="text-[#616161] text-xs font-bold">View Profile</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          {onMessage && (
+            <button 
+              onClick={onMessage}
+              className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-[#E0E0E0] hover:bg-surface-container-low text-[#616161] text-xs font-bold transition-colors"
+            >
+              <MessageCircle className="w-3.5 h-3.5 mr-1" />
+              Message
+            </button>
+          )}
+          <Link href={profileHref} className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-[#E0E0E0] hover:bg-gray-50 no-underline">
+            <span className="text-[#616161] text-xs font-bold">View Profile</span>
+          </Link>
+        </div>
       </div>
     </Card>
   );

@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import AnimatedCounter from '@/components/AnimatedCounter';
 import { Card } from '@/components/ui/Card';
 
@@ -8,11 +9,12 @@ interface StatCardProps {
   trendText: string;
   trendUp?: boolean;
   bgColorClass?: string;
+  href?: string;
 }
 
-export function StatCard({ title, value, trendText, trendUp = true, bgColorClass = 'bg-white' }: StatCardProps) {
-  return (
-    <Card className={`flex-1 ${bgColorClass}`}>
+export function StatCard({ title, value, trendText, trendUp = true, bgColorClass = 'bg-white', href }: StatCardProps) {
+  const content = (
+    <Card className={`flex-1 transition-all hover:-translate-y-1 hover:shadow-md ${bgColorClass}`}>
       <div className="flex flex-col items-start self-stretch mb-1">
         <span className="text-[#616161] text-[11px] font-bold">
           {title}
@@ -35,4 +37,14 @@ export function StatCard({ title, value, trendText, trendUp = true, bgColorClass
       </div>
     </Card>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="flex-1 flex w-full no-underline">
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
 }
