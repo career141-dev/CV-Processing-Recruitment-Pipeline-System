@@ -1,6 +1,19 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+
+export const listCandidates = query({
+  handler: async (ctx) => {
+    return await ctx.db.query("candidates").order("desc").collect();
+  },
+});
+
+export const getCandidate = query({
+  args: { id: v.id("candidates") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
 
 export const createCandidate = mutation({
   args: {

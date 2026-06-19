@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState } from 'react';
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { PageHeader } from '@/components/ui/PageHeader';
 import { CandidateSidebarFilters } from '@/components/candidates/CandidateSidebarFilters';
 import { CandidateCard } from '@/components/candidates/CandidateCard';
@@ -10,7 +13,43 @@ import { CustomSelect } from '@/components/ui/CustomSelect';
 import { X, Loader2, ChevronDown, Search, Filter } from 'lucide-react';
 import { MessageComposer } from '@/components/communications/MessageComposer';
 
+function getInitials(name?: string | null): string {
+  if (!name) return "??";
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function getSourceVariant(source?: string | null): "success" | "warning" | "error" | "info" | "default" {
+  switch (source?.toLowerCase()) {
+    case "linkedin": return "success";
+    case "whatsapp": return "warning";
+    case "email": return "info";
+    case "headhunting": return "error";
+    default: return "default";
+  }
+}
+
+function formatRole(title?: string | null, employer?: string | null): string {
+  if (title && employer) return `${title} at ${employer}`;
+  return title || employer || "Unknown Role";
+}
+
+function formatSkills(skills?: string[] | null, max = 2): string[] {
+  if (!skills || skills.length === 0) return [];
+  const shown = skills.slice(0, max);
+  const remainder = skills.length - max;
+  if (remainder > 0) shown.push(`+${remainder}`);
+  return shown;
+}
+
 export default function CandidatesSearch() {
+  const candidates = useQuery(api.candidates.listCandidates);
+
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [isAiSearching, setIsAiSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -40,79 +79,11 @@ export default function CandidatesSearch() {
     setActiveFilters(prev => 
       prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]
     );
-    // Auto-search if a filter is toggled and we haven't searched yet? 
-    // Let's just let the user explicitly search with the AI button.
   };
 
   const removeFilter = (filter: string) => {
     setActiveFilters(prev => prev.filter(f => f !== filter));
   };
-
-  const candidatesData = [
-    {
-      id: '1',
-      name: "Priya Nair",
-      initials: "PN",
-      avatarColorClass: "bg-[#ACF4A4] text-[#002C06]",
-      sourceText: "WHATSAPP",
-      sourceVariant: "warning" as const,
-      role: "Senior Software Engineer at FinTech Global",
-      location: "Mumbai, IN",
-      skills: ["React", "Node.js", "+4"],
-      score: 92,
-      scoreIconUrl: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/vych6cj6_expires_30_days.png",
-      scoreColorClass: "text-[#006E1C]"
-    },
-    {
-      id: '2',
-      name: "James Chen",
-      initials: "JC",
-      avatarColorClass: "bg-[#FFD9E2] text-[#6B1D3D]",
-      sourceText: "LINKEDIN",
-      sourceVariant: "success" as const,
-      role: "Fullstack Dev at TechScale Solutions",
-      location: "Singapore, SG",
-      skills: ["Next.js", "Go"],
-      score: 88,
-      scoreIconUrl: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/3f7mjel6_expires_30_days.png",
-      scoreColorClass: "text-[#006E1C]"
-    },
-    {
-      id: '3',
-      name: "Fatima Al Rashid",
-      initials: "FA",
-      avatarColorClass: "bg-[#00676333] text-[#006763]",
-      sourceText: "EMAIL",
-      sourceVariant: "success" as const,
-      role: "Product Lead at Oasis Digital",
-      location: "Dubai, UAE",
-      skills: ["Scrum", "Jira"],
-      score: 75,
-      scoreIconUrl: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/tlgb2nzc_expires_30_days.png",
-      scoreColorClass: "text-[#F97316]"
-    }
-  ];
-
-  const filteredCandidates = candidatesData.filter(candidate => {
-    if (activeFilters.length === 0) return true;
-
-    const roleFilters = activeFilters.filter(f => ['Senior', 'Lead'].includes(f));
-    const roleMatch = roleFilters.length === 0 || roleFilters.some(f => candidate.role.toLowerCase().includes(f.toLowerCase()));
-
-    const sourceFilters = activeFilters.filter(f => ['LinkedIn', 'WhatsApp'].includes(f));
-    const sourceMatch = sourceFilters.length === 0 || sourceFilters.some(f => candidate.sourceText.toLowerCase() === f.toLowerCase());
-
-    const customFilters = activeFilters.filter(f => 
-      !['Senior', 'Lead', 'LinkedIn', 'WhatsApp', 'Bachelor', 'Masters'].includes(f) && !f.includes('years')
-    );
-    const customMatch = customFilters.length === 0 || customFilters.some(f => 
-      candidate.skills.some(s => s.toLowerCase() === f.toLowerCase()) || 
-      candidate.role.toLowerCase().includes(f.toLowerCase())
-    );
-
-    return roleMatch && sourceMatch && customMatch;
-  });
-
   return (
     <div className="flex-1 relative w-full bg-white">
       <PageHeader title="Search Candidates" />
@@ -205,102 +176,48 @@ export default function CandidatesSearch() {
               </div>
             </div>
             
-            {/* Sort & Legend Bar */}
-            {hasSearched && (
-              <div className="flex justify-between items-center self-stretch mb-4 mt-2">
-                <div className="flex items-center gap-6">
-                  <span className="text-[#616161] text-[13px] font-bold">
-                    Showing {filteredCandidates.length} candidates
-                  </span>
-                  
-                  {/* Match Score Legend */}
-                  <div className="flex items-center gap-3 text-[11px] text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-200">
-                    <span className="font-semibold uppercase tracking-wider mr-1 text-gray-400">Match Score</span>
-                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#006E1C]" /> &gt;80%</div>
-                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#F97316]" /> 60-79%</div>
-                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-gray-400" /> &lt;60%</div>
-                  </div>
-                </div>
-
-                {/* Sort Dropdown */}
-                <div className="relative">
-                  <div 
-                    className="flex shrink-0 items-center py-1.5 px-3 gap-2 rounded-md border border-gray-200 cursor-pointer hover:bg-gray-50 bg-white shadow-sm"
-                    onClick={() => setIsSortOpen(!isSortOpen)}
-                  >
-                    <span className="text-[#616161] text-[13px]">Sort by:</span>
-                    <span className="text-[#212121] text-[13px] font-bold min-w-[80px]">{sortOption}</span>
-                    <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
-                  </div>
-                  {isSortOpen && (
-                    <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20">
-                      {['Best Match', 'Experience', 'Recency', 'Name'].map(opt => (
-                        <button
-                          key={opt}
-                          onClick={() => { setSortOption(opt); setIsSortOpen(false); }}
-                          className={`w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 ${sortOption === opt ? 'font-bold text-[#1B5E20]' : 'text-gray-700'}`}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            {/* Sort Bar */}
+            <div className="flex justify-between items-center self-stretch mb-2">
+              <span className="text-[#616161] text-[13px] font-bold">
+                {candidates === undefined
+                  ? "Loading..."
+                  : `Showing ${candidates.length} candidate${candidates.length !== 1 ? "s" : ""}`}
+              </span>
+              <div className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer">
+                <span className="text-[#616161] text-[13px]">
+                  Sort by:
+                </span>
+                <span className="text-[#212121] text-[13px] font-bold">
+                  Best Match
+                </span>
+              </div>
               </div>
             )}
             
             {/* Candidate List */}
-            <div className="flex flex-col gap-4 relative min-h-[400px]">
-              {isAiSearching && (
-                <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-xl">
-                  <Loader2 className="w-8 h-8 text-[#1B5E20] animate-spin mb-4" />
-                  <span className="text-sm font-bold text-[#1B5E20]">AI is analyzing 115,000+ candidates...</span>
-                  <span className="text-xs text-gray-500 mt-1">This may take a few seconds</span>
-                </div>
-              )}
-              
-              {!hasSearched && !isAiSearching ? (
-                <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                     <Search className="w-6 h-6 text-gray-400" />
-                  </div>
-                  <h3 className="text-base font-bold text-gray-900 mb-1">Start your candidate search</h3>
-                  <p className="text-sm text-gray-500 mb-4">Type a prompt to describe the ideal candidate and let AI do the rest.</p>
-                </div>
-              ) : hasSearched && !isAiSearching && filteredCandidates.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                     <Search className="w-6 h-6 text-gray-400" />
-                  </div>
-                  <h3 className="text-base font-bold text-gray-900 mb-1">No results match your search</h3>
-                  <p className="text-sm text-gray-500 mb-4">Try removing some filters or adjusting your AI prompt.</p>
-                  <Button variant="outline" onClick={() => setActiveFilters([])}>Clear All Filters</Button>
-                </div>
-              ) : hasSearched && !isAiSearching ? (
-                filteredCandidates.map(candidate => (
-                  <CandidateCard
-                    key={candidate.id}
-                    {...candidate}
-                    isSelected={selectedCandidates.includes(candidate.id)}
-                    onToggle={() => toggleCandidate(candidate.id)}
-                    onMessage={() => setMessageCandidate({
-                      id: candidate.id,
-                      name: candidate.name,
-                      initials: candidate.initials,
-                      role: candidate.role
-                    })}
-                  />
-                ))
-              ) : null}
-              
-              {filteredCandidates.length > 0 && !isAiSearching && (
-                <div className="flex justify-center mt-6">
-                  <Button variant="outline" className="px-8 bg-white">
-                    Load More Results
-                  </Button>
-                </div>
-              )}
-            </div>
+            {candidates === undefined ? (
+              <div className="flex justify-center py-10 text-[#9E9E9E] text-sm">Loading candidates...</div>
+            ) : candidates.length === 0 ? (
+              <div className="flex justify-center py-10 text-[#9E9E9E] text-sm">No candidates yet. Upload CVs to get started.</div>
+            ) : (
+              candidates.map((c) => (
+                <CandidateCard
+                  key={c._id}
+                  id={c._id}
+                  name={c.fullName || "Unknown"}
+                  initials={getInitials(c.fullName)}
+                  sourceText={(c.sourceChannel || "Manual").toUpperCase()}
+                  sourceVariant={getSourceVariant(c.sourceChannel)}
+                  role={formatRole(c.currentTitle, c.currentEmployer)}
+                  location={c.location || "Unknown"}
+                  skills={formatSkills(c.skills)}
+                  score={75}
+                  isSelected={selectedCandidates.includes(c._id)}
+                  onToggle={() => toggleCandidate(c._id)}
+                  profileHref={`/dashboard/candidates/${c._id}`}
+                />
+              ))
+            )}
             
             <FloatingActionBar 
               selectedCount={selectedCandidates.length} 

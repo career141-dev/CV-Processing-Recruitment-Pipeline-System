@@ -1,32 +1,63 @@
 "use client";
 
 import React from 'react';
-import Link from 'next/link';
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useParams } from "next/navigation";
+
+function getInitials(name?: string | null): string {
+  if (!name) return "?";
+  return name.split(" ").filter(Boolean).map(n => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
+function formatYoe(years?: number | null): string {
+  if (years == null) return "";
+  const y = Math.floor(years);
+  const m = Math.round((years - y) * 12);
+  if (y === 0) return `${m} Months`;
+  if (m === 0) return `${y} Years`;
+  return `${y} Years, ${m} Months`;
+}
 
 export default function CandidateProfile() {
+  const params = useParams<{ candidateId: string }>();
+  const candidate = useQuery(api.candidates.getCandidate, { id: params.candidateId as any });
+
+  if (candidate === undefined) {
+    return (
+      <div className="flex justify-center items-center h-64 text-[#9E9E9E] text-sm">
+        Loading candidate...
+      </div>
+    );
+  }
+
+  if (!candidate) {
+    return (
+      <div className="flex justify-center items-center h-64 text-[#BA1A1A] text-sm">
+        Candidate not found.
+      </div>
+    );
+  }
+
+  const educationText = candidate.education?.[0]
+    ? `${candidate.education[0].degree || ""}${candidate.education[0].institution ? ` — ${candidate.education[0].institution}` : ""}`
+    : null;
+
   return (
     <div className="flex flex-col bg-white w-full pr-6 pt-6">
       <div className="flex-1 mt-2 min-w-0">
         {/* Breadcrumb */}
             <div className="flex items-center self-stretch mb-4">
               <span className="text-[#616161] text-xs mr-2 cursor-pointer hover:underline">
-                Jobs
+                Candidates
               </span>
               <img
                 src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/c82l2plk_expires_30_days.png" 
                 className="w-1 h-[7px] mr-2 object-fill"
                 alt="Chevron"
               />
-              <span className="text-[#616161] text-xs mr-[7px] cursor-pointer hover:underline">
-                Brand Manager — Atlas
-              </span>
-              <img
-                src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/jniv23zq_expires_30_days.png" 
-                className="w-1 h-[7px] mr-2 object-fill"
-                alt="Chevron"
-              />
               <span className="text-[#212121] text-xs font-semibold">
-                Kasun Fernando
+                {candidate.fullName || "Candidate"}
               </span>
             </div>
 
@@ -34,96 +65,73 @@ export default function CandidateProfile() {
             <div className="flex flex-col md:flex-row items-center self-stretch bg-white py-[25px] px-[21px] mb-4 rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D]">
               <div className="flex flex-1 flex-col gap-4">
                 <div className="flex items-center self-stretch gap-[35px]">
-                  <img
-                    src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/fmlx8svr_expires_30_days.png" 
-                    className="w-[108px] h-[111px] object-cover rounded-full"
-                    alt="Profile Picture"
-                  />
+                  <div className="w-[108px] h-[111px] rounded-full bg-[#ACF4A4] flex items-center justify-center text-[#002C06] text-3xl font-bold shrink-0">
+                    {getInitials(candidate.fullName)}
+                  </div>
                   <div className="flex flex-col shrink-0 items-start gap-[3px]">
                     <span className="text-[#212121] text-[22px] font-bold">
-                      Kasun Fernando
+                      {candidate.fullName || "Unknown"}
                     </span>
                     <span className="text-[#616161] text-[13px]">
-                      Brand Manager · MAS Holdings
+                      {[candidate.currentTitle, candidate.currentEmployer].filter(Boolean).join(" · ") || "No title listed"}
                     </span>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex shrink-0 items-center bg-[#91F78E26] py-[3px] px-3 gap-1 rounded-full">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/mx2m9b6s_expires_30_days.png" 
-                      className="w-[9px] h-[11px] object-fill"
-                      alt="Icon"
-                    />
-                    <span className="text-[#006E1C] text-xs">Colombo</span>
-                  </div>
-                  <div className="flex shrink-0 items-center bg-[#EEEEE9] py-[3px] px-[11px] gap-1 rounded-full">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/tyfhk563_expires_30_days.png" 
-                      className="w-3 h-3 object-fill"
-                      alt="Icon"
-                    />
-                    <span className="text-[#212121] text-xs">6 Years Experience</span>
-                  </div>
-                  <div className="flex shrink-0 items-center bg-[#EEEEE9] py-[3px] px-[11px] gap-1 rounded-full">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/l1omes5x_expires_30_days.png" 
-                      className="w-3 h-2.5 object-fill"
-                      alt="Icon"
-                    />
-                    <span className="text-[#212121] text-xs">MBA — University of Colombo</span>
-                  </div>
-                  <div className="flex items-center bg-[#EEEEE9] py-[3px] px-3 gap-1 rounded-full">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/2mg7orts_expires_30_days.png" 
-                      className="w-[11px] h-[11px] object-fill"
-                      alt="Icon"
-                    />
-                    <span className="text-[#212121] text-xs">Notice: 1 Month</span>
-                  </div>
+                  {candidate.location && (
+                    <div className="flex shrink-0 items-center bg-[#91F78E26] py-[3px] px-3 gap-1 rounded-full">
+                      <span className="text-[#006E1C] text-xs">{candidate.location}</span>
+                    </div>
+                  )}
+                  {candidate.yearsOfExperience != null && (
+                    <div className="flex shrink-0 items-center bg-[#EEEEE9] py-[3px] px-[11px] gap-1 rounded-full">
+                      <span className="text-[#212121] text-xs">{formatYoe(candidate.yearsOfExperience)} Experience</span>
+                    </div>
+                  )}
+                  {educationText && (
+                    <div className="flex shrink-0 items-center bg-[#EEEEE9] py-[3px] px-[11px] gap-1 rounded-full">
+                      <span className="text-[#212121] text-xs">{educationText}</span>
+                    </div>
+                  )}
+                  {candidate.noticePeriod && (
+                    <div className="flex items-center bg-[#EEEEE9] py-[3px] px-3 gap-1 rounded-full">
+                      <span className="text-[#212121] text-xs">Notice: {candidate.noticePeriod}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-start self-stretch pt-6 pb-1 gap-8 border-t border-gray-100 mt-2">
                   <div className="flex flex-col shrink-0 items-start gap-2">
-                    <div className="flex items-center">
-                      <img
-                        src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/w1xtpicp_expires_30_days.png" 
-                        className="w-[13px] h-2.5 mr-2 object-fill"
-                        alt="Icon"
-                      />
-                      <span className="text-[#616161] text-xs">kasun@email.com</span>
-                    </div>
-                    <div className="flex items-center">
-                      <img
-                        src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/vbhi3cnk_expires_30_days.png" 
-                        className="w-3 h-3 mr-2 object-fill"
-                        alt="Icon"
-                      />
-                      <span className="text-[#616161] text-xs">+94 77 123 4567</span>
-                    </div>
-                    <div className="flex items-center">
-                      <img
-                        src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/s9nxw0qz_expires_30_days.png" 
-                        className="w-[13px] h-1.5 mr-2 object-fill"
-                        alt="Icon"
-                      />
-                      <span className="text-[#616161] text-xs hover:underline cursor-pointer text-blue-600">linkedin.com/in/kasunfernando</span>
-                    </div>
+                    {candidate.email && (
+                      <div className="flex items-center">
+                        <span className="text-[#616161] text-xs">{candidate.email}</span>
+                      </div>
+                    )}
+                    {candidate.phone && (
+                      <div className="flex items-center">
+                        <span className="text-[#616161] text-xs">{candidate.phone}</span>
+                      </div>
+                    )}
+                    {candidate.linkedinUrl && (
+                      <div className="flex items-center">
+                        <span className="text-[#616161] text-xs hover:underline cursor-pointer text-blue-600">{candidate.linkedinUrl}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col shrink-0 items-start gap-2">
-                    <div className="flex items-center">
-                      <span className="text-[#212121] text-xs mr-2 w-24">First seen via:</span>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <div className="bg-blue-500 w-2 h-2 rounded-full"></div>
-                        <span className="text-[#616161] text-xs font-medium">LinkedIn (BRAND24)</span>
+                    {candidate.sourceChannel && (
+                      <div className="flex items-center">
+                        <span className="text-[#212121] text-xs mr-2 w-24">Source:</span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span className="text-[#616161] text-xs font-medium">{candidate.sourceChannel}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-[#212121] text-xs mr-2 w-24">Also applied via:</span>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <div className="bg-[#CBFC06] w-2 h-2 rounded-full"></div>
-                        <span className="text-[#616161] text-xs font-medium">WhatsApp (GMOPS)</span>
+                    )}
+                    {candidate.status && (
+                      <div className="flex items-center">
+                        <span className="text-[#212121] text-xs mr-2 w-24">Status:</span>
+                        <span className="text-[#616161] text-xs font-medium capitalize">{candidate.status}</span>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -132,49 +140,29 @@ export default function CandidateProfile() {
               <div className="flex flex-col shrink-0 items-center gap-4 w-full md:w-auto mt-6 md:mt-0 md:pl-6 md:border-l border-gray-100">
                 <div className="flex flex-col items-center bg-[#F4F4EF] p-4 gap-1 rounded-lg border border-solid border-[#E0E0E0] w-full text-center">
                   <span className="text-[#1B5E20] text-sm font-bold">
-                    Best Match 92/100
+                    Score Pending
                   </span>
                   <span className="text-[#616161] text-xs">
-                    Brand Manager - Atlas Holdings
+                    {candidate.currentTitle || candidate.currentEmployer || "Awaiting job match"}
                   </span>
                 </div>
                 <div className="flex flex-col items-stretch gap-2 w-full">
                   <button className="flex items-center justify-center bg-[#1B5E20] text-white py-2 px-4 gap-2 rounded-md border-0 hover:bg-[#144718]"
                     onClick={() => alert('Pressed!')}>
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/t6weo40g_expires_30_days.png" 
-                      className="w-4 h-4 object-fill filter brightness-0 invert"
-                      alt="Icon"
-                    />
                     <span className="text-[13px] font-bold">Shortlist for Job</span>
                   </button>
                   <div className="flex items-center gap-2 w-full">
                     <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-[#E0E0E0] hover:bg-gray-50"
                       onClick={() => alert('Pressed!')}>
-                      <img
-                        src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/9sio8d8h_expires_30_days.png" 
-                        className="w-4 h-3.5 object-fill"
-                        alt="Icon"
-                      />
                       <span className="text-[#212121] text-[13px] whitespace-nowrap">Trigger AI Call</span>
                     </button>
                     <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-[#E0E0E0] hover:bg-gray-50"
                       onClick={() => alert('Pressed!')}>
-                      <img
-                        src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/z6fl9tx8_expires_30_days.png" 
-                        className="w-4 h-3 object-fill"
-                        alt="Icon"
-                      />
                       <span className="text-[#212121] text-[13px] whitespace-nowrap">Send Email</span>
                     </button>
                   </div>
                   <button className="flex items-center justify-center bg-transparent py-2 px-4 gap-2 rounded-md border border-solid border-[#BA1A1A80] hover:bg-red-50 mt-1"
                     onClick={() => alert('Pressed!')}>
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/jhsb99vs_expires_30_days.png" 
-                      className="w-4 h-4 object-fill"
-                      alt="Icon"
-                    />
                     <span className="text-[#BA1A1A] text-[13px] font-bold">Reject</span>
                   </button>
                 </div>
@@ -213,58 +201,66 @@ export default function CandidateProfile() {
                 <div className="flex flex-col bg-white rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D] overflow-hidden">
                   <div className="flex flex-col p-8 pb-16 bg-[#F8FAF2] relative">
                     <div className="flex flex-col items-center text-center pb-6 border-b border-gray-200 mb-6">
-                      <span className="text-[#1B5E20] text-2xl font-bold mb-1">Kasun Fernando</span>
-                      <span className="text-[#1B1B1D] text-[13px] font-bold mb-3">Brand Manager</span>
-                      <div className="flex items-center justify-center gap-3">
-                        <span className="text-[#5F6368] text-[10px] font-bold tracking-wider">COLOMBO, LK</span>
-                        <span className="text-[#5F6368] text-[10px] font-bold">•</span>
-                        <span className="text-[#5F6368] text-[10px] font-bold tracking-wider">KASUN@EMAIL.COM</span>
-                        <span className="text-[#5F6368] text-[10px] font-bold">•</span>
-                        <span className="text-[#5F6368] text-[10px] font-bold tracking-wider">+94 77 123 4567</span>
+                      <span className="text-[#1B5E20] text-2xl font-bold mb-1">{candidate.fullName || "Unknown"}</span>
+                      <span className="text-[#1B1B1D] text-[13px] font-bold mb-3">{candidate.currentTitle || ""}</span>
+                      <div className="flex items-center justify-center gap-3 flex-wrap">
+                        {candidate.location && <span className="text-[#5F6368] text-[10px] font-bold tracking-wider">{candidate.location.toUpperCase()}</span>}
+                        {candidate.email && <><span className="text-[#5F6368] text-[10px] font-bold">•</span><span className="text-[#5F6368] text-[10px] font-bold tracking-wider">{candidate.email.toUpperCase()}</span></>}
+                        {candidate.phone && <><span className="text-[#5F6368] text-[10px] font-bold">•</span><span className="text-[#5F6368] text-[10px] font-bold tracking-wider">{candidate.phone}</span></>}
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="flex flex-col gap-6">
-                        <div className="flex flex-col gap-2">
-                          <span className="text-[#1B5E20] text-xs font-bold tracking-wider">PROFESSIONAL SUMMARY</span>
-                          <span className="text-[#1B1B1D] text-sm leading-relaxed">
-                            Results-driven Brand Manager with 6+ years of experience in delivering actionable insights for major enterprises. Expert in strategic brand initiatives, product launches, and managing portfolio lines.
-                          </span>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <span className="text-[#1B5E20] text-xs font-bold tracking-wider">EXPERIENCE</span>
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[#1B1B1D] text-sm font-bold">Brand Manager</span>
-                              <span className="text-[#5F6368] text-[11px] font-medium">2021 - Present</span>
-                            </div>
-                            <span className="text-[#1B1B1D] text-[13px] font-medium text-gray-700">MAS Holdings</span>
-                            <ul className="list-disc pl-5 mt-1 text-[#5F6368] text-xs leading-relaxed space-y-1">
-                              <li>Led strategic brand initiatives across regional markets.</li>
-                              <li>Improved brand equity scores by 15% YoY.</li>
-                            </ul>
+                        {candidate.summary && (
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">PROFESSIONAL SUMMARY</span>
+                            <span className="text-[#1B1B1D] text-sm leading-relaxed">{candidate.summary}</span>
                           </div>
-                        </div>
+                        )}
+                        {candidate.certifications && candidate.certifications.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">CERTIFICATIONS</span>
+                            {candidate.certifications.map((cert, i) => (
+                              <span key={i} className="text-[#1B1B1D] text-[13px]">{cert}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col gap-6">
-                        <div className="flex flex-col gap-2">
-                          <span className="text-[#1B5E20] text-xs font-bold tracking-wider">SKILLS</span>
-                          <div className="flex flex-wrap gap-2">
-                            {['Brand Management', 'FMCG', 'P&L Management', 'Market Research', 'Campaign Strategy'].map((skill, i) => (
-                              <div key={i} className="bg-[#E8F5E9] py-1 px-2.5 rounded text-[#00450D] text-[11px] font-bold border border-[#C8E6C9]">
-                                {skill}
+                        {candidate.skills && candidate.skills.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">SKILLS</span>
+                            <div className="flex flex-wrap gap-2">
+                              {candidate.skills.map((skill, i) => (
+                                <div key={i} className="bg-[#E8F5E9] py-1 px-2.5 rounded text-[#00450D] text-[11px] font-bold border border-[#C8E6C9]">
+                                  {skill}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {candidate.education && candidate.education.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">EDUCATION</span>
+                            {candidate.education.map((edu, i) => (
+                              <div key={i} className="flex flex-col mb-2">
+                                <span className="text-[#1B1B1D] text-[13px] font-bold">{edu.degree || ""}{edu.field ? ` in ${edu.field}` : ""}</span>
+                                {edu.institution && <span className="text-[#5F6368] text-xs mt-0.5">{edu.institution}{edu.year ? ` • ${edu.year}` : ""}</span>}
                               </div>
                             ))}
                           </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <span className="text-[#1B5E20] text-xs font-bold tracking-wider">EDUCATION</span>
-                          <div className="flex flex-col">
-                            <span className="text-[#1B1B1D] text-[13px] font-bold">MBA</span>
-                            <span className="text-[#5F6368] text-xs mt-0.5">University of Colombo</span>
+                        )}
+                        {candidate.languages && candidate.languages.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">LANGUAGES</span>
+                            <div className="flex flex-wrap gap-2">
+                              {candidate.languages.map((lang, i) => (
+                                <span key={i} className="text-[#1B1B1D] text-[13px]">{lang}</span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -272,20 +268,7 @@ export default function CandidateProfile() {
                   <div className="bg-white border-t border-[#E0E0E0] p-6 pt-5">
                     <div className="flex items-center justify-between mb-5">
                       <div className="flex items-center gap-2">
-                        <img
-                          src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/cld9d30o_expires_30_days.png" 
-                          className="w-4 h-4 object-fill"
-                          alt="Icon"
-                        />
                         <span className="text-[#212121] text-[15px] font-bold">AI-Extracted Profile</span>
-                      </div>
-                      <div className="flex items-center bg-[#91F78E1A] py-1 px-3 gap-1.5 rounded-full border border-[#91F78E4D]">
-                        <img
-                          src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/zm19wi1a_expires_30_days.png" 
-                          className="w-3 h-3 object-fill"
-                          alt="Icon"
-                        />
-                        <span className="text-[#006E1C] text-[11px] font-bold">Confidence: 4.8/5</span>
                       </div>
                     </div>
 
@@ -293,104 +276,54 @@ export default function CandidateProfile() {
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-1">
                           <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Current Title</span>
-                          <span className="text-[#212121] text-sm font-semibold">Brand Manager</span>
+                          <span className="text-[#212121] text-sm font-semibold">{candidate.currentTitle || "—"}</span>
                         </div>
                         <div className="flex flex-col gap-1">
                           <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Current Employer</span>
-                          <span className="text-[#212121] text-sm font-semibold">MAS Holdings</span>
+                          <span className="text-[#212121] text-sm font-semibold">{candidate.currentEmployer || "—"}</span>
                         </div>
                       </div>
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-1">
                           <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Total Experience</span>
-                          <span className="text-[#212121] text-sm font-semibold">6 Years, 2 Months</span>
+                          <span className="text-[#212121] text-sm font-semibold">{candidate.yearsOfExperience != null ? formatYoe(candidate.yearsOfExperience) : "—"}</span>
                         </div>
                         <div className="flex flex-col gap-1">
                           <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Industry Focus</span>
-                          <span className="text-[#212121] text-sm font-semibold">FMCG, Apparel</span>
+                          <span className="text-[#212121] text-sm font-semibold">{candidate.industries?.join(", ") || "—"}</span>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Work History */}
-                <div className="flex flex-col bg-white p-6 rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D]">
-                  <div className="flex items-center mb-6">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/6oile524_expires_30_days.png" 
-                      className="w-4 h-4 mr-2 object-fill"
-                      alt="Icon"
-                    />
-                    <span className="text-[#212121] text-base font-bold">Work History</span>
-                  </div>
-                  
-                  <div className="flex flex-col relative pl-4 border-l-2 border-gray-100 ml-2 space-y-6">
-                    <div className="flex flex-col relative">
-                      <div className="absolute w-3 h-3 bg-[#00450D] rounded-full -left-[23px] top-1 border-[3px] border-white ring-1 ring-gray-200"></div>
-                      <span className="text-[#212121] text-[14px] font-bold">Brand Manager</span>
-                      <span className="text-[#616161] text-xs mt-0.5 mb-2">MAS Holdings • Jan 2021 - Present (2 yrs 10 mos)</span>
-                      <span className="text-[#424242] text-[13px] leading-relaxed">
-                        Led strategic brand initiatives across regional markets, managing a portfolio of activewear lines. Improved brand equity scores by 15% YoY.
-                      </span>
-                    </div>
 
-                    <div className="flex flex-col relative">
-                      <div className="absolute w-3 h-3 bg-[#DADAD5] rounded-full -left-[23px] top-1 border-[3px] border-white ring-1 ring-gray-200"></div>
-                      <span className="text-[#212121] text-[14px] font-bold">Assistant Brand Manager</span>
-                      <span className="text-[#616161] text-xs mt-0.5 mb-2">Unilever • Mar 2018 - Dec 2020 (2 yrs 10 mos)</span>
-                      <span className="text-[#424242] text-[13px] leading-relaxed">
-                        Managed personal care category product launches and consumer activation campaigns.
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col relative">
-                      <div className="absolute w-3 h-3 bg-[#DADAD5] rounded-full -left-[23px] top-1 border-[3px] border-white ring-1 ring-gray-200"></div>
-                      <span className="text-[#212121] text-[14px] font-bold">Marketing Executive</span>
-                      <span className="text-[#616161] text-xs mt-0.5">Fonterra • Aug 2016 - Feb 2018 (1 yr 7 mos)</span>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Education */}
                 <div className="flex flex-col bg-white p-6 rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D]">
                   <div className="flex items-center mb-6">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/17w7r1ot_expires_30_days.png" 
-                      className="w-4 h-4 mr-2 object-fill"
-                      alt="Icon"
-                    />
                     <span className="text-[#212121] text-base font-bold">Education</span>
                   </div>
-                  <div className="flex flex-col gap-5">
-                    <div className="flex items-start gap-4">
-                      <div className="bg-[#F8FAF2] p-2 rounded-lg border border-gray-100">
-                        <img
-                          src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/mqth15nx_expires_30_days.png" 
-                          className="w-8 h-8 object-fill"
-                          alt="Logo"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[#212121] text-[14px] font-bold">Master of Business Administration (MBA)</span>
-                        <span className="text-[#616161] text-xs mt-0.5">University of Colombo • 2019 - 2021</span>
-                      </div>
+                  {candidate.education && candidate.education.length > 0 ? (
+                    <div className="flex flex-col gap-5">
+                      {candidate.education.map((edu, i) => (
+                        <div key={i}>
+                          {i > 0 && <div className="h-[1px] bg-gray-100 w-full mb-5"></div>}
+                          <div className="flex items-start gap-4">
+                            <div className="bg-[#F8FAF2] p-2 rounded-lg border border-gray-100 w-12 h-12 flex items-center justify-center text-[#1B5E20] text-sm font-bold shrink-0">
+                              {edu.institution?.charAt(0) || "E"}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[#212121] text-[14px] font-bold">{edu.degree || ""}{edu.field ? ` in ${edu.field}` : ""}</span>
+                              <span className="text-[#616161] text-xs mt-0.5">{edu.institution || ""}{edu.year ? ` • ${edu.year}` : ""}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="h-[1px] bg-gray-100 w-full ml-14"></div>
-                    <div className="flex items-start gap-4">
-                      <div className="bg-[#F8FAF2] p-2 rounded-lg border border-gray-100">
-                        <img
-                          src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/dhb2wt1s_expires_30_days.png" 
-                          className="w-8 h-8 object-fill"
-                          alt="Logo"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[#212121] text-[14px] font-bold">BSc (Hons) in Marketing Management</span>
-                        <span className="text-[#616161] text-xs mt-0.5">NSBM Green University • 2012 - 2016</span>
-                      </div>
-                    </div>
-                  </div>
+                  ) : (
+                    <span className="text-[#9E9E9E] text-sm">No education data extracted.</span>
+                  )}
                 </div>
 
               </div>
