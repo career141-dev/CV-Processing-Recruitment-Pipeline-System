@@ -192,7 +192,7 @@ export default function CandidatesSearch() {
                 </span>
               </div>
               </div>
-            )}
+            
             
             {/* Candidate List */}
             {candidates === undefined ? (
