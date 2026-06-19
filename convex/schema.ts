@@ -54,6 +54,7 @@ export default defineSchema({
     fileHash: v.optional(v.string()),
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
+    rawText: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -61,7 +62,19 @@ export default defineSchema({
     .index("by_workableCandidateId", ["workableCandidateId"])
     .index("by_fullName", ["fullName"])
     .index("by_fileHash", ["fileHash"])
-    .index("by_cvUploadId", ["cvUploadId"]),
+    .index("by_cvUploadId", ["cvUploadId"])
+    .searchIndex("search_text", {
+      searchField: "rawText",
+    })
+    .searchIndex("search_skills", {
+      searchField: "skills",
+    })
+    .searchIndex("search_title", {
+      searchField: "currentTitle",
+    })
+    .searchIndex("search_summary", {
+      searchField: "summary",
+    }),
 
   documents: defineTable({
     fileHash: v.optional(v.string()),

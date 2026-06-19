@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useQuery } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { X, Loader2, ChevronDown, Search, Filter } from 'lucide-react';
 import { MessageComposer } from '@/components/communications/MessageComposer';
+import { toast } from 'sonner';
 
 function getInitials(name?: string | null): string {
   if (!name) return "??";
@@ -49,6 +50,7 @@ function formatSkills(skills?: string[] | null, max = 2): string[] {
 
 export default function CandidatesSearch() {
   const candidates = useQuery(api.candidates.listCandidates);
+  const aiSearchAction = useAction(api.search.aiSearch);
 
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -58,6 +60,19 @@ export default function CandidatesSearch() {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{
+    interpretation: {
+      searchText: string;
+      industry?: string;
+      seniority?: string;
+      minYears?: number;
+      interpretation: string;
+      keywords: string[];
+    };
+    results: { candidateId: string; score: number; reason: string }[];
+  } | null>(null);
+
   // Message Composer State
   const [messageCandidate, setMessageCandidate] = useState<{ id: string; name: string; initials: string; role: string } | null>(null);
 
@@ -67,12 +82,31 @@ export default function CandidatesSearch() {
     );
   };
 
-  const handleAiSearch = () => {
+  const handleAiSearch = async () => {
+    if (!searchQuery.trim()) {
+      toast.error("Please enter a search description");
+      return;
+    }
     setIsAiSearching(true);
-    setTimeout(() => {
-      setIsAiSearching(false);
+    try {
+      // Extract optional filters if they are applied in UI
+      let seniorityFilter: string | undefined = undefined;
+      if (activeFilters.includes("Senior")) seniorityFilter = "senior";
+      else if (activeFilters.includes("Lead")) seniorityFilter = "lead";
+
+      const res = await aiSearchAction({
+        query: searchQuery,
+        seniority: seniorityFilter,
+      });
+      setSearchResults(res);
       setHasSearched(true);
-    }, 2500);
+      toast.success(`Found ${res.results.length} candidate matches`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Search failed. Please try again.");
+    } finally {
+      setIsAiSearching(false);
+    }
   };
 
   const toggleFilter = (filter: string) => {
@@ -84,6 +118,18 @@ export default function CandidatesSearch() {
   const removeFilter = (filter: string) => {
     setActiveFilters(prev => prev.filter(f => f !== filter));
   };
+
+  const candidateMap = new Map(candidates?.map(c => [c._id, c]) ?? []);
+
+  const candidatesToRender = (hasSearched && searchResults
+    ? searchResults.results
+        .map(res => {
+          const cand = candidateMap.get(res.candidateId as any);
+          if (!cand) return null;
+          return { ...cand, score: res.score, matchReason: res.reason };
+        })
+        .filter(Boolean)
+    : candidates?.map(c => ({ ...c, score: undefined, matchReason: undefined }))) ?? [];
   return (
     <div className="flex-1 relative w-full bg-white">
       <PageHeader title="Search Candidates" />
@@ -146,6 +192,14 @@ export default function CandidatesSearch() {
                   className="text-[#212121] text-[13px] w-full border-none outline-none resize-none bg-transparent"
                   placeholder="Describe the ideal candidate (e.g. Senior Frontend Developer with experience in SaaS, React, and Fintech compliance)..."
                   rows={2}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleAiSearch();
+                    }
+                  }}
                   disabled={isAiSearching}
                 ></textarea>
               </div>
@@ -159,6 +213,19 @@ export default function CandidatesSearch() {
                   AI will score all results against this description to find the most relevant matches.
                 </span>
                 <div className="flex-1"></div>
+                {hasSearched && (
+                  <Button
+                    variant="outline"
+                    className="mr-2 h-9 text-xs py-1 px-3 border border-solid border-[#E0E0E0] hover:bg-gray-50 rounded-md"
+                    onClick={() => {
+                      setHasSearched(false);
+                      setSearchResults(null);
+                      setSearchQuery("");
+                    }}
+                  >
+                    Clear Search
+                  </Button>
+                )}
                 <Button 
                   variant="primary" 
                   onClick={handleAiSearch}
@@ -181,26 +248,27 @@ export default function CandidatesSearch() {
               <span className="text-[#616161] text-[13px] font-bold">
                 {candidates === undefined
                   ? "Loading..."
-                  : `Showing ${candidates.length} candidate${candidates.length !== 1 ? "s" : ""}`}
+                  : `Showing ${candidatesToRender.length} candidate${candidatesToRender.length !== 1 ? "s" : ""}`}
               </span>
               <div className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer">
                 <span className="text-[#616161] text-[13px]">
                   Sort by:
                 </span>
                 <span className="text-[#212121] text-[13px] font-bold">
-                  Best Match
+                  {hasSearched ? 'AI Relevancy' : 'Best Match'}
                 </span>
               </div>
-              </div>
-            
+            </div>
             
             {/* Candidate List */}
             {candidates === undefined ? (
               <div className="flex justify-center py-10 text-[#9E9E9E] text-sm">Loading candidates...</div>
-            ) : candidates.length === 0 ? (
-              <div className="flex justify-center py-10 text-[#9E9E9E] text-sm">No candidates yet. Upload CVs to get started.</div>
+            ) : candidatesToRender.length === 0 ? (
+              <div className="flex justify-center py-10 text-[#9E9E9E] text-sm">
+                {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates yet. Upload CVs to get started.'}
+              </div>
             ) : (
-              candidates.map((c) => (
+              candidatesToRender.map((c) => c && (
                 <CandidateCard
                   key={c._id}
                   id={c._id}
@@ -211,7 +279,8 @@ export default function CandidatesSearch() {
                   role={formatRole(c.currentTitle, c.currentEmployer)}
                   location={c.location || "Unknown"}
                   skills={formatSkills(c.skills)}
-                  score={75}
+                  score={c.score}
+                  matchReason={c.matchReason}
                   isSelected={selectedCandidates.includes(c._id)}
                   onToggle={() => toggleCandidate(c._id)}
                   profileHref={`/dashboard/candidates/${c._id}`}

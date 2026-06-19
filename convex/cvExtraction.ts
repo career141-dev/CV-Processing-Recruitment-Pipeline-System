@@ -1,10 +1,10 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
@@ -63,35 +63,78 @@ const ExtractionActionArgs = {
 // Text Extraction
 // ──────────────────────────────────────────────────
 
+/**
+ * safeDecodeURIComponent: pdf2json percent-encodes text segments.
+ * Some CVs contain raw "%" characters (e.g. "50% target achieved") that
+ * are not valid URI sequences and cause decodeURIComponent to throw.
+ * This helper catches those and falls back gracefully.
+ */
+function safeDecodeURIComponent(str: string): string {
+  try {
+    return decodeURIComponent(str);
+  } catch {
+    try {
+      return unescape(str);
+    } catch {
+      return str;
+    }
+  }
+}
+
+/**
+ * PDF: Use pdf2json — pure Node.js, no browser DOM APIs needed.
+ * pdfjs-dist requires DOMMatrix/ImageData/Path2D which are browser-only
+ * and are NOT available in the Convex serverless runtime.
+ */
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
   const PDFParser = await import("pdf2json");
+  const ParserClass = (PDFParser.default ?? PDFParser) as any;
   return new Promise<string>((resolve, reject) => {
-    const pdfParser = new PDFParser.default(null, true);
-    pdfParser.on("pdfParser_dataReady", (pdfData: { Pages: Array<{ Texts: Array<{ R: Array<{ T: string }> }> }> }) => {
-      try {
-        const textParts: string[] = [];
-        for (const page of pdfData.Pages) {
-          const pageText = (page.Texts || [])
-            .map((t) => (t.R || []).map((r) => decodeURIComponent(r.T)).join(" "))
-            .join(" ");
-          textParts.push(pageText);
+    const pdfParser = new ParserClass(null, true);
+    pdfParser.on(
+      "pdfParser_dataReady",
+      (pdfData: { Pages: Array<{ Texts: Array<{ R: Array<{ T: string }> }> }> }) => {
+        try {
+          const textParts: string[] = [];
+          for (const page of pdfData.Pages) {
+            const pageText = (page.Texts || [])
+              .map((t) =>
+                (t.R || []).map((r) => safeDecodeURIComponent(r.T)).join(" "),
+              )
+              .join(" ");
+            textParts.push(pageText);
+          }
+          resolve(textParts.join("\n"));
+        } catch (err) {
+          reject(err);
         }
-        resolve(textParts.join("\n"));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    pdfParser.on("pdfParser_dataError", (errMsg: Error | { parserError: Error }) => {
-      const err = "parserError" in errMsg ? errMsg.parserError : errMsg;
-      reject(err || new Error("PDF parse failed"));
-    });
+      },
+    );
+    pdfParser.on(
+      "pdfParser_dataError",
+      (errMsg: Error | { parserError: Error }) => {
+        const err = "parserError" in errMsg ? errMsg.parserError : errMsg;
+        reject(err || new Error("PDF parse failed"));
+      },
+    );
     pdfParser.parseBuffer(Buffer.from(buffer));
   });
 }
 
+/**
+ * DOCX: Use mammoth (same as C141 platform).
+ * Guard against bundler wrapping the module under .default.
+ */
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   const mammoth = await import("mammoth");
-  const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
+  const extractFn =
+    typeof mammoth.extractRawText === "function"
+      ? mammoth.extractRawText
+      : (mammoth as any).default?.extractRawText;
+  if (!extractFn) {
+    throw new Error("mammoth library could not be loaded correctly");
+  }
+  const result = await extractFn({ buffer: Buffer.from(buffer) });
   return result.value;
 }
 
@@ -103,11 +146,7 @@ export async function extractText(
   if (type === "pdf" || type === "application/pdf") {
     return extractTextFromPdf(buffer);
   }
-  if (
-    type === "docx" ||
-    type === "doc" ||
-    type.includes("wordprocessingml")
-  ) {
+  if (type === "docx" || type === "doc" || type.includes("wordprocessingml")) {
     return extractTextFromDocx(buffer);
   }
   return new TextDecoder().decode(buffer);
@@ -118,34 +157,44 @@ function computeSha256(buffer: ArrayBuffer): string {
 }
 
 // ──────────────────────────────────────────────────
-// NVIDIA LLM
+// LLM — same graceful-fallback pattern as C141
 // ──────────────────────────────────────────────────
 
 function createNvidiaClient(): OpenAI {
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) throw new Error("NVIDIA_API_KEY environment variable is not set");
   return new OpenAI({
     baseURL: "https://integrate.api.nvidia.com/v1",
-    apiKey: process.env.NVIDIA_API_KEY!,
+    apiKey,
   });
 }
 
-export async function callNvidiaLLM(rawText: string): Promise<CvExtractionResult> {
-  const openai = createNvidiaClient();
-
+/**
+ * Calls the LLM to extract structured CV data.
+ * Returns an empty object (not throws) if the API call fails —
+ * matching C141's parseCvWithAI fallback behaviour.
+ * The caller decides whether to treat empty data as an error.
+ */
+export async function callNvidiaLLM(
+  rawText: string,
+): Promise<CvExtractionResult | null> {
   const MAX_CHARS = 15000;
   const textToSend =
     rawText.length > MAX_CHARS
       ? rawText.slice(0, MAX_CHARS).replace(/\s+\S*$/, "")
       : rawText;
 
-  const response = await openai.chat.completions.create({
-    model: "meta/llama-3.1-70b-instruct",
-    temperature: 0,
-    max_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `You are a CV data extraction tool. Extract the following fields exactly as written in the CV. Do not paraphrase, summarize, or infer information that is not explicitly present. If a field is not present, return null — do not generate placeholder content.
+  try {
+    const openai = createNvidiaClient();
+    const response = await openai.chat.completions.create({
+      model: "meta/llama-3.1-70b-instruct",
+      temperature: 0,
+      max_tokens: 4096,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are a CV data extraction tool. Extract the following fields exactly as written in the CV. Do not paraphrase, summarize, or infer information that is not explicitly present. If a field is not present, return null — do not generate placeholder content.
 
 Return a valid JSON object with these fields:
 - fullName: string | null (full name exactly as written)
@@ -173,25 +222,72 @@ CRITICAL RULES:
 3. For "summary", write a brief professional summary based on the CV content.
 4. For "yearsOfExperience", only extract if explicitly stated (e.g. "10+ years of experience").
 5. For "seniorityLevel", only extract if the CV explicitly states a level.`,
-      },
-      {
-        role: "user",
-        content: `Extract the required fields from this CV text. Return ONLY valid JSON:\n\n${textToSend}`,
-      },
-    ],
-  });
+        },
+        {
+          role: "user",
+          content: `Extract the required fields from this CV text. Return ONLY valid JSON:\n\n${textToSend}`,
+        },
+      ],
+    });
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("LLM returned empty response");
+    const content = response.choices[0]?.message?.content;
+    if (!content) return null;
+
+    try {
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      return cvExtractionSchema.parse(parsed);
+    } catch {
+      // JSON parse or schema validation failed — fall back gracefully
+      return null;
+    }
+  } catch (error) {
+    // Re-throw credit/balance errors so the caller can set status to "paused"
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes("403") ||
+      message.toLowerCase().includes("insufficient") ||
+      message.toLowerCase().includes("balance") ||
+      message.toLowerCase().includes("credits")
+    ) {
+      throw error;
+    }
+    // All other API errors fall back gracefully (return null)
+    return null;
   }
-
-  const parsed = JSON.parse(content) as Record<string, unknown>;
-  return cvExtractionSchema.parse(parsed);
 }
 
 // ──────────────────────────────────────────────────
-// Reusable extraction pipeline — processes one CV
+// null → undefined helper (same as before)
+// ──────────────────────────────────────────────────
+
+function nullToUndefined<T extends Record<string, unknown>>(
+  obj: T,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => {
+      if (v === null) return [k, undefined];
+      if (Array.isArray(v)) {
+        return [
+          k,
+          v.map((item) =>
+            item !== null && typeof item === "object" && !Array.isArray(item)
+              ? Object.fromEntries(
+                  Object.entries(item).map(([ik, iv]) => [
+                    ik,
+                    iv === null ? undefined : iv,
+                  ]),
+                )
+              : item,
+          ),
+        ];
+      }
+      return [k, v];
+    }),
+  );
+}
+
+// ──────────────────────────────────────────────────
+// Core extraction pipeline — one CV at a time
 // ──────────────────────────────────────────────────
 
 export async function runCvExtraction(
@@ -206,41 +302,28 @@ export async function runCvExtraction(
   });
 
   try {
+    // 1. Fetch file from Convex storage
     const blob = await ctx.storage.get(storageId);
     if (!blob) throw new Error("File not found in Convex storage");
 
     const buffer = await blob.arrayBuffer();
     const fileHash = computeSha256(buffer);
 
+    // 2. Extract raw text (pdfjs-dist for PDF, mammoth for DOCX)
     const rawText = await extractText(buffer, fileType);
-    if (!rawText || rawText.trim().length < 20) {
+    if (!rawText || rawText.trim().length < 50) {
       throw new Error("Insufficient text extracted from file");
     }
 
+    // 3. Call LLM — graceful fallback to null on non-credit errors
     const extracted = await callNvidiaLLM(rawText);
 
-    const nullToUndefined = <T extends Record<string, unknown>>(obj: T): Record<string, unknown> =>
-      Object.fromEntries(
-        Object.entries(obj).map(([k, v]) => {
-          if (v === null) return [k, undefined];
-          if (Array.isArray(v)) {
-            return [
-              k,
-              v.map((item) =>
-                item !== null && typeof item === "object" && !Array.isArray(item)
-                  ? Object.fromEntries(
-                      Object.entries(item).map(([ik, iv]) => [ik, iv === null ? undefined : iv]),
-                    )
-                  : item,
-              ),
-            ];
-          }
-          return [k, v];
-        }),
-      );
+    // 4. Save candidate — even if LLM failed we save rawText for search indexing
+    const safeExtracted = extracted ? nullToUndefined(extracted) : {};
 
     const candidateId = await ctx.runMutation(api.candidates.createCandidate, {
-      ...nullToUndefined(extracted),
+      ...safeExtracted,
+      rawText: rawText.slice(0, 50000),
       sourceChannel: sourceChannel ?? undefined,
       fileHash,
       cvUploadId,
@@ -256,22 +339,93 @@ export async function runCvExtraction(
     return candidateId;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+
+    // Mirror C141: pause on credit errors so the user can top up and resume
+    const isInsufficientBalance =
+      message.includes("403") ||
+      message.toLowerCase().includes("insufficient") ||
+      message.toLowerCase().includes("balance") ||
+      message.toLowerCase().includes("credits");
+
     await ctx.runMutation(api.candidates.updateCvUpload, {
       cvUploadId,
-      status: "failed",
-      errorMessage: message,
+      status: isInsufficientBalance ? "paused" : "failed",
+      errorMessage: isInsufficientBalance
+        ? "Paused: insufficient AI credits. Top up your balance and click Resume."
+        : message,
     });
-    throw err;
+
+    // Don't re-throw for balance errors — caller should not retry immediately
+    if (!isInsufficientBalance) throw err;
+    return null;
   }
 }
 
 // ──────────────────────────────────────────────────
-// Public Action — callable from client or other actions
+// Public Action — callable from client
 // ──────────────────────────────────────────────────
 
 export const processCvExtraction = action({
   args: ExtractionActionArgs,
   handler: async (ctx, args): Promise<string | null> => {
     return runCvExtraction(ctx, args);
+  },
+});
+
+// ──────────────────────────────────────────────────
+// Batch Resume — same pattern as C141's resumeBatch
+// Retries all "paused" or "failed" uploads in pages
+// ──────────────────────────────────────────────────
+
+export const resumeFailedUploads = action({
+  args: {},
+  handler: async (ctx): Promise<{ queued: number }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    await ctx.runAction(internal.cvExtraction.resumeBatch, {
+      cursor: undefined,
+      totalQueued: 0,
+    });
+    return { queued: 0 };
+  },
+});
+
+export const resumeBatch = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    totalQueued: v.number(),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    // Fetch a page of failed/paused uploads
+    const result = await ctx.runQuery(api.candidates.listFailedUploads, {
+      cursor: args.cursor,
+      limit: 50,
+    });
+
+    for (let i = 0; i < result.page.length; i++) {
+      const upload = result.page[i];
+      // Stagger retries: 1 second apart to avoid rate limit spikes
+      // Note: cvUploads uses 'source' field, exposed as sourceChannel to the action
+      ctx.scheduler.runAfter(i * 1000, api.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId,
+        fileType: upload.fileType,
+        sourceChannel: upload.source,
+        uploadedBy: upload.uploadedBy,
+        cvUploadId: upload._id,
+      });
+    }
+
+    // Recurse if there are more pages
+    if (!result.isDone && result.continueCursor) {
+      ctx.scheduler.runAfter(
+        result.page.length * 1000 + 500,
+        internal.cvExtraction.resumeBatch,
+        {
+          cursor: result.continueCursor,
+          totalQueued: args.totalQueued + result.page.length,
+        },
+      );
+    }
   },
 });

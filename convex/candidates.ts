@@ -47,6 +47,7 @@ export const createCandidate = mutation({
     fileHash: v.optional(v.string()),
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
+    rawText: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     if (args.fileHash) {
@@ -104,5 +105,52 @@ export const updateCvUpload = mutation({
     if (args.candidateId !== undefined) updates.candidateId = args.candidateId;
     if (args.errorMessage !== undefined) updates.errorMessage = args.errorMessage;
     await ctx.db.patch(args.cvUploadId, updates);
+  },
+});
+
+// Paginated query used by resumeBatch to retry paused/failed uploads
+export const listFailedUploads = query({
+  args: {
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+    const q = ctx.db
+      .query("cvUploads")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "failed"),
+          q.eq(q.field("status"), "paused"),
+        ),
+      );
+    const result = await q.paginate({ cursor: args.cursor ?? null, numItems: limit });
+    return {
+      page: result.page,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+export const clearEverything = mutation({
+  handler: async (ctx) => {
+    // 1. Collect all storage IDs and delete files
+    const uploads = await ctx.db.query("cvUploads").collect();
+    const storageIds = uploads
+      .map((u) => u.storageId)
+      .filter((id): id is Id<"_storage"> => !!id);
+    for (const sid of storageIds) {
+      try { await ctx.storage.delete(sid); } catch { }
+    }
+    // 2. Delete all documents
+    const docs = await ctx.db.query("documents").collect();
+    for (const d of docs) await ctx.db.delete(d._id);
+    // 3. Delete all candidates
+    const cands = await ctx.db.query("candidates").collect();
+    for (const c of cands) await ctx.db.delete(c._id);
+    // 4. Delete all cvUploads
+    for (const u of uploads) await ctx.db.delete(u._id);
+    return { storageDeleted: storageIds.length, documentsDeleted: docs.length, candidatesDeleted: cands.length, uploadsDeleted: uploads.length };
   },
 });

@@ -22,6 +22,7 @@
     "openai": "^6.43.0",
     "pdf-parse": "^2.4.5",
     "pdf2json": "^4.0.3",
+    "pdfjs-dist": "^6.0.227",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "sonner": "^2.0.7",

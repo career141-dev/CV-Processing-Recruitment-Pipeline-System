@@ -14,13 +14,14 @@ interface CandidateCardProps {
   role: string;
   location: string;
   skills: string[];
-  score: number;
+  score?: number;
   scoreIconUrl?: string;
   scoreColorClass?: string;
   isSelected: boolean;
   onToggle: () => void;
   onMessage?: () => void;
   profileHref?: string;
+  matchReason?: string;
 }
 
 export function CandidateCard({
@@ -39,25 +40,26 @@ export function CandidateCard({
   isSelected,
   onToggle,
   onMessage,
-  profileHref = '/dashboard/candidates/kasun'
+  profileHref = '/dashboard/candidates/kasun',
+  matchReason
 }: CandidateCardProps) {
   return (
     <Card 
       noPadding 
-      className={`flex flex-row items-center self-stretch py-[17px] px-4 hover:border-[#1B5E20] transition-colors cursor-default !bg-[#F2F5EC] ${isSelected ? 'border-[#1B5E20] !bg-[#E8EDE1]' : ''}`}
+      className={`flex flex-row items-start self-stretch py-[17px] px-4 hover:border-[#1B5E20] transition-colors cursor-default !bg-[#F2F5EC] ${isSelected ? 'border-[#1B5E20] !bg-[#E8EDE1]' : ''}`}
     >
       <input 
         type="checkbox" 
-        className="w-4 h-4 mr-[15px] cursor-pointer" 
+        className="w-4 h-4 mr-[15px] mt-[18px] cursor-pointer" 
         checked={isSelected}
         onChange={onToggle}
       />
       
-      <div className="mr-[15px]">
+      <div className="mr-[15px] mt-[10px]">
         <AvatarBadge initials={initials} colorClass={avatarColorClass} />
       </div>
       
-      <div className="flex-1 px-[1px] mr-4 min-w-0">
+      <div className="flex-1 px-[1px] mr-4 min-w-0 flex flex-col justify-start">
         <div className="flex items-center self-stretch mb-1 gap-2">
           <span className="text-[#212121] text-sm font-bold truncate">
             {name}
@@ -84,15 +86,22 @@ export function CandidateCard({
             ))}
           </div>
         </div>
+        {matchReason && (
+          <div className="mt-2 text-xs text-[#1B5E20] bg-white/70 border border-[#1B5E20]/15 rounded-md py-1.5 px-2.5 leading-relaxed">
+            {matchReason}
+          </div>
+        )}
       </div>
       
-      <div className="flex flex-col shrink-0 items-end gap-2">
-        <div 
-          className="flex items-center justify-center bg-[length:100%_100%] w-12 h-12 rounded-full"
-          style={{ backgroundImage: `url('${scoreIconUrl}')` }}
-        >
-          <span className={`${scoreColorClass} text-sm font-bold`}>{score}</span>
-        </div>
+      <div className="flex flex-col shrink-0 items-end gap-2 mt-[6px]">
+        {score !== undefined && score !== null && (
+          <div 
+            className="flex items-center justify-center bg-[length:100%_100%] w-12 h-12 rounded-full"
+            style={{ backgroundImage: `url('${scoreIconUrl}')` }}
+          >
+            <span className={`${scoreColorClass} text-sm font-bold`}>{score}</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           {onMessage && (
             <button 
