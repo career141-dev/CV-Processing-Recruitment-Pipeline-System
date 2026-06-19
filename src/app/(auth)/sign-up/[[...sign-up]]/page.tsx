@@ -11,7 +11,36 @@ export default function SignUpPage() {
   const [password, setPassword] = React.useState('');
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
+  const [company, setCompany] = React.useState('');
+  const [role, setRole] = React.useState('');
   const [error, setError] = React.useState('');
+  const [emailError, setEmailError] = React.useState('');
+  const [passwordError, setPasswordError] = React.useState('');
+  const [firstNameError, setFirstNameError] = React.useState('');
+  const [companyError, setCompanyError] = React.useState('');
+  const [roleError, setRoleError] = React.useState('');
+
+  const handleEmailBlur = () => {
+    if (!emailAddress) setEmailError('Email is required');
+    else if (!/\S+@\S+\.\S+/.test(emailAddress)) setEmailError('Invalid email');
+    else setEmailError('');
+  };
+  const handlePasswordBlur = () => {
+    if (!password) setPasswordError('Password is required');
+    else setPasswordError('');
+  };
+  const handleFirstNameBlur = () => {
+    if (!firstName) setFirstNameError('First name is required');
+    else setFirstNameError('');
+  };
+  const handleCompanyBlur = () => {
+    if (!company) setCompanyError('Company is required');
+    else setCompanyError('');
+  };
+  const handleRoleBlur = () => {
+    if (!role) setRoleError('Role is required');
+    else setRoleError('');
+  };
   const loading = fetchStatus === 'fetching';
   const [pendingVerification, setPendingVerification] = React.useState(false);
   const [code, setCode] = React.useState('');
@@ -22,7 +51,13 @@ export default function SignUpPage() {
     if (!signUp) return;
     setError('');
     
-    const { error: signUpError } = await signUp.password({ emailAddress, password, firstName, lastName });
+    const { error: signUpError } = await signUp.create({ 
+      emailAddress, 
+      password, 
+      firstName, 
+      lastName,
+      unsafeMetadata: { role, company }
+    });
     if (signUpError) {
       setError((signUpError as any).errors?.[0]?.longMessage || signUpError.message || 'Failed to create account');
       return;
@@ -145,7 +180,7 @@ export default function SignUpPage() {
           </div>
         </div>
 
-        {/* Email/Password Form */}
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -155,10 +190,12 @@ export default function SignUpPage() {
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
+                onBlur={handleFirstNameBlur}
                 required
                 placeholder="John"
-                className="w-full px-4 py-2.5 rounded-lg border border-border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                className={`w-full px-4 py-2.5 rounded-lg border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary transition-colors ${firstNameError ? 'border-error' : 'border-border'}`}
               />
+              {firstNameError && <p className="mt-1 text-xs text-error">{firstNameError}</p>}
             </div>
             <div>
               <label htmlFor="lastName" className="block text-sm font-medium text-text-primary mb-1">Last name</label>
@@ -172,6 +209,42 @@ export default function SignUpPage() {
               />
             </div>
           </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="company" className="block text-sm font-medium text-text-primary mb-1">Company</label>
+              <input
+                id="company"
+                type="text"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                onBlur={handleCompanyBlur}
+                required
+                placeholder="Acme Corp"
+                className={`w-full px-4 py-2.5 rounded-lg border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary transition-colors ${companyError ? 'border-error' : 'border-border'}`}
+              />
+              {companyError && <p className="mt-1 text-xs text-error">{companyError}</p>}
+            </div>
+            <div>
+              <label htmlFor="role" className="block text-sm font-medium text-text-primary mb-1">Role</label>
+              <select
+                id="role"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                onBlur={handleRoleBlur}
+                required
+                className={`w-full px-4 py-2.5 rounded-lg border bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary transition-colors appearance-none ${roleError ? 'border-error' : 'border-border'}`}
+              >
+                <option value="" disabled>Select a role</option>
+                <option value="Admin">Admin</option>
+                <option value="TA">Talent Acquisition (TA)</option>
+                <option value="Recruiter">Recruiter</option>
+                <option value="Hiring Manager">Hiring Manager</option>
+              </select>
+              {roleError && <p className="mt-1 text-xs text-error">{roleError}</p>}
+            </div>
+          </div>
+
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-text-primary mb-1">Email address</label>
             <input
@@ -179,11 +252,13 @@ export default function SignUpPage() {
               type="email"
               value={emailAddress}
               onChange={(e) => setEmailAddress(e.target.value)}
+              onBlur={handleEmailBlur}
               required
               autoComplete="email"
               placeholder="you@example.com"
-              className="w-full px-4 py-2.5 rounded-lg border border-border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+              className={`w-full px-4 py-2.5 rounded-lg border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary transition-colors ${emailError ? 'border-error' : 'border-border'}`}
             />
+            {emailError && <p className="mt-1 text-xs text-error">{emailError}</p>}
           </div>
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-text-primary mb-1">Password</label>
@@ -192,17 +267,25 @@ export default function SignUpPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onBlur={handlePasswordBlur}
               required
               autoComplete="new-password"
               placeholder="••••••••"
-              className="w-full px-4 py-2.5 rounded-lg border border-border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+              className={`w-full px-4 py-2.5 rounded-lg border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary transition-colors ${passwordError ? 'border-error' : 'border-border'}`}
             />
+            {passwordError && <p className="mt-1 text-xs text-error">{passwordError}</p>}
           </div>
           <button
             type="submit"
             disabled={loading || !signUp}
-            className="w-full py-2.5 rounded-lg bg-primary-container text-on-primary font-semibold hover:bg-on-primary-fixed-variant transition-colors disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary-container text-on-primary font-semibold hover:bg-on-primary-fixed-variant transition-colors disabled:opacity-50"
           >
+            {loading && (
+              <svg className="animate-spin h-5 w-5 text-on-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            )}
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>

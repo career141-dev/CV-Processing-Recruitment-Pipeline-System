@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 
-export function PipelineActivityTable() {
+export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: string }) {
   const [activeTab, setActiveTab] = useState('All Jobs');
   
-  const pipelineJobs = [
+  const allPipelineJobs = [
     {
       id: 1,
       title: "Brand\nManager",
@@ -57,6 +58,12 @@ export function PipelineActivityTable() {
     }
   ];
 
+  const pipelineJobs = jobFilter === 'Active Jobs' 
+    ? allPipelineJobs.filter(job => job.status === 'Active' || job.status === 'Urgent')
+    : jobFilter === 'My Jobs'
+    ? allPipelineJobs.filter(job => job.assigned === 'Shambra')
+    : allPipelineJobs;
+
   const filteredJobs = pipelineJobs.filter(job => activeTab === 'All Jobs' || job.status === activeTab);
 
   return (
@@ -78,7 +85,7 @@ export function PipelineActivityTable() {
         </div>
       </div>
       <div className="w-full overflow-x-auto pb-[1px]">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full text-left border-collapse font-sans">
           <thead>
             <tr className="border-b border-solid border-[#E0E0E0] bg-white">
               <th className="py-3 px-5 text-[#616161] font-normal text-[13px]">Job Title</th>
@@ -108,10 +115,10 @@ export function PipelineActivityTable() {
                 <td className="py-4 px-5 text-[#616161] text-[13px] whitespace-pre-line">{job.stage}</td>
                 <td className="py-4 px-5 text-[#616161] text-[13px]">{job.assigned}</td>
                 <td className="py-4 px-5 text-center">
-                  <button className="flex items-center justify-center text-[#1B5E20] text-[13px] hover:underline mx-auto" onClick={() => alert('View Clicked')}>
+                  <Link href={`/dashboard/jobs/${job.id}`} className="flex items-center justify-center text-[#1B5E20] text-[13px] hover:underline mx-auto no-underline cursor-pointer">
                     View
                     <img src={job.arrowIcon} className="w-[9px] h-[9px] ml-1 object-fill" alt="Arrow" />
-                  </button>
+                  </Link>
                 </td>
               </tr>
             ))}
