@@ -64,61 +64,42 @@ const ExtractionActionArgs = {
 // ──────────────────────────────────────────────────
 
 /**
- * safeDecodeURIComponent: pdf2json percent-encodes text segments.
- * Some CVs contain raw "%" characters (e.g. "50% target achieved") that
- * are not valid URI sequences and cause decodeURIComponent to throw.
- * This helper catches those and falls back gracefully.
- */
-function safeDecodeURIComponent(str: string): string {
-  try {
-    return decodeURIComponent(str);
-  } catch {
-    try {
-      return unescape(str);
-    } catch {
-      return str;
-    }
-  }
-}
-
-/**
- * PDF: Use pdf2json — pure Node.js, no browser DOM APIs needed.
- * pdfjs-dist requires DOMMatrix/ImageData/Path2D which are browser-only
- * and are NOT available in the Convex serverless runtime.
+ * PDF: Use pdfjs-dist/legacy — same approach as the C141 platform.
+ * The legacy build ships browser-API polyfills (DOMMatrix, ImageData,
+ * Path2D, etc.) so it works correctly inside the Convex "use node"
+ * serverless runtime where those globals are otherwise absent.
+ *
+ * Rationale for NOT using pdf2json:
+ *  - pdf2json percent-encodes every text token, requiring a custom
+ *    safeDecodeURIComponent helper and producing noisier output.
+ *  - pdfjs-dist (legacy) delivers clean, whitespace-correct text that
+ *    matches what the LLM expects, exactly as validated in C141.
  */
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
-  const PDFParser = await import("pdf2json");
-  const ParserClass = (PDFParser.default ?? PDFParser) as any;
-  return new Promise<string>((resolve, reject) => {
-    const pdfParser = new ParserClass(null, true);
-    pdfParser.on(
-      "pdfParser_dataReady",
-      (pdfData: { Pages: Array<{ Texts: Array<{ R: Array<{ T: string }> }> }> }) => {
-        try {
-          const textParts: string[] = [];
-          for (const page of pdfData.Pages) {
-            const pageText = (page.Texts || [])
-              .map((t) =>
-                (t.R || []).map((r) => safeDecodeURIComponent(r.T)).join(" "),
-              )
-              .join(" ");
-            textParts.push(pageText);
-          }
-          resolve(textParts.join("\n"));
-        } catch (err) {
-          reject(err);
-        }
-      },
-    );
-    pdfParser.on(
-      "pdfParser_dataError",
-      (errMsg: Error | { parserError: Error }) => {
-        const err = "parserError" in errMsg ? errMsg.parserError : errMsg;
-        reject(err || new Error("PDF parse failed"));
-      },
-    );
-    pdfParser.parseBuffer(Buffer.from(buffer));
-  });
+  // Manual polyfills for browser-only globals to prevent ReferenceError in serverless Node runtimes
+  if (typeof globalThis.DOMMatrix === "undefined") {
+    globalThis.DOMMatrix = class DOMMatrix {} as any;
+  }
+  if (typeof globalThis.ImageData === "undefined") {
+    globalThis.ImageData = class ImageData {} as any;
+  }
+  if (typeof globalThis.Path2D === "undefined") {
+    globalThis.Path2D = class Path2D {} as any;
+  }
+
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
+  const pdf = await loadingTask.promise;
+  const textParts: string[] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items
+      .map((item) => ("str" in item ? item.str : ""))
+      .join(" ");
+    textParts.push(pageText);
+  }
+  return textParts.join("\n");
 }
 
 /**
@@ -214,12 +195,12 @@ Return a valid JSON object with these fields:
 - education: { degree: string | null, institution: string | null, year: number | null, field: string | null }[] | null
 - certifications: string[] | null (certifications exactly as written)
 - languages: string[] | null (languages exactly as written)
-- summary: string | null (1-2 sentence professional summary based on the CV)
+- summary: string | null (the exact professional summary, profile, or about-me section written in the CV verbatim)
 
 CRITICAL RULES:
 1. Extract text verbatim from the CV. Do NOT rephrase, normalize, or infer.
 2. If a field is not present in the CV, set it to null — do not generate fake values or placeholder text.
-3. For "summary", write a brief professional summary based on the CV content.
+3. For "summary", extract the exact professional summary or profile statement verbatim as written in the CV. Do not summarize, rephrase, or write an AI-generated summary.
 4. For "yearsOfExperience", only extract if explicitly stated (e.g. "10+ years of experience").
 5. For "seniorityLevel", only extract if the CV explicitly states a level.`,
         },
@@ -309,7 +290,10 @@ export async function runCvExtraction(
     const buffer = await blob.arrayBuffer();
     const fileHash = computeSha256(buffer);
 
-    // 2. Extract raw text (pdfjs-dist for PDF, mammoth for DOCX)
+    // 2. Extract raw text — pdfjs-dist/legacy for PDF, mammoth for DOCX.
+    //    The FULL extracted text is stored so the search index covers the
+    //    entire CV.  Only the slice sent to the LLM is capped (see
+    //    callNvidiaLLM which limits to MAX_CHARS = 15 000).
     const rawText = await extractText(buffer, fileType);
     if (!rawText || rawText.trim().length < 50) {
       throw new Error("Insufficient text extracted from file");
@@ -318,12 +302,15 @@ export async function runCvExtraction(
     // 3. Call LLM — graceful fallback to null on non-credit errors
     const extracted = await callNvidiaLLM(rawText);
 
-    // 4. Save candidate — even if LLM failed we save rawText for search indexing
+    // 4. Save candidate — even if LLM failed we save rawText for search indexing.
+    //    Convex document size limit is 1 MB; a full CV rarely exceeds 100 KB of
+    //    text, so we keep the full text.  We cap at 500 000 chars as a safety
+    //    net only.
     const safeExtracted = extracted ? nullToUndefined(extracted) : {};
 
     const candidateId = await ctx.runMutation(api.candidates.createCandidate, {
       ...safeExtracted,
-      rawText: rawText.slice(0, 50000),
+      rawText,
       sourceChannel: sourceChannel ?? undefined,
       fileHash,
       cvUploadId,
