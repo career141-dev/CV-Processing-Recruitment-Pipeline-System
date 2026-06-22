@@ -2,10 +2,12 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import QRCode from 'react-qr-code';
 
 export default function JobDetailsPage() {
   const [isCvPreviewOpen, setIsCvPreviewOpen] = useState(false);
   const [isAiWidgetOpen, setIsAiWidgetOpen] = useState(true);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('New CVs');
 
   const TABS = [
@@ -57,6 +59,12 @@ export default function JobDetailsPage() {
               </div>
             </div>
             <div className="flex gap-2">
+              <button 
+                onClick={() => setIsQrModalOpen(true)}
+                className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-[16px]">qr_code</span> Ad QR Code
+              </button>
               <button className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1">
                 <span className="material-symbols-outlined text-[16px]">edit</span> Edit Job
               </button>
@@ -348,6 +356,45 @@ export default function JobDetailsPage() {
           </div>
         )}
       </div>
+      
+      {/* SECTION 6: QR CODE MODAL */}
+      {isQrModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4">
+          <div className="bg-surface rounded-[16px] shadow-modal max-w-md w-full overflow-hidden border border-border">
+            <div className="p-4 border-b border-border flex justify-between items-center bg-surface-container-low">
+              <h3 className="font-semibold text-[16px] text-text-primary">Job Ad QR Code</h3>
+              <button onClick={() => setIsQrModalOpen(false)} className="text-text-secondary hover:bg-surface-container p-1 rounded-full transition-colors">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+            <div className="p-8 flex flex-col items-center">
+              <div className="bg-white p-4 rounded-[12px] shadow-subtle mb-6 inline-block">
+                <QRCode value="https://wa.me/94770000001?text=BRAND24" size={200} />
+              </div>
+              <h4 className="font-semibold text-text-primary text-[15px] mb-2 text-center">Scan to Apply via WhatsApp</h4>
+              <p className="text-[13px] text-text-secondary text-center mb-6 max-w-[300px]">
+                Candidates scan this code to open WhatsApp with the <strong className="text-text-primary">BRAND24</strong> keyword pre-filled. They just hit send and attach their CV.
+              </p>
+              
+              <div className="w-full">
+                <label className="block text-[12px] font-medium text-text-secondary mb-1">Direct Link</label>
+                <div className="flex gap-2">
+                  <input type="text" readOnly value="https://wa.me/94770000001?text=BRAND24" className="flex-1 bg-surface-container-low border border-border rounded-[8px] px-3 py-2 text-[13px] text-text-primary outline-none" />
+                  <button onClick={() => { navigator.clipboard.writeText("https://wa.me/94770000001?text=BRAND24"); alert('Copied!'); }} className="border border-border bg-surface px-3 py-2 rounded-[8px] text-[13px] font-medium hover:bg-surface-container transition-colors">
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-border bg-surface-container-low flex justify-end gap-3">
+              <button onClick={() => setIsQrModalOpen(false)} className="px-4 py-2 border border-border text-text-secondary rounded-[8px] text-[13px] font-medium hover:bg-surface transition-colors">Close</button>
+              <button className="px-4 py-2 bg-primary-container text-on-primary rounded-[8px] text-[13px] font-medium hover:bg-primary shadow-subtle flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">download</span> Download PNG
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
     </div>
   );
