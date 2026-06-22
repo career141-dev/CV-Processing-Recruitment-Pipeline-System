@@ -15,6 +15,8 @@ import type * as cvUploads from "../cvUploads.js";
 import type * as jdParser from "../jdParser.js";
 import type * as llm from "../llm.js";
 import type * as search from "../search.js";
+import type * as workable from "../workable.js";
+import type * as workableActions from "../workableActions.js";
 
 import type {
   ApiFromModules,
@@ -30,6 +32,8 @@ declare const fullApi: ApiFromModules<{
   jdParser: typeof jdParser;
   llm: typeof llm;
   search: typeof search;
+  workable: typeof workable;
+  workableActions: typeof workableActions;
 }>;
 
 /**

@@ -105,4 +105,19 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_status", ["status"])
     .index("by_uploadedBy", ["uploadedBy"]),
+
+  workableImports: defineTable({
+    status: v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped")),
+    totalCandidates: v.number(),
+    imported: v.number(),
+    skipped: v.number(),
+    deduplicated: v.optional(v.number()),
+    failed: v.number(),
+    userId: v.string(),
+    startedAt: v.string(),
+    errorMessage: v.optional(v.string()),
+    lastCursor: v.optional(v.string()),
+    subdomain: v.optional(v.string()),
+    apiKey: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
 });

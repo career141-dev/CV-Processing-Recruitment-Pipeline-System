@@ -96,6 +96,10 @@ export default function Sidebar() {
           />
           <span className={`${isActive('/dashboard/upload-cvs') ? 'text-primary-container' : 'text-text-secondary'} text-[13px]`}>Upload CVs</span>
         </Link>
+        <Link href="/dashboard/workable-import" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer ${isActive('/dashboard/workable-import') ? 'bg-surface-container-high' : 'hover:bg-surface-container-high transition-colors'}`}>
+          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0" style={{color: isActive('/dashboard/workable-import') ? 'var(--primary-container)' : 'var(--text-secondary)'}}>sync</span>
+          <span className={`${isActive('/dashboard/workable-import') ? 'text-primary-container' : 'text-text-secondary'} text-[13px]`}>Workable Import</span>
+        </Link>
         
         <div className="flex flex-col items-start py-3 mb-1 w-full mt-auto">
           <div className="bg-border w-full h-[1px] mb-3"></div>

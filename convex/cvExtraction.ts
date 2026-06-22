@@ -49,6 +49,13 @@ type ExtractionArgs = {
   sourceChannel?: string;
   uploadedBy: string;
   cvUploadId: Id<"cvUploads">;
+  workableCandidateId?: string;
+  skipLLM?: boolean;
+  preExtractedData?: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+  };
 };
 
 const ExtractionActionArgs = {
@@ -57,6 +64,13 @@ const ExtractionActionArgs = {
   sourceChannel: v.optional(v.string()),
   uploadedBy: v.string(),
   cvUploadId: v.id("cvUploads"),
+  workableCandidateId: v.optional(v.string()),
+  skipLLM: v.optional(v.boolean()),
+  preExtractedData: v.optional(v.object({
+    fullName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  })),
 };
 
 // ──────────────────────────────────────────────────
@@ -69,14 +83,11 @@ const ExtractionActionArgs = {
  * Path2D, etc.) so it works correctly inside the Convex "use node"
  * serverless runtime where those globals are otherwise absent.
  *
- * Rationale for NOT using pdf2json:
- *  - pdf2json percent-encodes every text token, requiring a custom
- *    safeDecodeURIComponent helper and producing noisier output.
- *  - pdfjs-dist (legacy) delivers clean, whitespace-correct text that
- *    matches what the LLM expects, exactly as validated in C141.
+ * Uses each text item's transform/position info to insert line breaks
+ * where lines change vertically, preserving paragraph structure for
+ * better LLM extraction and search quality.
  */
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
-  // Manual polyfills for browser-only globals to prevent ReferenceError in serverless Node runtimes
   if (typeof globalThis.DOMMatrix === "undefined") {
     globalThis.DOMMatrix = class DOMMatrix {} as any;
   }
@@ -91,15 +102,27 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
   const pdf = await loadingTask.promise;
   const textParts: string[] = [];
+
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item) => ("str" in item ? item.str : ""))
-      .join(" ");
-    textParts.push(pageText);
+    const lines: string[] = [];
+    let lastY: number | null = null;
+
+    for (const item of content.items) {
+      if (!("str" in item)) continue;
+      const y = "transform" in item ? (item as any).transform[5] : 0;
+      if (lastY !== null && Math.abs(y - lastY) > 5) {
+        lines.push("");
+      }
+      lines.push(item.str);
+      lastY = y;
+    }
+
+    textParts.push(lines.join(" ").replace(/ {2,}/g, " ").trim());
   }
-  return textParts.join("\n");
+
+  return textParts.join("\n\n");
 }
 
 /**
@@ -124,14 +147,46 @@ export async function extractText(
   fileType: string,
 ): Promise<string> {
   const type = fileType.toLowerCase();
+
   if (type === "pdf" || type === "application/pdf") {
     return extractTextFromPdf(buffer);
   }
+
   if (type === "docx" || type === "doc" || type.includes("wordprocessingml")) {
     return extractTextFromDocx(buffer);
   }
-  return new TextDecoder().decode(buffer);
+
+  if (type === "rtf") {
+    const decoded = new TextDecoder("utf-8").decode(buffer);
+    const text = decoded
+      .replace(/\\[a-z]+[-0-9]*/g, "")
+      .replace(/[{}]/g, "")
+      .replace(/\\(?:par|line|tab)/g, " ")
+      .replace(/\\'[0-9a-f]{2}/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length > 50) return text;
+  }
+
+  if (type === "txt") {
+    return new TextDecoder("utf-8").decode(buffer);
+  }
+
+  // Unknown type — try PDF first (most common for CVs), then DOCX, then raw decode
+  try {
+    const pdfText = await extractTextFromPdf(buffer);
+    if (pdfText.trim().length > 50) return pdfText;
+  } catch {}
+
+  try {
+    const docxText = await extractTextFromDocx(buffer);
+    if (docxText.trim().length > 50) return docxText;
+  } catch {}
+
+  return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
 }
+
+const MAX_RAW_TEXT_LENGTH = 500_000;
 
 function computeSha256(buffer: ArrayBuffer): string {
   return crypto.createHash("sha256").update(Buffer.from(buffer)).digest("hex");
@@ -275,7 +330,7 @@ export async function runCvExtraction(
   ctx: ActionCtx,
   args: ExtractionArgs,
 ): Promise<string | null> {
-  const { storageId, fileType, sourceChannel, cvUploadId } = args;
+  const { storageId, fileType, sourceChannel, cvUploadId, workableCandidateId, skipLLM, preExtractedData } = args;
 
   await ctx.runMutation(api.candidates.updateCvUpload, {
     cvUploadId,
@@ -292,15 +347,44 @@ export async function runCvExtraction(
 
     // 2. Extract raw text — pdfjs-dist/legacy for PDF, mammoth for DOCX.
     //    The FULL extracted text is stored so the search index covers the
-    //    entire CV.  Only the slice sent to the LLM is capped (see
-    //    callNvidiaLLM which limits to MAX_CHARS = 15 000).
+    //    entire CV (capped at MAX_RAW_TEXT_LENGTH to stay within Convex's
+    //    1 MB document limit).  Only the slice sent to the LLM is capped
+    //    further (see callNvidiaLLM which limits to MAX_CHARS = 15 000).
     const rawText = await extractText(buffer, fileType);
-    if (!rawText || rawText.trim().length < 50) {
+    const trimmed = rawText.trim();
+    if (trimmed.length < 20) {
       throw new Error("Insufficient text extracted from file");
     }
+    const cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
+      ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
+      : trimmed;
 
     // 3. Call LLM — graceful fallback to null on non-credit errors
-    const extracted = await callNvidiaLLM(rawText);
+    let extracted: CvExtractionResult | null = null;
+    if (skipLLM && preExtractedData) {
+      extracted = {
+        fullName: preExtractedData.fullName ?? null,
+        email: preExtractedData.email ?? null,
+        phone: preExtractedData.phone ?? null,
+        location: null,
+        linkedinUrl: null,
+        currentTitle: null,
+        currentEmployer: null,
+        seniorityLevel: null,
+        yearsOfExperience: null,
+        industries: null,
+        expectedSalary: null,
+        noticePeriod: null,
+        employmentStatus: null,
+        skills: null,
+        education: null,
+        certifications: null,
+        languages: null,
+        summary: null,
+      };
+    } else {
+      extracted = await callNvidiaLLM(cappedRawText);
+    }
 
     // 4. Save candidate — even if LLM failed we save rawText for search indexing.
     //    Convex document size limit is 1 MB; a full CV rarely exceeds 100 KB of
@@ -310,10 +394,11 @@ export async function runCvExtraction(
 
     const candidateId = await ctx.runMutation(api.candidates.createCandidate, {
       ...safeExtracted,
-      rawText,
+      rawText: cappedRawText,
       sourceChannel: sourceChannel ?? undefined,
       fileHash,
       cvUploadId,
+      workableCandidateId: workableCandidateId ?? undefined,
     });
 
     await ctx.runMutation(api.candidates.updateCvUpload, {
@@ -336,9 +421,9 @@ export async function runCvExtraction(
 
     await ctx.runMutation(api.candidates.updateCvUpload, {
       cvUploadId,
-      status: isInsufficientBalance ? "paused" : "failed",
+      status: "processed",
       errorMessage: isInsufficientBalance
-        ? "Paused: insufficient AI credits. Top up your balance and click Resume."
+        ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : message,
     });
 
