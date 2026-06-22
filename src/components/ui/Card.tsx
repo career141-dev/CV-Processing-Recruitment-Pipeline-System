@@ -10,8 +10,7 @@ export function Card({ children, className = '', noPadding = false, ...props }: 
   const hasBgClass = className.includes('bg-');
   return (
     <div 
-      className={`${hasBgClass ? '' : 'bg-white'} rounded-[10px] border border-solid border-[#E0E0E0] flex flex-col ${noPadding ? '' : 'p-5'} ${className}`} 
-      style={{ boxShadow: '0px 2px 4px #0000000D' }}
+      className={`${hasBgClass ? '' : 'bg-surface'} rounded-[10px] border border-solid border-border shadow-[0px_2px_4px_#0000000D] dark:shadow-[0px_2px_4px_rgba(0,0,0,0.5)] flex flex-col ${noPadding ? '' : 'p-5'} ${className}`} 
       {...props}
     >
       {children}
@@ -21,7 +20,7 @@ export function Card({ children, className = '', noPadding = false, ...props }: 
 
 export function CardHeader({ children, className = '' }: { children: React.ReactNode, className?: string }) {
   return (
-    <div className={`flex flex-col items-start bg-[#F2F5EC4D] py-4 px-5 w-full border-b border-solid border-b-[#E0E0E0] ${className}`}>
+    <div className={`flex flex-col items-start bg-surface-container-high/30 py-4 px-5 w-full border-b border-solid border-b-border ${className}`}>
       {children}
     </div>
   );
@@ -29,7 +28,7 @@ export function CardHeader({ children, className = '' }: { children: React.React
 
 export function CardTitle({ children, className = '' }: { children: React.ReactNode, className?: string }) {
   return (
-    <span className={`text-[#212121] text-sm font-bold ${className}`}>
+    <span className={`text-text-primary text-sm font-bold ${className}`}>
       {children}
     </span>
   );

@@ -64,7 +64,7 @@ export function BulkMessageModal({ isOpen, onClose, selectedCount, onSuccess }: 
             <button
               onClick={() => setChannel('email')}
               className={`flex-1 flex items-center justify-center gap-2 py-3 border rounded-lg transition-colors ${
-                channel === 'email' ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium ring-1 ring-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                channel === 'email' ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium ring-1 ring-blue-600' : 'border-gray-200 text-gray-600 hover:bg-surface-container-high transition-colors'
               }`}
             >
               <Mail className="w-4 h-4" />
@@ -73,7 +73,7 @@ export function BulkMessageModal({ isOpen, onClose, selectedCount, onSuccess }: 
             <button
               onClick={() => setChannel('whatsapp')}
               className={`flex-1 flex items-center justify-center gap-2 py-3 border rounded-lg transition-colors ${
-                channel === 'whatsapp' ? 'border-green-600 bg-green-50 text-green-700 font-medium ring-1 ring-green-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                channel === 'whatsapp' ? 'border-green-600 bg-green-50 text-green-700 font-medium ring-1 ring-green-600' : 'border-gray-200 text-gray-600 hover:bg-surface-container-high transition-colors'
               }`}
             >
               <MessageSquare className="w-4 h-4" />
@@ -92,7 +92,7 @@ export function BulkMessageModal({ isOpen, onClose, selectedCount, onSuccess }: 
                 placeholder="e.g. Exciting new opportunity at FinTech Global..."
                 value={subject}
                 onChange={e => setSubject(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1B5E20] focus:ring-1 focus:ring-[#1B5E20]"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-[#1B5E20]"
               />
             </div>
           )}
@@ -107,7 +107,7 @@ export function BulkMessageModal({ isOpen, onClose, selectedCount, onSuccess }: 
               placeholder={`Hi {{first_name}},\n\nI came across your profile and...`}
               value={message}
               onChange={e => setMessage(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1B5E20] focus:ring-1 focus:ring-[#1B5E20] resize-y"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-[#1B5E20] resize-y"
             />
           </div>
         </div>

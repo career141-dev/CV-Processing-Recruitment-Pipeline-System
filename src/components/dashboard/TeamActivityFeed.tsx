@@ -5,7 +5,7 @@ export function TeamActivityFeed() {
   const activities = [
     {
       id: 1,
-      iconBg: "bg-[#1B5E2026]",
+      iconBg: "bg-primary-container/15",
       iconUrl: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/4d093c8c-cdbb-4660-939f-6f3503eaac6e",
       text: "Sarah K. moved James Chen → Interviewed",
       time: "2 mins ago",
@@ -32,7 +32,7 @@ export function TeamActivityFeed() {
   return (
     <Card noPadding className="p-[1px]">
       <CardHeader>
-        <span className="text-[#212121] text-sm font-bold">Team Activity</span>
+        <span className="text-text-primary text-sm font-bold">Team Activity</span>
       </CardHeader>
       <div className="flex flex-col items-start p-5 gap-4 w-full">
         {activities.length > 0 ? (
@@ -49,20 +49,20 @@ export function TeamActivityFeed() {
                 />
               </button>
               <div className="flex flex-col flex-1">
-                <span className={`text-[#212121] text-[13px] leading-tight mb-1 ${activity.isBold ? 'font-bold' : ''}`}>
+                <span className={`text-text-primary text-[13px] leading-tight mb-1 ${activity.isBold ? 'font-bold' : ''}`}>
                   {activity.text}
                 </span>
-                <span className="text-[#9E9E9E] text-xs">{activity.time}</span>
+                <span className="text-text-disabled text-xs">{activity.time}</span>
               </div>
             </div>
           ))
         ) : (
-          <div className="flex flex-col items-center justify-center w-full py-8 text-center bg-[#FAFAFA] rounded-md">
-            <div className="w-10 h-10 bg-[#F4F4EF] rounded-full flex items-center justify-center mb-3">
-              <span className="text-[#616161] text-lg">📭</span>
+          <div className="flex flex-col items-center justify-center w-full py-8 text-center bg-surface-container-lowest rounded-md">
+            <div className="w-10 h-10 bg-surface-container-low rounded-full flex items-center justify-center mb-3">
+              <span className="text-text-secondary text-lg">📭</span>
             </div>
-            <span className="text-[#212121] font-medium text-[13px]">No recent activity</span>
-            <span className="text-[#616161] text-xs mt-1 max-w-[200px]">When your team takes action, it will show up here.</span>
+            <span className="text-text-primary font-medium text-[13px]">No recent activity</span>
+            <span className="text-text-secondary text-xs mt-1 max-w-[200px]">When your team takes action, it will show up here.</span>
           </div>
         )}
       </div>

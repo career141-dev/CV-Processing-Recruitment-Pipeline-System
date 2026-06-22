@@ -67,7 +67,7 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: Add
             placeholder="Search active jobs..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1B5E20] focus:ring-1 focus:ring-[#1B5E20]"
+            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-[#1B5E20]"
           />
         </div>
 
@@ -84,11 +84,11 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: Add
                 onClick={() => setSelectedJob(job.id)}
                 className={`flex items-start gap-3 p-3 rounded-lg border text-left transition-colors ${
                   selectedJob === job.id 
-                    ? 'border-[#1B5E20] bg-[#1B5E20]/5 ring-1 ring-[#1B5E20]' 
-                    : 'border-gray-200 hover:border-[#1B5E20]/30 hover:bg-gray-50'
+                    ? 'border-primary-container bg-primary-container/5 ring-1 ring-[#1B5E20]' 
+                    : 'border-gray-200 hover:border-primary-container/30 hover:bg-surface-container-high transition-colors'
                 }`}
               >
-                <div className={`mt-0.5 p-2 rounded-md ${selectedJob === job.id ? 'bg-[#1B5E20]/10 text-[#1B5E20]' : 'bg-gray-100 text-gray-500'}`}>
+                <div className={`mt-0.5 p-2 rounded-md ${selectedJob === job.id ? 'bg-primary-container/10 text-primary-container' : 'bg-gray-100 text-gray-500'}`}>
                   <Briefcase className="w-4 h-4" />
                 </div>
                 <div className="flex flex-col flex-1">
@@ -96,7 +96,7 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: Add
                   <span className="text-xs text-gray-500">{job.client} • {job.status}</span>
                 </div>
                 {selectedJob === job.id && (
-                  <div className="w-4 h-4 rounded-full border-4 border-[#1B5E20] self-center" />
+                  <div className="w-4 h-4 rounded-full border-4 border-primary-container self-center" />
                 )}
               </button>
             ))
