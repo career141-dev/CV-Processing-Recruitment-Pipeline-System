@@ -43,9 +43,9 @@ export function CustomSelect({
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={clsx(
-          "group relative flex items-center bg-white/60 backdrop-blur-md border border-white/40 shadow-[0_4px_16px_rgba(0,0,0,0.03)] rounded-full px-4 py-2 transition-all duration-300 w-[240px]",
+          "group relative flex items-center bg-surface/60 backdrop-blur-md border border-surface/40 shadow-[0_4px_16px_rgba(0,0,0,0.03)] rounded-full px-4 py-2 transition-all duration-300 w-[240px]",
           hoverColorClass,
-          isOpen ? "bg-white" : ""
+          isOpen ? "bg-surface" : ""
         )}
       >
         <div className={clsx(
@@ -58,13 +58,13 @@ export function CustomSelect({
           {label}
         </span>
         
-        <span className="text-[14px] text-[#212121] font-medium flex-1 text-left relative z-10 truncate">
+        <span className="text-[14px] text-text-primary font-medium flex-1 text-left relative z-10 truncate">
           {value}
         </span>
         
         <ChevronDown 
           className={clsx(
-            "w-4 h-4 text-[#616161] transition-transform duration-300 relative z-10",
+            "w-4 h-4 text-text-secondary transition-transform duration-300 relative z-10",
             isOpen ? "rotate-180" : "group-hover:text-current"
           )} 
         />
@@ -72,7 +72,7 @@ export function CustomSelect({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-full bg-white/90 backdrop-blur-xl border border-white/40 shadow-xl rounded-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+        <div className="absolute top-full left-0 mt-2 w-full bg-surface/90 backdrop-blur-xl border border-surface/40 shadow-xl rounded-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
           <div className="py-2">
             {options.map((option) => (
               <button
@@ -85,7 +85,7 @@ export function CustomSelect({
                   "w-full px-4 py-2.5 text-left text-[14px] flex items-center justify-between transition-colors",
                   value === option 
                     ? "bg-gray-50/80 font-semibold text-gray-900" 
-                    : "text-[#616161] hover:bg-gray-50 hover:text-gray-900 font-medium"
+                    : "text-text-secondary hover:bg-surface-container-high transition-colors hover:text-gray-900 font-medium"
                 )}
               >
                 <span className="truncate">{option}</span>

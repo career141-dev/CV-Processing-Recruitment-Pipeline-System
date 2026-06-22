@@ -21,11 +21,31 @@ function formatYoe(years?: number | null): string {
 
 export default function CandidateProfile() {
   const params = useParams<{ candidateId: string }>();
-  const candidate = useQuery(api.candidates.getCandidate, { id: params.candidateId as any });
+  
+  // Fake IDs (like "1" from the dashboard dummy tables) crash Convex's v.id validator
+  const isFakeId = params.candidateId.length < 10;
+  const fetchedCandidate = useQuery(api.candidates.getCandidate, isFakeId ? "skip" : { id: params.candidateId as any });
+
+  const candidate = isFakeId 
+    ? {
+        fullName: params.candidateId === "1" ? "Priya Nair" : params.candidateId === "2" ? "James Chen" : "Mock Candidate",
+        currentTitle: "Candidate Profile Preview",
+        currentEmployer: "Demo Employer",
+        location: "Dubai, UAE",
+        yearsOfExperience: 5,
+        email: "demo@example.com",
+        phone: "+971 50 123 4567",
+        sourceChannel: "LinkedIn",
+        status: "Active",
+        summary: "This is a dummy candidate profile because a non-database ID was provided in the URL.",
+        skills: ["React", "Next.js", "Recruitment"],
+        education: [{ degree: "BSc Computer Science", institution: "University of Tech", year: "2020" }],
+      }
+    : fetchedCandidate;
 
   if (candidate === undefined) {
     return (
-      <div className="flex justify-center items-center h-64 text-[#9E9E9E] text-sm">
+      <div className="flex justify-center items-center h-64 text-text-disabled text-sm">
         Loading candidate...
       </div>
     );
@@ -44,11 +64,11 @@ export default function CandidateProfile() {
     : null;
 
   return (
-    <div className="flex flex-col bg-white w-full pr-6 pt-6">
+    <div className="flex flex-col bg-surface w-full pr-6 pt-6">
       <div className="flex-1 mt-2 min-w-0">
         {/* Breadcrumb */}
             <div className="flex items-center self-stretch mb-4">
-              <span className="text-[#616161] text-xs mr-2 cursor-pointer hover:underline">
+              <span className="text-text-secondary text-xs mr-2 cursor-pointer hover:underline">
                 Candidates
               </span>
               <img
@@ -56,23 +76,23 @@ export default function CandidateProfile() {
                 className="w-1 h-[7px] mr-2 object-fill"
                 alt="Chevron"
               />
-              <span className="text-[#212121] text-xs font-semibold">
+              <span className="text-text-primary text-xs font-semibold">
                 {candidate.fullName || "Candidate"}
               </span>
             </div>
 
             {/* Candidate Header Card */}
-            <div className="flex flex-col md:flex-row items-center self-stretch bg-white py-[25px] px-[21px] mb-4 rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D]">
+            <div className="flex flex-col md:flex-row items-center self-stretch bg-surface py-[25px] px-[21px] mb-4 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
               <div className="flex flex-1 flex-col gap-4">
                 <div className="flex items-center self-stretch gap-[35px]">
-                  <div className="w-[108px] h-[111px] rounded-full bg-[#ACF4A4] flex items-center justify-center text-[#002C06] text-3xl font-bold shrink-0">
+                  <div className="w-[108px] h-[111px] rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed text-3xl font-bold shrink-0">
                     {getInitials(candidate.fullName)}
                   </div>
                   <div className="flex flex-col shrink-0 items-start gap-[3px]">
-                    <span className="text-[#212121] text-[22px] font-bold">
+                    <span className="text-text-primary text-[22px] font-bold">
                       {candidate.fullName || "Unknown"}
                     </span>
-                    <span className="text-[#616161] text-[13px]">
+                    <span className="text-text-secondary text-[13px]">
                       {[candidate.currentTitle, candidate.currentEmployer].filter(Boolean).join(" · ") || "No title listed"}
                     </span>
                   </div>
@@ -85,51 +105,51 @@ export default function CandidateProfile() {
                   )}
                   {candidate.yearsOfExperience != null && (
                     <div className="flex shrink-0 items-center bg-[#EEEEE9] py-[3px] px-[11px] gap-1 rounded-full">
-                      <span className="text-[#212121] text-xs">{formatYoe(candidate.yearsOfExperience)} Experience</span>
+                      <span className="text-text-primary text-xs">{formatYoe(candidate.yearsOfExperience)} Experience</span>
                     </div>
                   )}
                   {educationText && (
                     <div className="flex shrink-0 items-center bg-[#EEEEE9] py-[3px] px-[11px] gap-1 rounded-full">
-                      <span className="text-[#212121] text-xs">{educationText}</span>
+                      <span className="text-text-primary text-xs">{educationText}</span>
                     </div>
                   )}
                   {candidate.noticePeriod && (
                     <div className="flex items-center bg-[#EEEEE9] py-[3px] px-3 gap-1 rounded-full">
-                      <span className="text-[#212121] text-xs">Notice: {candidate.noticePeriod}</span>
+                      <span className="text-text-primary text-xs">Notice: {candidate.noticePeriod}</span>
                     </div>
                   )}
                 </div>
-                <div className="flex flex-wrap items-start self-stretch pt-6 pb-1 gap-8 border-t border-gray-100 mt-2">
+                <div className="flex flex-wrap items-start self-stretch pt-6 pb-1 gap-8 border-t border-border mt-2">
                   <div className="flex flex-col shrink-0 items-start gap-2">
                     {candidate.email && (
                       <div className="flex items-center">
-                        <span className="text-[#616161] text-xs">{candidate.email}</span>
+                        <span className="text-text-secondary text-xs">{candidate.email}</span>
                       </div>
                     )}
                     {candidate.phone && (
                       <div className="flex items-center">
-                        <span className="text-[#616161] text-xs">{candidate.phone}</span>
+                        <span className="text-text-secondary text-xs">{candidate.phone}</span>
                       </div>
                     )}
                     {candidate.linkedinUrl && (
                       <div className="flex items-center">
-                        <span className="text-[#616161] text-xs hover:underline cursor-pointer text-blue-600">{candidate.linkedinUrl}</span>
+                        <span className="text-text-secondary text-xs hover:underline cursor-pointer text-blue-600">{candidate.linkedinUrl}</span>
                       </div>
                     )}
                   </div>
                   <div className="flex flex-col shrink-0 items-start gap-2">
                     {candidate.sourceChannel && (
                       <div className="flex items-center">
-                        <span className="text-[#212121] text-xs mr-2 w-24">Source:</span>
+                        <span className="text-text-primary text-xs mr-2 w-24">Source:</span>
                         <div className="flex shrink-0 items-center gap-1.5">
-                          <span className="text-[#616161] text-xs font-medium">{candidate.sourceChannel}</span>
+                          <span className="text-text-secondary text-xs font-medium">{candidate.sourceChannel}</span>
                         </div>
                       </div>
                     )}
                     {candidate.status && (
                       <div className="flex items-center">
-                        <span className="text-[#212121] text-xs mr-2 w-24">Status:</span>
-                        <span className="text-[#616161] text-xs font-medium capitalize">{candidate.status}</span>
+                        <span className="text-text-primary text-xs mr-2 w-24">Status:</span>
+                        <span className="text-text-secondary text-xs font-medium capitalize">{candidate.status}</span>
                       </div>
                     )}
                   </div>
@@ -137,28 +157,28 @@ export default function CandidateProfile() {
               </div>
 
               {/* Action Sidebar on Header */}
-              <div className="flex flex-col shrink-0 items-center gap-4 w-full md:w-auto mt-6 md:mt-0 md:pl-6 md:border-l border-gray-100">
-                <div className="flex flex-col items-center bg-[#F4F4EF] p-4 gap-1 rounded-lg border border-solid border-[#E0E0E0] w-full text-center">
-                  <span className="text-[#1B5E20] text-sm font-bold">
+              <div className="flex flex-col shrink-0 items-center gap-4 w-full md:w-auto mt-6 md:mt-0 md:pl-6 md:border-l border-border">
+                <div className="flex flex-col items-center bg-surface-container-low p-4 gap-1 rounded-lg border border-solid border-border w-full text-center">
+                  <span className="text-primary-container text-sm font-bold">
                     Score Pending
                   </span>
-                  <span className="text-[#616161] text-xs">
+                  <span className="text-text-secondary text-xs">
                     {candidate.currentTitle || candidate.currentEmployer || "Awaiting job match"}
                   </span>
                 </div>
                 <div className="flex flex-col items-stretch gap-2 w-full">
-                  <button className="flex items-center justify-center bg-[#1B5E20] text-white py-2 px-4 gap-2 rounded-md border-0 hover:bg-[#144718]"
+                  <button className="flex items-center justify-center bg-primary-container text-on-primary py-2 px-4 gap-2 rounded-md border-0 hover:bg-[#144718]"
                     onClick={() => alert('Pressed!')}>
                     <span className="text-[13px] font-bold">Shortlist for Job</span>
                   </button>
                   <div className="flex items-center gap-2 w-full">
-                    <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-[#E0E0E0] hover:bg-gray-50"
+                    <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors"
                       onClick={() => alert('Pressed!')}>
-                      <span className="text-[#212121] text-[13px] whitespace-nowrap">Trigger AI Call</span>
+                      <span className="text-text-primary text-[13px] whitespace-nowrap">Trigger AI Call</span>
                     </button>
-                    <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-[#E0E0E0] hover:bg-gray-50"
+                    <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors"
                       onClick={() => alert('Pressed!')}>
-                      <span className="text-[#212121] text-[13px] whitespace-nowrap">Send Email</span>
+                      <span className="text-text-primary text-[13px] whitespace-nowrap">Send Email</span>
                     </button>
                   </div>
                   <button className="flex items-center justify-center bg-transparent py-2 px-4 gap-2 rounded-md border border-solid border-[#BA1A1A80] hover:bg-red-50 mt-1"
@@ -174,20 +194,20 @@ export default function CandidateProfile() {
               <div className="flex flex-col shrink-0 items-center py-3 px-4 border-b-2 border-[#00450D] cursor-pointer">
                 <span className="text-[#00450D] text-[13px] font-bold">Overview</span>
               </div>
-              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-gray-50">
-                <span className="text-[#616161] text-[13px]">Timeline</span>
+              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-surface-container-high transition-colors">
+                <span className="text-text-secondary text-[13px]">Timeline</span>
               </div>
-              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-gray-50">
-                <span className="text-[#616161] text-[13px]">Communications</span>
+              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-surface-container-high transition-colors">
+                <span className="text-text-secondary text-[13px]">Communications</span>
               </div>
-              <div className="flex items-center py-3 px-4 gap-2 cursor-pointer hover:bg-gray-50">
-                <span className="text-[#616161] text-[13px]">Job Applications</span>
+              <div className="flex items-center py-3 px-4 gap-2 cursor-pointer hover:bg-surface-container-high transition-colors">
+                <span className="text-text-secondary text-[13px]">Job Applications</span>
                 <div className="bg-[#DADAD5] py-0.5 px-2 rounded-full">
-                  <span className="text-[#616161] text-[11px] font-bold">2</span>
+                  <span className="text-text-secondary text-[11px] font-bold">2</span>
                 </div>
               </div>
-              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-gray-50">
-                <span className="text-[#616161] text-[13px]">AI Call Log</span>
+              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-surface-container-high transition-colors">
+                <span className="text-text-secondary text-[13px]">AI Call Log</span>
               </div>
             </div>
 
@@ -198,10 +218,10 @@ export default function CandidateProfile() {
               <div className="flex flex-col gap-6">
                 
                 {/* Extracted Profile CV Snapshot */}
-                <div className="flex flex-col bg-white rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D] overflow-hidden">
+                <div className="flex flex-col bg-surface rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D] overflow-hidden">
                   <div className="flex flex-col p-8 pb-16 bg-[#F8FAF2] relative">
                     <div className="flex flex-col items-center text-center pb-6 border-b border-gray-200 mb-6">
-                      <span className="text-[#1B5E20] text-2xl font-bold mb-1">{candidate.fullName || "Unknown"}</span>
+                      <span className="text-primary-container text-2xl font-bold mb-1">{candidate.fullName || "Unknown"}</span>
                       <span className="text-[#1B1B1D] text-[13px] font-bold mb-3">{candidate.currentTitle || ""}</span>
                       <div className="flex items-center justify-center gap-3 flex-wrap">
                         {candidate.location && <span className="text-[#5F6368] text-[10px] font-bold tracking-wider">{candidate.location.toUpperCase()}</span>}
@@ -214,13 +234,13 @@ export default function CandidateProfile() {
                       <div className="flex flex-col gap-6">
                         {candidate.summary && (
                           <div className="flex flex-col gap-2">
-                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">PROFESSIONAL SUMMARY</span>
+                            <span className="text-primary-container text-xs font-bold tracking-wider">PROFESSIONAL SUMMARY</span>
                             <span className="text-[#1B1B1D] text-sm leading-relaxed">{candidate.summary}</span>
                           </div>
                         )}
                         {candidate.certifications && candidate.certifications.length > 0 && (
                           <div className="flex flex-col gap-2">
-                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">CERTIFICATIONS</span>
+                            <span className="text-primary-container text-xs font-bold tracking-wider">CERTIFICATIONS</span>
                             {candidate.certifications.map((cert, i) => (
                               <span key={i} className="text-[#1B1B1D] text-[13px]">{cert}</span>
                             ))}
@@ -230,7 +250,7 @@ export default function CandidateProfile() {
                       <div className="flex flex-col gap-6">
                         {candidate.skills && candidate.skills.length > 0 && (
                           <div className="flex flex-col gap-2">
-                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">SKILLS</span>
+                            <span className="text-primary-container text-xs font-bold tracking-wider">SKILLS</span>
                             <div className="flex flex-wrap gap-2">
                               {candidate.skills.map((skill, i) => (
                                 <div key={i} className="bg-[#E8F5E9] py-1 px-2.5 rounded text-[#00450D] text-[11px] font-bold border border-[#C8E6C9]">
@@ -242,7 +262,7 @@ export default function CandidateProfile() {
                         )}
                         {candidate.education && candidate.education.length > 0 && (
                           <div className="flex flex-col gap-2">
-                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">EDUCATION</span>
+                            <span className="text-primary-container text-xs font-bold tracking-wider">EDUCATION</span>
                             {candidate.education.map((edu, i) => (
                               <div key={i} className="flex flex-col mb-2">
                                 <span className="text-[#1B1B1D] text-[13px] font-bold">{edu.degree || ""}{edu.field ? ` in ${edu.field}` : ""}</span>
@@ -253,7 +273,7 @@ export default function CandidateProfile() {
                         )}
                         {candidate.languages && candidate.languages.length > 0 && (
                           <div className="flex flex-col gap-2">
-                            <span className="text-[#1B5E20] text-xs font-bold tracking-wider">LANGUAGES</span>
+                            <span className="text-primary-container text-xs font-bold tracking-wider">LANGUAGES</span>
                             <div className="flex flex-wrap gap-2">
                               {candidate.languages.map((lang, i) => (
                                 <span key={i} className="text-[#1B1B1D] text-[13px]">{lang}</span>
@@ -265,32 +285,32 @@ export default function CandidateProfile() {
                     </div>
                   </div>
 
-                  <div className="bg-white border-t border-[#E0E0E0] p-6 pt-5">
+                  <div className="bg-surface border-t border-border p-6 pt-5">
                     <div className="flex items-center justify-between mb-5">
                       <div className="flex items-center gap-2">
-                        <span className="text-[#212121] text-[15px] font-bold">AI-Extracted Profile</span>
+                        <span className="text-text-primary text-[15px] font-bold">AI-Extracted Profile</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-6">
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-1">
-                          <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Current Title</span>
-                          <span className="text-[#212121] text-sm font-semibold">{candidate.currentTitle || "—"}</span>
+                          <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Current Title</span>
+                          <span className="text-text-primary text-sm font-semibold">{candidate.currentTitle || "—"}</span>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Current Employer</span>
-                          <span className="text-[#212121] text-sm font-semibold">{candidate.currentEmployer || "—"}</span>
+                          <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Current Employer</span>
+                          <span className="text-text-primary text-sm font-semibold">{candidate.currentEmployer || "—"}</span>
                         </div>
                       </div>
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-1">
-                          <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Total Experience</span>
-                          <span className="text-[#212121] text-sm font-semibold">{candidate.yearsOfExperience != null ? formatYoe(candidate.yearsOfExperience) : "—"}</span>
+                          <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Total Experience</span>
+                          <span className="text-text-primary text-sm font-semibold">{candidate.yearsOfExperience != null ? formatYoe(candidate.yearsOfExperience) : "—"}</span>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <span className="text-[#616161] text-xs font-medium uppercase tracking-wide">Industry Focus</span>
-                          <span className="text-[#212121] text-sm font-semibold">{candidate.industries?.join(", ") || "—"}</span>
+                          <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Industry Focus</span>
+                          <span className="text-text-primary text-sm font-semibold">{candidate.industries?.join(", ") || "—"}</span>
                         </div>
                       </div>
                     </div>
@@ -300,9 +320,9 @@ export default function CandidateProfile() {
 
 
                 {/* Education */}
-                <div className="flex flex-col bg-white p-6 rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D]">
+                <div className="flex flex-col bg-surface p-6 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
                   <div className="flex items-center mb-6">
-                    <span className="text-[#212121] text-base font-bold">Education</span>
+                    <span className="text-text-primary text-base font-bold">Education</span>
                   </div>
                   {candidate.education && candidate.education.length > 0 ? (
                     <div className="flex flex-col gap-5">
@@ -310,19 +330,19 @@ export default function CandidateProfile() {
                         <div key={i}>
                           {i > 0 && <div className="h-[1px] bg-gray-100 w-full mb-5"></div>}
                           <div className="flex items-start gap-4">
-                            <div className="bg-[#F8FAF2] p-2 rounded-lg border border-gray-100 w-12 h-12 flex items-center justify-center text-[#1B5E20] text-sm font-bold shrink-0">
+                            <div className="bg-[#F8FAF2] p-2 rounded-lg border border-border w-12 h-12 flex items-center justify-center text-primary-container text-sm font-bold shrink-0">
                               {edu.institution?.charAt(0) || "E"}
                             </div>
                             <div className="flex flex-col">
-                              <span className="text-[#212121] text-[14px] font-bold">{edu.degree || ""}{edu.field ? ` in ${edu.field}` : ""}</span>
-                              <span className="text-[#616161] text-xs mt-0.5">{edu.institution || ""}{edu.year ? ` • ${edu.year}` : ""}</span>
+                              <span className="text-text-primary text-[14px] font-bold">{edu.degree || ""}{edu.field ? ` in ${edu.field}` : ""}</span>
+                              <span className="text-text-secondary text-xs mt-0.5">{edu.institution || ""}{edu.year ? ` • ${edu.year}` : ""}</span>
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <span className="text-[#9E9E9E] text-sm">No education data extracted.</span>
+                    <span className="text-text-disabled text-sm">No education data extracted.</span>
                   )}
                 </div>
 
@@ -332,24 +352,24 @@ export default function CandidateProfile() {
               <div className="flex flex-col gap-6">
                 
                 {/* Active Applications */}
-                <div className="flex flex-col bg-white rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D] overflow-hidden">
-                  <div className="flex items-center bg-[#FAFAF5] py-3 px-4 border-b border-gray-100">
+                <div className="flex flex-col bg-surface rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D] overflow-hidden">
+                  <div className="flex items-center bg-background py-3 px-4 border-b border-border">
                     <img
                       src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/4jhtq7qv_expires_30_days.png" 
                       className="w-3.5 h-4 mr-2 object-fill"
                       alt="Icon"
                     />
-                    <span className="text-[#212121] text-sm font-bold">Active Applications</span>
+                    <span className="text-text-primary text-sm font-bold">Active Applications</span>
                   </div>
                   <div className="flex flex-col divide-y divide-gray-100">
-                    <div className="flex flex-col py-4 px-4 hover:bg-gray-50 cursor-pointer">
+                    <div className="flex flex-col py-4 px-4 hover:bg-surface-container-high transition-colors cursor-pointer">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[#212121] text-[14px] font-bold text-blue-700 hover:underline">Brand Manager</span>
-                        <div className="bg-[#1B5E20] py-0.5 px-2 rounded">
-                          <span className="text-white text-[11px] font-bold">92</span>
+                        <span className="text-text-primary text-[14px] font-bold text-blue-700 hover:underline">Brand Manager</span>
+                        <div className="bg-primary-container py-0.5 px-2 rounded">
+                          <span className="text-on-primary text-[11px] font-bold">92</span>
                         </div>
                       </div>
-                      <span className="text-[#616161] text-xs mb-2">Atlas Holdings</span>
+                      <span className="text-text-secondary text-xs mb-2">Atlas Holdings</span>
                       <div className="flex items-center">
                         <img
                           src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/a818xgw0_expires_30_days.png" 
@@ -359,35 +379,35 @@ export default function CandidateProfile() {
                         <span className="text-[#00450D] text-[11px] font-medium">Stage: Shortlisted</span>
                       </div>
                     </div>
-                    <div className="flex flex-col py-4 px-4 hover:bg-gray-50 cursor-pointer">
+                    <div className="flex flex-col py-4 px-4 hover:bg-surface-container-high transition-colors cursor-pointer">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[#212121] text-[14px] font-bold text-blue-700 hover:underline">GM Operations</span>
+                        <span className="text-text-primary text-[14px] font-bold text-blue-700 hover:underline">GM Operations</span>
                         <div className="bg-[#DADAD5] py-0.5 px-2 rounded">
-                          <span className="text-[#212121] text-[11px] font-bold">67</span>
+                          <span className="text-text-primary text-[11px] font-bold">67</span>
                         </div>
                       </div>
-                      <span className="text-[#616161] text-xs mb-2">LPI Group</span>
+                      <span className="text-text-secondary text-xs mb-2">LPI Group</span>
                       <div className="flex items-center">
                         <img
                           src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/uq406u12_expires_30_days.png" 
                           className="w-3 h-3 mr-1.5 object-fill"
                           alt="Icon"
                         />
-                        <span className="text-[#616161] text-[11px] font-medium">Stage: Applied</span>
+                        <span className="text-text-secondary text-[11px] font-medium">Stage: Applied</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* AI Call Summary */}
-                <div className="flex flex-col bg-white p-5 rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D]">
+                <div className="flex flex-col bg-surface p-5 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
                   <div className="flex items-center mb-4">
                     <img
                       src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/helwqcbd_expires_30_days.png" 
                       className="w-4 h-4 mr-2 object-fill"
                       alt="Icon"
                     />
-                    <span className="text-[#212121] text-sm font-bold">AI Call Summary</span>
+                    <span className="text-text-primary text-sm font-bold">AI Call Summary</span>
                   </div>
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center bg-[#91F78E1A] p-3 gap-3 rounded-lg border border-[#91F78E4D]">
@@ -397,19 +417,19 @@ export default function CandidateProfile() {
                         alt="Avatar"
                       />
                       <div className="flex flex-col flex-1">
-                        <span className="text-[#212121] text-[13px] font-medium">Pre-screen: Brand Manager</span>
-                        <span className="text-[#616161] text-xs mt-0.5">Oct 24 • <span className="text-[#00450D] font-medium">Interested</span></span>
+                        <span className="text-text-primary text-[13px] font-medium">Pre-screen: Brand Manager</span>
+                        <span className="text-text-secondary text-xs mt-0.5">Oct 24 • <span className="text-[#00450D] font-medium">Interested</span></span>
                       </div>
                     </div>
-                    <div className="flex items-center bg-[#F8FAF2] p-3 gap-3 rounded-lg border border-gray-100">
+                    <div className="flex items-center bg-[#F8FAF2] p-3 gap-3 rounded-lg border border-border">
                       <img
                         src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/ifmm9cq2_expires_30_days.png" 
                         className="w-8 h-8 rounded-lg object-fill"
                         alt="Avatar"
                       />
                       <div className="flex flex-col flex-1">
-                        <span className="text-[#212121] text-[13px] font-medium">Initial Outreach</span>
-                        <span className="text-[#616161] text-xs mt-0.5">Oct 22 • No Answer</span>
+                        <span className="text-text-primary text-[13px] font-medium">Initial Outreach</span>
+                        <span className="text-text-secondary text-xs mt-0.5">Oct 22 • No Answer</span>
                       </div>
                     </div>
                     <button className="text-[#00450D] text-[13px] font-bold bg-transparent border-0 mt-1 hover:underline cursor-pointer">
@@ -419,28 +439,28 @@ export default function CandidateProfile() {
                 </div>
 
                 {/* Source History */}
-                <div className="flex flex-col bg-white p-5 rounded-xl border border-solid border-[#E0E0E0] shadow-[0px_2px_4px_#0000000D]">
+                <div className="flex flex-col bg-surface p-5 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
                   <div className="flex items-center mb-5">
                     <img
                       src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/22j0bf3x_expires_30_days.png" 
                       className="w-3.5 h-4 mr-2 object-fill"
                       alt="Icon"
                     />
-                    <span className="text-[#212121] text-sm font-bold">Source History</span>
+                    <span className="text-text-primary text-sm font-bold">Source History</span>
                   </div>
                   <div className="flex flex-col gap-4">
                     <div className="flex items-start gap-3">
                       <div className="bg-blue-500 w-2 h-2 rounded-full mt-1.5 shrink-0"></div>
                       <div className="flex flex-col">
-                        <span className="text-[#212121] text-[13px] font-medium leading-tight">Sourced via LinkedIn Extension</span>
-                        <span className="text-[#616161] text-xs mt-1">By Sarah Jenkins • Sep 15</span>
+                        <span className="text-text-primary text-[13px] font-medium leading-tight">Sourced via LinkedIn Extension</span>
+                        <span className="text-text-secondary text-xs mt-1">By Sarah Jenkins • Sep 15</span>
                       </div>
                     </div>
                     <div className="flex items-start gap-3">
                       <div className="bg-[#CBFC06] w-2 h-2 rounded-full mt-1.5 shrink-0"></div>
                       <div className="flex flex-col">
-                        <span className="text-[#212121] text-[13px] font-medium leading-tight">Applied via WhatsApp Bot</span>
-                        <span className="text-[#616161] text-xs mt-1">Campaign: GMOPS • Oct 02</span>
+                        <span className="text-text-primary text-[13px] font-medium leading-tight">Applied via WhatsApp Bot</span>
+                        <span className="text-text-secondary text-xs mt-1">Campaign: GMOPS • Oct 02</span>
                       </div>
                     </div>
                   </div>

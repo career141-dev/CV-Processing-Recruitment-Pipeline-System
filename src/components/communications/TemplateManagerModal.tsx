@@ -6,7 +6,7 @@ import { Button } from '../ui/Button';
 import { Plus, Edit2, Trash2, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface Template {
+export interface Template {
   id: string;
   name: string;
   content: string;
@@ -15,14 +15,11 @@ interface Template {
 interface TemplateManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  templates: Template[];
+  setTemplates: React.Dispatch<React.SetStateAction<Template[]>>;
 }
 
-export function TemplateManagerModal({ isOpen, onClose }: TemplateManagerModalProps) {
-  const [templates, setTemplates] = useState<Template[]>([
-    { id: '1', name: 'Job Introduction', content: 'Hi [Name],\n\nI came across your profile and wanted to reach out about an exciting [Job Title] opportunity with [Company].\n\nWould you be open to learning more?\n\nBest regards,\n[Recruiter]' },
-    { id: '2', name: 'CV Request', content: "Hello [Name],\n\nI'm reviewing your application for the [Job Title] role. Could you please share an updated version of your CV?\n\nThanks,\n[Recruiter]" },
-    { id: '3', name: 'Interview Invitation', content: "Hi [Name],\n\nThe team was impressed with your profile. We'd love to schedule a 30-minute introductory call this week.\n\nBest,\n[Recruiter]" },
-  ]);
+export function TemplateManagerModal({ isOpen, onClose, templates, setTemplates }: TemplateManagerModalProps) {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -112,7 +109,7 @@ export function TemplateManagerModal({ isOpen, onClose }: TemplateManagerModalPr
 
         <div className="flex flex-col gap-2">
           {templates.map(t => (
-            <div key={t.id} className="flex items-start justify-between p-3 border border-border rounded-lg bg-white hover:border-secondary transition-colors group">
+            <div key={t.id} className="flex items-start justify-between p-3 border border-border rounded-lg bg-surface hover:border-secondary transition-colors group">
               <div className="flex flex-col gap-1 pr-4">
                 <span className="font-medium text-sm text-text-primary">{t.name}</span>
                 <span className="text-xs text-text-secondary line-clamp-1">{t.content}</span>

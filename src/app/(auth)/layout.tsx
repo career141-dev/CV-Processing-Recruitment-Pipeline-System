@@ -37,7 +37,7 @@ export default async function AuthLayout({
 
         <div className="relative z-10 p-12 mt-auto mb-12 max-w-xl">
           {/* Glassmorphism Card */}
-          <div className="bg-surface/80 backdrop-blur-md border border-white/40 p-8 rounded-xl shadow-lg">
+          <div className="bg-surface/80 backdrop-blur-md border border-surface/40 p-8 rounded-xl shadow-lg">
             <div className="w-12 h-12 bg-primary-container/10 rounded-lg flex items-center justify-center mb-6">
               <span
                 className="material-symbols-outlined text-primary-container text-2xl"

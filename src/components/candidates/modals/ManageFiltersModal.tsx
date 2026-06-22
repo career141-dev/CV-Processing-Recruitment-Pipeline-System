@@ -43,7 +43,7 @@ export function ManageFiltersModal({ isOpen, onClose, savedFilters, onDeleteFilt
             savedFilters.map((filter) => (
               <div 
                 key={filter}
-                className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-[#1B5E20]/30 transition-colors group"
+                className="flex items-center justify-between p-3 bg-surface border border-gray-200 rounded-lg hover:border-primary-container/30 transition-colors group"
               >
                 <span className="text-sm font-medium text-gray-900">{filter}</span>
                 <button

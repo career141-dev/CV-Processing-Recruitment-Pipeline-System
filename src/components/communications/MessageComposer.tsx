@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Mail, MessageCircle, Smartphone, AlertTriangle, ChevronDown, Calendar, X } from 'lucide-react';
+import { Mail, MessageCircle, Smartphone, AlertTriangle, ChevronDown, Calendar, X, Paperclip, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { TemplateManagerModal } from './TemplateManagerModal';
+import { TemplateManagerModal, Template } from './TemplateManagerModal';
 import { ScheduleMessageModal } from './ScheduleMessageModal';
 
 interface MessageComposerProps {
@@ -30,7 +30,17 @@ export function MessageComposer({
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState('intro');
+  const [selectedTemplate, setSelectedTemplate] = useState('1');
+  
+  const [templates, setTemplates] = useState<Template[]>([
+    { id: '1', name: 'Job Introduction', content: 'Hi [Name],\n\nI came across your profile and wanted to reach out about an exciting [Job Title] opportunity with [Company].\n\nWould you be open to learning more?\n\nBest regards,\n[Recruiter]' },
+    { id: '2', name: 'CV Request', content: "Hello [Name],\n\nI'm reviewing your application for the [Job Title] role. Could you please share an updated version of your CV?\n\nThanks,\n[Recruiter]" },
+    { id: '3', name: 'Interview Invitation', content: "Hi [Name],\n\nThe team was impressed with your profile. We'd love to schedule a 30-minute introductory call this week.\n\nBest,\n[Recruiter]" },
+  ]);
+
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   // Hardcoded duplicate warning for now
   const duplicateWarning = "Priya Nair was contacted 3 days ago by Mike J. via Email. Review before sending.";
@@ -48,8 +58,11 @@ export function MessageComposer({
       return;
     }
     
-    toast.success(`Message sent to ${candidateName} via ${channel === 'email' ? 'Email' : channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}. ${isFollowupOn ? 'Follow-ups enabled.' : ''}`);
-    onClose();
+    setIsSuccess(true);
+    setTimeout(() => {
+      setIsSuccess(false);
+      onClose();
+    }, 2000);
   };
 
   const handleSchedule = (date: Date) => {
@@ -71,20 +84,22 @@ export function MessageComposer({
     setSelectedTemplate(val);
     if (val === 'manage') {
       setIsTemplateModalOpen(true);
-      setSelectedTemplate('intro'); // reset to intro
+      setSelectedTemplate(templates[0]?.id || ''); 
       return;
     }
     
-    const templates: Record<string, string> = {
-      intro: "Hi Priya Nair,\n\nI came across your profile and wanted to reach out about an exciting Senior Data Analyst opportunity with one of our clients.\n\nWould you be open to learning more?\n\nBest regards,\nSarah K.",
-      cv: "Hello Priya,\n\nI'm reviewing your application for the Senior Data Analyst role. Could you please share an updated version of your CV?\n\nThanks,\nSarah",
-      interview: "Hi Priya,\n\nThe team was impressed with your profile. We'd love to schedule a 30-minute introductory call this week. Do any of these times work for you?\n\n- Tuesday 2pm\n- Wednesday 10am\n\nBest,",
-      offer: "Dear Priya,\n\nI have some exciting news regarding your interview for the Senior Data Analyst role. Do you have a moment for a quick call today?",
-      followup: "Hi Priya,\n\nJust following up on my previous message regarding the Data Analyst position. Are you still interested in exploring new opportunities?\n\nBest regards,\nSarah K.",
-      custom: ""
-    };
-    setMessage(templates[val] || "");
+    const t = templates.find(t => t.id === val);
+    if (t) {
+      setMessage(t.content);
+    }
   };
+
+  const computedMessage = isPreviewMode ? message
+    .replace(/\[Name\]/gi, candidateName || 'Candidate')
+    .replace(/\[Job Title\]/gi, candidateTitle || 'the role')
+    .replace(/\[Company\]/gi, 'Career141')
+    .replace(/\[Recruiter\]/gi, 'Sarah K.')
+    : message;
 
   const maxLength = channel === 'sms' ? 160 : 1000;
 
@@ -98,18 +113,33 @@ export function MessageComposer({
 
       {/* Slide-over Panel */}
       <div 
-        className={`fixed top-0 right-0 h-screen w-[420px] bg-white border-l border-border shadow-[0_8px_16px_rgba(0,0,0,0.10)] z-[50] flex flex-col transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`fixed top-0 right-0 h-screen w-[420px] bg-surface border-l border-border shadow-[0_8px_16px_rgba(0,0,0,0.10)] z-[50] flex flex-col transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <header className="flex items-center justify-between px-4 py-4 border-b border-border shrink-0">
           <h3 className="text-[16px] font-semibold text-text-primary">Send Message</h3>
           <button 
             className="text-text-secondary hover:text-text-primary transition-colors bg-transparent border-0 p-1 cursor-pointer" 
-            onClick={onClose}
+            onClick={() => {
+              setIsSuccess(false);
+              onClose();
+            }}
           >
             <X className="w-5 h-5" />
           </button>
         </header>
 
+        {isSuccess ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-300">
+            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-semibold text-text-primary mb-2">Message Sent</h3>
+            <p className="text-sm text-text-secondary">
+              Successfully sent to {candidateName} via {channel}.
+            </p>
+          </div>
+        ) : (
+          <>
         <div className="flex-1 overflow-y-auto">
           {/* Recipient Section */}
           <div className="p-4 bg-surface-container-low border-b border-border">
@@ -149,21 +179,21 @@ export function MessageComposer({
             <div className="flex gap-2">
               <button 
                 onClick={() => handleChannelSelect('email')}
-                className={`flex-1 flex flex-col items-center py-2.5 px-0 rounded-[10px] cursor-pointer transition-all ${channel === 'email' ? 'border-2 border-secondary bg-[#F0FFF0] text-secondary' : 'border border-border bg-white text-text-secondary hover:bg-surface-container-low'}`}
+                className={`flex-1 flex flex-col items-center py-2.5 px-0 rounded-[10px] cursor-pointer transition-all ${channel === 'email' ? 'border-2 border-secondary bg-[#F0FFF0] text-secondary' : 'border border-border bg-surface text-text-secondary hover:bg-surface-container-low'}`}
               >
                 <Mail className="w-4 h-4 mb-1" />
                 <span className="text-[13px] font-semibold">Email</span>
               </button>
               <button 
                 onClick={() => handleChannelSelect('whatsapp')}
-                className={`flex-1 flex flex-col items-center py-2.5 px-0 rounded-[10px] cursor-pointer transition-all ${channel === 'whatsapp' ? 'border-2 border-secondary bg-[#F0FFF0] text-secondary' : 'border border-border bg-white text-text-secondary hover:bg-surface-container-low'}`}
+                className={`flex-1 flex flex-col items-center py-2.5 px-0 rounded-[10px] cursor-pointer transition-all ${channel === 'whatsapp' ? 'border-2 border-secondary bg-[#F0FFF0] text-secondary' : 'border border-border bg-surface text-text-secondary hover:bg-surface-container-low'}`}
               >
                 <MessageCircle className="w-4 h-4 mb-1" />
                 <span className="text-[13px] font-semibold">WhatsApp</span>
               </button>
               <button 
                 onClick={() => handleChannelSelect('sms')}
-                className={`flex-1 flex flex-col items-center py-2.5 px-0 rounded-[10px] cursor-pointer transition-all ${channel === 'sms' ? 'border-2 border-secondary bg-[#F0FFF0] text-secondary' : 'border border-border bg-white text-text-secondary hover:bg-surface-container-low'}`}
+                className={`flex-1 flex flex-col items-center py-2.5 px-0 rounded-[10px] cursor-pointer transition-all ${channel === 'sms' ? 'border-2 border-secondary bg-[#F0FFF0] text-secondary' : 'border border-border bg-surface text-text-secondary hover:bg-surface-container-low'}`}
               >
                 <Smartphone className="w-4 h-4 mb-1" />
                 <span className="text-[13px] font-semibold">SMS</span>
@@ -195,12 +225,9 @@ export function MessageComposer({
                 onChange={handleTemplateChange}
                 className="w-full appearance-none px-3 py-2 border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:border-secondary cursor-pointer"
               >
-                <option value="intro">Job Introduction</option>
-                <option value="cv">CV Request</option>
-                <option value="interview">Interview Invitation</option>
-                <option value="offer">Offer Discussion</option>
-                <option value="followup">General Follow-Up</option>
-                <option value="custom">Custom</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
                 <option disabled>──────────</option>
                 <option value="manage">Manage Templates...</option>
               </select>
@@ -209,22 +236,54 @@ export function MessageComposer({
           </div>
 
           {/* Message Body */}
-          <div className="p-4 border-b border-border">
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              <button onClick={() => insertToken('[Name]')} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors">[Name]</button>
-              <button onClick={() => insertToken('[Job Title]')} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors">[Job Title]</button>
-              <button onClick={() => insertToken('[Recruiter]')} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors">[Recruiter]</button>
-              <button onClick={() => insertToken('[Company]')} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors">[Company]</button>
+          <div className="p-4 border-b border-border relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-wrap gap-1.5">
+                <button onClick={() => insertToken('[Name]')} disabled={isPreviewMode} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed">[Name]</button>
+                <button onClick={() => insertToken('[Job Title]')} disabled={isPreviewMode} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed">[Job Title]</button>
+                <button onClick={() => insertToken('[Recruiter]')} disabled={isPreviewMode} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed">[Recruiter]</button>
+                <button onClick={() => insertToken('[Company]')} disabled={isPreviewMode} className="bg-surface-container-low text-on-surface-variant text-[11px] font-semibold py-1 px-2.5 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed">[Company]</button>
+              </div>
+              <button 
+                onClick={() => setIsPreviewMode(!isPreviewMode)}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-semibold transition-colors ${isPreviewMode ? 'bg-secondary text-on-primary' : 'bg-surface-container-low text-text-secondary hover:bg-surface-container-high'}`}
+              >
+                {isPreviewMode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                Preview
+              </button>
             </div>
+            
             <textarea 
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className={`w-full p-3 border rounded-lg text-[13px] text-text-primary leading-relaxed focus:outline-none focus:ring-1 transition-all resize-none ${message.length > maxLength ? 'border-error focus:border-error focus:ring-error' : 'border-border focus:border-secondary focus:ring-secondary'}`}
+              value={computedMessage}
+              onChange={(e) => !isPreviewMode && setMessage(e.target.value)}
+              disabled={isPreviewMode}
+              className={`w-full p-3 border rounded-lg text-[13px] text-text-primary leading-relaxed focus:outline-none focus:ring-1 transition-all resize-none ${isPreviewMode ? 'bg-gray-50' : ''} ${message.length > maxLength ? 'border-error focus:border-error focus:ring-error' : 'border-border focus:border-secondary focus:ring-secondary'}`}
               rows={8}
             />
-            <span className={`text-[11px] block text-right mt-1.5 ${message.length > maxLength ? 'text-error font-medium' : 'text-text-disabled'}`}>
-              {message.length} / {maxLength}
-            </span>
+            
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setAttachments(prev => [...prev, 'Job_Description.pdf'])}
+                  disabled={channel === 'sms' || isPreviewMode}
+                  className="p-1.5 text-text-secondary hover:text-secondary hover:bg-surface-container-low rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Add Attachment"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                {attachments.map((att, i) => (
+                  <div key={i} className="flex items-center gap-1 bg-surface-container-low px-2 py-1 rounded text-[11px] text-text-secondary">
+                    {att}
+                    <button onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-error">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <span className={`text-[11px] ${message.length > maxLength ? 'text-error font-medium' : 'text-text-disabled'}`}>
+                {message.length} / {maxLength} {channel === 'sms' ? `(${(Math.ceil(message.length / 160) || 1)} segment${Math.ceil(message.length / 160) > 1 ? 's' : ''})` : ''}
+              </span>
+            </div>
           </div>
 
           {/* Follow-up Section */}
@@ -237,7 +296,7 @@ export function MessageComposer({
                 className="relative inline-flex items-center cursor-pointer bg-transparent border-0 p-0"
               >
                 <div className={`w-8 h-[18px] rounded-full transition-colors ${isFollowupOn ? 'bg-secondary' : 'bg-text-disabled'}`} />
-                <div className={`absolute w-[14px] h-[14px] bg-white rounded-full transition-all top-[2px] ${isFollowupOn ? 'left-[16px]' : 'left-[2px]'}`} />
+                <div className={`absolute w-[14px] h-[14px] bg-surface rounded-full transition-all top-[2px] ${isFollowupOn ? 'left-[16px]' : 'left-[2px]'}`} />
               </button>
             </div>
 
@@ -261,36 +320,42 @@ export function MessageComposer({
             )}
           </div>
         </div>
+          </>
+        )}
 
         {/* Footer */}
-        <footer className="p-4 border-t border-border bg-white flex items-center justify-between sticky bottom-0 z-20">
-          <button 
-            className="text-[13px] text-text-secondary hover:text-text-primary transition-colors bg-transparent border-0 cursor-pointer"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <div className="flex gap-2">
+        {!isSuccess && (
+          <footer className="p-4 border-t border-border bg-surface flex items-center justify-between sticky bottom-0 z-20">
             <button 
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-[13px] text-text-primary font-semibold hover:bg-surface-container-low transition-all bg-white"
+              className="text-[13px] text-text-secondary hover:text-text-primary transition-colors bg-transparent border-0 cursor-pointer"
+              onClick={onClose}
             >
-              <Calendar className="w-4 h-4" />
-              Schedule
+              Cancel
             </button>
-            <button 
-              onClick={handleSendNow}
-              className="px-5 py-2 bg-secondary text-white rounded-lg text-[13px] font-semibold hover:opacity-90 transition-all shadow-sm"
-            >
-              Send Now
-            </button>
-          </div>
-        </footer>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setIsScheduleModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-[13px] text-text-primary font-semibold hover:bg-surface-container-low transition-all bg-surface"
+              >
+                <Calendar className="w-4 h-4" />
+                Schedule
+              </button>
+              <button 
+                onClick={handleSendNow}
+                className="px-5 py-2 bg-secondary text-on-primary rounded-lg text-[13px] font-semibold hover:opacity-90 transition-all shadow-sm"
+              >
+                Send Now
+              </button>
+            </div>
+          </footer>
+        )}
       </div>
 
       <TemplateManagerModal 
         isOpen={isTemplateModalOpen} 
         onClose={() => setIsTemplateModalOpen(false)} 
+        templates={templates}
+        setTemplates={setTemplates}
       />
       <ScheduleMessageModal 
         isOpen={isScheduleModalOpen} 

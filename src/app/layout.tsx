@@ -4,6 +4,7 @@ import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
+import { ThemeProvider } from "./providers";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -23,6 +24,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${inter.variable} h-full antialiased`}
     >
       <head>
@@ -30,10 +32,12 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col font-body">
         <ClerkProvider>
-          <ConvexClientProvider>
-            {children}
-            <Toaster position="bottom-right" richColors />
-          </ConvexClientProvider>
+          <ThemeProvider>
+            <ConvexClientProvider>
+              {children}
+              <Toaster position="bottom-right" richColors />
+            </ConvexClientProvider>
+          </ThemeProvider>
         </ClerkProvider>
       </body>
     </html>

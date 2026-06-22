@@ -131,7 +131,7 @@ export default function CandidatesSearch() {
         .filter(Boolean)
     : candidates?.map(c => ({ ...c, score: undefined, matchReason: undefined }))) ?? [];
   return (
-    <div className="flex-1 relative w-full bg-white">
+    <div className="flex-1 relative w-full bg-surface">
       <PageHeader title="Search Candidates" />
       
       <div className="flex flex-col items-start self-stretch relative">
@@ -148,8 +148,8 @@ export default function CandidatesSearch() {
           <div className="flex-1 flex flex-col gap-4 min-w-0 pr-6 pb-[100px]">
             {/* Heading and Subtopic */}
             <div className="flex flex-col items-start mb-2">
-              <h2 className="text-[22px] font-bold text-[#212121]">Smart Candidate Sourcing</h2>
-              <p className="text-sm text-[#616161] mt-1">
+              <h2 className="text-[22px] font-bold text-text-primary">Smart Candidate Sourcing</h2>
+              <p className="text-sm text-text-secondary mt-1">
                 Use the AI prompt to describe your ideal hire, and apply filters to narrow down the results perfectly.
               </p>
             </div>
@@ -158,7 +158,7 @@ export default function CandidatesSearch() {
             <div className="flex items-start gap-3 mb-4">
               <button 
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="flex shrink-0 items-center justify-center p-2.5 rounded-lg transition-colors shadow-sm bg-[#1B5E20] text-white hover:bg-[#144718]"
+                className="flex shrink-0 items-center justify-center p-2.5 rounded-lg transition-colors shadow-sm bg-primary-container text-on-primary hover:bg-[#144718]"
                 title="Toggle Filters"
               >
                 <Filter className="w-5 h-5" />
@@ -170,7 +170,7 @@ export default function CandidatesSearch() {
                   <span className="text-xs font-bold text-gray-500 uppercase tracking-wider mr-2">Applied Filters:</span>
                   <div className="flex flex-wrap gap-2 flex-1">
                     {activeFilters.map(filter => (
-                      <div key={filter} className="flex items-center bg-white border border-gray-200 rounded-md py-1 px-2 gap-1 text-xs text-gray-700 shadow-sm">
+                      <div key={filter} className="flex items-center bg-surface border border-gray-200 rounded-md py-1 px-2 gap-1 text-xs text-gray-700 shadow-sm">
                         {filter}
                         <button onClick={() => removeFilter(filter)} className="text-gray-400 hover:text-red-500 ml-1">
                           <X className="w-3 h-3" />
@@ -178,7 +178,7 @@ export default function CandidatesSearch() {
                       </div>
                     ))}
                   </div>
-                  <button onClick={() => setActiveFilters([])} className="text-xs text-[#1B5E20] font-medium hover:underline shrink-0">
+                  <button onClick={() => setActiveFilters([])} className="text-xs text-primary-container font-medium hover:underline shrink-0">
                     Clear All
                   </button>
                 </div>
@@ -186,10 +186,10 @@ export default function CandidatesSearch() {
             </div>
 
             {/* AI Search Banner */}
-            <div className="flex flex-col self-stretch bg-white py-[17px] mb-2 gap-[21px] rounded-[10px] border border-solid border-[#E0E0E0]" style={{ boxShadow: '0px 2px 4px #0000000D' }}>
-              <div className="flex flex-col items-start self-stretch bg-white pt-[13px] pb-[33px] px-[17px] mx-[21px] rounded-lg border border-solid border-[#E0E0E0]">
+            <div className="flex flex-col self-stretch bg-surface py-[17px] mb-2 gap-[21px] rounded-[10px] border border-solid border-border" style={{ boxShadow: '0px 2px 4px #0000000D' }}>
+              <div className="flex flex-col items-start self-stretch bg-surface pt-[13px] pb-[33px] px-[17px] mx-[21px] rounded-lg border border-solid border-border">
                 <textarea 
-                  className="text-[#212121] text-[13px] w-full border-none outline-none resize-none bg-transparent"
+                  className="text-text-primary text-[13px] w-full border-none outline-none resize-none bg-transparent"
                   placeholder="Describe the ideal candidate (e.g. Senior Frontend Developer with experience in SaaS, React, and Fintech compliance)..."
                   rows={2}
                   value={searchQuery}
@@ -209,7 +209,7 @@ export default function CandidatesSearch() {
                   className="w-[13px] h-[13px] object-fill"
                   alt="icon"
                 />
-                <span className="text-[#616161] text-xs">
+                <span className="text-text-secondary text-xs">
                   AI will score all results against this description to find the most relevant matches.
                 </span>
                 <div className="flex-1"></div>
@@ -245,16 +245,16 @@ export default function CandidatesSearch() {
             
             {/* Sort Bar */}
             <div className="flex justify-between items-center self-stretch mb-2">
-              <span className="text-[#616161] text-[13px] font-bold">
+              <span className="text-text-secondary text-[13px] font-bold">
                 {candidates === undefined
                   ? "Loading..."
                   : `Showing ${candidatesToRender.length} candidate${candidatesToRender.length !== 1 ? "s" : ""}`}
               </span>
               <div className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer">
-                <span className="text-[#616161] text-[13px]">
+                <span className="text-text-secondary text-[13px]">
                   Sort by:
                 </span>
-                <span className="text-[#212121] text-[13px] font-bold">
+                <span className="text-text-primary text-[13px] font-bold">
                   {hasSearched ? 'AI Relevancy' : 'Best Match'}
                 </span>
               </div>
@@ -262,9 +262,9 @@ export default function CandidatesSearch() {
             
             {/* Candidate List */}
             {candidates === undefined ? (
-              <div className="flex justify-center py-10 text-[#9E9E9E] text-sm">Loading candidates...</div>
+              <div className="flex justify-center py-10 text-text-disabled text-sm">Loading candidates...</div>
             ) : candidatesToRender.length === 0 ? (
-              <div className="flex justify-center py-10 text-[#9E9E9E] text-sm">
+              <div className="flex justify-center py-10 text-text-disabled text-sm">
                 {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates yet. Upload CVs to get started.'}
               </div>
             ) : (
@@ -284,6 +284,12 @@ export default function CandidatesSearch() {
                   isSelected={selectedCandidates.includes(c._id)}
                   onToggle={() => toggleCandidate(c._id)}
                   profileHref={`/dashboard/candidates/${c._id}`}
+                  onMessage={() => setMessageCandidate({
+                    id: c._id,
+                    name: c.fullName || "Unknown",
+                    initials: getInitials(c.fullName),
+                    role: formatRole(c.currentTitle, c.currentEmployer)
+                  })}
                 />
               ))
             )}

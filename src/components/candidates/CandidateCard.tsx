@@ -28,7 +28,7 @@ export function CandidateCard({
   id,
   name,
   initials,
-  avatarColorClass = 'bg-[#ACF4A4] text-[#002C06]',
+  avatarColorClass = 'bg-primary-fixed text-on-primary-fixed',
   sourceText,
   sourceVariant = 'success',
   role,
@@ -46,7 +46,7 @@ export function CandidateCard({
   return (
     <Card 
       noPadding 
-      className={`flex flex-row items-start self-stretch py-[17px] px-4 hover:border-[#1B5E20] transition-colors cursor-default !bg-[#F2F5EC] ${isSelected ? 'border-[#1B5E20] !bg-[#E8EDE1]' : ''}`}
+      className={`flex flex-row items-start self-stretch py-[17px] px-4 hover:border-primary-container transition-colors cursor-default !bg-surface-container-high ${isSelected ? 'border-primary-container !bg-[#E8EDE1]' : ''}`}
     >
       <input 
         type="checkbox" 
@@ -61,13 +61,13 @@ export function CandidateCard({
       
       <div className="flex-1 px-[1px] mr-4 min-w-0 flex flex-col justify-start">
         <div className="flex items-center self-stretch mb-1 gap-2">
-          <span className="text-[#212121] text-sm font-bold truncate">
+          <span className="text-text-primary text-sm font-bold truncate">
             {name}
           </span>
           <Badge variant={sourceVariant} size="sm">{sourceText}</Badge>
         </div>
         <div className="flex flex-col items-start self-stretch mb-1">
-          <span className="text-[#616161] text-[13px] truncate">
+          <span className="text-text-secondary text-[13px] truncate">
             {role}
           </span>
         </div>
@@ -78,7 +78,7 @@ export function CandidateCard({
               className="w-[9px] h-[11px] object-fill"
               alt="loc"
             />
-            <span className="text-[#9E9E9E] text-[11px]">{location}</span>
+            <span className="text-text-disabled text-[11px]">{location}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {skills.map((skill, idx) => (
@@ -106,14 +106,14 @@ export function CandidateCard({
           {onMessage && (
             <button 
               onClick={onMessage}
-              className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-[#E0E0E0] hover:bg-surface-container-low text-[#616161] text-xs font-bold transition-colors"
+              className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-border hover:bg-surface-container-low text-text-secondary text-xs font-bold transition-colors"
             >
               <MessageCircle className="w-3.5 h-3.5 mr-1" />
               Message
             </button>
           )}
-          <Link href={profileHref} className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-[#E0E0E0] hover:bg-gray-50 no-underline">
-            <span className="text-[#616161] text-xs font-bold">View Profile</span>
+          <Link href={profileHref} className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors no-underline">
+            <span className="text-text-secondary text-xs font-bold">View Profile</span>
           </Link>
         </div>
       </div>

@@ -16,11 +16,11 @@ export function FloatingActionBar({ selectedCount, onClear }: FloatingActionBarP
   return (
     <>
       <div className="fixed bottom-[40px] right-6 flex items-center bg-[#212121] py-3 px-6 rounded-xl shadow-2xl z-50">
-        <span className="text-white text-base font-bold mr-8">
+        <span className="text-on-primary text-base font-bold mr-8">
           {selectedCount} candidate{selectedCount > 1 ? 's' : ''} selected
         </span>
         <button 
-          className="flex items-center bg-[#FFFFFF1A] hover:bg-[#FFFFFF33] transition-colors py-1.5 px-3 mr-3 gap-2 rounded-lg border-0 cursor-pointer text-white"
+          className="flex items-center bg-[#FFFFFF1A] hover:bg-[#FFFFFF33] transition-colors py-1.5 px-3 mr-3 gap-2 rounded-lg border-0 cursor-pointer text-on-primary"
           onClick={() => setIsJobModalOpen(true)}
         >
           <img
@@ -31,7 +31,7 @@ export function FloatingActionBar({ selectedCount, onClear }: FloatingActionBarP
           <span className="text-sm font-bold">Add to Job</span>
         </button>
         <button 
-          className="flex items-center bg-[#FFFFFF1A] hover:bg-[#FFFFFF33] transition-colors py-1.5 px-3 mr-4 gap-2 rounded-lg border-0 cursor-pointer text-white"
+          className="flex items-center bg-[#FFFFFF1A] hover:bg-[#FFFFFF33] transition-colors py-1.5 px-3 mr-4 gap-2 rounded-lg border-0 cursor-pointer text-on-primary"
           onClick={() => setIsMsgModalOpen(true)}
         >
           <img
@@ -42,7 +42,7 @@ export function FloatingActionBar({ selectedCount, onClear }: FloatingActionBarP
           <span className="text-sm font-bold">Send Message</span>
         </button>
         <button 
-          className="bg-transparent border-0 cursor-pointer text-white text-sm font-bold underline hover:text-gray-300"
+          className="bg-transparent border-0 cursor-pointer text-on-primary text-sm font-bold underline hover:text-gray-300"
           onClick={onClear}
         >
           Clear

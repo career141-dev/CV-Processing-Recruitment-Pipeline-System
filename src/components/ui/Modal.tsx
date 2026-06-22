@@ -40,10 +40,10 @@ export function Modal({ isOpen, onClose, title, children, footer, maxWidth = 'ma
       
       {/* Modal Content */}
       <div 
-        className={`relative w-full ${maxWidth} bg-white rounded-xl shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200 mx-4 max-h-[90vh]`}
+        className={`relative w-full ${maxWidth} bg-surface rounded-xl shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200 mx-4 max-h-[90vh]`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="text-lg font-bold text-gray-900">{title}</h2>
           <button 
             onClick={onClose}
@@ -60,7 +60,7 @@ export function Modal({ isOpen, onClose, title, children, footer, maxWidth = 'ma
         
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-xl flex justify-end gap-3">
+          <div className="px-6 py-4 border-t border-border bg-gray-50/50 rounded-b-xl flex justify-end gap-3">
             {footer}
           </div>
         )}

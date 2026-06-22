@@ -82,26 +82,26 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
 
   return (
     <>
-      <div className="flex flex-col shrink-0 items-start bg-white pt-2 w-[260px] pb-4">
+      <div className="flex flex-col shrink-0 items-start bg-surface pt-2 w-[260px] pb-4">
         <div className="flex items-center mb-3 ml-5 gap-2">
-          <button className="flex flex-col shrink-0 items-center bg-[#1B5E20] text-left py-1 px-2 rounded-md border-0">
-            <span className="text-white text-sm font-bold">C</span>
+          <button className="flex flex-col shrink-0 items-center bg-primary-container text-left py-1 px-2 rounded-md border-0">
+            <span className="text-on-primary text-sm font-bold">C</span>
           </button>
-          <span className="text-[#1B5E20] text-base font-bold">Career141</span>
+          <span className="text-primary-container text-base font-bold">Career141</span>
         </div>
-        <div className="flex items-center bg-[#F4F4EF] py-2 pl-[19px] pr-[110px] w-full mb-4 gap-2 border-r-2 border-solid border-r-[#1B5E20]">
+        <div className="flex items-center bg-surface-container-low py-2 pl-[19px] pr-[110px] w-full mb-4 gap-2 border-r-2 border-solid border-r-[#1B5E20]">
         <img
           src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/t5q3a73c_expires_30_days.png" 
           className="w-[15px] h-3.5 object-fill"
           alt="search"
         />
-        <span className="text-[#1B5E20] text-[13px] font-bold">Search</span>
+        <span className="text-primary-container text-[13px] font-bold">Search</span>
       </div>
       
       <div className="flex flex-col items-start ml-5 w-full">
         {/* Role */}
         <div className="flex flex-col items-start mb-4 gap-2 w-full pr-4">
-          <span className="text-[#616161] text-[11px] font-bold">ROLE</span>
+          <span className="text-text-secondary text-[11px] font-bold">ROLE</span>
           <div className="flex flex-col items-start gap-2 w-full">
             <label className="flex items-center cursor-pointer">
               <input 
@@ -110,7 +110,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
                 onChange={() => onToggleFilter && onToggleFilter('Senior')}
                 className="mr-2" 
               />
-              <span className="text-[#212121] text-[13px]">Senior</span>
+              <span className="text-text-primary text-[13px]">Senior</span>
             </label>
             <label className="flex items-center cursor-pointer">
               <input 
@@ -119,7 +119,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
                 onChange={() => onToggleFilter && onToggleFilter('Lead')}
                 className="mr-2" 
               />
-              <span className="text-[#212121] text-[13px]">Lead</span>
+              <span className="text-text-primary text-[13px]">Lead</span>
             </label>
           </div>
           <div className="w-full h-[1px] bg-gray-200 mt-3"></div>
@@ -128,15 +128,15 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
         {/* Experience */}
         <div className="flex flex-col items-start mb-4 gap-2 w-full pr-4">
           <div className="flex items-center justify-between w-full">
-            <span className="text-[#616161] text-[11px] font-bold">EXPERIENCE</span>
+            <span className="text-text-secondary text-[11px] font-bold">EXPERIENCE</span>
             <span className="text-[#006E1C] text-xs font-bold">{minExp} – {maxExp} years</span>
           </div>
           <div className="w-full relative mt-2 h-6 flex items-center">
             {/* Background Track */}
-            <div className="bg-[#E0E0E0] w-full h-1 rounded-sm absolute top-1/2 -translate-y-1/2"></div>
+            <div className="bg-border w-full h-1 rounded-sm absolute top-1/2 -translate-y-1/2"></div>
             {/* Active Track */}
             <div 
-              className="bg-[#1B5E20] h-1 rounded-sm absolute top-1/2 -translate-y-1/2 pointer-events-none" 
+              className="bg-primary-container h-1 rounded-sm absolute top-1/2 -translate-y-1/2 pointer-events-none" 
               style={{ left: `${(minExp / 20) * 100}%`, right: `${100 - (maxExp / 20) * 100}%` }}
             ></div>
             
@@ -149,7 +149,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
               onChange={handleMinChange}
               onMouseUp={applyExperienceFilter}
               onTouchEnd={applyExperienceFilter}
-              className="absolute inset-0 w-full h-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#1B5E20] [&::-webkit-slider-thumb]:appearance-none cursor-pointer z-10"
+              className="absolute inset-0 w-full h-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary-container [&::-webkit-slider-thumb]:appearance-none cursor-pointer z-10"
             />
             {/* Max Slider */}
             <input 
@@ -160,7 +160,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
               onChange={handleMaxChange}
               onMouseUp={applyExperienceFilter}
               onTouchEnd={applyExperienceFilter}
-              className="absolute inset-0 w-full h-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#1B5E20] [&::-webkit-slider-thumb]:appearance-none cursor-pointer z-20"
+              className="absolute inset-0 w-full h-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary-container [&::-webkit-slider-thumb]:appearance-none cursor-pointer z-20"
             />
           </div>
           <div className="w-full h-[1px] bg-gray-200 mt-3"></div>
@@ -168,8 +168,8 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
         
         {/* Location */}
         <div className="flex flex-col items-start mb-4 gap-2 w-full pr-4">
-          <span className="text-[#616161] text-[11px] font-bold">LOCATION</span>
-          <div className="flex items-center bg-white py-[11px] px-[15px] gap-2.5 rounded-md border border-solid border-[#E0E0E0] w-full">
+          <span className="text-text-secondary text-[11px] font-bold">LOCATION</span>
+          <div className="flex items-center bg-surface py-[11px] px-[15px] gap-2.5 rounded-md border border-solid border-border w-full">
             <img
               src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/7porn968_expires_30_days.png" 
               className="w-3 h-[15px] object-fill"
@@ -182,7 +182,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
         
         {/* Education */}
         <div className="flex flex-col items-start mb-4 gap-2 w-full pr-4">
-          <span className="text-[#616161] text-[11px] font-bold">EDUCATION</span>
+          <span className="text-text-secondary text-[11px] font-bold">EDUCATION</span>
           <div className="flex flex-col items-start gap-2 w-full">
             <label className="flex items-center cursor-pointer">
               <input 
@@ -191,7 +191,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
                 onChange={() => onToggleFilter && onToggleFilter('Bachelor')}
                 className="mr-2" 
               />
-              <span className="text-[#212121] text-[13px]">Bachelor</span>
+              <span className="text-text-primary text-[13px]">Bachelor</span>
             </label>
             <label className="flex items-center cursor-pointer">
               <input 
@@ -200,7 +200,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
                 onChange={() => onToggleFilter && onToggleFilter('Masters')}
                 className="mr-2" 
               />
-              <span className="text-[#212121] text-[13px]">Masters</span>
+              <span className="text-text-primary text-[13px]">Masters</span>
             </label>
           </div>
           <div className="w-full h-[1px] bg-gray-200 mt-3"></div>
@@ -208,7 +208,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
         
         {/* Source */}
         <div className="flex flex-col items-start mb-4 gap-2 w-full pr-4">
-          <span className="text-[#616161] text-[11px] font-bold">SOURCE</span>
+          <span className="text-text-secondary text-[11px] font-bold">SOURCE</span>
           <div className="flex flex-col items-start gap-2 w-full">
             <label className="flex items-center cursor-pointer">
               <input 
@@ -217,7 +217,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
                 onChange={() => onToggleFilter && onToggleFilter('LinkedIn')}
                 className="mr-2" 
               />
-              <span className="text-[#212121] text-[13px]">LinkedIn</span>
+              <span className="text-text-primary text-[13px]">LinkedIn</span>
             </label>
             <label className="flex items-center cursor-pointer">
               <input 
@@ -226,7 +226,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
                 onChange={() => onToggleFilter && onToggleFilter('WhatsApp')}
                 className="mr-2" 
               />
-              <span className="text-[#212121] text-[13px]">WhatsApp</span>
+              <span className="text-text-primary text-[13px]">WhatsApp</span>
             </label>
           </div>
         </div>
@@ -234,10 +234,10 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
         {/* Custom Filters */}
         <div className="flex flex-col items-start mb-2 w-full pr-4">
           <div className="flex items-center justify-between w-full mb-2">
-            <span className="text-[#616161] text-[11px] font-bold">CUSTOM FILTERS</span>
+            <span className="text-text-secondary text-[11px] font-bold">CUSTOM FILTERS</span>
             <button 
               onClick={() => setIsManageModalOpen(true)}
-              className="text-[10px] text-[#1B5E20] hover:underline"
+              className="text-[10px] text-primary-container hover:underline"
             >
               Manage
             </button>
@@ -249,7 +249,7 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
               onChange={e => setCustomFilterInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAddCustomFilter()}
               placeholder="Add custom..."
-              className="flex-1 text-gray-700 bg-white text-xs py-[7px] px-[13px] rounded-md border border-solid border-[#E0E0E0] focus:outline-none focus:border-[#1B5E20]"
+              className="flex-1 text-gray-700 bg-surface text-xs py-[7px] px-[13px] rounded-md border border-solid border-border focus:outline-none focus:border-primary-container"
             />
             <Button variant="primary" size="sm" onClick={handleAddCustomFilter}>Add</Button>
           </div>

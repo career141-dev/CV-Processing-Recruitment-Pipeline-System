@@ -143,23 +143,23 @@ export default function UploadCVs() {
   }, [files, source, campaignLabel, assignToJob, user, generateUploadUrl, saveUpload, processCvExtraction, updateFileStatus]);
 
   return (
-    <div className="flex flex-col bg-white w-full">
-      <div className="self-stretch bg-white px-8 md:px-[114px] pt-10">
-        <div className="flex flex-col self-stretch bg-[#F5F5F0] max-w-[1052px] pb-[499px] gap-6 rounded-t-[10px]">
+    <div className="flex flex-col bg-surface w-full">
+      <div className="self-stretch bg-surface px-8 md:px-[114px] pt-10">
+        <div className="flex flex-col self-stretch bg-background max-w-[1052px] pb-[499px] gap-6 rounded-t-[10px]">
           <div className="flex justify-between items-center self-stretch bg-[#F8FAF2] py-[11px] px-[23px] ml-[13px] rounded-t-[10px]">
             <div className="flex shrink-0 items-center gap-4">
-              <span className="text-[#002C06] text-2xl font-bold">Upload CV</span>
+              <span className="text-on-primary-fixed text-2xl font-bold">Upload CV</span>
             </div>
           </div>
           <div className="flex flex-col self-stretch mx-8 md:mx-[71px] gap-8">
             <div className="flex flex-col items-start self-stretch">
-              <span className="text-[#212121] text-2xl font-bold">Upload CVs</span>
-              <span className="text-[#616161] text-[13px]">Add CVs manually — batch or individual</span>
+              <span className="text-text-primary text-2xl font-bold">Upload CVs</span>
+              <span className="text-text-secondary text-[13px]">Add CVs manually — batch or individual</span>
             </div>
             <div className="flex flex-col md:flex-row items-start self-stretch gap-6">
-              <div className="flex-1 w-full bg-white p-[21px] rounded-[10px] border border-solid border-[#E0E0E0]" style={{ boxShadow: "0px 2px 4px #0000000D" }}>
+              <div className="flex-1 w-full bg-surface p-[21px] rounded-[10px] border border-solid border-border" style={{ boxShadow: "0px 2px 4px #0000000D" }}>
                 <div
-                  className="flex flex-col items-center self-stretch bg-[#FAFAF5] py-[41px] rounded-lg border-2 border-dashed border-[#C0C9BB] cursor-pointer hover:bg-[#f3f3ea] transition-colors"
+                  className="flex flex-col items-center self-stretch bg-background py-[41px] rounded-lg border-2 border-dashed border-[#C0C9BB] cursor-pointer hover:bg-[#f3f3ea] transition-colors"
                   onClick={() => !showSuccess && fileInputRef.current?.click()}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
@@ -170,7 +170,7 @@ export default function UploadCVs() {
                         <circle cx="32" cy="32" r="30" fill="#E8F5E9" stroke="#1B5E20" strokeWidth="2" />
                         <path d="M20 33 L28 41 L44 25" stroke="#1B5E20" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      <span className="text-[#1B5E20] text-base font-bold">Upload Complete!</span>
+                      <span className="text-primary-container text-base font-bold">Upload Complete!</span>
                     </>
                   ) : (
                     <>
@@ -185,9 +185,9 @@ export default function UploadCVs() {
                         <span className="text-[#191D18] text-base font-bold text-center">Drag & drop CV files here</span>
                       </div>
                       <div className="flex flex-col items-center pb-[15px]">
-                        <span className="text-[#616161] text-[13px]">or click to select files</span>
+                        <span className="text-text-secondary text-[13px]">or click to select files</span>
                       </div>
-                      <span className="text-[#9E9E9E] text-[11px] font-bold text-center px-4">PDF, DOC, DOCX, PNG, JPG — UP TO 600 FILES</span>
+                      <span className="text-text-disabled text-[11px] font-bold text-center px-4">PDF, DOC, DOCX, PNG, JPG — UP TO 600 FILES</span>
                     </>
                   )}
                 </div>
@@ -196,15 +196,15 @@ export default function UploadCVs() {
                 {files.length > 0 && (
                   <div className="mt-4 max-h-48 overflow-y-auto">
                     {files.map((entry, i) => (
-                      <div key={`${entry.file.name}-${i}`} className="flex items-center justify-between py-2 px-3 bg-[#FAFAF5] rounded-md mb-1">
+                      <div key={`${entry.file.name}-${i}`} className="flex items-center justify-between py-2 px-3 bg-background rounded-md mb-1">
                         <div className="flex items-center gap-2 truncate min-w-0">
                           <svg className="w-4 h-4 shrink-0" viewBox="0 0 16 20" fill="none">
                             <rect x="2" y="1" width="12" height="17" rx="2" stroke="#757575" strokeWidth="1.5" fill="none" />
                             <line x1="5" y1="6" x2="11" y2="6" stroke="#757575" strokeWidth="1.5" />
                             <line x1="5" y1="9" x2="9" y2="9" stroke="#757575" strokeWidth="1.5" />
                           </svg>
-                          <span className="text-[#212121] text-[13px] truncate">{entry.file.name}</span>
-                          <span className="text-[#9E9E9E] text-[11px] shrink-0">({(entry.file.size / 1024).toFixed(0)} KB)</span>
+                          <span className="text-text-primary text-[13px] truncate">{entry.file.name}</span>
+                          <span className="text-text-disabled text-[11px] shrink-0">({(entry.file.size / 1024).toFixed(0)} KB)</span>
                           {entry.status === "uploading" && (
                             <span className="text-[#F57C00] text-[10px] font-bold shrink-0">Uploading...</span>
                           )}
@@ -212,7 +212,7 @@ export default function UploadCVs() {
                             <span className="text-[#1565C0] text-[10px] font-bold shrink-0">Processing...</span>
                           )}
                           {entry.status === "done" && (
-                            <span className="text-[#1B5E20] text-[10px] font-bold shrink-0">Done</span>
+                            <span className="text-primary-container text-[10px] font-bold shrink-0">Done</span>
                           )}
                           {entry.status === "failed" && (
                             <span className="text-[#BA1A1A] text-[10px] font-bold shrink-0" title={entry.error}>Failed</span>
@@ -227,29 +227,29 @@ export default function UploadCVs() {
                 )}
               </div>
 
-              <div className="flex flex-col w-full md:w-[320px] shrink-0 items-center bg-white p-5 gap-6 rounded-[10px] border border-solid border-[#E0E0E0]" style={{ boxShadow: "0px 2px 4px #0000000D" }}>
+              <div className="flex flex-col w-full md:w-[320px] shrink-0 items-center bg-surface p-5 gap-6 rounded-[10px] border border-solid border-border" style={{ boxShadow: "0px 2px 4px #0000000D" }}>
                 <div className="flex flex-col w-full items-start gap-3">
                   <div className="flex flex-col items-start w-full">
-                    <span className="text-[#616161] text-[11px] font-bold">TAG THIS UPLOAD</span>
+                    <span className="text-text-secondary text-[11px] font-bold">TAG THIS UPLOAD</span>
                   </div>
                   <div className="flex flex-col items-center gap-4 w-full">
                     <div className="flex flex-col items-start gap-1 w-full relative">
-                      <span className="text-[#9E9E9E] text-[11px] font-bold">CV SOURCE</span>
+                      <span className="text-text-disabled text-[11px] font-bold">CV SOURCE</span>
                       <div className="w-full relative">
                         <div
-                          className="flex items-center bg-white rounded-md border border-solid border-[#E0E0E0] w-full cursor-pointer hover:bg-gray-50 py-[9px] px-[13px]"
+                          className="flex items-center bg-surface rounded-md border border-solid border-border w-full cursor-pointer hover:bg-surface-container-high transition-colors py-[9px] px-[13px]"
                           onClick={() => setShowSourceDropdown(!showSourceDropdown)}
                         >
-                          <span className={`text-[13px] ${source ? "text-[#212121]" : "text-[#9E9E9E]"}`}>
+                          <span className={`text-[13px] ${source ? "text-text-primary" : "text-text-disabled"}`}>
                             {source || "Select Source..."}
                           </span>
                         </div>
                         {showSourceDropdown && (
-                          <div className="absolute top-full left-0 mt-1 w-full bg-white rounded-md border border-solid border-[#E0E0E0] shadow-lg z-10">
+                          <div className="absolute top-full left-0 mt-1 w-full bg-surface rounded-md border border-solid border-border shadow-lg z-10">
                             {SOURCE_OPTIONS.map((opt) => (
                               <div
                                 key={opt}
-                                className="py-2 px-[13px] text-[13px] text-[#212121] hover:bg-[#FAFAF5] cursor-pointer"
+                                className="py-2 px-[13px] text-[13px] text-text-primary hover:bg-background cursor-pointer"
                                 onClick={() => { setSource(opt); setShowSourceDropdown(false); }}
                               >
                                 {opt}
@@ -260,35 +260,35 @@ export default function UploadCVs() {
                       </div>
                     </div>
                     <div className="flex flex-col items-start gap-1 w-full">
-                      <span className="text-[#9E9E9E] text-[11px] font-bold">CAMPAIGN LABEL</span>
+                      <span className="text-text-disabled text-[11px] font-bold">CAMPAIGN LABEL</span>
                       <input
                         type="text"
                         placeholder="e.g. Q4 Hiring Sprint"
                         value={campaignLabel}
                         onChange={(e) => setCampaignLabel(e.target.value)}
-                        className="text-[#212121] bg-white text-[13px] py-[9px] px-3 rounded-md border border-solid border-[#E0E0E0] w-full focus:outline-none focus:border-[#1B5E20]"
+                        className="text-text-primary bg-surface text-[13px] py-[9px] px-3 rounded-md border border-solid border-border w-full focus:outline-none focus:border-primary-container"
                       />
                     </div>
                     <div className="flex flex-col items-start gap-1 w-full">
-                      <span className="text-[#9E9E9E] text-[11px] font-bold">ASSIGN TO JOB</span>
-                      <div className="flex items-center bg-white p-2.5 gap-[9px] rounded-md border border-solid border-[#E0E0E0] w-full">
+                      <span className="text-text-disabled text-[11px] font-bold">ASSIGN TO JOB</span>
+                      <div className="flex items-center bg-surface p-2.5 gap-[9px] rounded-md border border-solid border-border w-full">
                         <input
                           type="text"
                           placeholder="Search open roles..."
                           value={assignToJob}
                           onChange={(e) => setAssignToJob(e.target.value)}
-                          className="text-[#212121] text-[13px] bg-transparent border-none outline-none w-full"
+                          className="text-text-primary text-[13px] bg-transparent border-none outline-none w-full"
                         />
                       </div>
                     </div>
                   </div>
                 </div>
                 <button
-                  className="flex items-center bg-[#1B5E20] hover:bg-[#144718] transition-colors text-left py-3 px-[25px] gap-2 rounded-lg border-0 w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center bg-primary-container hover:bg-[#144718] transition-colors text-left py-3 px-[25px] gap-2 rounded-lg border-0 w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleUpload}
                   disabled={files.length === 0 || uploading || !user?.id}
                 >
-                  <span className="text-white text-sm font-bold">
+                  <span className="text-on-primary text-sm font-bold">
                     {uploading ? "Processing..." : "Upload and Process CVs"}
                   </span>
                 </button>

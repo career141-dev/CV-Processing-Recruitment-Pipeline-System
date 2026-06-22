@@ -30,10 +30,10 @@ export function Button({
   };
 
   const variantStyles = {
-    primary: 'bg-[#1B5E20] text-white hover:bg-[#144718] border-none',
-    secondary: 'bg-[#006763] text-white hover:bg-[#00504d] border border-solid border-[#E0E0E0]',
-    ghost: 'bg-transparent text-[#616161] hover:text-gray-900 hover:bg-gray-50 border-none',
-    outline: 'bg-transparent text-[#212121] border border-solid border-[#E0E0E0] hover:bg-gray-50',
+    primary: 'bg-primary-container text-on-primary hover:bg-[#144718] border-none',
+    secondary: 'bg-accent-teal text-on-primary hover:bg-[#00504d] border border-solid border-border',
+    ghost: 'bg-transparent text-text-secondary hover:text-gray-900 hover:bg-surface-container-high transition-colors border-none',
+    outline: 'bg-transparent text-text-primary border border-solid border-border hover:bg-surface-container-high transition-colors',
     danger: 'bg-transparent text-[#BA1A1A] hover:bg-red-50 border-none underline',
   };
 
