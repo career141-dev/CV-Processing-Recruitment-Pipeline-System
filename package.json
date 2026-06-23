@@ -23,7 +23,7 @@
     "openai": "^6.43.0",
     "pdf-parse": "^2.4.5",
     "pdf2json": "^4.0.3",
-    "pdfjs-dist": "^6.0.227",
+    "pdfjs-dist": "^5.7.284",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-qr-code": "^2.2.0",

@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function ForgotPasswordPage() {
-  const { signIn, isLoaded } = useSignIn();
+  const { signIn, fetchStatus, errors } = useSignIn();
+  const isLoaded = fetchStatus !== 'fetching';
   const [emailAddress, setEmailAddress] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [code, setCode] = React.useState('');
@@ -17,15 +18,12 @@ export default function ForgotPasswordPage() {
 
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoaded) return;
+    if (!isLoaded || !signIn) return;
     setLoading(true);
     setError('');
 
     try {
-      await signIn.create({
-        strategy: 'reset_password_email_code',
-        identifier: emailAddress,
-      });
+      await signIn.emailCode.sendCode({ emailAddress });
       setSuccessfulCreation(true);
     } catch (err: any) {
       setError(err.errors?.[0]?.longMessage || err.message || 'Failed to send reset code');
@@ -36,23 +34,23 @@ export default function ForgotPasswordPage() {
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoaded) return;
+    if (!isLoaded || !signIn) return;
     setLoading(true);
     setError('');
 
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: 'reset_password_email_code',
-        code,
-        password,
-      });
+      const { error: verifyError } = await signIn.emailCode.verifyCode({ code });
 
-      if (result.status === 'complete') {
+      if (verifyError) {
+        setError(verifyError.message || 'Failed to verify code');
+        return;
+      }
+
+      if (signIn.status === 'complete') {
         await signIn.finalize({
           navigate: ({ decorateUrl }) => router.push(decorateUrl('/dashboard')),
         });
       } else {
-        console.log(result);
         setError('Something went wrong. Please try again.');
       }
     } catch (err: any) {

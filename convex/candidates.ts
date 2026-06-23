@@ -45,6 +45,7 @@ export const createCandidate = mutation({
     languages: v.optional(v.array(v.string())),
     sourceChannel: v.optional(v.string()),
     fileHash: v.optional(v.string()),
+    workableCandidateId: v.optional(v.string()),
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     rawText: v.optional(v.string()),
@@ -129,6 +130,22 @@ export const listFailedUploads = query({
       page: result.page,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
+    };
+  },
+});
+
+export const getCvUploadUrl = query({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    const upload = await ctx.db.get(args.cvUploadId);
+    if (!upload || !upload.storageId) return null;
+    const url = await ctx.storage.getUrl(upload.storageId);
+    if (!url) return null;
+    return {
+      url,
+      fileName: upload.fileName,
+      fileType: upload.fileType,
+      fileSize: upload.fileSize,
     };
   },
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams } from "next/navigation";
@@ -26,7 +26,7 @@ export default function CandidateProfile() {
   const isFakeId = params.candidateId.length < 10;
   const fetchedCandidate = useQuery(api.candidates.getCandidate, isFakeId ? "skip" : { id: params.candidateId as any });
 
-  const candidate = isFakeId 
+  const candidate = (isFakeId 
     ? {
         fullName: params.candidateId === "1" ? "Priya Nair" : params.candidateId === "2" ? "James Chen" : "Mock Candidate",
         currentTitle: "Candidate Profile Preview",
@@ -41,7 +41,14 @@ export default function CandidateProfile() {
         skills: ["React", "Next.js", "Recruitment"],
         education: [{ degree: "BSc Computer Science", institution: "University of Tech", year: "2020" }],
       }
-    : fetchedCandidate;
+    : fetchedCandidate) as any;
+
+  const [activeTab, setActiveTab] = useState("overview");
+
+  const cvUpload = useQuery(
+    api.candidates.getCvUploadUrl,
+    !isFakeId && candidate?.cvUploadId ? { cvUploadId: candidate.cvUploadId } : "skip"
+  );
 
   if (candidate === undefined) {
     return (
@@ -191,28 +198,71 @@ export default function CandidateProfile() {
 
             {/* Tab Menu */}
             <div className="flex items-center self-stretch mb-6 border-b border-gray-200">
-              <div className="flex flex-col shrink-0 items-center py-3 px-4 border-b-2 border-[#00450D] cursor-pointer">
-                <span className="text-[#00450D] text-[13px] font-bold">Overview</span>
-              </div>
-              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-surface-container-high transition-colors">
-                <span className="text-text-secondary text-[13px]">Timeline</span>
-              </div>
-              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-surface-container-high transition-colors">
-                <span className="text-text-secondary text-[13px]">Communications</span>
-              </div>
-              <div className="flex items-center py-3 px-4 gap-2 cursor-pointer hover:bg-surface-container-high transition-colors">
-                <span className="text-text-secondary text-[13px]">Job Applications</span>
-                <div className="bg-[#DADAD5] py-0.5 px-2 rounded-full">
-                  <span className="text-text-secondary text-[11px] font-bold">2</span>
+              {[
+                { key: "overview", label: "Overview" },
+                { key: "cvPreview", label: "CV Preview" },
+                { key: "timeline", label: "Timeline" },
+                { key: "communications", label: "Communications" },
+                { key: "applications", label: "Job Applications", badge: "2" },
+                { key: "callLog", label: "AI Call Log" },
+              ].map((tab) => (
+                <div
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`flex shrink-0 items-center py-3 px-4 cursor-pointer transition-colors hover:bg-surface-container-high ${
+                    activeTab === tab.key
+                      ? "border-b-2 border-[#00450D]"
+                      : ""
+                  }`}
+                >
+                  <span className={
+                    activeTab === tab.key
+                      ? "text-[#00450D] text-[13px] font-bold"
+                      : "text-text-secondary text-[13px]"
+                  }>
+                    {tab.label}
+                  </span>
+                  {tab.badge && (
+                    <div className="bg-[#DADAD5] py-0.5 px-2 rounded-full ml-2">
+                      <span className="text-text-secondary text-[11px] font-bold">{tab.badge}</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div className="flex flex-col shrink-0 items-center py-3 px-4 cursor-pointer hover:bg-surface-container-high transition-colors">
-                <span className="text-text-secondary text-[13px]">AI Call Log</span>
-              </div>
+              ))}
             </div>
 
-            {/* Main Layout Grid */}
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-6">
+            {/* Main Content */}
+            {activeTab === "cvPreview" && (
+              <div className="flex flex-col gap-6">
+                <div className="flex flex-col bg-surface rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D] overflow-hidden">
+                  <div className="flex items-center justify-between py-3 px-6 border-b border-border bg-background">
+                    <span className="text-text-primary text-sm font-bold">CV Preview</span>
+                    {cvUpload && (
+                      <span className="text-text-secondary text-xs">{cvUpload.fileName}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-center bg-[#F8FAF2] min-h-[600px]">
+                    {cvUpload === undefined ? (
+                      <span className="text-text-disabled text-sm">Loading CV...</span>
+                    ) : cvUpload ? (
+                      <iframe
+                        src={cvUpload.url}
+                        className="w-full h-[800px] border-0"
+                        title="CV Preview"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 py-16">
+                        <span className="text-text-disabled text-sm">No CV file available for preview.</span>
+                        <span className="text-text-secondary text-xs">Upload a CV to enable preview.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "overview" && (
+              <div className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-6">
               
               {/* Left Column (Main Info) */}
               <div className="flex flex-col gap-6">
@@ -241,7 +291,7 @@ export default function CandidateProfile() {
                         {candidate.certifications && candidate.certifications.length > 0 && (
                           <div className="flex flex-col gap-2">
                             <span className="text-primary-container text-xs font-bold tracking-wider">CERTIFICATIONS</span>
-                            {candidate.certifications.map((cert, i) => (
+                            {candidate.certifications.map((cert: string, i: number) => (
                               <span key={i} className="text-[#1B1B1D] text-[13px]">{cert}</span>
                             ))}
                           </div>
@@ -252,7 +302,7 @@ export default function CandidateProfile() {
                           <div className="flex flex-col gap-2">
                             <span className="text-primary-container text-xs font-bold tracking-wider">SKILLS</span>
                             <div className="flex flex-wrap gap-2">
-                              {candidate.skills.map((skill, i) => (
+                              {candidate.skills.map((skill: string, i: number) => (
                                 <div key={i} className="bg-[#E8F5E9] py-1 px-2.5 rounded text-[#00450D] text-[11px] font-bold border border-[#C8E6C9]">
                                   {skill}
                                 </div>
@@ -263,7 +313,7 @@ export default function CandidateProfile() {
                         {candidate.education && candidate.education.length > 0 && (
                           <div className="flex flex-col gap-2">
                             <span className="text-primary-container text-xs font-bold tracking-wider">EDUCATION</span>
-                            {candidate.education.map((edu, i) => (
+                  {candidate.education.map((edu: { degree?: string; institution?: string; year?: string | number; field?: string }, i: number) => (
                               <div key={i} className="flex flex-col mb-2">
                                 <span className="text-[#1B1B1D] text-[13px] font-bold">{edu.degree || ""}{edu.field ? ` in ${edu.field}` : ""}</span>
                                 {edu.institution && <span className="text-[#5F6368] text-xs mt-0.5">{edu.institution}{edu.year ? ` • ${edu.year}` : ""}</span>}
@@ -275,7 +325,7 @@ export default function CandidateProfile() {
                           <div className="flex flex-col gap-2">
                             <span className="text-primary-container text-xs font-bold tracking-wider">LANGUAGES</span>
                             <div className="flex flex-wrap gap-2">
-                              {candidate.languages.map((lang, i) => (
+                              {candidate.languages.map((lang: string, i: number) => (
                                 <span key={i} className="text-[#1B1B1D] text-[13px]">{lang}</span>
                               ))}
                             </div>
@@ -326,7 +376,7 @@ export default function CandidateProfile() {
                   </div>
                   {candidate.education && candidate.education.length > 0 ? (
                     <div className="flex flex-col gap-5">
-                      {candidate.education.map((edu, i) => (
+                      {candidate.education.map((edu: { degree?: string; institution?: string; year?: string | number; field?: string }, i: number) => (
                         <div key={i}>
                           {i > 0 && <div className="h-[1px] bg-gray-100 w-full mb-5"></div>}
                           <div className="flex items-start gap-4">
@@ -468,6 +518,35 @@ export default function CandidateProfile() {
 
               </div>
             </div>
+            )}
+
+            {activeTab === "timeline" && (
+              <div className="flex flex-col items-center justify-center py-16 bg-surface rounded-xl border border-solid border-border">
+                <span className="text-text-primary text-sm font-bold mb-2">Timeline</span>
+                <span className="text-text-disabled text-xs">Candidate activity timeline coming soon.</span>
+              </div>
+            )}
+
+            {activeTab === "communications" && (
+              <div className="flex flex-col items-center justify-center py-16 bg-surface rounded-xl border border-solid border-border">
+                <span className="text-text-primary text-sm font-bold mb-2">Communications</span>
+                <span className="text-text-disabled text-xs">Communication history coming soon.</span>
+              </div>
+            )}
+
+            {activeTab === "applications" && (
+              <div className="flex flex-col items-center justify-center py-16 bg-surface rounded-xl border border-solid border-border">
+                <span className="text-text-primary text-sm font-bold mb-2">Job Applications</span>
+                <span className="text-text-disabled text-xs">Job application history coming soon.</span>
+              </div>
+            )}
+
+            {activeTab === "callLog" && (
+              <div className="flex flex-col items-center justify-center py-16 bg-surface rounded-xl border border-solid border-border">
+                <span className="text-text-primary text-sm font-bold mb-2">AI Call Log</span>
+                <span className="text-text-disabled text-xs">AI call log coming soon.</span>
+              </div>
+            )}
           </div>
         </div>
   );
