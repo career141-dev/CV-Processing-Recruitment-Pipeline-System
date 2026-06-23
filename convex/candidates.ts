@@ -61,18 +61,51 @@ export const createCandidate = mutation({
     rawText: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    if (args.fileHash) {
+    // 4-Factor Deduplication (Agent 6)
+    let existingCandidateId: Id<"candidates"> | null = null;
+
+    // Factor 1: fileHash
+    if (args.fileHash && !existingCandidateId) {
       const existing = await ctx.db
         .query("candidates")
         .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash!))
         .first();
-      if (existing) {
-        await ctx.db.patch(existing._id, {
-          ...args,
-          status: "new",
-        });
-        return existing._id;
-      }
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    // Factor 2: email
+    if (args.email && !existingCandidateId) {
+      const existing = await ctx.db
+        .query("candidates")
+        .filter((q) => q.eq(q.field("email"), args.email!))
+        .first();
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    // Factor 3: phone
+    if (args.phone && !existingCandidateId) {
+      const existing = await ctx.db
+        .query("candidates")
+        .filter((q) => q.eq(q.field("phone"), args.phone!))
+        .first();
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    // Factor 4: linkedinUrl
+    if (args.linkedinUrl && !existingCandidateId) {
+      const existing = await ctx.db
+        .query("candidates")
+        .filter((q) => q.eq(q.field("linkedinUrl"), args.linkedinUrl!))
+        .first();
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    if (existingCandidateId) {
+      await ctx.db.patch(existingCandidateId, {
+        ...args,
+        status: "new",
+      });
+      return existingCandidateId;
     }
 
     return await ctx.db.insert("candidates", {
@@ -116,6 +149,8 @@ export const updateCvUpload = mutation({
     if (args.candidateId !== undefined) updates.candidateId = args.candidateId;
     if (args.errorMessage !== undefined) updates.errorMessage = args.errorMessage;
     await ctx.db.patch(args.cvUploadId, updates);
+    const upload = await ctx.db.get(args.cvUploadId);
+    return upload?.assignToJob;
   },
 });
 

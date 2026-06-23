@@ -401,12 +401,19 @@ export async function runCvExtraction(
       workableCandidateId: workableCandidateId ?? undefined,
     });
 
-    await ctx.runMutation(api.candidates.updateCvUpload, {
+    const jobId = await ctx.runMutation(api.candidates.updateCvUpload, {
       cvUploadId,
       status: "processed",
       fileHash,
       candidateId,
-    });
+    }) as string | undefined | null;
+
+    if (jobId) {
+      await ctx.scheduler.runAfter(0, api.cvScoringActions.processCvScoring, {
+        candidateId,
+        jobId: jobId as any,
+      });
+    }
 
     return candidateId;
   } catch (err) {
@@ -480,7 +487,7 @@ export const resumeBatch = internalAction({
       // Stagger retries: 1 second apart to avoid rate limit spikes
       // Note: cvUploads uses 'source' field, exposed as sourceChannel to the action
       ctx.scheduler.runAfter(i * 1000, api.cvExtraction.processCvExtraction, {
-        storageId: upload.storageId,
+        storageId: upload.storageId as Id<"_storage">,
         fileType: upload.fileType,
         sourceChannel: upload.source,
         uploadedBy: upload.uploadedBy,

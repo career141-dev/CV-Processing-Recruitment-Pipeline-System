@@ -1,64 +1,202 @@
-import React from 'react';
+"use client";
+
+import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
-import { UserPlus, Edit2 } from 'lucide-react';
+import { UserPlus, Edit2, X, Loader2 } from 'lucide-react';
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+import { inviteUser } from "../../../app/actions/inviteUser";
 
 export function TeamTab() {
+  const teamMembers = useQuery(api.users.getTeamMembers);
+  
+  // Modal state
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("ta");
+  const [isInviting, setIsInviting] = useState(false);
+  const [message, setMessage] = useState({ text: "", isError: false });
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsInviting(true);
+    setMessage({ text: "", isError: false });
+
+    try {
+      const result = await inviteUser(email, role);
+      if (result.success) {
+        setMessage({ text: "Invitation sent successfully!", isError: false });
+        setTimeout(() => {
+          setIsInviteOpen(false);
+          setEmail("");
+          setRole("ta");
+          setMessage({ text: "", isError: false });
+        }, 2000);
+      } else {
+        setMessage({ text: result.error || "Failed to invite", isError: true });
+      }
+    } catch (err: any) {
+      setMessage({ text: err.message || "An unexpected error occurred", isError: true });
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
   return (
-    <Card className="overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300" noPadding>
-      <div className="p-5 border-b border-border flex justify-between items-center bg-surface">
-        <h2 className="text-text-primary text-[14px] font-bold">Team Members</h2>
-        <button className="px-4 py-2 bg-primary-container text-on-primary rounded-md text-[13px] font-medium hover:bg-primary-container/90 transition-colors flex items-center gap-2">
-          <UserPlus size={16} />
-          Invite Member
-        </button>
-      </div>
-      <div className="overflow-x-auto bg-surface rounded-b-[10px]">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-surface-container-low border-b border-border">
-              <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Member</th>
-              <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Role</th>
-              <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Jobs Assigned</th>
-              <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Status</th>
-              <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#E0E0E0]">
-            <tr className="hover:bg-surface-container-high transition-colors transition-colors">
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary-container/10 text-primary-container flex items-center justify-center font-bold text-xs">S</div>
-                  <span className="text-[13px] font-medium text-text-primary">Shambra</span>
+    <>
+      <Card className="overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300 relative" noPadding>
+        <div className="p-5 border-b border-border flex justify-between items-center bg-surface">
+          <h2 className="text-text-primary text-[14px] font-bold">Team Members</h2>
+          <button 
+            onClick={() => setIsInviteOpen(true)}
+            className="px-4 py-2 bg-primary-container text-on-primary rounded-md text-[13px] font-medium hover:bg-primary-container/90 transition-colors flex items-center gap-2"
+          >
+            <UserPlus size={16} />
+            Invite Member
+          </button>
+        </div>
+        <div className="overflow-x-auto bg-surface rounded-b-[10px]">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-surface-container-low border-b border-border">
+                <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Member</th>
+                <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Role</th>
+                <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Jobs Assigned</th>
+                <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Status</th>
+                <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E0E0E0]">
+              {teamMembers === undefined ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-text-secondary text-[13px]">
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="animate-spin w-4 h-4" /> Loading team members...
+                    </div>
+                  </td>
+                </tr>
+              ) : teamMembers.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-text-secondary text-[13px]">
+                    No team members found.
+                  </td>
+                </tr>
+              ) : (
+                teamMembers.map((member) => {
+                  const initial = member.fullName ? member.fullName.charAt(0).toUpperCase() : "?";
+                  const isAdmin = member.role === "admin" || member.role === "director";
+                  
+                  return (
+                    <tr key={member._id} className="hover:bg-surface-container-high transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                              isAdmin 
+                                ? "bg-primary-container/10 text-primary-container" 
+                                : "bg-[#91F78E] text-[#00731E]"
+                            }`}
+                          >
+                            {initial}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[13px] font-medium text-text-primary">{member.fullName}</span>
+                            <span className="text-[11px] text-text-secondary">{member.email}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-text-secondary text-[13px] capitalize">{member.role}</td>
+                      <td className="px-6 py-4 text-text-secondary text-[13px]">
+                        {member.role === "admin" ? "All" : member.jobCount}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-text-primary text-[13px]">
+                          <span className="text-[10px]">{member.isActive ? "🟢" : "🔴"}</span> 
+                          {member.isActive ? "Active" : "Inactive"}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button className="text-text-secondary hover:text-accent-teal transition-colors">
+                          <Edit2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Invite Modal */}
+      {isInviteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-surface w-full max-w-md rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-border flex justify-between items-center bg-surface-container-low">
+              <h3 className="text-[15px] font-bold text-text-primary">Invite Team Member</h3>
+              <button 
+                onClick={() => setIsInviteOpen(false)}
+                className="text-text-secondary hover:text-text-primary transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleInvite} className="p-6 space-y-4">
+              {message.text && (
+                <div className={`p-3 rounded-md text-[13px] ${message.isError ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>
+                  {message.text}
                 </div>
-              </td>
-              <td className="px-6 py-4 text-text-secondary text-[13px]">Admin</td>
-              <td className="px-6 py-4 text-text-secondary text-[13px]">All</td>
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-2 text-text-primary text-[13px]"><span className="text-[10px]">🟢</span> Active</div>
-              </td>
-              <td className="px-6 py-4 text-right">
-                <button className="text-text-secondary hover:text-accent-teal transition-colors"><Edit2 size={16} /></button>
-              </td>
-            </tr>
-            <tr className="hover:bg-surface-container-high transition-colors transition-colors">
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#91F78E] text-[#00731E] flex items-center justify-center font-bold text-xs">R</div>
-                  <span className="text-[13px] font-medium text-text-primary">Rayan</span>
-                </div>
-              </td>
-              <td className="px-6 py-4 text-text-secondary text-[13px]">Recruiter</td>
-              <td className="px-6 py-4 text-text-secondary text-[13px]">12</td>
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-2 text-text-primary text-[13px]"><span className="text-[10px]">🟢</span> Active</div>
-              </td>
-              <td className="px-6 py-4 text-right">
-                <button className="text-text-secondary hover:text-accent-teal transition-colors"><Edit2 size={16} /></button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Card>
+              )}
+              
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-semibold text-text-secondary uppercase">Email Address</label>
+                <input 
+                  type="email" 
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="colleague@career141.com"
+                  className="w-full bg-surface-container-low border border-border rounded-lg px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-container transition-all"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-semibold text-text-secondary uppercase">System Role</label>
+                <select 
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full bg-surface-container-low border border-border rounded-lg px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-container transition-all appearance-none"
+                >
+                  <option value="admin">Admin (Full Access)</option>
+                  <option value="director">Director (Review & Approve)</option>
+                  <option value="ta">Talent Acquisition / Recruiter</option>
+                  <option value="ops">Operations / Read-Only</option>
+                </select>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsInviteOpen(false)}
+                  className="px-4 py-2 text-[13px] font-medium text-text-secondary hover:bg-surface-container-low rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isInviting}
+                  className="px-4 py-2 bg-primary-container text-on-primary rounded-lg text-[13px] font-medium hover:bg-primary-container/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isInviting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Send Invitation
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
