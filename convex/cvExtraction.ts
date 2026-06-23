@@ -247,6 +247,32 @@ function createNvidiaClient(): OpenAI {
   });
 }
 
+function parseJsonRobustly(content: string): Record<string, unknown> | null {
+  // 1. Try direct parsing
+  try {
+    return JSON.parse(content) as Record<string, unknown>;
+  } catch {}
+
+  // 2. Strip ```json and ``` fences and try again
+  const stripped = content.replace(/```json/gi, "").replace(/```/g, "").trim();
+  try {
+    return JSON.parse(stripped) as Record<string, unknown>;
+  } catch {}
+
+  // 3. Extract between first { and last }
+  const firstBrace = content.indexOf("{");
+  const lastBrace = content.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      const jsonStr = content.substring(firstBrace, lastBrace + 1);
+      return JSON.parse(jsonStr) as Record<string, unknown>;
+    } catch {}
+  }
+
+  // 4. Return null if completely unparseable
+  return null;
+}
+
 /**
  * Calls the LLM to extract structured CV data.
  * Returns an empty object (not throws) if the API call fails —
@@ -311,11 +337,13 @@ CRITICAL RULES:
     const content = response.choices[0]?.message?.content;
     if (!content) return null;
 
+    const parsed = parseJsonRobustly(content);
+    if (!parsed) return null;
+
     try {
-      const parsed = JSON.parse(content) as Record<string, unknown>;
       return cvExtractionSchema.parse(parsed);
     } catch {
-      // JSON parse or schema validation failed — fall back gracefully
+      // Schema validation failed — fall back gracefully
       return null;
     }
   } catch (error) {
