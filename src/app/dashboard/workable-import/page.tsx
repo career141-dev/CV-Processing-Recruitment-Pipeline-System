@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { 
@@ -62,6 +62,8 @@ export default function WorkableImportPage() {
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const systemStats = useQuery(api.stats.getSystemStats);
 
   const testConnection = useAction(api.workableActions.testConnection);
   const startBulkImport = useAction(api.workableActions.startBulkImport);
@@ -213,6 +215,22 @@ export default function WorkableImportPage() {
             <div className="flex flex-col items-start self-stretch">
               <span className="text-text-primary text-2xl font-bold">Import from Workable</span>
               <span className="text-text-secondary text-[13px] mt-1">Bulk import candidates and their CVs from Workable into this system. Limited to 100 CVs per run for testing.</span>
+            </div>
+
+            {/* Real-time System Stats */}
+            <div className="flex gap-6">
+              <div className="bg-surface border border-border rounded-xl p-5 flex-1 shadow-sm">
+                <p className="text-sm font-bold text-text-secondary">Total Candidates in System</p>
+                <p className="text-3xl font-black text-text-primary mt-2">
+                  {systemStats === undefined ? <Loader2 className="w-6 h-6 animate-spin text-text-secondary mt-1" /> : systemStats.candidatesCount.toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-surface border border-border rounded-xl p-5 flex-1 shadow-sm">
+                <p className="text-sm font-bold text-text-secondary">Total CVs in System</p>
+                <p className="text-3xl font-black text-text-primary mt-2">
+                  {systemStats === undefined ? <Loader2 className="w-6 h-6 animate-spin text-text-secondary mt-1" /> : systemStats.cvUploadsCount.toLocaleString()}
+                </p>
+              </div>
             </div>
 
             {isRestoring ? (

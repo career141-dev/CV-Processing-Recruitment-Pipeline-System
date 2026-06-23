@@ -84,6 +84,17 @@ const ExtractionActionArgs = {
 // ──────────────────────────────────────────────────
 
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
+  // Polyfill missing DOM APIs that pdf.js relies on in a Node environment
+  if (typeof globalThis.DOMMatrix === "undefined") {
+    (globalThis as any).DOMMatrix = class DOMMatrix {};
+  }
+  if (typeof globalThis.ImageData === "undefined") {
+    (globalThis as any).ImageData = class ImageData {};
+  }
+  if (typeof globalThis.Path2D === "undefined") {
+    (globalThis as any).Path2D = class Path2D {};
+  }
+
   const pdf = await import("pdf-parse");
   const parseFn = typeof pdf === "function" ? pdf : (pdf as any).default;
   if (!parseFn) {
