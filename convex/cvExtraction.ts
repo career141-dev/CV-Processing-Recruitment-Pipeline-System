@@ -14,31 +14,37 @@ import { z } from "zod";
 // ──────────────────────────────────────────────────
 
 export const educationSchema = z.object({
-  degree: z.string().nullable(),
-  institution: z.string().nullable(),
-  year: z.number().nullable(),
-  field: z.string().nullable(),
+  degree: z.string().nullable().optional(),
+  institution: z.string().nullable().optional(),
+  year: z.number().nullable().optional(),
+  field: z.string().nullable().optional(),
+});
+
+export const jobHistorySchema = z.object({
+  company: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
 });
 
 export const cvExtractionSchema = z.object({
-  fullName: z.string().nullable(),
-  email: z.string().nullable(),
-  phone: z.string().nullable(),
-  location: z.string().nullable(),
-  linkedinUrl: z.string().nullable(),
-  currentTitle: z.string().nullable(),
-  currentEmployer: z.string().nullable(),
-  seniorityLevel: z.string().nullable(),
-  yearsOfExperience: z.number().nullable(),
-  industries: z.array(z.string()).nullable(),
-  expectedSalary: z.string().nullable(),
-  noticePeriod: z.string().nullable(),
-  employmentStatus: z.string().nullable(),
-  skills: z.array(z.string()).nullable(),
-  education: z.array(educationSchema).nullable(),
-  certifications: z.array(z.string()).nullable(),
-  languages: z.array(z.string()).nullable(),
-  summary: z.string().nullable(),
+  fullName: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  linkedinUrl: z.string().nullable().optional(),
+  currentTitle: z.string().nullable().optional(),
+  currentEmployer: z.string().nullable().optional(),
+  seniorityLevel: z.string().nullable().optional(),
+  yearsOfExperience: z.number().nullable().optional(),
+  industries: z.array(z.string()).nullable().optional(),
+  sector: z.string().nullable().optional(),
+  skills: z.array(z.string()).nullable().optional(),
+  education: z.array(educationSchema).nullable().optional(),
+  languages: z.array(z.string()).nullable().optional(),
+  summary: z.string().nullable().optional(),
+  jobHistory: z.array(jobHistorySchema).nullable().optional(),
 });
 
 export type CvExtractionResult = z.infer<typeof cvExtractionSchema>;
@@ -77,9 +83,6 @@ const ExtractionActionArgs = {
 // Text Extraction
 // ──────────────────────────────────────────────────
 
-/**
- * PDF: Use pdf-parse
- */
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
   const pdf = await import("pdf-parse");
   const parseFn = typeof pdf === "function" ? pdf : (pdf as any).default;
@@ -90,10 +93,6 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
   return data.text;
 }
 
-/**
- * DOCX: Use mammoth (same as C141 platform).
- * Guard against bundler wrapping the module under .default.
- */
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   const mammoth = await import("mammoth");
   const extractFn =
@@ -107,9 +106,6 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   return result.value;
 }
 
-/**
- * Image OCR: Use tesseract.js
- */
 async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
   const tesseract = await import("tesseract.js");
   const tesseractObj = typeof tesseract.recognize === "function" ? tesseract : (tesseract as any).default;
@@ -117,7 +113,7 @@ async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
     throw new Error("tesseract.js library could not be loaded correctly");
   }
   const result = await tesseractObj.recognize(Buffer.from(buffer), 'eng', {
-    logger: () => {} // Suppress logging
+    logger: () => {}
   });
   return result.data.text;
 }
@@ -156,7 +152,6 @@ export async function extractText(
     return new TextDecoder("utf-8").decode(buffer);
   }
 
-  // Unknown type — try PDF first (most common for CVs), then DOCX, then Image, then raw decode
   try {
     const pdfText = await extractTextFromPdf(buffer);
     if (pdfText.trim().length > 50) return pdfText;
@@ -180,18 +175,13 @@ export async function extractText(
 // ──────────────────────────────────────────────────
 
 export function cleanRawText(text: string): string {
-  // 5. Strip non-printable characters and unicode junk
-  // Removes control chars except newline (\n) and tab (\t)
   let cleaned = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD]/g, "");
 
-  // 6. Remove table border characters and divider dashes
   cleaned = cleaned.replace(/[|│║┆┇┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬╭╮╯╰╱╲╳╴╵╶╷╸╹╺╻╼╽╾╿─━┄┅┈┉]/g, " ");
   cleaned = cleaned.replace(/[-_]{3,}/g, " ");
 
-  // Process line by line for page numbers and headers/footers
   const lines = cleaned.split("\n");
   
-  // Count line frequencies for header/footer detection
   const lineCounts = new Map<string, number>();
   for (const line of lines) {
     const trimmed = line.trim();
@@ -204,12 +194,10 @@ export function cleanRawText(text: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
     
-    // 3. Remove page number patterns
     if (/^page\s*\d+\s*(of\s*\d+)?$/i.test(trimmed)) continue;
     if (/^\d+\s*\/\s*\d+$/.test(trimmed)) continue;
     if (/^\d+$/.test(trimmed)) continue;
     
-    // 4. Remove repeated header/footer lines (appears 3+ times)
     if (trimmed.length > 0 && (lineCounts.get(trimmed) || 0) >= 3) {
       continue;
     }
@@ -219,10 +207,7 @@ export function cleanRawText(text: string): string {
 
   cleaned = filteredLines.join("\n");
 
-  // 1. Replace all sequences of more than two newlines with a single newline
   cleaned = cleaned.replace(/\n{3,}/g, "\n");
-
-  // 2. Collapse multiple spaces into one space (ignoring newlines)
   cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
 
   return cleaned;
@@ -248,18 +233,15 @@ function createNvidiaClient(): OpenAI {
 }
 
 function parseJsonRobustly(content: string): Record<string, unknown> | null {
-  // 1. Try direct parsing
   try {
     return JSON.parse(content) as Record<string, unknown>;
   } catch {}
 
-  // 2. Strip ```json and ``` fences and try again
   const stripped = content.replace(/```json/gi, "").replace(/```/g, "").trim();
   try {
     return JSON.parse(stripped) as Record<string, unknown>;
   } catch {}
 
-  // 3. Extract between first { and last }
   const firstBrace = content.indexOf("{");
   const lastBrace = content.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
@@ -269,7 +251,6 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
     } catch {}
   }
 
-  // 4. Return null if completely unparseable
   return null;
 }
 
@@ -297,39 +278,47 @@ export async function callNvidiaLLM(
       response_format: { type: "json_object" },
       messages: [
         {
-          role: "system",
-          content: `You are a CV data extraction tool. Extract the following fields exactly as written in the CV. Do not paraphrase, summarize, or infer information that is not explicitly present. If a field is not present, return null — do not generate placeholder content.
-
-Return a valid JSON object with these fields:
-- fullName: string | null (full name exactly as written)
-- email: string | null (email address exactly as written)
-- phone: string | null (phone number exactly as written)
-- location: string | null (city, country or location exactly as written)
-- linkedinUrl: string | null (LinkedIn profile URL exactly as written)
-- currentTitle: string | null (most recent job title exactly as written)
-- currentEmployer: string | null (most recent employer name exactly as written)
-- seniorityLevel: string | null (only if explicitly stated — e.g. Junior, Mid, Senior, Lead, Manager, Director, C-Level)
-- yearsOfExperience: number | null (only if explicitly stated, e.g. "10 years" -> 10)
-- industries: string[] | null (industries explicitly mentioned)
-- expectedSalary: string | null (salary expectation exactly as written)
-- noticePeriod: string | null (notice period exactly as written)
-- employmentStatus: string | null (current employment status exactly as written)
-- skills: string[] | null (list of skills exactly as written)
-- education: { degree: string | null, institution: string | null, year: number | null, field: string | null }[] | null
-- certifications: string[] | null (certifications exactly as written)
-- languages: string[] | null (languages exactly as written)
-- summary: string | null (the exact professional summary, profile, or about-me section written in the CV verbatim)
-
-CRITICAL RULES:
-1. Extract text verbatim from the CV. Do NOT rephrase, normalize, or infer.
-2. If a field is not present in the CV, set it to null — do not generate fake values or placeholder text.
-3. For "summary", extract the exact professional summary or profile statement verbatim as written in the CV. Do not summarize, rephrase, or write an AI-generated summary.
-4. For "yearsOfExperience", only extract if explicitly stated (e.g. "10+ years of experience").
-5. For "seniorityLevel", only extract if the CV explicitly states a level.`,
-        },
-        {
           role: "user",
-          content: `Extract the required fields from this CV text. Return ONLY valid JSON:\n\n${textToSend}`,
+          content: `Extract candidate information from the CV text below and return it as a JSON object.
+1. Return only valid JSON. No markdown, no backticks, no explanation.
+2. If a field is not found, return null. Never invent or guess.
+3. Return skills as an array of strings.
+4. Return jobHistory as an array of objects.
+{
+  "fullName": null,
+  "email": null,
+  "phone": null,
+  "location": null,
+  "linkedinUrl": null,
+  "currentTitle": null,
+  "currentEmployer": null,
+  "seniorityLevel": null,
+  "yearsOfExperience": null,
+  "industries": null,
+  "sector": null,
+  "skills": null,
+  "education": [
+    {
+      "degree": null,
+      "institution": null,
+      "year": null,
+      "field": null
+    }
+  ],
+  "languages": null,
+  "summary": null,
+  "jobHistory": [
+    {
+      "company": null,
+      "title": null,
+      "startDate": null,
+      "endDate": null,
+      "description": null
+    }
+  ]
+}
+CV TEXT:
+${textToSend}`,
         },
       ],
     });
@@ -343,11 +332,9 @@ CRITICAL RULES:
     try {
       return cvExtractionSchema.parse(parsed);
     } catch {
-      // Schema validation failed — fall back gracefully
       return null;
     }
   } catch (error) {
-    // Re-throw credit/balance errors so the caller can set status to "paused"
     const message = error instanceof Error ? error.message : String(error);
     if (
       message.includes("403") ||
@@ -357,13 +344,12 @@ CRITICAL RULES:
     ) {
       throw error;
     }
-    // All other API errors fall back gracefully (return null)
     return null;
   }
 }
 
 // ──────────────────────────────────────────────────
-// null → undefined helper (same as before)
+// null → undefined helper
 // ──────────────────────────────────────────────────
 
 function nullToUndefined<T extends Record<string, unknown>>(
@@ -408,18 +394,12 @@ export async function runCvExtraction(
   });
 
   try {
-    // 1. Fetch file from Convex storage
     const blob = await ctx.storage.get(storageId);
     if (!blob) throw new Error("File not found in Convex storage");
 
     const buffer = await blob.arrayBuffer();
     const fileHash = computeSha256(buffer);
 
-    // 2. Extract raw text — pdfjs-dist/legacy for PDF, mammoth for DOCX.
-    //    The FULL extracted text is stored so the search index covers the
-    //    entire CV (capped at MAX_RAW_TEXT_LENGTH to stay within Convex's
-    //    1 MB document limit).  Only the slice sent to the LLM is capped
-    //    further (see callNvidiaLLM which limits to MAX_CHARS = 15 000).
     const rawText = await extractText(buffer, fileType);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
@@ -430,7 +410,6 @@ export async function runCvExtraction(
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
       : trimmed;
 
-    // 3. Save candidate with rawText FIRST, before any LLM call
     const candidateId = await ctx.runMutation(api.candidates.createCandidate, {
       rawText: cappedRawText,
       sourceChannel: sourceChannel ?? undefined,
@@ -441,12 +420,11 @@ export async function runCvExtraction(
 
     await ctx.runMutation(api.candidates.updateCvUpload, {
       cvUploadId,
-      status: "processing", // still processing LLM
+      status: "processing",
       fileHash,
       candidateId,
     });
 
-    // 4. Call LLM — graceful fallback to null on non-credit errors
     let extracted: CvExtractionResult | null = null;
     if (skipLLM && preExtractedData) {
       extracted = {
@@ -460,6 +438,7 @@ export async function runCvExtraction(
         seniorityLevel: null,
         yearsOfExperience: null,
         industries: null,
+        sector: null,
         expectedSalary: null,
         noticePeriod: null,
         employmentStatus: null,
@@ -468,15 +447,14 @@ export async function runCvExtraction(
         certifications: null,
         languages: null,
         summary: null,
-      };
+        jobHistory: null,
+      } as unknown as CvExtractionResult;
     } else {
       extracted = await callNvidiaLLM(cappedRawText);
     }
 
-    // 5. Update candidate with LLM extracted data if available
     if (extracted) {
       const safeExtracted = nullToUndefined(extracted);
-      // We can call createCandidate again with the fileHash, it will patch the existing record
       await ctx.runMutation(api.candidates.createCandidate, {
         ...safeExtracted,
         fileHash,
@@ -492,7 +470,6 @@ export async function runCvExtraction(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
 
-    // Mirror C141: pause on credit errors so the user can top up and resume
     const isInsufficientBalance =
       message.includes("403") ||
       message.toLowerCase().includes("insufficient") ||
@@ -507,7 +484,6 @@ export async function runCvExtraction(
         : message,
     });
 
-    // Don't re-throw for balance errors — caller should not retry immediately
     if (!isInsufficientBalance) throw err;
     return null;
   }
@@ -525,8 +501,7 @@ export const processCvExtraction = action({
 });
 
 // ──────────────────────────────────────────────────
-// Batch Resume — same pattern as C141's resumeBatch
-// Retries all "paused" or "failed" uploads in pages
+// Batch Resume — rate limited queue worker
 // ──────────────────────────────────────────────────
 
 export const resumeFailedUploads = action({
@@ -536,32 +511,29 @@ export const resumeFailedUploads = action({
     if (!identity) throw new Error("Not authenticated");
 
     await ctx.scheduler.runAfter(0, internal.cvExtraction.processNextInQueue, {});
-    return { queued: 1 }; // indicates worker started
+    return { queued: 1 };
   },
 });
 
 export const processNextInQueue = internalAction({
   args: {},
   handler: async (ctx): Promise<void> => {
-    // Fetch the next failed/paused upload
     const result = await ctx.runQuery(api.candidates.listFailedUploads, {
       limit: 1,
     });
 
     if (result.page.length === 0) {
-      return; // Queue is empty, stop
+      return;
     }
 
     const upload = result.page[0];
 
-    // Mark as processing immediately so another worker doesn't pick it up
     await ctx.runMutation(api.candidates.updateCvUpload, {
       cvUploadId: upload._id,
       status: "processing",
     });
 
     if (upload.storageId) {
-      // Process it completely (success or failure is handled inside runCvExtraction)
       await runCvExtraction(ctx, {
         storageId: upload.storageId,
         fileType: upload.fileType,
@@ -570,7 +542,6 @@ export const processNextInQueue = internalAction({
         cvUploadId: upload._id,
       });
     } else {
-      // If no storageId, mark failed so it's not picked up again
       await ctx.runMutation(api.candidates.updateCvUpload, {
         cvUploadId: upload._id,
         status: "failed",
@@ -578,7 +549,6 @@ export const processNextInQueue = internalAction({
       });
     }
 
-    // After completion, wait exactly 1600ms before scheduling the next one
     await ctx.scheduler.runAfter(1600, internal.cvExtraction.processNextInQueue, {});
   },
 });
