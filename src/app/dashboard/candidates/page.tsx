@@ -8,9 +8,10 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { CandidateSidebarFilters } from '@/components/candidates/CandidateSidebarFilters';
 import { CandidateCard } from '@/components/candidates/CandidateCard';
 import { FloatingActionBar } from '@/components/candidates/FloatingActionBar';
+import { CandidateManagementTable } from '@/components/candidates/CandidateManagementTable';
 import { Button } from '@/components/ui/Button';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { X, Loader2, ChevronDown, Search, Filter } from 'lucide-react';
+import { X, Loader2, ChevronDown, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MessageComposer } from '@/components/communications/MessageComposer';
 import { toast } from 'sonner';
 
@@ -59,6 +60,11 @@ export default function CandidatesSearch() {
   const [sortOption, setSortOption] = useState('Best Match');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'management' | 'search'>('management');
+  
+  // Search Tab Pagination
+  const [searchPage, setSearchPage] = useState(1);
+  const searchItemsPerPage = 10;
   
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<{
@@ -100,6 +106,7 @@ export default function CandidatesSearch() {
       });
       setSearchResults(res);
       setHasSearched(true);
+      setSearchPage(1);
       toast.success(`Found ${res.results.length} candidate matches`);
     } catch (error) {
       console.error(error);
@@ -130,12 +137,48 @@ export default function CandidatesSearch() {
         })
         .filter(Boolean)
     : candidates?.map(c => ({ ...c, score: undefined, matchReason: undefined }))) ?? [];
+
+  const searchStartIndex = (searchPage - 1) * searchItemsPerPage;
+  const currentSearchItems = candidatesToRender.slice(searchStartIndex, searchStartIndex + searchItemsPerPage);
+  const totalSearchPages = Math.ceil(candidatesToRender.length / searchItemsPerPage);
+
   return (
     <div className="flex-1 relative w-full bg-surface">
-      <PageHeader title="Search Candidates" />
+      <PageHeader title="Candidates" />
       
-      <div className="flex flex-col items-start self-stretch relative">
-        <div className="flex items-start self-stretch relative">
+      {/* Tabs Navigation */}
+      <div className="px-6 border-b border-gray-200 mt-2 mb-6">
+        <div className="flex space-x-8">
+          <button
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'management'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('management')}
+          >
+            Candidate Management
+          </button>
+          <button
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'search'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('search')}
+          >
+            Candidate Search
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'management' && (
+        <CandidateManagementTable />
+      )}
+
+      {activeTab === 'search' && (
+        <div className="flex flex-col items-start self-stretch relative">
+          <div className="flex items-start self-stretch relative">
           
           {/* Animated Sidebar Container */}
           <div className={`transition-all duration-300 ease-in-out shrink-0 overflow-hidden ${isSidebarOpen ? 'w-[260px] opacity-100 mr-[21px]' : 'w-0 opacity-0 mr-0'}`}>
@@ -248,7 +291,7 @@ export default function CandidatesSearch() {
               <span className="text-text-secondary text-[13px] font-bold">
                 {candidates === undefined
                   ? "Loading..."
-                  : `Showing ${candidatesToRender.length} candidate${candidatesToRender.length !== 1 ? "s" : ""}`}
+                  : `Showing ${candidatesToRender.length === 0 ? 0 : Math.min((searchPage - 1) * searchItemsPerPage + 1, candidatesToRender.length)} to ${Math.min(searchPage * searchItemsPerPage, candidatesToRender.length)} of ${candidatesToRender.length} candidate${candidatesToRender.length !== 1 ? "s" : ""}`}
               </span>
               <div className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer">
                 <span className="text-text-secondary text-[13px]">
@@ -268,7 +311,7 @@ export default function CandidatesSearch() {
                 {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates yet. Upload CVs to get started.'}
               </div>
             ) : (
-              candidatesToRender.map((c) => c && (
+              currentSearchItems.map((c) => c && (
                 <CandidateCard
                   key={c._id}
                   id={c._id}
@@ -298,9 +341,37 @@ export default function CandidatesSearch() {
               selectedCount={selectedCandidates.length} 
               onClear={() => setSelectedCandidates([])} 
             />
+
+            {/* Search Pagination Controls */}
+            {candidatesToRender.length > 0 && (
+              <div className="flex items-center justify-between mt-4 bg-surface p-3 rounded-lg border border-gray-200">
+                <span className="text-sm text-gray-500">
+                  Page <span className="font-medium text-gray-900">{searchPage}</span> of <span className="font-medium text-gray-900">{totalSearchPages}</span>
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
+                    onClick={() => setSearchPage(p => Math.max(1, p - 1))}
+                    disabled={searchPage === 1}
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Prev
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
+                    onClick={() => setSearchPage(p => Math.min(totalSearchPages, p + 1))}
+                    disabled={searchPage === totalSearchPages || totalSearchPages === 0}
+                  >
+                    Next <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
+      )}
 
       {messageCandidate && (
         <MessageComposer

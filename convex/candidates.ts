@@ -8,6 +8,16 @@ export const listCandidates = query({
   },
 });
 
+export const listCandidatesPaginated = query({
+  args: { paginationOpts: v.any() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidates")
+      .order("desc")
+      .paginate(args.paginationOpts);
+  },
+});
+
 export const getCandidate = query({
   args: { id: v.id("candidates") },
   handler: async (ctx, args) => {
