@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { action, query } from "./_generated/server";
-import { api } from "./_generated/api";
-import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "./jdParser";
-import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct } from "./cvScoring";
+import { action, query } from "../_generated/server";
+import { api } from "../_generated/api";
+import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
+import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
 export const searchCandidates = query({
   args: {
@@ -130,8 +130,8 @@ export const aiSearch = action({
     const topCandidates = rawResults.slice(0, 30);
 
     const ranked = topCandidates
-      .map((cv, index) => scoreCandidateAgainstRequirements(cv, effectiveReq, index))
-      .sort((a, b) =>
+      .map((cv: (typeof rawResults)[0], index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))
+      .sort((a: ScoredCandidate, b: ScoredCandidate) =>
         (b.titleScore - a.titleScore) ||
         (b.skillScore - a.skillScore) ||
         (b.experienceScore - a.experienceScore) ||

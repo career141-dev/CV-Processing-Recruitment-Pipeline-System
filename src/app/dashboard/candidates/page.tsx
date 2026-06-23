@@ -126,7 +126,7 @@ export default function CandidatesSearch() {
     setActiveFilters(prev => prev.filter(f => f !== filter));
   };
 
-  const candidateMap = new Map(candidates?.map(c => [c._id, c]) ?? []);
+  const candidateMap = new Map((candidates ?? []).map((c: Doc<"candidates">) => [c._id, c]));
 
   const candidatesToRender = (hasSearched && searchResults
     ? searchResults.results
@@ -136,7 +136,7 @@ export default function CandidatesSearch() {
           return { ...cand, score: res.score, matchReason: res.reason };
         })
         .filter(Boolean)
-    : candidates?.map(c => ({ ...c, score: undefined, matchReason: undefined }))) ?? [];
+    : (candidates ?? []).map((c: Doc<"candidates">) => ({ ...c, score: undefined as number | undefined, matchReason: undefined as string | undefined }))) ?? [];
 
   const searchStartIndex = (searchPage - 1) * searchItemsPerPage;
   const currentSearchItems = candidatesToRender.slice(searchStartIndex, searchStartIndex + searchItemsPerPage);
@@ -311,7 +311,7 @@ export default function CandidatesSearch() {
                 {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates yet. Upload CVs to get started.'}
               </div>
             ) : (
-              currentSearchItems.map((c) => c && (
+              (currentSearchItems as any[]).map((c) => c && (
                 <CandidateCard
                   key={c._id}
                   id={c._id}

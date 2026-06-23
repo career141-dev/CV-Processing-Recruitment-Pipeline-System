@@ -1,5 +1,5 @@
-import { getOpenAI, getModelForTask, logLLMUsage } from "./llm";
-import type { SearchRequirements } from "./jdParser";
+import { getOpenAI, getModelForTask, logLLMUsage } from "../lib/llm";
+import type { SearchRequirements } from "../lib/jdParser";
 
 function normalizeText(value: string): string {
   return value

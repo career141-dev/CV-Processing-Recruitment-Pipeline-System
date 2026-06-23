@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { query, mutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 
 export const listCandidates = query({
   handler: async (ctx) => {
@@ -214,5 +214,18 @@ export const clearEverything = mutation({
     // 4. Delete all cvUploads
     for (const u of uploads) await ctx.db.delete(u._id);
     return { storageDeleted: storageIds.length, documentsDeleted: docs.length, candidatesDeleted: cands.length, uploadsDeleted: uploads.length };
+  },
+});
+
+export const seedDummyAdmin = mutation({
+  handler: async (ctx) => {
+    return await ctx.db.insert("users", {
+      tokenIdentifier: "dummy_clerk_id",
+      email: "admin@career141.com",
+      fullName: "Admin Recruiter",
+      role: "admin",
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    });
   },
 });

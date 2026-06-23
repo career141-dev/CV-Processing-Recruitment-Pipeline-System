@@ -1,5 +1,5 @@
-import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { httpAction } from "../_generated/server";
+import { api } from "../_generated/api";
 
 // Helper to extract Meta Campaign ID from referral payload (if present)
 function extractMetaCampaignId(referralData?: string | null): string | undefined {
@@ -76,7 +76,7 @@ export const handleWhatsappWebhook = httpAction(async (ctx, request) => {
   const metaCampaignId = extractMetaCampaignId(referralData as string | null);
 
   // 5. Process central ingestion pipeline
-  const result = await ctx.runMutation(api.ingestion.processCvIngestion, {
+  const result = await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
     jobId: job._id,
     sourceChannel: metaCampaignId ? "meta_campaign" : "whatsapp",
     rawSender: from,

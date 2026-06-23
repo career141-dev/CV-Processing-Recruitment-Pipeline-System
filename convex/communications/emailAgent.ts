@@ -1,6 +1,6 @@
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { api } from "../_generated/api";
 
 // ----------------------------------------------------------------------------------
 // STUBBED HELPER FUNCTIONS 
@@ -66,7 +66,7 @@ export const pollEmailInbox = action({
       }
 
       // 3. Process ingestion
-      await ctx.runMutation(api.ingestion.processCvIngestion, {
+      await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
         jobId: resolvedJobId,
         sourceChannel: inboxEmail === process.env.LINKEDIN_SHARED_INBOX ? "linkedin" : "email_campaign",
         rawSender: message.from?.emailAddress?.address,

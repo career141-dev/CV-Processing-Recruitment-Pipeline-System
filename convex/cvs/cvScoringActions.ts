@@ -1,7 +1,7 @@
-import { action, internalQuery, internalMutation } from "./_generated/server";
+import { action, internalQuery, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
-import { api, internal } from "./_generated/api";
+import { Id } from "../_generated/dataModel";
+import { api, internal } from "../_generated/api";
 
 // 1. Internal Query to get the necessary data for scoring
 export const getScoringData = internalQuery({
@@ -64,7 +64,7 @@ export const processCvScoring = action({
   args: { candidateId: v.id("candidates"), jobId: v.id("jobs") },
   handler: async (ctx, args) => {
     // 1. Get candidate and job
-    const data = await ctx.runQuery(internal.cvScoringActions.getScoringData, {
+    const data = await ctx.runQuery(internal.cvs.cvScoringActions.getScoringData, {
       candidateId: args.candidateId,
       jobId: args.jobId,
     });
@@ -109,7 +109,7 @@ export const processCvScoring = action({
     const finalScore = Math.round((weightedScore * 0.6) + (llmScore * 0.4));
     
     // 6. Save the final score
-    await ctx.runMutation(internal.cvScoringActions.saveMatchScore, {
+    await ctx.runMutation(internal.cvs.cvScoringActions.saveMatchScore, {
       applicationId: application._id,
       jobId: job._id,
       candidateId: candidate._id,

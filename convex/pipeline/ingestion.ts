@@ -1,7 +1,7 @@
-import { mutation } from "./_generated/server";
+import { mutation } from "../_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
-import { api } from "./_generated/api";
+import { Id } from "../_generated/dataModel";
+import { api } from "../_generated/api";
 
 export const processCvIngestion = mutation({
   args: {
@@ -118,7 +118,7 @@ export const processCvIngestion = mutation({
     } as any);
 
     // Trigger Agent 1 (CV Parsing) immediately using standard api
-    await ctx.scheduler.runAfter(0, api.cvExtraction.processCvExtraction, {
+    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
       storageId: args.storageId,
       fileType: args.fileType,
       sourceChannel: args.sourceChannel,

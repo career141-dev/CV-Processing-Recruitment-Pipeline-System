@@ -32,7 +32,7 @@ export default function OutreachPage() {
   ];
 
   const jobs = useQuery(api.jobs.list);
-  const aiCalls = useQuery(api.outreach.getAiCalls, {
+  const aiCalls = useQuery(api.pipeline.outreach.getAiCalls, {
     jobId: selectedJob ? (selectedJob as Id<"jobs">) : undefined,
     outcome: selectedOutcome,
     dateRange: dateRange,

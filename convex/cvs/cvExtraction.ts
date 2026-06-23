@@ -1,10 +1,10 @@
 "use node";
 
 import { v } from "convex/values";
-import { action, internalAction } from "./_generated/server";
-import type { ActionCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
-import { api, internal } from "./_generated/api";
+import { action, internalAction } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { api, internal } from "../_generated/api";
 import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
@@ -409,7 +409,7 @@ export async function runCvExtraction(
     }) as string | undefined | null;
 
     if (jobId) {
-      await ctx.scheduler.runAfter(0, api.cvScoringActions.processCvScoring, {
+      await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
         candidateId,
         jobId: jobId as any,
       });
@@ -462,7 +462,7 @@ export const resumeFailedUploads = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    await ctx.runAction(internal.cvExtraction.resumeBatch, {
+    await ctx.runAction(internal.cvs.cvExtraction.resumeBatch, {
       cursor: undefined,
       totalQueued: 0,
     });
@@ -486,7 +486,7 @@ export const resumeBatch = internalAction({
       const upload = result.page[i];
       // Stagger retries: 1 second apart to avoid rate limit spikes
       // Note: cvUploads uses 'source' field, exposed as sourceChannel to the action
-      ctx.scheduler.runAfter(i * 1000, api.cvExtraction.processCvExtraction, {
+      ctx.scheduler.runAfter(i * 1000, api.cvs.cvExtraction.processCvExtraction, {
         storageId: upload.storageId as Id<"_storage">,
         fileType: upload.fileType,
         sourceChannel: upload.source,
@@ -499,7 +499,7 @@ export const resumeBatch = internalAction({
     if (!result.isDone && result.continueCursor) {
       ctx.scheduler.runAfter(
         result.page.length * 1000 + 500,
-        internal.cvExtraction.resumeBatch,
+        internal.cvs.cvExtraction.resumeBatch,
         {
           cursor: result.continueCursor,
           totalQueued: args.totalQueued + result.page.length,

@@ -12,7 +12,7 @@ interface SendMessageModalProps {
 }
 
 export function SendMessageModal({ onClose, candidateId, jobId }: SendMessageModalProps) {
-  const sendMessage = useMutation(api.outreach.sendMessage);
+  const sendMessage = useMutation(api.pipeline.outreach.sendMessage);
   // Optional: queries to get candidate details and jobs
   
   const [channel, setChannel] = useState<"email" | "whatsapp" | "sms">("email");

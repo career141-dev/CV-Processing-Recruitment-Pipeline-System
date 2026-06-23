@@ -1,7 +1,8 @@
 "use node";
 
 import OpenAI from "openai";
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx } from "../_generated/server";
+
 
 export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching";
 
