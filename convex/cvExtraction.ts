@@ -78,51 +78,16 @@ const ExtractionActionArgs = {
 // ──────────────────────────────────────────────────
 
 /**
- * PDF: Use pdfjs-dist/legacy — same approach as the C141 platform.
- * The legacy build ships browser-API polyfills (DOMMatrix, ImageData,
- * Path2D, etc.) so it works correctly inside the Convex "use node"
- * serverless runtime where those globals are otherwise absent.
- *
- * Uses each text item's transform/position info to insert line breaks
- * where lines change vertically, preserving paragraph structure for
- * better LLM extraction and search quality.
+ * PDF: Use pdf-parse
  */
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
-  if (typeof globalThis.DOMMatrix === "undefined") {
-    globalThis.DOMMatrix = class DOMMatrix {} as any;
+  const pdf = await import("pdf-parse");
+  const parseFn = typeof pdf === "function" ? pdf : (pdf as any).default;
+  if (!parseFn) {
+    throw new Error("pdf-parse library could not be loaded correctly");
   }
-  if (typeof globalThis.ImageData === "undefined") {
-    globalThis.ImageData = class ImageData {} as any;
-  }
-  if (typeof globalThis.Path2D === "undefined") {
-    globalThis.Path2D = class Path2D {} as any;
-  }
-
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
-  const pdf = await loadingTask.promise;
-  const textParts: string[] = [];
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const lines: string[] = [];
-    let lastY: number | null = null;
-
-    for (const item of content.items) {
-      if (!("str" in item)) continue;
-      const y = "transform" in item ? (item as any).transform[5] : 0;
-      if (lastY !== null && Math.abs(y - lastY) > 5) {
-        lines.push("");
-      }
-      lines.push(item.str);
-      lastY = y;
-    }
-
-    textParts.push(lines.join(" ").replace(/ {2,}/g, " ").trim());
-  }
-
-  return textParts.join("\n\n");
+  const data = await parseFn(Buffer.from(buffer));
+  return data.text;
 }
 
 /**
@@ -142,6 +107,21 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   return result.value;
 }
 
+/**
+ * Image OCR: Use tesseract.js
+ */
+async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
+  const tesseract = await import("tesseract.js");
+  const tesseractObj = typeof tesseract.recognize === "function" ? tesseract : (tesseract as any).default;
+  if (!tesseractObj || !tesseractObj.recognize) {
+    throw new Error("tesseract.js library could not be loaded correctly");
+  }
+  const result = await tesseractObj.recognize(Buffer.from(buffer), 'eng', {
+    logger: () => {} // Suppress logging
+  });
+  return result.data.text;
+}
+
 export async function extractText(
   buffer: ArrayBuffer,
   fileType: string,
@@ -154,6 +134,10 @@ export async function extractText(
 
   if (type === "docx" || type === "doc" || type.includes("wordprocessingml")) {
     return extractTextFromDocx(buffer);
+  }
+
+  if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg") {
+    return extractTextFromImage(buffer);
   }
 
   if (type === "rtf") {
@@ -172,7 +156,7 @@ export async function extractText(
     return new TextDecoder("utf-8").decode(buffer);
   }
 
-  // Unknown type — try PDF first (most common for CVs), then DOCX, then raw decode
+  // Unknown type — try PDF first (most common for CVs), then DOCX, then Image, then raw decode
   try {
     const pdfText = await extractTextFromPdf(buffer);
     if (pdfText.trim().length > 50) return pdfText;
@@ -183,7 +167,65 @@ export async function extractText(
     if (docxText.trim().length > 50) return docxText;
   } catch {}
 
+  try {
+    const imgText = await extractTextFromImage(buffer);
+    if (imgText.trim().length > 50) return imgText;
+  } catch {}
+
   return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+}
+
+// ──────────────────────────────────────────────────
+// Text Cleaning
+// ──────────────────────────────────────────────────
+
+export function cleanRawText(text: string): string {
+  // 5. Strip non-printable characters and unicode junk
+  // Removes control chars except newline (\n) and tab (\t)
+  let cleaned = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD]/g, "");
+
+  // 6. Remove table border characters and divider dashes
+  cleaned = cleaned.replace(/[|│║┆┇┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬╭╮╯╰╱╲╳╴╵╶╷╸╹╺╻╼╽╾╿─━┄┅┈┉]/g, " ");
+  cleaned = cleaned.replace(/[-_]{3,}/g, " ");
+
+  // Process line by line for page numbers and headers/footers
+  const lines = cleaned.split("\n");
+  
+  // Count line frequencies for header/footer detection
+  const lineCounts = new Map<string, number>();
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      lineCounts.set(trimmed, (lineCounts.get(trimmed) || 0) + 1);
+    }
+  }
+
+  const filteredLines: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // 3. Remove page number patterns
+    if (/^page\s*\d+\s*(of\s*\d+)?$/i.test(trimmed)) continue;
+    if (/^\d+\s*\/\s*\d+$/.test(trimmed)) continue;
+    if (/^\d+$/.test(trimmed)) continue;
+    
+    // 4. Remove repeated header/footer lines (appears 3+ times)
+    if (trimmed.length > 0 && (lineCounts.get(trimmed) || 0) >= 3) {
+      continue;
+    }
+
+    filteredLines.push(line);
+  }
+
+  cleaned = filteredLines.join("\n");
+
+  // 1. Replace all sequences of more than two newlines with a single newline
+  cleaned = cleaned.replace(/\n{3,}/g, "\n");
+
+  // 2. Collapse multiple spaces into one space (ignoring newlines)
+  cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
+
+  return cleaned;
 }
 
 const MAX_RAW_TEXT_LENGTH = 500_000;
@@ -351,7 +393,8 @@ export async function runCvExtraction(
     //    1 MB document limit).  Only the slice sent to the LLM is capped
     //    further (see callNvidiaLLM which limits to MAX_CHARS = 15 000).
     const rawText = await extractText(buffer, fileType);
-    const trimmed = rawText.trim();
+    const cleanedText = cleanRawText(rawText);
+    const trimmed = cleanedText.trim();
     if (trimmed.length < 20) {
       throw new Error("Insufficient text extracted from file");
     }
@@ -359,7 +402,23 @@ export async function runCvExtraction(
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
       : trimmed;
 
-    // 3. Call LLM — graceful fallback to null on non-credit errors
+    // 3. Save candidate with rawText FIRST, before any LLM call
+    const candidateId = await ctx.runMutation(api.candidates.createCandidate, {
+      rawText: cappedRawText,
+      sourceChannel: sourceChannel ?? undefined,
+      fileHash,
+      cvUploadId,
+      workableCandidateId: workableCandidateId ?? undefined,
+    });
+
+    await ctx.runMutation(api.candidates.updateCvUpload, {
+      cvUploadId,
+      status: "processing", // still processing LLM
+      fileHash,
+      candidateId,
+    });
+
+    // 4. Call LLM — graceful fallback to null on non-credit errors
     let extracted: CvExtractionResult | null = null;
     if (skipLLM && preExtractedData) {
       extracted = {
@@ -386,26 +445,19 @@ export async function runCvExtraction(
       extracted = await callNvidiaLLM(cappedRawText);
     }
 
-    // 4. Save candidate — even if LLM failed we save rawText for search indexing.
-    //    Convex document size limit is 1 MB; a full CV rarely exceeds 100 KB of
-    //    text, so we keep the full text.  We cap at 500 000 chars as a safety
-    //    net only.
-    const safeExtracted = extracted ? nullToUndefined(extracted) : {};
-
-    const candidateId = await ctx.runMutation(api.candidates.createCandidate, {
-      ...safeExtracted,
-      rawText: cappedRawText,
-      sourceChannel: sourceChannel ?? undefined,
-      fileHash,
-      cvUploadId,
-      workableCandidateId: workableCandidateId ?? undefined,
-    });
+    // 5. Update candidate with LLM extracted data if available
+    if (extracted) {
+      const safeExtracted = nullToUndefined(extracted);
+      // We can call createCandidate again with the fileHash, it will patch the existing record
+      await ctx.runMutation(api.candidates.createCandidate, {
+        ...safeExtracted,
+        fileHash,
+      });
+    }
 
     await ctx.runMutation(api.candidates.updateCvUpload, {
       cvUploadId,
       status: "processed",
-      fileHash,
-      candidateId,
     });
 
     return candidateId;
@@ -455,49 +507,50 @@ export const resumeFailedUploads = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    await ctx.runAction(internal.cvExtraction.resumeBatch, {
-      cursor: undefined,
-      totalQueued: 0,
-    });
-    return { queued: 0 };
+    await ctx.scheduler.runAfter(0, internal.cvExtraction.processNextInQueue, {});
+    return { queued: 1 }; // indicates worker started
   },
 });
 
-export const resumeBatch = internalAction({
-  args: {
-    cursor: v.optional(v.string()),
-    totalQueued: v.number(),
-  },
-  handler: async (ctx, args): Promise<void> => {
-    // Fetch a page of failed/paused uploads
+export const processNextInQueue = internalAction({
+  args: {},
+  handler: async (ctx): Promise<void> => {
+    // Fetch the next failed/paused upload
     const result = await ctx.runQuery(api.candidates.listFailedUploads, {
-      cursor: args.cursor,
-      limit: 50,
+      limit: 1,
     });
 
-    for (let i = 0; i < result.page.length; i++) {
-      const upload = result.page[i];
-      // Stagger retries: 1 second apart to avoid rate limit spikes
-      // Note: cvUploads uses 'source' field, exposed as sourceChannel to the action
-      ctx.scheduler.runAfter(i * 1000, api.cvExtraction.processCvExtraction, {
+    if (result.page.length === 0) {
+      return; // Queue is empty, stop
+    }
+
+    const upload = result.page[0];
+
+    // Mark as processing immediately so another worker doesn't pick it up
+    await ctx.runMutation(api.candidates.updateCvUpload, {
+      cvUploadId: upload._id,
+      status: "processing",
+    });
+
+    if (upload.storageId) {
+      // Process it completely (success or failure is handled inside runCvExtraction)
+      await runCvExtraction(ctx, {
         storageId: upload.storageId,
         fileType: upload.fileType,
         sourceChannel: upload.source,
         uploadedBy: upload.uploadedBy,
         cvUploadId: upload._id,
       });
+    } else {
+      // If no storageId, mark failed so it's not picked up again
+      await ctx.runMutation(api.candidates.updateCvUpload, {
+        cvUploadId: upload._id,
+        status: "failed",
+        errorMessage: "No storageId attached to this upload",
+      });
     }
 
-    // Recurse if there are more pages
-    if (!result.isDone && result.continueCursor) {
-      ctx.scheduler.runAfter(
-        result.page.length * 1000 + 500,
-        internal.cvExtraction.resumeBatch,
-        {
-          cursor: result.continueCursor,
-          totalQueued: args.totalQueued + result.page.length,
-        },
-      );
-    }
+    // After completion, wait exactly 1600ms before scheduling the next one
+    await ctx.scheduler.runAfter(1600, internal.cvExtraction.processNextInQueue, {});
   },
 });
