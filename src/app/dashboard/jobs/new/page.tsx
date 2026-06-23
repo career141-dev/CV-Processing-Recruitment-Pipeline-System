@@ -101,6 +101,7 @@ export default function CreateJobWizard() {
       clientSla: '5',
       clientOnBreach: 'notifyOps',
       esaStatusCheck: true,
+      offerRejectionLoop: 'restart',
     },
     customFilters: [],
     newFilterType: 'Qualification',
@@ -109,11 +110,13 @@ export default function CreateJobWizard() {
     enablePipelineHealth: true,
     pipelineAlerts: {
       noNewCvs: '5',
-      taReviewPending: '3',
+      taReviewPending: '2',
+      aiCallNotCompleted: '1',
+      secondShortlistPending: '2',
       directorReviewPending: '3',
       clientReviewPending: '5',
       interviewNotScheduled: '3',
-      offerNotMade: '5',
+      offerNotMade: '2',
       dailyReport: true,
     }
   });
@@ -1055,6 +1058,20 @@ export default function CreateJobWizard() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
+                    <span className="text-sm text-text-primary">Alert if AI call not completed:</span>
+                    <div className="flex items-center gap-2">
+                      <input type="number" className="w-16 border border-border rounded px-2 py-1 text-sm text-center" value={formData.pipelineAlerts.aiCallNotCompleted} onChange={e => updateNestedFormData('pipelineAlerts', 'aiCallNotCompleted', e.target.value)} />
+                      <span className="text-sm text-text-secondary">days</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-text-primary">Alert if second shortlist pending:</span>
+                    <div className="flex items-center gap-2">
+                      <input type="number" className="w-16 border border-border rounded px-2 py-1 text-sm text-center" value={formData.pipelineAlerts.secondShortlistPending} onChange={e => updateNestedFormData('pipelineAlerts', 'secondShortlistPending', e.target.value)} />
+                      <span className="text-sm text-text-secondary">days</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-sm text-text-primary">Alert if director review pending:</span>
                     <div className="flex items-center gap-2">
                       <input type="number" className="w-16 border border-border rounded px-2 py-1 text-sm text-center" value={formData.pipelineAlerts.directorReviewPending} onChange={e => updateNestedFormData('pipelineAlerts', 'directorReviewPending', e.target.value)} />
@@ -1115,10 +1132,28 @@ export default function CreateJobWizard() {
             </div>
 
             {/* Level 2 */}
+            <div className="bg-surface-container-low p-4 rounded-md border border-border flex items-start gap-3">
+              <input type="checkbox" checked disabled className="mt-1 rounded text-primary-container" />
+              <div className="flex-1">
+                <div className="font-medium text-text-primary text-sm">Level 2 — AI Call <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded text-[10px] ml-2 border border-green-100 uppercase tracking-wider font-bold">Always Required</span></div>
+                <p className="text-xs text-text-secondary mt-1">AI conducts preliminary interview</p>
+              </div>
+            </div>
+
+            {/* Level 3 */}
+            <div className="bg-surface-container-low p-4 rounded-md border border-border flex items-start gap-3">
+              <input type="checkbox" checked disabled className="mt-1 rounded text-primary-container" />
+              <div className="flex-1">
+                <div className="font-medium text-text-primary text-sm">Level 3 — Second Shortlist <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded text-[10px] ml-2 border border-green-100 uppercase tracking-wider font-bold">Always Required</span></div>
+                <p className="text-xs text-text-secondary mt-1">Review AI Call outcomes</p>
+              </div>
+            </div>
+
+            {/* Level 4 */}
             <div className={`p-4 rounded-md border ${formData.reviewLevels.directorReview ? 'bg-surface-container-low border-primary-container/30' : 'bg-surface border-border'} flex items-start gap-3 transition-colors`}>
               <input type="checkbox" checked={formData.reviewLevels.directorReview} onChange={e => updateNestedFormData('reviewLevels', 'directorReview', e.target.checked)} className="mt-1 rounded text-primary-container focus:ring-primary-container" />
               <div className="flex-1">
-                <div className="font-medium text-text-primary text-sm mb-1">Level 2 — Director Review</div>
+                <div className="font-medium text-text-primary text-sm mb-1">Level 4 — Director Review</div>
                 {formData.reviewLevels.directorReview && (
                   <div className="mt-3 grid grid-cols-2 gap-4">
                     <div>
@@ -1159,11 +1194,11 @@ export default function CreateJobWizard() {
               </div>
             </div>
 
-            {/* Level 3 */}
+            {/* Level 5 */}
             <div className={`p-4 rounded-md border ${formData.reviewLevels.clientReview ? 'bg-surface-container-low border-primary-container/30' : 'bg-surface border-border'} flex items-start gap-3 transition-colors`}>
               <input type="checkbox" checked={formData.reviewLevels.clientReview} onChange={e => updateNestedFormData('reviewLevels', 'clientReview', e.target.checked)} className="mt-1 rounded text-primary-container focus:ring-primary-container" />
               <div className="flex-1">
-                <div className="font-medium text-text-primary text-sm mb-1">Level 3 — Client Review</div>
+                <div className="font-medium text-text-primary text-sm mb-1">Level 5 — Client Review</div>
                 {formData.reviewLevels.clientReview && (
                   <div className="mt-3 grid grid-cols-2 gap-4">
                     <div>
@@ -1208,6 +1243,37 @@ export default function CreateJobWizard() {
               </div>
             </div>
             
+            {/* Level 6 */}
+            <div className="bg-surface-container-low p-4 rounded-md border border-border flex items-start gap-3 mt-4">
+              <input type="checkbox" checked disabled className="mt-1 rounded text-primary-container" />
+              <div className="flex-1">
+                <div className="font-medium text-text-primary text-sm">Level 6 — Interview <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded text-[10px] ml-2 border border-green-100 uppercase tracking-wider font-bold">Always Required</span></div>
+                <p className="text-xs text-text-secondary mt-1">Client and TA coordinate interviews</p>
+              </div>
+            </div>
+
+            {/* Level 7 */}
+            <div className="bg-surface-container-low p-4 rounded-md border border-border flex items-start gap-3 mt-4">
+              <input type="checkbox" checked disabled className="mt-1 rounded text-primary-container" />
+              <div className="flex-1">
+                <div className="font-medium text-text-primary text-sm mb-3">Level 7 — Offer <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded text-[10px] ml-2 border border-green-100 uppercase tracking-wider font-bold">Always Required</span></div>
+                
+                <div className="bg-surface p-3 rounded border border-border">
+                  <label className="block text-xs font-medium text-text-primary mb-2">If candidate rejects offer or client rejects all candidates:</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" checked={formData.reviewLevels.offerRejectionLoop === 'restart'} onChange={() => updateNestedFormData('reviewLevels', 'offerRejectionLoop', 'restart')} className="text-primary-container focus:ring-primary-container" />
+                      <span className="text-sm">Restart sourcing from New CVs</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" checked={formData.reviewLevels.offerRejectionLoop === 'clientReview'} onChange={() => updateNestedFormData('reviewLevels', 'offerRejectionLoop', 'clientReview')} className="text-primary-container focus:ring-primary-container" />
+                      <span className="text-sm">Return to Client Review only</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="pt-4 border-t border-border mt-4">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" checked={formData.reviewLevels.esaStatusCheck} onChange={e => updateNestedFormData('reviewLevels', 'esaStatusCheck', e.target.checked)} className="mt-0.5 rounded text-primary-container focus:ring-primary-container" />
