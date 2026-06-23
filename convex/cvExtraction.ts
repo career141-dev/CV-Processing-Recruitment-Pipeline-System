@@ -11,6 +11,12 @@ import { z } from "zod";
 import PDFParser from "pdf2json";
 import mammoth from "mammoth";
 import tesseract from "tesseract.js";
+import {
+  deriveNoticePeriodDays,
+  deriveSeniorityLevel,
+  deriveEducationFields,
+  deriveTotalExperienceYears,
+} from "./tier2Derivations";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -448,8 +454,20 @@ export async function runCvExtraction(
 
     if (extracted) {
       const safeExtracted = nullToUndefined(extracted);
+      
+      const noticePeriodDays = deriveNoticePeriodDays(extracted.noticePeriod);
+      const seniorityLevel = deriveSeniorityLevel(extracted.yearsOfExperience, extracted.currentTitle);
+      const { educationDegree, educationInstitution, educationYear } = deriveEducationFields(extracted.education);
+      const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, extracted.yearsOfExperience);
+
       await ctx.runMutation(api.candidates.createCandidate, {
         ...safeExtracted,
+        seniorityLevel: seniorityLevel ?? safeExtracted.seniorityLevel,
+        noticePeriodDays,
+        educationDegree,
+        educationInstitution,
+        educationYear,
+        totalExperienceYears,
         fileHash,
       });
     }

@@ -17,6 +17,7 @@ import type * as jdParser from "../jdParser.js";
 import type * as llm from "../llm.js";
 import type * as search from "../search.js";
 import type * as stats from "../stats.js";
+import type * as tier2Derivations from "../tier2Derivations.js";
 import type * as workable from "../workable.js";
 import type * as workableActions from "../workableActions.js";
 
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   llm: typeof llm;
   search: typeof search;
   stats: typeof stats;
+  tier2Derivations: typeof tier2Derivations;
   workable: typeof workable;
   workableActions: typeof workableActions;
 }>;
