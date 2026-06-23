@@ -12,6 +12,7 @@ import type * as candidates from "../candidates.js";
 import type * as cvExtraction from "../cvExtraction.js";
 import type * as cvScoring from "../cvScoring.js";
 import type * as cvUploads from "../cvUploads.js";
+import type * as fix from "../fix.js";
 import type * as jdParser from "../jdParser.js";
 import type * as llm from "../llm.js";
 import type * as search from "../search.js";
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   cvExtraction: typeof cvExtraction;
   cvScoring: typeof cvScoring;
   cvUploads: typeof cvUploads;
+  fix: typeof fix;
   jdParser: typeof jdParser;
   llm: typeof llm;
   search: typeof search;

@@ -13,3 +13,52 @@ export const getSystemStats = query({
     };
   },
 });
+
+export const getIngestionStats = query({
+  args: {},
+  handler: async (ctx) => {
+    // We will collect cvUploads to calculate channel stats
+    const allUploads = await ctx.db.query("cvUploads").order("desc").collect();
+    
+    // Group by source
+    const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {};
+    
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    
+    const activeUploads = [];
+    const failedUploads = [];
+    const recentDone = [];
+
+    for (const upload of allUploads) {
+      const source = upload.source || "Manual";
+      
+      if (!statsBySource[source]) {
+        statsBySource[source] = { todayCount: 0, lastReceived: null };
+      }
+      
+      if (statsBySource[source].lastReceived === null || upload._creationTime > statsBySource[source].lastReceived!) {
+        statsBySource[source].lastReceived = upload._creationTime;
+      }
+      
+      if (upload._creationTime >= startOfToday) {
+        statsBySource[source].todayCount++;
+      }
+      
+      if (upload.status === "failed") {
+        failedUploads.push(upload);
+      } else if (upload.status === "uploaded" || upload.status === "processing") {
+        activeUploads.push(upload);
+      } else if (upload.status === "done" && recentDone.length < 50) {
+        recentDone.push(upload);
+      }
+    }
+    
+    return {
+      statsBySource,
+      activeUploads,
+      failedUploads,
+      recentDone
+    };
+  },
+});

@@ -1,104 +1,72 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { MessageCircle, Mail, Globe, RefreshCw, UserPlus, UserSearch, Upload } from 'lucide-react';
+import { RefreshCw, Upload, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { ChannelStatusCard } from '@/components/ingestion-monitor/ChannelStatusCard';
-import { ProcessingQueue } from '@/components/ingestion-monitor/ProcessingQueue';
-import { IngestionLog, LogEntry } from '@/components/ingestion-monitor/IngestionLog';
-import { ErrorLog } from '@/components/ingestion-monitor/ErrorLog';
-import { CustomSelect } from '@/components/ui/CustomSelect';
+import { useQuery, useAction } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { toast } from 'sonner';
 
-const SOURCES = [
-  { name: 'WhatsApp', bgColor: 'bg-[#E8F5E9]', textColor: 'text-primary-container' },
-  { name: 'Email Campaign', bgColor: 'bg-[#FFF3E0]', textColor: 'text-[#E65100]' },
-  { name: 'Portal', bgColor: 'bg-[#E3F2FD]', textColor: 'text-[#1565C0]' },
-  { name: 'LinkedIn', bgColor: 'bg-[#E1F5FE]', textColor: 'text-[#0277BD]' }
-];
-
-const CANDIDATES = [
-  'Robert De Niro', 'Meryl Streep', 'Al Pacino', 'Tom Hanks', 'Denzel Washington', 
-  'Leonardo DiCaprio', 'Cate Blanchett', 'Morgan Freeman', 'Julianne Moore', 
-  'Christian Bale', 'Amy Adams', 'Joaquin Phoenix', 'Gary Oldman', 'Viola Davis'
-];
+const SOURCE_COLORS: Record<string, { bgColor: string; textColor: string }> = {
+  'Workable': { bgColor: 'bg-[#E3F2FD]', textColor: 'text-[#1565C0]' },
+  'Manual': { bgColor: 'bg-[#E1F5FE]', textColor: 'text-[#0277BD]' },
+  'LinkedIn': { bgColor: 'bg-[#E8F5E9]', textColor: 'text-[#006E1C]' },
+  'WhatsApp': { bgColor: 'bg-[#E8F5E9]', textColor: 'text-primary-container' },
+  'Email': { bgColor: 'bg-[#FFF3E0]', textColor: 'text-[#E65100]' },
+  'default': { bgColor: 'bg-[#F3F4F6]', textColor: 'text-[#374151]' }
+};
 
 export default function IngestionMonitorPage() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [queueCount, setQueueCount] = useState(0);
-  const [progress, setProgress] = useState(0);
-  const [showErrorLog, setShowErrorLog] = useState(false);
-  const [jobFilter, setJobFilter] = useState('Brand Manager — Atlas');
+  const stats = useQuery(api.stats.getIngestionStats);
+  const resumeFailedUploads = useAction(api.cvExtraction.resumeFailedUploads);
+  const [retrying, setRetrying] = useState(false);
 
-  // Used to prevent picking the exact same candidate twice in a row
-  const lastPickedRef = useRef<string | null>(null);
+  if (!stats) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
-  // Simulation logic
-  useEffect(() => {
-    let logIdCounter = 0;
-    const timeouts: NodeJS.Timeout[] = [];
+  const { statsBySource, activeUploads, failedUploads, recentDone } = stats;
 
-    const addLogEntry = () => {
-      const now = new Date();
-      const time = now.toLocaleTimeString('en-US', { hour12: false });
-      const source = SOURCES[Math.floor(Math.random() * SOURCES.length)];
-      
-      let candidate = '';
-      do {
-        candidate = CANDIDATES[Math.floor(Math.random() * CANDIDATES.length)];
-      } while (candidate === lastPickedRef.current);
-      lastPickedRef.current = candidate;
-
-      const newId = Math.random().toString(36).substring(2, 11);
-
-      const newEntry: LogEntry = {
-        id: newId,
-        time,
-        source,
-        candidate,
-        status: 'parsing'
-      };
-
-      setLogs(prev => {
-        const updated = [newEntry, ...prev];
-        if (updated.length > 15) return updated.slice(0, 15);
-        return updated;
-      });
-
-      // Simulate Queue visually
-      setQueueCount(prev => prev + 1);
-      setProgress(45);
-      
-      timeouts.push(setTimeout(() => {
-        setQueueCount(prev => Math.max(0, prev - 1));
-        setProgress(0);
-      }, 2500));
-
-      // Simulate parsing completion
-      timeouts.push(setTimeout(() => {
-        setLogs(prev => prev.map(log => 
-          log.id === newId ? { ...log, status: 'parsed' } : log
-        ));
-      }, 3000));
-    };
-
-    // Initial pop
-    for (let i = 0; i < 3; i++) {
-      timeouts.push(setTimeout(addLogEntry, i * 1000));
+  const handleRetryFailed = async () => {
+    setRetrying(true);
+    try {
+      await resumeFailedUploads();
+      toast.success("Retry queued! Background process started.");
+    } catch (err) {
+      toast.error("Failed to queue retries.");
+    } finally {
+      setRetrying(false);
     }
-
-    const interval = setInterval(addLogEntry, 6000);
-    
-    return () => {
-      clearInterval(interval);
-      timeouts.forEach(clearTimeout);
-    };
-  }, []);
-
-  const getCampaignEmail = () => {
-    if (jobFilter === 'Brand Manager — Atlas') return 'brand24@career141.com';
-    if (jobFilter === 'CFO — LPI') return 'cfo@career141.com';
-    return 'cvs@career141.com';
   };
+
+  const getSourceConfig = (source: string) => SOURCE_COLORS[source] || SOURCE_COLORS.default;
+
+  const workableStats = statsBySource['Workable'] || { todayCount: 0, lastReceived: null };
+  const manualStats = statsBySource['Manual'] || { todayCount: 0, lastReceived: null };
+
+  const formatTime = (ts: number | null) => {
+    if (!ts) return "N/A";
+    const mins = Math.floor((Date.now() - ts) / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs} hr ago`;
+  };
+
+  // Group failed by source
+  const failedBySource = failedUploads.reduce((acc: any, curr: any) => {
+    const s = curr.source || 'Manual';
+    if (!acc[s]) acc[s] = [];
+    acc[s].push(curr);
+    return acc;
+  }, {});
+
+  const allLogs = [...activeUploads, ...recentDone].sort((a, b) => b._creationTime - a._creationTime).slice(0, 50);
 
   return (
     <div className="self-stretch bg-background min-h-screen w-full flex flex-col">
@@ -109,130 +77,143 @@ export default function IngestionMonitorPage() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <div>
             <h1 className="text-[24px] leading-8 font-semibold text-text-primary">Ingestion Monitor</h1>
-            <p className="text-[13px] text-text-secondary mt-1">Real-time status of all CV intake channels and the AI parsing queue.</p>
+            <p className="text-[13px] text-text-secondary mt-1">Real-time status of all CV intake channels and the parsing queue.</p>
           </div>
-          <div className="flex items-center gap-4">
-            <CustomSelect 
-              label="Job Filter"
-              labelColorClass="text-[#E65100]"
-              hoverColorClass="hover:shadow-[0_4px_20px_rgba(230,81,0,0.1)] group-hover:text-[#E65100]"
-              gradientFromClass="bg-gradient-to-r from-[#E65100]/5 to-transparent"
-              value={jobFilter}
-              onChange={setJobFilter}
-              options={["All Active Jobs", "Brand Manager — Atlas", "CFO — LPI"]}
-            />
-            <div className="flex items-center gap-3 bg-surface px-4 py-2.5 rounded-md border border-border shadow-sm">
-              <div className="w-2 h-2 rounded-full bg-[#006E1C] animate-pulse"></div>
-              <span className="text-[11px] font-semibold tracking-widest text-[#006E1C]">AUTO-REFRESH: ON</span>
-            </div>
+          <div className="flex items-center gap-3 bg-surface px-4 py-2.5 rounded-md border border-border shadow-sm">
+            <div className="w-2 h-2 rounded-full bg-[#006E1C] animate-pulse"></div>
+            <span className="text-[11px] font-semibold tracking-widest text-[#006E1C]">LIVE SYNC</span>
           </div>
         </header>
 
         {/* Channel Status Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
-          <ChannelStatusCard
-            title="LinkedIn Monitor"
-            status="Active"
-            statusColor="text-[#006E1C]"
-            pulse={true}
-            icon={<UserPlus size={20} />}
-            stats={[
-              { label: 'CVs Today', value: '136' },
-              { label: 'Last received', value: '1 min ago' },
-              { label: 'Routing', value: 'linkedin@career141.com' }
-            ]}
-          />
-          <ChannelStatusCard
-            title="Email Campaign"
-            status="Active"
-            statusColor="text-[#006E1C]"
-            pulse={true}
-            icon={<Mail size={20} />}
-            stats={[
-              { label: 'CVs Today', value: '12' },
-              { label: 'Last received', value: '22 min ago' },
-              { label: 'Inbox', value: getCampaignEmail() }
-            ]}
-          />
-          <ChannelStatusCard
-            title="WhatsApp Monitor"
-            status="Active"
-            statusColor="text-[#006E1C]"
-            pulse={true}
-            icon={<MessageCircle size={20} />}
-            stats={[
-              { label: 'CVs Today', value: '18' },
-              { label: 'Last received', value: '4 min ago' },
-              { label: 'Number', value: '+971 50 XXX XXXX' }
-            ]}
-          />
-          <ChannelStatusCard
-            title="Campaign Portal"
-            status="Active"
-            statusColor="text-[#006E1C]"
-            pulse={true}
-            icon={<Globe size={20} />}
-            stats={[
-              { label: 'CVs Today', value: '7' },
-              { label: 'Last received', value: '1 hr ago' },
-              { label: 'Status', value: 'Healthy' }
-            ]}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           <ChannelStatusCard
             title="Workable Sync"
-            status="Sync Delayed"
-            statusColor="text-[#E65100]"
-            borderClass="border-[#E65100]"
+            status={workableStats.lastReceived ? "Active" : "Awaiting Data"}
+            statusColor={workableStats.lastReceived ? "text-[#1565C0]" : "text-text-secondary"}
             icon={<RefreshCw size={20} />}
+            pulse={!!activeUploads.find(u => u.source === 'Workable')}
             stats={[
-              { label: 'Last sync', value: '2 hr ago' },
-              { label: 'CVs Today', value: '5' },
-              { label: 'Next sync', value: 'in 1 hr' }
-            ]}
-            actionButton={
-              <button className="w-full py-1.5 text-[11px] font-semibold tracking-wider border border-[#E65100] text-[#E65100] rounded-lg hover:bg-[#E65100] hover:text-on-primary transition-colors">
-                SYNC NOW
-              </button>
-            }
-          />
-          <ChannelStatusCard
-            title="Headhunting (Passive)"
-            status="Manual"
-            statusColor="text-text-secondary"
-            icon={<UserSearch size={20} />}
-            stats={[
-              { label: 'Added Today', value: '3' },
-              { label: 'Top Tagger', value: 'Shambra' },
-              { label: 'Status', value: 'Awaiting Outreach' }
+              { label: 'CVs Uploaded Today', value: workableStats.todayCount.toString() },
+              { label: 'Last received', value: formatTime(workableStats.lastReceived) }
             ]}
           />
           <ChannelStatusCard
-            title="Bulk Upload"
-            status="Manual"
-            statusColor="text-text-secondary"
+            title="Manual Bulk Upload"
+            status={manualStats.lastReceived ? "Active" : "Ready"}
+            statusColor={manualStats.lastReceived ? "text-[#0277BD]" : "text-text-secondary"}
             icon={<Upload size={20} />}
+            pulse={!!activeUploads.find(u => u.source === 'Manual' || !u.source)}
             stats={[
-              { label: 'Total Today', value: '42' },
-              { label: 'Last Batch', value: '3 hrs ago (20 CVs)' },
-              { label: 'Uploader', value: 'Rayan' }
+              { label: 'CVs Uploaded Today', value: manualStats.todayCount.toString() },
+              { label: 'Last Batch', value: formatTime(manualStats.lastReceived) }
             ]}
           />
         </div>
 
-        <ProcessingQueue 
-          queueCount={queueCount}
-          rate="43 CVs/hr"
-          estClear="~0 min"
-          progress={progress}
-        />
+        {/* Failed Extractions Section */}
+        {Object.keys(failedBySource).length > 0 && (
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-[#B3261E] flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                Failed CV Extractions
+              </h2>
+              <button
+                onClick={handleRetryFailed}
+                disabled={retrying}
+                className="flex items-center gap-2 bg-[#B3261E] hover:bg-[#8C1D18] text-white py-2 px-4 rounded-md font-bold text-sm transition-colors disabled:opacity-50"
+              >
+                {retrying && <Loader2 className="w-4 h-4 animate-spin" />}
+                {retrying ? "Queueing..." : "Retry All Failed CVs"}
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {Object.entries(failedBySource).map(([source, uploads]: [string, any]) => (
+                <div key={source} className="bg-[#FEF7F6] border border-[#F9DEDC] p-5 rounded-xl">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="font-bold text-[#1D1B20] text-[15px]">{source} Failures</span>
+                    <span className="text-[12px] font-bold text-[#B3261E] bg-[#FCEEEE] px-2 py-1 rounded-sm">
+                      {uploads.length} files
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2">
+                    {uploads.map((f: any) => (
+                      <div key={f._id} className="bg-white p-3 rounded-md border border-[#F9DEDC] shadow-sm flex flex-col">
+                        <span className="text-[13px] font-semibold text-[#1D1B20] truncate">{f.fileName}</span>
+                        <span className="text-[11px] text-[#49454F] mt-1 truncate">{f.errorMessage || "Unknown extraction error"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-        <IngestionLog logs={logs} />
-
-        <ErrorLog 
-          showErrorLog={showErrorLog} 
-          setShowErrorLog={setShowErrorLog} 
-          errorCount={1}
-        />
+        {/* Real-time Ingestion Log */}
+        <div className="bg-surface rounded-xl border border-border overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-surface">
+            <h2 className="text-[15px] font-semibold text-text-primary">Real-time Parsing Log</h2>
+            <div className="flex gap-4 text-[12px] text-text-secondary">
+              <span>{activeUploads.length} actively processing</span>
+              <span>Showing last 50 activities</span>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            {allLogs.length === 0 ? (
+              <div className="p-8 text-center text-text-secondary text-[13px]">
+                No recent activity. Upload a CV or sync Workable to see logs.
+              </div>
+            ) : (
+              <table className="w-full text-left">
+                <thead className="bg-surface-container-high border-b border-border">
+                  <tr>
+                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Time</th>
+                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Source</th>
+                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">File Name</th>
+                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E0E0E0]">
+                  {allLogs.map((log: any) => {
+                    const sourceConfig = getSourceConfig(log.source || 'Manual');
+                    const isProcessing = log.status === 'processing' || log.status === 'uploaded';
+                    
+                    return (
+                      <tr key={log._id} className="hover:bg-surface-container-low transition-colors" style={{ backgroundColor: isProcessing ? '#F0FFF0' : 'transparent' }}>
+                        <td className="px-6 py-4 text-[13px] text-text-secondary whitespace-nowrap">
+                          {new Date(log._creationTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 ${sourceConfig.bgColor} ${sourceConfig.textColor} rounded-md text-[11px] font-bold`}>
+                            {log.source || 'Manual'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-[13px] font-semibold truncate max-w-[300px]">
+                          {log.fileName}
+                        </td>
+                        <td className="px-6 py-4 flex items-center gap-2">
+                          {isProcessing ? (
+                            <div className="flex items-center gap-2 text-[#006E1C] font-bold text-[12px]">
+                              <Loader2 className="w-4 h-4 animate-spin" /> {log.status === 'uploaded' ? 'Queued...' : 'Extracting Text...'}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-text-secondary font-bold text-[12px]">
+                              <CheckCircle2 className="w-4 h-4 text-[#006E1C]" /> Parsed Successfully
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
 
       </div>
     </div>
