@@ -182,7 +182,7 @@ export default defineSchema({
   }).index("by_jobId", ["jobId"]),
 
   cvUploads: defineTable({
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
     fileName: v.string(),
     fileSize: v.float64(),
     fileType: v.string(),
@@ -242,6 +242,14 @@ export default defineSchema({
     vectorEmbeddingId: v.optional(v.string()),
     embedding: v.optional(v.array(v.float64())),
     rawText: v.optional(v.string()),
+    jobHistory: v.optional(v.array(v.object({
+      company: v.string(),
+      title: v.string(),
+      startDate: v.optional(v.string()),
+      endDate: v.optional(v.string()),
+      description: v.optional(v.string()),
+    }))),
+    sector: v.optional(v.string()),
     overallStatus: v.optional(
       v.union(v.literal("active"), v.literal("placed"), v.literal("not_available"), v.literal("merged"))
     ),
@@ -760,5 +768,17 @@ export default defineSchema({
     lastCursor: v.optional(v.string()),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
+
+  herculesImports: defineTable({
+    status: v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped")),
+    totalFound: v.number(),
+    imported: v.number(),
+    skipped: v.number(),
+    failed: v.number(),
+    userId: v.string(),
+    startedAt: v.string(),
+    errorMessage: v.optional(v.string()),
+    lastCursor: v.optional(v.string()),
   }).index("by_user", ["userId"]),
 });
