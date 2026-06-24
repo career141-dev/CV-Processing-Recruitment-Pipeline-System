@@ -3,12 +3,14 @@
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { UserPlus, Edit2, X, Loader2 } from 'lucide-react';
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { inviteUser } from "../../../app/actions/inviteUser";
 
 export function TeamTab() {
   const teamMembers = useQuery(api.users.getTeamMembers);
+  const assignRole = useMutation(api.users.assignRole);
+  const deactivate = useMutation(api.users.deactivate);
   
   // Modal state
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -39,6 +41,23 @@ export function TeamTab() {
       setMessage({ text: err.message || "An unexpected error occurred", isError: true });
     } finally {
       setIsInviting(false);
+    }
+  };
+
+  const handleRoleChange = async (userId: any, newRole: string) => {
+    try {
+      await assignRole({ targetUserId: userId, newRole, reason: "Admin role change via UI" });
+    } catch (err: any) {
+      alert("Failed to change role: " + err.message);
+    }
+  };
+
+  const handleDeactivate = async (userId: any) => {
+    if (!confirm("Are you sure you want to deactivate this user? They will lose all access immediately.")) return;
+    try {
+      await deactivate({ targetUserId: userId, reason: "Admin deactivation via UI" });
+    } catch (err: any) {
+      alert("Failed to deactivate user: " + err.message);
     }
   };
 
@@ -84,7 +103,7 @@ export function TeamTab() {
               ) : (
                 teamMembers.map((member) => {
                   const initial = member.fullName ? member.fullName.charAt(0).toUpperCase() : "?";
-                  const isAdmin = member.role === "admin" || member.role === "director";
+                  const isAdmin = member.role === "admin" || member.role === "ta_manager";
                   
                   return (
                     <tr key={member._id} className="hover:bg-surface-container-high transition-colors">
@@ -105,7 +124,22 @@ export function TeamTab() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-text-secondary text-[13px] capitalize">{member.role}</td>
+                      <td className="px-6 py-4">
+                        <select 
+                          className="bg-transparent border border-border rounded px-2 py-1 text-[13px] text-text-secondary focus:outline-none focus:border-primary-container"
+                          value={member.role}
+                          onChange={(e) => handleRoleChange(member._id, e.target.value)}
+                          disabled={!member.isActive}
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="ta_manager">TA Manager</option>
+                          <option value="senior_ta">Senior TA</option>
+                          <option value="recruiter">Recruiter</option>
+                          <option value="director">Director</option>
+                          <option value="client">Client</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                      </td>
                       <td className="px-6 py-4 text-text-secondary text-[13px]">
                         {member.role === "admin" ? "All" : member.jobCount}
                       </td>
@@ -116,9 +150,14 @@ export function TeamTab() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button className="text-text-secondary hover:text-accent-teal transition-colors">
-                          <Edit2 size={16} />
-                        </button>
+                        {member.isActive && (
+                          <button 
+                            onClick={() => handleDeactivate(member._id)}
+                            className="text-red-500 hover:text-red-700 transition-colors text-[12px] font-medium border border-red-200 hover:border-red-500 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md"
+                          >
+                            Deactivate
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -169,10 +208,13 @@ export function TeamTab() {
                   onChange={(e) => setRole(e.target.value)}
                   className="w-full bg-surface-container-low border border-border rounded-lg px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-container transition-all appearance-none"
                 >
-                  <option value="admin">Admin (Full Access)</option>
-                  <option value="director">Director (Review & Approve)</option>
-                  <option value="ta">Talent Acquisition / Recruiter</option>
-                  <option value="ops">Operations / Read-Only</option>
+                  <option value="admin">System Administrator (Full Access)</option>
+                  <option value="ta_manager">Talent Acquisition Manager</option>
+                  <option value="senior_ta">Senior Talent Acquisition</option>
+                  <option value="recruiter">Recruiter</option>
+                  <option value="director">Director / Reviewer</option>
+                  <option value="client">Client Contact</option>
+                  <option value="viewer">Viewer / Read-Only</option>
                 </select>
               </div>
 
