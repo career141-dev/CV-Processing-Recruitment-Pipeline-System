@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useUser } from '@clerk/nextjs';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { RefreshCw, Upload, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
+import { RefreshCw, Upload, AlertCircle, Loader2, CheckCircle2, Info, Building2, Key, X } from 'lucide-react';
 import { ChannelStatusCard } from '@/components/ingestion-monitor/ChannelStatusCard';
-import { useQuery, useAction } from 'convex/react';
+import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
 
@@ -20,8 +23,104 @@ const SOURCE_COLORS: Record<string, { bgColor: string; textColor: string }> = {
 export default function IngestionMonitorPage() {
   const stats = useQuery(api.stats.getIngestionStats);
   const resumeFailedUploads = useAction(api.cvs.cvExtraction.resumeFailedUploads);
+  
+  // Handlers for Upload
+  const { user } = useUser();
+  const startBulkImport = useAction(api.integrations.workableActions.startBulkImport);
+  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
+  const processCvExtraction = useAction(api.cvs.cvExtraction.processCvExtraction);
+
   const [retrying, setRetrying] = useState(false);
   const [activeTab, setActiveTab] = useState<'ongoing' | 'history'>('ongoing');
+  
+  // Workable State
+  const [isWorkableModalOpen, setIsWorkableModalOpen] = useState(false);
+  const [subdomain, setSubdomain] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [isWorkableImporting, setIsWorkableImporting] = useState(false);
+
+  // Manual Upload State
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleWorkableImport = async () => {
+    if (!subdomain || !apiKey || !user?.id) {
+      toast.error("Please enter both subdomain and API key");
+      return;
+    }
+    setIsWorkableImporting(true);
+    try {
+      await startBulkImport({ subdomain, apiKey, userId: user.id });
+      toast.success("Workable import started!");
+      setIsWorkableModalOpen(false);
+      setSubdomain("");
+      setApiKey("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start import");
+    } finally {
+      setIsWorkableImporting(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files) setFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)]);
+  };
+
+  const normalizeFileType = (file: File): string => {
+    if (file.type.includes("pdf")) return "pdf";
+    if (file.type.includes("wordprocessingml") || file.name.endsWith(".docx")) return "docx";
+    if (file.type.includes("msword") || file.name.endsWith(".doc")) return "doc";
+    if (file.type.includes("text")) return "txt";
+    if (file.type.includes("png")) return "png";
+    if (file.type.includes("jpeg")) return "jpg";
+    return file.name.split(".").pop()?.toLowerCase() || "txt";
+  };
+
+  const handleManualUpload = async () => {
+    if (files.length === 0 || !user?.id) return;
+    setIsUploading(true);
+    let successCount = 0;
+    try {
+      for (const file of files) {
+        const uploadUrl = await generateUploadUrl();
+        const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
+        const { storageId } = await resp.json();
+
+        const cvUploadId = await saveUpload({
+          storageId,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          source: "Manual",
+          uploadedBy: user.id,
+        });
+
+        await processCvExtraction({
+          storageId,
+          fileType: normalizeFileType(file),
+          sourceChannel: "Manual",
+          uploadedBy: user.id,
+          cvUploadId,
+        });
+        successCount++;
+      }
+      toast.success(`${successCount} CVs uploaded and processing started.`);
+      setFiles([]);
+      setIsManualModalOpen(false);
+    } catch (err) {
+      toast.error("Upload failed for some files.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   if (!stats) {
     return (
@@ -100,6 +199,14 @@ export default function IngestionMonitorPage() {
               { label: 'CVs Uploaded Today', value: workableStats.todayCount.toString() },
               { label: 'Last received', value: formatTime(workableStats.lastReceived) }
             ]}
+            actionButton={
+              <button 
+                onClick={() => setIsWorkableModalOpen(true)}
+                className="w-full mt-2 py-2 text-sm font-semibold text-[#1565C0] bg-[#E3F2FD] hover:bg-[#BBDEFB] rounded-md transition-colors"
+              >
+                Import Data
+              </button>
+            }
           />
           <ChannelStatusCard
             title="Manual Bulk Upload"
@@ -111,6 +218,14 @@ export default function IngestionMonitorPage() {
               { label: 'CVs Uploaded Today', value: manualStats.todayCount.toString() },
               { label: 'Last Batch', value: formatTime(manualStats.lastReceived) }
             ]}
+            actionButton={
+              <button 
+                onClick={() => setIsManualModalOpen(true)}
+                className="w-full mt-2 py-2 text-sm font-semibold text-[#0277BD] bg-[#E1F5FE] hover:bg-[#B3E5FC] rounded-md transition-colors"
+              >
+                Import Data
+              </button>
+            }
           />
         </div>
 
@@ -229,6 +344,106 @@ export default function IngestionMonitorPage() {
         </div>
 
       </div>
+
+      <Modal
+        isOpen={isWorkableModalOpen}
+        onClose={() => setIsWorkableModalOpen(false)}
+        title="Import from Workable"
+      >
+        <div className="flex flex-col gap-5 py-2">
+          {/* How it works */}
+          <div className="bg-[#E1F5FE] border border-[#B3E5FC] rounded-xl p-4 text-[#0277BD]">
+            <p className="text-sm font-bold flex items-center gap-2 mb-2">
+              <Info className="w-4 h-4 shrink-0" /> How this works
+            </p>
+            <ol className="text-xs space-y-1 list-decimal list-inside font-medium ml-1">
+              <li>We connect to your Workable account using your API key.</li>
+              <li>Candidates with a CV/resume attached are downloaded.</li>
+              <li>CVs are extracted and processed with AI (name, skills, experience).</li>
+              <li>Up to 100 new candidates will be imported in a single run.</li>
+            </ol>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
+                <Building2 className="w-4 h-4 text-text-secondary" /> Workable subdomain
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="mycompany"
+                  value={subdomain}
+                  onChange={(e) => setSubdomain(e.target.value)}
+                  className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border flex-1 focus:outline-none focus:border-primary-container"
+                />
+                <span className="flex items-center text-[13px] text-text-secondary bg-surface-container-low px-3 rounded-md border border-border whitespace-nowrap font-medium">
+                  .workable.com
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
+                <Key className="w-4 h-4 text-text-secondary" /> API key
+              </label>
+              <input
+                type="password"
+                placeholder="your-workable-api-key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
+              />
+            </div>
+            
+            <div className="pt-2 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setIsWorkableModalOpen(false)}>Cancel</Button>
+              <Button onClick={handleWorkableImport} disabled={isWorkableImporting}>
+                {isWorkableImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Start Import"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isManualModalOpen}
+        onClose={() => { setIsManualModalOpen(false); setFiles([]); }}
+        title="Manual Bulk Upload"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => { setIsManualModalOpen(false); setFiles([]); }}>Cancel</Button>
+            <Button onClick={handleManualUpload} disabled={files.length === 0 || isUploading}>
+              {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Upload Files"}
+            </Button>
+          </>
+        }
+      >
+        <div 
+          className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border rounded-lg bg-surface-container-low cursor-pointer hover:bg-surface-container-high transition-colors"
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
+        >
+          <Upload className="w-8 h-8 text-text-secondary mb-2" />
+          <p className="text-sm font-medium text-text-primary">Drag & drop CV files here</p>
+          <p className="text-xs text-text-secondary mt-1 mb-4">Support PDF, DOCX, PNG</p>
+          <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>Select Files</Button>
+          <input ref={fileInputRef} type="file" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" className="hidden" onChange={handleFileSelect} />
+        </div>
+        {files.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2 max-h-40 overflow-y-auto pr-2">
+            {files.map((f, i) => (
+              <div key={i} className="flex items-center justify-between bg-surface-container-low p-2 rounded-md border border-border shadow-sm">
+                <span className="text-[13px] text-text-primary truncate">{f.name}</span>
+                <button onClick={(e) => { e.stopPropagation(); setFiles(prev => prev.filter((_, idx) => idx !== i)); }} className="text-[#BA1A1A] hover:bg-red-50 p-1 rounded">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
