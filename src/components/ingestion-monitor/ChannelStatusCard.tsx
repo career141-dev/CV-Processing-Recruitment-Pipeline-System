@@ -10,6 +10,7 @@ interface ChannelStatusCardProps {
   borderClass?: string;
   pulse?: boolean;
   actionButton?: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export function ChannelStatusCard({
@@ -20,7 +21,8 @@ export function ChannelStatusCard({
   stats,
   borderClass = 'border-border',
   pulse = false,
-  actionButton
+  actionButton,
+  children
 }: ChannelStatusCardProps) {
   const isCustomBorder = borderClass !== 'border-border';
 
@@ -53,6 +55,7 @@ export function ChannelStatusCard({
           </div>
         ))}
       </div>
+      {children && <div className="mb-3">{children}</div>}
       {actionButton}
     </Card>
   );

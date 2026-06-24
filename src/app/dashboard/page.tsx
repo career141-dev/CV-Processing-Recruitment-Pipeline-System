@@ -38,7 +38,7 @@ export default function Dashboard() {
         <div className="flex-1"></div>
         <button
           className="flex shrink-0 items-center bg-surface text-text-primary text-left py-2 px-4 mt-[18px] mr-2.5 gap-2 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors transition-colors cursor-pointer"
-          onClick={() => router.push('/dashboard/upload-cvs')}
+          onClick={() => router.push('/dashboard/ingestion-monitor')}
         >
           <img
             src="https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/8051779b-2400-47b2-bd7d-080c98e29a8a"

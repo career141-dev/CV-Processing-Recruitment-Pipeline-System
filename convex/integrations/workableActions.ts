@@ -273,7 +273,7 @@ export const stopImport = action({
 
 // ─── Core import batch runner ─────────────────────────────────────────────────
 
-const MAX_IMPORT = 100; // Limit per import run
+const MAX_IMPORT = 10; // Limit per import run
 
 export const runImportBatch = internalAction({
   args: {
