@@ -36,9 +36,9 @@ function normalizeFileType(file: File): string {
 
 export default function UploadCVs() {
   const { user } = useUser();
-  const generateUploadUrl = useMutation(api.cvUploads.generateUploadUrl);
-  const saveUpload = useMutation(api.cvUploads.saveUpload);
-  const processCvExtraction = useAction(api.cvExtraction.processCvExtraction);
+  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
+  const processCvExtraction = useAction(api.cvs.cvExtraction.processCvExtraction);
 
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [source, setSource] = useState("");

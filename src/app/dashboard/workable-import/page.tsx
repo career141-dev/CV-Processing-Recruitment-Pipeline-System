@@ -65,14 +65,14 @@ export default function WorkableImportPage() {
 
   const systemStats = useQuery(api.stats.getSystemStats);
 
-  const testConnection = useAction(api.workableActions.testConnection);
-  const startBulkImport = useAction(api.workableActions.startBulkImport);
-  const getLatestImportStatus = useAction(api.workableActions.getLatestImportStatus);
-  const getImportStatus = useAction(api.workableActions.getImportStatus);
-  const retryImport = useAction(api.workableActions.retryImport);
-  const retrySkippedAction = useAction(api.workableActions.retrySkipped);
-  const stopImport = useAction(api.workableActions.stopImport);
-  const clearImportHistory = useMutation(api.workable.clearImportHistory);
+  const testConnection = useAction(api.integrations.workableActions.testConnection);
+  const startBulkImport = useAction(api.integrations.workableActions.startBulkImport);
+  const getLatestImportStatus = useAction(api.integrations.workableActions.getLatestImportStatus);
+  const getImportStatus = useAction(api.integrations.workableActions.getImportStatus);
+  const retryImport = useAction(api.integrations.workableActions.retryImport);
+  const retrySkippedAction = useAction(api.integrations.workableActions.retrySkipped);
+  const stopImport = useAction(api.integrations.workableActions.stopImport);
+  const clearImportHistory = useMutation(api.integrations.workable.clearImportHistory);
 
   useEffect(() => {
     if (!user?.id) return;

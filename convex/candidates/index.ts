@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { query, mutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 
 export const listCandidates = query({
   handler: async (ctx) => {
@@ -67,18 +67,51 @@ export const createCandidate = mutation({
     totalExperienceYears: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    if (args.fileHash) {
+    // 4-Factor Deduplication (Agent 6)
+    let existingCandidateId: Id<"candidates"> | null = null;
+
+    // Factor 1: fileHash
+    if (args.fileHash && !existingCandidateId) {
       const existing = await ctx.db
         .query("candidates")
         .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash!))
         .first();
-      if (existing) {
-        await ctx.db.patch(existing._id, {
-          ...args,
-          status: "new",
-        });
-        return existing._id;
-      }
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    // Factor 2: email
+    if (args.email && !existingCandidateId) {
+      const existing = await ctx.db
+        .query("candidates")
+        .filter((q) => q.eq(q.field("email"), args.email!))
+        .first();
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    // Factor 3: phone
+    if (args.phone && !existingCandidateId) {
+      const existing = await ctx.db
+        .query("candidates")
+        .filter((q) => q.eq(q.field("phone"), args.phone!))
+        .first();
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    // Factor 4: linkedinUrl
+    if (args.linkedinUrl && !existingCandidateId) {
+      const existing = await ctx.db
+        .query("candidates")
+        .filter((q) => q.eq(q.field("linkedinUrl"), args.linkedinUrl!))
+        .first();
+      if (existing) existingCandidateId = existing._id;
+    }
+
+    if (existingCandidateId) {
+      await ctx.db.patch(existingCandidateId, {
+        ...args,
+        status: "new",
+      });
+      return existingCandidateId;
     }
 
     return await ctx.db.insert("candidates", {
@@ -122,6 +155,8 @@ export const updateCvUpload = mutation({
     if (args.candidateId !== undefined) updates.candidateId = args.candidateId;
     if (args.errorMessage !== undefined) updates.errorMessage = args.errorMessage;
     await ctx.db.patch(args.cvUploadId, updates);
+    const upload = await ctx.db.get(args.cvUploadId);
+    return upload?.assignToJob;
   },
 });
 
@@ -185,5 +220,18 @@ export const clearEverything = mutation({
     // 4. Delete all cvUploads
     for (const u of uploads) await ctx.db.delete(u._id);
     return { storageDeleted: storageIds.length, documentsDeleted: docs.length, candidatesDeleted: cands.length, uploadsDeleted: uploads.length };
+  },
+});
+
+export const seedDummyAdmin = mutation({
+  handler: async (ctx) => {
+    return await ctx.db.insert("users", {
+      tokenIdentifier: "dummy_clerk_id",
+      email: "admin@career141.com",
+      fullName: "Admin Recruiter",
+      role: "admin",
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    });
   },
 });

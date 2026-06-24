@@ -3,11 +3,23 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
+import { Loader2 } from "lucide-react";
 
 export default function CreateJobWizard() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  const teamMembers = useQuery(api.users.getTeamMembers);
+  const createJob = useMutation(api.jobs.createJob);
+  const updateJobChannels = useMutation(api.jobs.updateJobChannels);
+  const updateJobAiConfig = useMutation(api.jobs.updateJobAiConfig);
+  const publishJob = useMutation(api.jobs.publishJob);
+
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
 
   // Form State
   const [formData, setFormData] = useState({
@@ -137,8 +149,143 @@ export default function CreateJobWizard() {
 
   const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, 4));
   const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
-  const handlePublish = () => {
-    setShowSuccessModal(true);
+  const handlePublish = async () => {
+    setIsPublishing(true);
+    setPublishError("");
+    
+    try {
+      const primaryRecruiterObj = teamMembers?.find(m => m.fullName === formData.primaryRecruiter) || teamMembers?.[0];
+      const primaryRecruiterId = primaryRecruiterObj?._id;
+      
+      if (!primaryRecruiterId) {
+         throw new Error("No team members found in database to assign as Primary Recruiter.");
+      }
+
+      const directorObj = teamMembers?.find(m => m.fullName === formData.director);
+      const directorId = directorObj?._id;
+
+      // Step 1: createJob
+      const { jobId } = await createJob({
+        title: formData.jobTitle || "Untitled Job",
+        clientName: formData.confidential ? "Confidential Client" : (formData.clientCompany || "Unknown Client"),
+        clientIndustry: formData.industry || "Other",
+        recruitmentType: formData.recruitmentType.includes("headhunting") && formData.recruitmentType.includes("posting") ? "both" : formData.recruitmentType.includes("headhunting") ? "headhunting" : "job_posting",
+        isConfidential: formData.confidential,
+        jobDescription: formData.jobDescription || "No description provided.",
+        requiredSkills: formData.requiredSkills ? formData.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : ["Not specified"],
+        niceToHaveSkills: formData.niceToHaveSkills ? formData.niceToHaveSkills.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        seniorityLevel: formData.seniorityLevel.toLowerCase().replace(/ /g, "_").replace("-", "_"),
+        experienceMinYears: parseInt(formData.experienceMin) || 0,
+        experienceMaxYears: parseInt(formData.experienceMax) || undefined,
+        location: formData.location || "Remote",
+        salaryMin: parseInt(formData.salaryRange.split("-")[0]?.replace(/[^0-9]/g, '')) || undefined,
+        salaryMax: parseInt(formData.salaryRange.split("-")[1]?.replace(/[^0-9]/g, '')) || undefined,
+        salaryCurrency: formData.salaryRange.replace(/[0-9\- ]/g, '').trim() || "LKR",
+        primaryRecruiterId: primaryRecruiterId as any,
+        directorId: directorId as any,
+        clientContactName: formData.clientContact || undefined,
+        clientContactEmail: formData.clientContact || undefined,
+      });
+
+      // Step 2: updateJobChannels
+      const channelsPayload: any[] = [];
+      if (formData.channels.whatsapp) {
+        channelsPayload.push({
+          channelType: "whatsapp",
+          isEnabled: true,
+          whatsappNumber: formData.commonWhatsAppNumber || undefined,
+        });
+      }
+      if (formData.channels.linkedin) {
+        channelsPayload.push({
+          channelType: "linkedin",
+          isEnabled: true,
+          emailInbox: formData.linkedinEmail || undefined,
+        });
+      }
+      if (formData.channels.metaCampaign) {
+        channelsPayload.push({
+          channelType: "meta",
+          isEnabled: true,
+          metaCampaignId: formData.metaCampaignId || undefined,
+          whatsappNumber: (formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : formData.commonWhatsAppNumber) || undefined,
+        });
+      }
+      if (formData.channels.emailCampaign) {
+        channelsPayload.push({
+          channelType: "email",
+          isEnabled: true,
+          emailInbox: formData.emailInbox || undefined,
+        });
+      }
+      if (formData.channels.workable) {
+        channelsPayload.push({
+          channelType: "workable",
+          isEnabled: true,
+          workableJobId: formData.workableJobId || undefined,
+        });
+      }
+
+      await updateJobChannels({
+        jobId,
+        channels: channelsPayload,
+      });
+
+      // Step 3: updateJobAiConfig
+      await updateJobAiConfig({
+        jobId,
+        minMatchScoreToShow: formData.minMatchScore,
+        reverseMatchOnPublish: formData.reverseMatchOnPublish,
+        scoreWeightSkills: formData.scoreWeights.skills,
+        scoreWeightExperience: formData.scoreWeights.experience,
+        scoreWeightJobTitle: formData.scoreWeights.jobTitle,
+        scoreWeightIndustry: formData.scoreWeights.industry,
+        scoreWeightLocation: formData.scoreWeights.location,
+        
+        agent3Enabled: formData.enableFollowUps,
+        agent3Day2Channel: formData.followUpSchedule.day2 ? formData.followUpSchedule.day2Channel.toLowerCase() : undefined,
+        agent3Day4Channel: formData.followUpSchedule.day4 ? formData.followUpSchedule.day4Channel.toLowerCase() : undefined,
+        agent3Day7Channel: formData.followUpSchedule.day7 ? formData.followUpSchedule.day7Channel.toLowerCase() : undefined,
+        agent3AfterDay7: formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "trigger_agent5",
+        
+        agent5Enabled: formData.enablePhoneScreening,
+        agent5Trigger: "all_new_applicants",
+        agent5CallScript: "default",
+        agent5CustomQuestions: formData.additionalQuestions,
+        agent5NoAnswerAction: "trigger_agent3",
+        agent5HideCompany: formData.phoneScreeningConfidential,
+        
+        directorReviewEnabled: formData.reviewLevels.directorReview,
+        clientReviewEnabled: formData.reviewLevels.clientReview,
+        clientContactName: formData.reviewLevels.clientName || undefined,
+        clientContactEmail: formData.reviewLevels.clientEmail || undefined,
+        clientAccessLevel: "view_comment",
+        esaCheckEnabled: formData.reviewLevels.esaStatusCheck,
+        rejectionLoopAction: "restart_from_new_cvs",
+        
+        slaNoNewCvsDays: parseInt(formData.pipelineAlerts.noNewCvs) || 5,
+        slaTaReviewDays: parseInt(formData.pipelineAlerts.taReviewPending) || 2,
+        slaAiCallDays: parseInt(formData.pipelineAlerts.aiCallNotCompleted) || 1,
+        slaSecondShortlistDays: parseInt(formData.pipelineAlerts.secondShortlistPending) || 2,
+        slaDirectorReviewDays: parseInt(formData.pipelineAlerts.directorReviewPending) || 3,
+        slaClientReviewDays: parseInt(formData.pipelineAlerts.clientReviewPending) || 5,
+        slaEsaDays: 3,
+        slaInterviewDays: parseInt(formData.pipelineAlerts.interviewNotScheduled) || 3,
+        slaOfferDays: parseInt(formData.pipelineAlerts.offerNotMade) || 2,
+      });
+
+      // Step 4: publishJob
+      if (formData.jobStatus === 'Active') {
+        await publishJob({ jobId });
+      }
+
+      setShowSuccessModal(true);
+    } catch (err: any) {
+      console.error("Publishing error:", err);
+      setPublishError(err.message || "An unexpected error occurred while publishing.");
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const renderStepIndicator = () => (
@@ -1595,27 +1742,42 @@ export default function CreateJobWizard() {
         <div className="max-w-5xl mx-auto flex justify-between items-center">
           <div>
             {currentStep > 1 && (
-              <button className="px-6 py-2 border border-border text-text-secondary rounded-md hover:bg-surface-variant transition-colors font-medium bg-white" onClick={handleBack}>
+              <button 
+                className="px-6 py-2 border border-border text-text-secondary rounded-md hover:bg-surface-variant transition-colors font-medium bg-white disabled:opacity-50" 
+                onClick={handleBack}
+                disabled={isPublishing}
+              >
                 Back
               </button>
             )}
           </div>
-          <div className="flex gap-4">
-            <button className="px-6 py-2 border border-border text-text-primary rounded-md hover:bg-surface-variant transition-colors bg-white font-medium">
+          <div className="flex gap-4 items-center">
+            {publishError && (
+              <span className="text-red-500 text-sm font-medium">{publishError}</span>
+            )}
+            <button className="px-6 py-2 border border-border text-text-primary rounded-md hover:bg-surface-variant transition-colors bg-white font-medium disabled:opacity-50" disabled={isPublishing}>
               Save as Draft
             </button>
             {currentStep < 4 ? (
-              <button className="px-8 py-2 bg-primary-container text-on-primary rounded-md hover:bg-primary transition-colors font-medium shadow-sm flex items-center gap-2" onClick={handleNext}>
+              <button 
+                className="px-8 py-2 bg-primary-container text-on-primary rounded-md hover:bg-primary transition-colors font-medium shadow-sm flex items-center gap-2 disabled:opacity-50" 
+                onClick={handleNext}
+                disabled={isPublishing}
+              >
                 Next Step <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
               </button>
             ) : (
               <button 
                 className="px-8 py-2 bg-primary-container text-on-primary rounded-md hover:bg-primary transition-colors font-medium shadow-md flex items-center gap-2 text-lg disabled:opacity-50 disabled:cursor-not-allowed" 
                 onClick={handlePublish}
-                disabled={!formData.jobTitle || !formData.requiredSkills}
+                disabled={!formData.jobTitle || !formData.requiredSkills || isPublishing}
               >
-                <span className="material-symbols-outlined">rocket_launch</span>
-                Publish Job
+                {isPublishing ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <span className="material-symbols-outlined">rocket_launch</span>
+                )}
+                {isPublishing ? "Publishing..." : "Publish Job"}
               </button>
             )}
           </div>

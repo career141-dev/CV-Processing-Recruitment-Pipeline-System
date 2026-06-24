@@ -1,6 +1,6 @@
 // V8 runtime — mutations and queries for Workable import tracking
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalMutation, internalQuery, mutation } from "../_generated/server";
 
 export const createImportJob = internalMutation({
   args: {

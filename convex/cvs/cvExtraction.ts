@@ -1,10 +1,10 @@
 "use node";
 
 import { v } from "convex/values";
-import { action, internalAction } from "./_generated/server";
-import type { ActionCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
-import { api, internal } from "./_generated/api";
+import { action, internalAction } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { api, internal } from "../_generated/api";
 import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
@@ -484,10 +484,19 @@ export async function runCvExtraction(
       });
     }
 
-    await ctx.runMutation(api.candidates.updateCvUpload, {
+    const jobId = await ctx.runMutation(api.candidates.updateCvUpload, {
       cvUploadId,
       status: "processed",
-    });
+      fileHash,
+      candidateId,
+    }) as string | undefined | null;
+
+    if (jobId) {
+      await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+        candidateId,
+        jobId: jobId as any,
+      });
+    }
 
     return candidateId;
   } catch (err) {
@@ -530,47 +539,45 @@ export const processCvExtraction = action({
 export const resumeFailedUploads = action({
   args: {},
   handler: async (ctx): Promise<{ queued: number }> => {
-    // Auth check removed to avoid Clerk dev instance token issues; 
-    // it simply kicks off the internal processing queue.
-    await ctx.scheduler.runAfter(0, internal.cvExtraction.processNextInQueue, {});
-    return { queued: 1 };
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    await ctx.runAction(internal.cvs.cvExtraction.resumeBatch, {
+      cursor: undefined,
+      totalQueued: 0,
+    });
+    return { queued: 0 };
   },
 });
 
-export const processNextInQueue = internalAction({
-  args: {},
-  handler: async (ctx): Promise<void> => {
+export const resumeBatch = internalAction({
+  args: { cursor: v.optional(v.string()), totalQueued: v.number() },
+  handler: async (ctx, args): Promise<void> => {
     const result = await ctx.runQuery(api.candidates.listFailedUploads, {
-      limit: 1,
+      limit: 5,
+      cursor: args.cursor,
     });
 
-    if (result.page.length === 0) {
-      return;
-    }
-
-    const upload = result.page[0];
-
-    await ctx.runMutation(api.candidates.updateCvUpload, {
-      cvUploadId: upload._id,
-      status: "processing",
-    });
-
-    if (upload.storageId) {
-      await runCvExtraction(ctx, {
-        storageId: upload.storageId,
+    for (let i = 0; i < result.page.length; i++) {
+      const upload = result.page[i];
+      ctx.scheduler.runAfter(i * 1000, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId as Id<"_storage">,
         fileType: upload.fileType,
         sourceChannel: upload.source,
         uploadedBy: upload.uploadedBy,
         cvUploadId: upload._id,
       });
-    } else {
-      await ctx.runMutation(api.candidates.updateCvUpload, {
-        cvUploadId: upload._id,
-        status: "failed",
-        errorMessage: "No storageId attached to this upload",
-      });
     }
 
-    await ctx.scheduler.runAfter(1600, internal.cvExtraction.processNextInQueue, {});
+    if (!result.isDone && result.continueCursor) {
+      ctx.scheduler.runAfter(
+        result.page.length * 1000 + 500,
+        internal.cvs.cvExtraction.resumeBatch,
+        {
+          cursor: result.continueCursor,
+          totalQueued: args.totalQueued + result.page.length,
+        },
+      );
+    }
   },
 });
