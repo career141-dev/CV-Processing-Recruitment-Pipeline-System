@@ -16,7 +16,7 @@ import {
   deriveSeniorityLevel,
   deriveEducationFields,
   deriveTotalExperienceYears,
-} from "./tier2Derivations";
+} from "../tier2Derivations";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas

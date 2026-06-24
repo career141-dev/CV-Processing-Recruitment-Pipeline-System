@@ -8,18 +8,18 @@
  * @module
  */
 
-import type * as candidates from "../candidates/index.js";
+import type * as candidates from "../candidates.js";
+import type * as communications_emailAgent from "../communications/emailAgent.js";
+import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
 import type * as cvs_cvExtraction from "../cvs/cvExtraction.js";
 import type * as cvs_cvScoring from "../cvs/cvScoring.js";
 import type * as cvs_cvScoringActions from "../cvs/cvScoringActions.js";
 import type * as cvs_cvUploads from "../cvs/cvUploads.js";
-import type * as communications_emailAgent from "../communications/emailAgent.js";
-import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
 import type * as fix from "../fix.js";
 import type * as http from "../http.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
-import type * as jobs from "../jobs/index.js";
+import type * as jobs from "../jobs.js";
 import type * as lib_activityLog from "../lib/activityLog.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_jdParser from "../lib/jdParser.js";
@@ -27,7 +27,7 @@ import type * as lib_llm from "../lib/llm.js";
 import type * as lib_validate from "../lib/validate.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
-import type * as search from "../search/index.js";
+import type * as search from "../search.js";
 import type * as stats from "../stats.js";
 import type * as tier2Derivations from "../tier2Derivations.js";
 import type * as users from "../users.js";
@@ -40,12 +40,12 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   candidates: typeof candidates;
+  "communications/emailAgent": typeof communications_emailAgent;
+  "communications/whatsappAgent": typeof communications_whatsappAgent;
   "cvs/cvExtraction": typeof cvs_cvExtraction;
   "cvs/cvScoring": typeof cvs_cvScoring;
   "cvs/cvScoringActions": typeof cvs_cvScoringActions;
   "cvs/cvUploads": typeof cvs_cvUploads;
-  "communications/emailAgent": typeof communications_emailAgent;
-  "communications/whatsappAgent": typeof communications_whatsappAgent;
   fix: typeof fix;
   http: typeof http;
   "integrations/workable": typeof integrations_workable;
