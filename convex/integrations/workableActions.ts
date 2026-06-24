@@ -130,6 +130,9 @@ export const testConnection = action({
 export const startBulkImport = action({
   args: { subdomain: v.string(), apiKey: v.string(), userId: v.string() },
   handler: async (ctx, args): Promise<{ importId: string }> => {
+    const lastJob: any = await ctx.runQuery(internal.integrations.workable.getLatestImportJob as any, {});
+    const nextUrl = lastJob && lastJob.userId === args.userId ? lastJob.lastCursor : undefined;
+
     const importId = await ctx.runMutation(internal.integrations.workable.createImportJob, {
       userId: args.userId,
       totalCandidates: 0,
@@ -142,7 +145,7 @@ export const startBulkImport = action({
       subdomain: args.subdomain,
       apiKey: args.apiKey,
       userId: args.userId,
-      nextUrl: undefined,
+      nextUrl: nextUrl,
       imported: 0,
       skipped: 0,
       deduplicated: 0,

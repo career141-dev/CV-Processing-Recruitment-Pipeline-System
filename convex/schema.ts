@@ -5,26 +5,25 @@ import { v } from "convex/values";
 export default defineSchema({
 // ■■ USERS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 users: defineTable({
-tokenIdentifier: v.string(),
-email: v.string(),
-fullName: v.string(),
-role: v.union(v.literal("admin"), v.literal("director"),
-v.literal("ta"), v.literal("ops")),
-phone: v.optional(v.string()),
-avatarUrl: v.optional(v.string()),
-isActive: v.boolean(),
-createdAt: v.string(),
-lastLoginAt: v.optional(v.string()),
-notificationPrefs: v.optional(v.object({
-email: v.boolean(),
-whatsapp: v.boolean(),
-inApp: v.boolean(),
-})),
+  tokenIdentifier: v.string(),
+  email: v.string(),
+  fullName: v.string(),
+  role: v.union(v.literal("admin"), v.literal("director"), v.literal("ta"), v.literal("ops")),
+  phone: v.optional(v.string()),
+  avatarUrl: v.optional(v.string()),
+  isActive: v.boolean(),
+  createdAt: v.string(),
+  lastLoginAt: v.optional(v.string()),
+  notificationPrefs: v.optional(v.object({
+    email: v.boolean(),
+    whatsapp: v.boolean(),
+    inApp: v.boolean(),
+  })),
 })
-.index("by_token", ["tokenIdentifier"])
-.index("by_email", ["email"])
-.index("by_role", ["role"])
-.index("by_active", ["isActive"]),
+  .index("by_token", ["tokenIdentifier"])
+  .index("by_email", ["email"])
+  .index("by_role", ["role"])
+  .index("by_active", ["isActive"]),
 
 // ■■ JOBS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 jobs: defineTable({

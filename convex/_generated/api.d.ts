@@ -15,6 +15,7 @@ import type * as cvs_cvExtraction from "../cvs/cvExtraction.js";
 import type * as cvs_cvScoring from "../cvs/cvScoring.js";
 import type * as cvs_cvScoringActions from "../cvs/cvScoringActions.js";
 import type * as cvs_cvUploads from "../cvs/cvUploads.js";
+import type * as fix from "../fix.js";
 import type * as http from "../http.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
@@ -27,6 +28,8 @@ import type * as lib_validate from "../lib/validate.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as search from "../search.js";
+import type * as stats from "../stats.js";
+import type * as tier2Derivations from "../tier2Derivations.js";
 import type * as users from "../users.js";
 
 import type {
@@ -43,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   "cvs/cvScoring": typeof cvs_cvScoring;
   "cvs/cvScoringActions": typeof cvs_cvScoringActions;
   "cvs/cvUploads": typeof cvs_cvUploads;
+  fix: typeof fix;
   http: typeof http;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
@@ -55,6 +59,8 @@ declare const fullApi: ApiFromModules<{
   "pipeline/ingestion": typeof pipeline_ingestion;
   "pipeline/outreach": typeof pipeline_outreach;
   search: typeof search;
+  stats: typeof stats;
+  tier2Derivations: typeof tier2Derivations;
   users: typeof users;
 }>;
 

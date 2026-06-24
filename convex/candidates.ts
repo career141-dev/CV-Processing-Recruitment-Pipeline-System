@@ -59,6 +59,24 @@ export const createCandidate = mutation({
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     rawText: v.optional(v.string()),
+    sector: v.optional(v.string()),
+    jobHistory: v.optional(
+      v.array(
+        v.object({
+          company: v.string(),
+          title: v.string(),
+          startDate: v.optional(v.string()),
+          endDate: v.optional(v.string()),
+          description: v.optional(v.string()),
+        })
+      )
+    ),
+    // Derived fields
+    noticePeriodDays: v.optional(v.number()),
+    educationDegree: v.optional(v.string()),
+    educationInstitution: v.optional(v.string()),
+    educationYear: v.optional(v.number()),
+    totalExperienceYears: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     // 4-Factor Deduplication (Agent 6)

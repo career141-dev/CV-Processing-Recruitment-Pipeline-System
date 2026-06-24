@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 const SOURCE_OPTIONS = [
   "LinkedIn",
@@ -206,10 +207,16 @@ export default function UploadCVs() {
                           <span className="text-text-primary text-[13px] truncate">{entry.file.name}</span>
                           <span className="text-text-disabled text-[11px] shrink-0">({(entry.file.size / 1024).toFixed(0)} KB)</span>
                           {entry.status === "uploading" && (
-                            <span className="text-[#F57C00] text-[10px] font-bold shrink-0">Uploading...</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Loader2 className="w-3 h-3 animate-spin text-[#F57C00]" />
+                              <span className="text-[#F57C00] text-[10px] font-bold">Uploading...</span>
+                            </div>
                           )}
                           {entry.status === "processing" && (
-                            <span className="text-[#1565C0] text-[10px] font-bold shrink-0">Processing...</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Loader2 className="w-3 h-3 animate-spin text-[#1565C0]" />
+                              <span className="text-[#1565C0] text-[10px] font-bold">Parsing...</span>
+                            </div>
                           )}
                           {entry.status === "done" && (
                             <span className="text-primary-container text-[10px] font-bold shrink-0">Done</span>

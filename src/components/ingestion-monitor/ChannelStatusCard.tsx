@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/Card';
 
 interface ChannelStatusCardProps {
   title: string;
-  status: 'Active' | 'Delayed' | 'Healthy' | 'Sync Delayed' | 'Manual';
+  status: string;
   statusColor: string;
   icon: React.ReactNode;
   stats: { label: string; value: string | React.ReactNode }[];
