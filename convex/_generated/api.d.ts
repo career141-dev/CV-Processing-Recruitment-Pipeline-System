@@ -28,6 +28,7 @@ import type * as lib_validate from "../lib/validate.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as search from "../search.js";
+import type * as seed from "../seed.js";
 import type * as stats from "../stats.js";
 import type * as tier2Derivations from "../tier2Derivations.js";
 import type * as users from "../users.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/ingestion": typeof pipeline_ingestion;
   "pipeline/outreach": typeof pipeline_outreach;
   search: typeof search;
+  seed: typeof seed;
   stats: typeof stats;
   tier2Derivations: typeof tier2Derivations;
   users: typeof users;

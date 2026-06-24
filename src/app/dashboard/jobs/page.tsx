@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 
 type Source = { id: string, label: string, bgClass: string, textClass: string };
 
@@ -11,6 +13,10 @@ type Job = {
   title: string;
   client: string;
   keyword: string;
+  location: string;
+  seniority: string;
+  type: string;
+  salary: string;
   sources: Source[];
   newCvs: number;
   newCvsBadge?: { text: string, bgClass: string, textClass: string };
@@ -21,143 +27,7 @@ type Job = {
   created: string;
 };
 
-const MOCK_JOBS: Job[] = [
-  {
-    id: "1", title: "Brand Manager", client: "Atlas Holdings", keyword: "BRAND24",
-    sources: [
-      { id: "li", label: "LI", bgClass: "bg-blue-100", textClass: "text-blue-700" },
-      { id: "wa", label: "WA", bgClass: "bg-yellow-100", textClass: "text-yellow-700" },
-      { id: "em", label: "EM", bgClass: "bg-purple-100", textClass: "text-purple-700" }
-    ],
-    newCvs: 8, newCvsBadge: { text: "+8", bgClass: "bg-blue-100", textClass: "text-blue-800" },
-    stage: { label: "TA Review", bgClass: "bg-orange-50", textClass: "text-orange-700", borderClass: "border-orange-200" },
-    taAssigned: "Shambra", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "12 Jun 2026"
-  },
-  {
-    id: "2", title: "CFO — Group Level", client: "Confidential", keyword: "CFO2024",
-    sources: [
-      { id: "li", label: "LI", bgClass: "bg-blue-100", textClass: "text-blue-700" },
-      { id: "hh", label: "HH", bgClass: "bg-blue-800", textClass: "text-on-primary" }
-    ],
-    newCvs: 3,
-    stage: { label: "Dir. Review", bgClass: "bg-purple-50", textClass: "text-purple-700", borderClass: "border-purple-200" },
-    taAssigned: "Shambra", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "08 Jun 2026"
-  },
-  {
-    id: "3", title: "Senior Software Engineer", client: "CBL Group", keyword: "ENGSR",
-    sources: [
-      { id: "wa", label: "WA", bgClass: "bg-yellow-100", textClass: "text-yellow-700" },
-      { id: "mc", label: "MC", bgClass: "bg-orange-100", textClass: "text-orange-700" },
-      { id: "em", label: "EM", bgClass: "bg-purple-100", textClass: "text-purple-700" }
-    ],
-    newCvs: 12, newCvsBadge: { text: "+3", bgClass: "bg-green-100", textClass: "text-green-800" },
-    stage: { label: "New CVs", bgClass: "bg-blue-50", textClass: "text-blue-700", borderClass: "border-blue-200" },
-    taAssigned: "Rayan", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "10 Jun 2026"
-  },
-  {
-    id: "4", title: "GM Operations", client: "LPI Group", keyword: "GMOPS",
-    sources: [
-      { id: "em", label: "EM", bgClass: "bg-purple-100", textClass: "text-purple-700" },
-      { id: "hh", label: "HH", bgClass: "bg-blue-800", textClass: "text-on-primary" }
-    ],
-    newCvs: 5,
-    stage: { label: "Client Review", bgClass: "bg-teal-50", textClass: "text-teal-700", borderClass: "border-teal-200" },
-    taAssigned: "Ana", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "05 Jun 2026"
-  },
-  {
-    id: "5", title: "Head of Marketing", client: "Dialog", keyword: "MKTDLG",
-    sources: [
-      { id: "li", label: "LI", bgClass: "bg-blue-100", textClass: "text-blue-700" },
-      { id: "em", label: "EM", bgClass: "bg-purple-100", textClass: "text-purple-700" }
-    ],
-    newCvs: 0,
-    stage: { label: "Interview", bgClass: "bg-indigo-50", textClass: "text-indigo-700", borderClass: "border-indigo-200" },
-    taAssigned: "Jasmine", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "01 Jun 2026"
-  },
-  {
-    id: "6", title: "Finance Manager", client: "MAS Holdings", keyword: "FIN2024",
-    sources: [
-      { id: "li", label: "LI", bgClass: "bg-blue-100", textClass: "text-blue-700" },
-      { id: "wa", label: "WA", bgClass: "bg-yellow-100", textClass: "text-yellow-700" }
-    ],
-    newCvs: 2,
-    stage: { label: "TA Review", bgClass: "bg-orange-50", textClass: "text-orange-700", borderClass: "border-orange-200" },
-    taAssigned: "Rayan", status: "On Hold",
-    statusBadge: { label: "On Hold", bgClass: "bg-amber-50", textClass: "text-amber-700", borderClass: "border-amber-200" },
-    created: "28 May 2026"
-  },
-  {
-    id: "7", title: "Training & Dev Manager", client: "John Keells", keyword: "TNDMGR",
-    sources: [
-      { id: "li", label: "LI", bgClass: "bg-blue-100", textClass: "text-blue-700" },
-      { id: "mc", label: "MC", bgClass: "bg-orange-100", textClass: "text-orange-700" }
-    ],
-    newCvs: 1,
-    stage: { label: "Fins", bgClass: "bg-primary-container/10", textClass: "text-primary-container", borderClass: "border-primary-container/20" },
-    taAssigned: "Shambra", status: "Fins",
-    statusBadge: { label: "Fins", bgClass: "bg-primary-container/10", textClass: "text-primary-container", borderClass: "border-primary-container/20" },
-    created: "20 May 2026"
-  },
-  {
-    id: "8", title: "Regional Sales Manager", client: "LOLC", keyword: "SALREG",
-    sources: [],
-    newCvs: 0,
-    stage: { label: "Placement", bgClass: "bg-green-100", textClass: "text-green-800", borderClass: "border-green-200" },
-    taAssigned: "Ana", status: "Placed",
-    statusBadge: { label: "Placed", bgClass: "bg-green-100", textClass: "text-green-800", borderClass: "border-green-200" },
-    created: "10 May 2026"
-  },
-  {
-    id: "9", title: "HR Executive", client: "Dialog", keyword: "HREXEC",
-    sources: [], newCvs: 0,
-    stage: { label: "Lost", bgClass: "bg-red-50", textClass: "text-red-700", borderClass: "border-red-200" },
-    taAssigned: "Rayan", status: "Lost",
-    statusBadge: { label: "Lost", bgClass: "bg-red-50", textClass: "text-red-700", borderClass: "border-red-200" },
-    created: "05 May 2026"
-  },
-  {
-    id: "10", title: "Data Scientist", client: "Virtusa", keyword: "DATASCI",
-    sources: [], newCvs: 4,
-    stage: { label: "Interview", bgClass: "bg-indigo-50", textClass: "text-indigo-700", borderClass: "border-indigo-200" },
-    taAssigned: "Ana", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "01 May 2026"
-  },
-  {
-    id: "11", title: "UX Designer", client: "WSO2", keyword: "UX2026",
-    sources: [], newCvs: 2,
-    stage: { label: "Client Review", bgClass: "bg-teal-50", textClass: "text-teal-700", borderClass: "border-teal-200" },
-    taAssigned: "Jasmine", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "20 Apr 2026"
-  },
-  {
-    id: "12", title: "Operations Manager", client: "Atlas Holdings", keyword: "OPSMGR",
-    sources: [], newCvs: 0,
-    stage: { label: "On Hold", bgClass: "bg-amber-50", textClass: "text-amber-700", borderClass: "border-amber-200" },
-    taAssigned: "Shambra", status: "On Hold",
-    statusBadge: { label: "On Hold", bgClass: "bg-amber-50", textClass: "text-amber-700", borderClass: "border-amber-200" },
-    created: "15 Apr 2026"
-  },
-  {
-    id: "13", title: "Backend Developer", client: "CBL Group", keyword: "BKND26",
-    sources: [], newCvs: 5,
-    stage: { label: "TA Review", bgClass: "bg-orange-50", textClass: "text-orange-700", borderClass: "border-orange-200" },
-    taAssigned: "Rayan", status: "Active",
-    statusBadge: { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" },
-    created: "10 Apr 2026"
-  }
-];
+// Mock jobs removed in favor of real DB jobs.];
 
 export default function JobsPage() {
   const [activeTab, setActiveTab] = useState<string>('All Jobs');
@@ -165,6 +35,49 @@ export default function JobsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const router = useRouter();
   
+  const dbJobs = useQuery(api.jobs.list);
+  const users = useQuery(api.users.getAllUsers);
+
+  const MOCK_JOBS: Job[] = dbJobs && users ? dbJobs.map((j: any) => {
+    const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);
+    
+    // Map status to formatted text and badge
+    let statusFormatted = 'Active';
+    let statusBadge = { label: "Active", bgClass: "bg-green-50", textClass: "text-green-700", borderClass: "border-green-200" };
+    
+    if (j.status === 'on_hold') {
+      statusFormatted = 'On Hold';
+      statusBadge = { label: "On Hold", bgClass: "bg-amber-50", textClass: "text-amber-700", borderClass: "border-amber-200" };
+    } else if (j.status === 'closed') {
+      statusFormatted = 'Fins';
+      statusBadge = { label: "Fins", bgClass: "bg-primary-container/10", textClass: "text-primary-container", borderClass: "border-primary-container/20" };
+    } else if (j.status === 'lost') {
+      statusFormatted = 'Lost';
+      statusBadge = { label: "Lost", bgClass: "bg-red-50", textClass: "text-red-700", borderClass: "border-red-200" };
+    } else if (j.status === 'draft') {
+      statusFormatted = 'Draft';
+      statusBadge = { label: "Draft", bgClass: "bg-gray-100", textClass: "text-gray-700", borderClass: "border-gray-200" };
+    }
+    
+    return {
+      id: j._id,
+      title: j.title,
+      client: j.clientName,
+      keyword: j.keyword,
+      location: j.location || 'Remote',
+      seniority: j.seniorityLevel || 'N/A',
+      type: j.recruitmentType || 'N/A',
+      salary: j.salaryMin ? `${j.salaryMin}${j.salaryMax ? `-${j.salaryMax}` : ''} ${j.salaryCurrency || 'LKR'}` : '-',
+      sources: [], // To be populated later when channels are implemented
+      newCvs: 0, // Placeholder
+      stage: { label: "New Job", bgClass: "bg-blue-50", textClass: "text-blue-700", borderClass: "border-blue-200" },
+      taAssigned: recruiter ? recruiter.fullName.split(' ')[0] : 'Unassigned',
+      status: statusFormatted,
+      statusBadge: statusBadge,
+      created: new Date(j._creationTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    };
+  }) : [];
+
   const handleSelectJob = (id: string) => {
     setSelectedJobs(prev => prev.includes(id) ? prev.filter(jId => jId !== id) : [...prev, id]);
   };
@@ -290,13 +203,12 @@ export default function JobsPage() {
                   <th className="px-5 py-3 w-12"><input checked={selectedJobs.length === filteredJobs.length && filteredJobs.length > 0} onChange={handleSelectAll} className="rounded border-border text-primary-container focus:ring-[#1B5E20] w-4 h-4 cursor-pointer mt-0.5" type="checkbox" /></th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Job Title</th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Client</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Keyword</th>
+                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Location</th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Sources Active</th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">New CVs</th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Stage</th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">TA Assigned</th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Status</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Created</th>
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider text-center">Actions</th>
                 </tr>
               </thead>
@@ -317,7 +229,7 @@ export default function JobsPage() {
                       </Link>
                     </td>
                     <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{job.client}</td>
-                    <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{job.keyword}</td>
+                    <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{job.location}</td>
                     <td className="px-5 py-3">
                       {job.sources.length > 0 ? (
                         <div className="flex items-center gap-1">
@@ -348,7 +260,6 @@ export default function JobsPage() {
                     <td className="px-5 py-3 whitespace-nowrap"><span className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-medium border ${job.stage.bgClass} ${job.stage.textClass} ${job.stage.borderClass}`}>{job.stage.label}</span></td>
                     <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{job.taAssigned}</td>
                     <td className="px-5 py-3 whitespace-nowrap"><span className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-medium border ${job.statusBadge.bgClass} ${job.statusBadge.textClass} ${job.statusBadge.borderClass}`}>{job.statusBadge.label}</span></td>
-                    <td className="px-5 py-3 text-text-secondary whitespace-nowrap text-sm">{job.created}</td>
                     <td className="px-5 py-3 text-center">
                       <button className="text-text-disabled hover:text-primary-container transition-colors p-1"><span className="material-symbols-outlined text-[18px]">more_vert</span></button>
                     </td>
