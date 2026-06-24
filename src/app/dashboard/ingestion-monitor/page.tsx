@@ -21,6 +21,7 @@ export default function IngestionMonitorPage() {
   const stats = useQuery(api.stats.getIngestionStats);
   const resumeFailedUploads = useAction(api.cvs.cvExtraction.resumeFailedUploads);
   const [retrying, setRetrying] = useState(false);
+  const [activeTab, setActiveTab] = useState<'ongoing' | 'history'>('ongoing');
 
   if (!stats) {
     return (
@@ -66,7 +67,9 @@ export default function IngestionMonitorPage() {
     return acc;
   }, {});
 
-  const allLogs = [...activeUploads, ...recentDone].sort((a, b) => b._creationTime - a._creationTime).slice(0, 50);
+  const logsToShow = activeTab === 'ongoing' 
+    ? [...activeUploads].sort((a: any, b: any) => b._creationTime - a._creationTime)
+    : [...recentDone].sort((a: any, b: any) => b._creationTime - a._creationTime).slice(0, 50);
 
   return (
     <div className="self-stretch bg-background min-h-screen w-full flex flex-col">
@@ -92,7 +95,7 @@ export default function IngestionMonitorPage() {
             status={workableStats.lastReceived ? "Active" : "Awaiting Data"}
             statusColor={workableStats.lastReceived ? "text-[#1565C0]" : "text-text-secondary"}
             icon={<RefreshCw size={20} />}
-            pulse={!!activeUploads.find(u => u.source === 'Workable')}
+            pulse={!!activeUploads.find((u: any) => u.source === 'Workable')}
             stats={[
               { label: 'CVs Uploaded Today', value: workableStats.todayCount.toString() },
               { label: 'Last received', value: formatTime(workableStats.lastReceived) }
@@ -103,7 +106,7 @@ export default function IngestionMonitorPage() {
             status={manualStats.lastReceived ? "Active" : "Ready"}
             statusColor={manualStats.lastReceived ? "text-[#0277BD]" : "text-text-secondary"}
             icon={<Upload size={20} />}
-            pulse={!!activeUploads.find(u => u.source === 'Manual' || !u.source)}
+            pulse={!!activeUploads.find((u: any) => u.source === 'Manual' || !u.source)}
             stats={[
               { label: 'CVs Uploaded Today', value: manualStats.todayCount.toString() },
               { label: 'Last Batch', value: formatTime(manualStats.lastReceived) }
@@ -153,19 +156,29 @@ export default function IngestionMonitorPage() {
         )}
 
         {/* Real-time Ingestion Log */}
-        <div className="bg-surface rounded-xl border border-border overflow-hidden shadow-sm">
-          <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-surface">
+        <div className="bg-surface rounded-xl border border-border overflow-hidden shadow-sm mb-8">
+          <div className="px-6 py-4 border-b border-border flex flex-col sm:flex-row justify-between items-start sm:items-center bg-surface gap-4">
             <h2 className="text-[15px] font-semibold text-text-primary">Real-time Parsing Log</h2>
-            <div className="flex gap-4 text-[12px] text-text-secondary">
-              <span>{activeUploads.length} actively processing</span>
-              <span>Showing last 50 activities</span>
+            <div className="flex gap-2 bg-surface-container-low p-1 rounded-lg border border-border">
+              <button 
+                onClick={() => setActiveTab('ongoing')} 
+                className={`px-4 py-1.5 rounded-md text-[13px] font-semibold transition-all ${activeTab === 'ongoing' ? 'bg-white text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-surface-container'}`}
+              >
+                Ongoing Parsings ({activeUploads.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('history')} 
+                className={`px-4 py-1.5 rounded-md text-[13px] font-semibold transition-all ${activeTab === 'history' ? 'bg-white text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-surface-container'}`}
+              >
+                Parsing History
+              </button>
             </div>
           </div>
           
           <div className="overflow-x-auto">
-            {allLogs.length === 0 ? (
+            {logsToShow.length === 0 ? (
               <div className="p-8 text-center text-text-secondary text-[13px]">
-                No recent activity. Upload a CV or sync Workable to see logs.
+                {activeTab === 'ongoing' ? "No CVs currently processing." : "No recent activity. Upload a CV or sync Workable to see logs."}
               </div>
             ) : (
               <table className="w-full text-left">
@@ -178,7 +191,7 @@ export default function IngestionMonitorPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E0E0E0]">
-                  {allLogs.map((log: any) => {
+                  {logsToShow.map((log: any) => {
                     const sourceConfig = getSourceConfig(log.source || 'Manual');
                     const isProcessing = log.status === 'processing' || log.status === 'uploaded';
                     

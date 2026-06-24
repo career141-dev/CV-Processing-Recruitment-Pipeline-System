@@ -133,3 +133,58 @@ export function deriveTotalExperienceYears(
 
   return yearsOfExperience ?? undefined;
 }
+
+export function deriveCurrentRole(
+  jobHistory: Array<{ company?: string | null; title?: string | null; endDate?: string | null; startDate?: string | null }> | null | undefined,
+  currentEmployer: string | null | undefined,
+  currentTitle: string | null | undefined
+): { derivedEmployer: string | undefined; derivedTitle: string | undefined } {
+  let derivedEmployer = currentEmployer ?? undefined;
+  let derivedTitle = currentTitle ?? undefined;
+
+  if ((derivedEmployer && derivedTitle) || !jobHistory || jobHistory.length === 0) {
+    return { derivedEmployer, derivedTitle };
+  }
+
+  let currentJob = null;
+  let mostRecentDate = -Infinity;
+
+  for (const job of jobHistory) {
+    const endStr = (job.endDate || "").toLowerCase().trim();
+    
+    // Explicitly current jobs
+    if (
+      endStr.includes("present") ||
+      endStr.includes("current") ||
+      endStr.includes("now") ||
+      endStr.includes("to date") ||
+      (!job.endDate && job.startDate) // Open-ended
+    ) {
+      currentJob = job;
+      break; // Found the definitive current job
+    }
+
+    // Try to find the most recent one based on date
+    const parsedEnd = new Date(job.endDate || "").getTime();
+    if (!isNaN(parsedEnd) && parsedEnd > mostRecentDate) {
+      mostRecentDate = parsedEnd;
+      currentJob = job;
+    }
+  }
+
+  // If we didn't find one by date, default to the first one in the list 
+  // (usually CVs list most recent first)
+  if (!currentJob) {
+    currentJob = jobHistory[0];
+  }
+
+  if (!derivedEmployer && currentJob.company) {
+    derivedEmployer = currentJob.company;
+  }
+  
+  if (!derivedTitle && currentJob.title) {
+    derivedTitle = currentJob.title;
+  }
+
+  return { derivedEmployer, derivedTitle };
+}

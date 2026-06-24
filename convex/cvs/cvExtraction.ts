@@ -16,6 +16,7 @@ import {
   deriveSeniorityLevel,
   deriveEducationFields,
   deriveTotalExperienceYears,
+  deriveCurrentRole,
 } from "../tier2Derivations";
 
 // ──────────────────────────────────────────────────
@@ -305,6 +306,7 @@ export async function callNvidiaLLM(
 2. If a field is not found, return null. Never invent or guess.
 3. Return skills as an array of strings.
 4. Return jobHistory as an array of objects.
+5. If currentTitle or currentEmployer are not explicitly stated as "current" or "present", infer them from the most recent job in their work experience by considering the dates.
 {
   "fullName": null,
   "email": null,
@@ -490,6 +492,7 @@ export async function runCvExtraction(
       const seniorityLevel = deriveSeniorityLevel(extracted.yearsOfExperience, extracted.currentTitle);
       const { educationDegree, educationInstitution, educationYear } = deriveEducationFields(extracted.education);
       const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, extracted.yearsOfExperience);
+      const { derivedEmployer, derivedTitle } = deriveCurrentRole(extracted.jobHistory, extracted.currentEmployer, extracted.currentTitle);
 
       const formattedJobHistory = safeExtracted.jobHistory?.map((jh) => ({
         ...jh,
@@ -499,6 +502,8 @@ export async function runCvExtraction(
 
       await ctx.runMutation(api.candidates.createCandidate, {
         ...safeExtracted,
+        currentEmployer: derivedEmployer,
+        currentTitle: derivedTitle,
         jobHistory: formattedJobHistory,
         seniorityLevel: seniorityLevel ?? safeExtracted.seniorityLevel,
         noticePeriodDays,

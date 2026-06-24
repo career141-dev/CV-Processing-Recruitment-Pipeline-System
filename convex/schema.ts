@@ -39,6 +39,7 @@ jobDescription: v.string(),
 requiredSkills: v.array(v.string()),
 niceToHaveSkills: v.optional(v.array(v.string())),
 seniorityLevel: v.union(
+v.literal("entry_level"), v.literal("junior"), v.literal("mid_level"), v.literal("senior_level"),
 v.literal("executive"), v.literal("senior_executive"),
 v.literal("manager"), v.literal("senior_manager"),
 v.literal("agm"), v.literal("gm"),
