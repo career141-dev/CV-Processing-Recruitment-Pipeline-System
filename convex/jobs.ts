@@ -1,19 +1,19 @@
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { requireRole, requireUser } from "./lib/permissions";
 
 // convex/jobs.ts — generateKeyword helper function
 function generateKeyword(title: string): string {
-  // Extract first word, uppercase, append random 4-digit number
   const word = title.split(" ")[0].toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
   const num = Math.floor(1000 + Math.random() * 9000);
-  return `${word}${num}`; // e.g. BRAND2024 -> BRAND7412
+  return `${word}${num}`; 
 }
 
-// Check uniqueness and regenerate if collision
 export const createJobKeyword = mutation({
   args: { title: v.string() },
   handler: async (ctx, { title }) => {
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
     let keyword: string = "";
     let attempts = 0;
     do {
@@ -28,7 +28,6 @@ export const createJobKeyword = mutation({
   },
 });
 
-// createJob Mutation — Step 1 Fields
 export const createJob = mutation({
   args: {
     title: v.string(),
@@ -46,24 +45,27 @@ export const createJob = mutation({
     salaryMin: v.optional(v.number()),
     salaryMax: v.optional(v.number()),
     salaryCurrency: v.optional(v.string()),
+    // These are needed by schema but will be formally assigned in assignTeamToJob
     primaryRecruiterId: v.id("users"),
+    supportingRecruiterIds: v.optional(v.array(v.id("users"))),
     directorId: v.optional(v.id("users")),
     clientContactName: v.optional(v.string()),
     clientContactEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Auto-generate keyword
+    // ROLE GUARD: Only ADMIN, TA_MANAGER, SENIOR_TA can create jobs
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+
     let keyword = generateKeyword(args.title);
     const existing = await ctx.db.query("jobs")
       .withIndex("by_keyword", (q) => q.eq("keyword", keyword))
       .unique();
-    if (existing) keyword = generateKeyword(args.title); // retry once
+    if (existing) keyword = generateKeyword(args.title); 
 
     const jobId = await ctx.db.insert("jobs", {
       ...args,
       keyword,
       status: "draft",
-      // Agent config defaults
       scoreWeightSkills: 35,
       scoreWeightExperience: 25,
       scoreWeightJobTitle: 20,
@@ -97,11 +99,89 @@ export const createJob = mutation({
       recruitmentType: args.recruitmentType as any,
       seniorityLevel: args.seniorityLevel as any,
     });
+
+    // Write activity log (Standardizing per Section 8 & 12)
+    await ctx.db.insert("activityLog", {
+      actorId: user._id,
+      actorName: user.fullName || "Unknown",
+      action: "create",
+      entityType: "job",
+      entityId: jobId,
+      occurredAt: new Date().toISOString(),
+    });
+    
     return { jobId, keyword };
   },
 });
 
-// updateJobChannels Mutation — Step 2
+export const assignTeamToJob = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    primaryRecruiterId: v.id("users"),
+    supportingRecruiterIds: v.optional(v.array(v.id("users"))),
+    directorId: v.optional(v.id("users")),
+    clientContactId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+
+    // Validate that primaryRecruiterId is SENIOR_TA or RECRUITER
+    const primary = await ctx.db.get(args.primaryRecruiterId);
+    if (!primary || !["senior_ta", "recruiter"].includes(primary.role)) {
+      throw new Error("Primary Recruiter must be SENIOR_TA or RECRUITER role");
+    }
+
+    const now = new Date().toISOString();
+
+    // Create primary recruiter assignment
+    await ctx.db.insert("jobAssignments", {
+      jobId: args.jobId,
+      userId: args.primaryRecruiterId,
+      assignmentRole: "primary_recruiter",
+      assignedBy: user._id,
+      assignedAt: now,
+      isActive: true,
+    });
+
+    // Create supporting recruiter assignments
+    for (const uid of args.supportingRecruiterIds ?? []) {
+      await ctx.db.insert("jobAssignments", {
+        jobId: args.jobId,
+        userId: uid,
+        assignmentRole: "supporting_recruiter",
+        assignedBy: user._id,
+        assignedAt: now,
+        isActive: true,
+      });
+    }
+
+    // Create director assignment if provided
+    if (args.directorId) {
+      const director = await ctx.db.get(args.directorId);
+      if (!director || director.role !== "director") {
+        throw new Error("Director must have DIRECTOR role");
+      }
+      await ctx.db.insert("jobAssignments", {
+        jobId: args.jobId,
+        userId: args.directorId,
+        assignmentRole: "director",
+        assignedBy: user._id,
+        assignedAt: now,
+        isActive: true,
+      });
+    }
+    
+    // We update the jobs table cache fields
+    await ctx.db.patch(args.jobId, {
+      primaryRecruiterId: args.primaryRecruiterId,
+      supportingRecruiterIds: args.supportingRecruiterIds,
+      directorId: args.directorId,
+    });
+
+    return { success: true };
+  },
+});
+
 export const updateJobChannels = mutation({
   args: {
     jobId: v.id("jobs"),
@@ -115,6 +195,8 @@ export const updateJobChannels = mutation({
     })),
   },
   handler: async (ctx, { jobId, channels }) => {
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+
     for (const ch of channels) {
       const existing = await ctx.db.query("jobChannels")
         .withIndex("by_job", (q) => q.eq("jobId", jobId))
@@ -142,11 +224,9 @@ export const updateJobChannels = mutation({
   },
 });
 
-// updateJobAiConfig Mutation — Step 3
 export const updateJobAiConfig = mutation({
   args: {
     jobId: v.id("jobs"),
-    // Agent 2
     minMatchScoreToShow: v.number(),
     reverseMatchOnPublish: v.boolean(),
     scoreWeightSkills: v.number(),
@@ -154,20 +234,17 @@ export const updateJobAiConfig = mutation({
     scoreWeightJobTitle: v.number(),
     scoreWeightIndustry: v.number(),
     scoreWeightLocation: v.number(),
-    // Agent 3
     agent3Enabled: v.boolean(),
     agent3Day2Channel: v.optional(v.string()),
     agent3Day4Channel: v.optional(v.string()),
     agent3Day7Channel: v.optional(v.string()),
     agent3AfterDay7: v.string(),
-    // Agent 5
     agent5Enabled: v.boolean(),
     agent5Trigger: v.string(),
     agent5CallScript: v.string(),
     agent5CustomQuestions: v.optional(v.array(v.string())),
     agent5NoAnswerAction: v.string(),
     agent5HideCompany: v.boolean(),
-    // Pipeline gates
     directorReviewEnabled: v.boolean(),
     directorId: v.optional(v.id("users")),
     clientReviewEnabled: v.boolean(),
@@ -176,7 +253,6 @@ export const updateJobAiConfig = mutation({
     clientAccessLevel: v.optional(v.string()),
     esaCheckEnabled: v.boolean(),
     rejectionLoopAction: v.string(),
-    // SLA
     slaNoNewCvsDays: v.number(),
     slaTaReviewDays: v.number(),
     slaAiCallDays: v.number(),
@@ -188,7 +264,8 @@ export const updateJobAiConfig = mutation({
     slaOfferDays: v.number(),
   },
   handler: async (ctx, { jobId, ...config }) => {
-    // Validate weights sum to 100
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+
     const total = config.scoreWeightSkills + config.scoreWeightExperience + config.scoreWeightJobTitle + config.scoreWeightIndustry + config.scoreWeightLocation;
     if (total !== 100) throw new Error(`Score weights must total 100. Got ${total}.`);
 
@@ -209,14 +286,13 @@ export const updateJobAiConfig = mutation({
   },
 });
 
-// publishJob Mutation — Step 4
 export const publishJob = mutation({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, { jobId }) => {
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
     const job = await ctx.db.get(jobId);
     if (!job) throw new Error("Job not found");
 
-    // Validation: title, required skills
     if (!job.title || !job.requiredSkills?.length) {
       throw new Error("Missing required fields: title, required skills");
     }
@@ -227,20 +303,43 @@ export const publishJob = mutation({
       updatedAt: new Date().toISOString()
     });
 
-    // TODO: Trigger Agent 2 reverse match if enabled
-    // if (job.reverseMatchOnPublish) {
-    //   await ctx.scheduler.runAfter(0, "matchingAgent:reverseMatchJob", { jobId });
-    // }
+    await ctx.db.insert("activityLog", {
+      actorId: user._id,
+      actorName: user.fullName || "Unknown",
+      action: "publish",
+      entityType: "job",
+      entityId: jobId,
+      occurredAt: new Date().toISOString(),
+    });
 
     return { success: true, keyword: job.keyword };
   },
 });
 
-// Helpful query to get jobs
 export const list = query({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.query("jobs").order("desc").take(100);
+  },
+});
+
+export const getMyAssignment = query({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+    if (!user) return null;
+
+    return await ctx.db.query("jobAssignments")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .filter((q) => q.eq(q.field("userId"), user._id))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
   },
 });
 
@@ -252,4 +351,3 @@ export const getByKeyword = query({
       .unique();
   }
 });
-

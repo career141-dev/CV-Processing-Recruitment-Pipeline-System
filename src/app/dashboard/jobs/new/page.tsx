@@ -1,22 +1,51 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
+import { usePermissions } from '@/hooks/usePermissions';
 
 export default function CreateJobWizard() {
   const router = useRouter();
+  const { canCreateJob, isLoaded } = usePermissions();
   const [currentStep, setCurrentStep] = useState(1);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  const teamMembers = useQuery(api.users.getAllUsers);
+  // RBAC Gate
+  useEffect(() => {
+    if (isLoaded && !canCreateJob) {
+      router.push('/dashboard');
+    }
+  }, [isLoaded, canCreateJob, router]);
+
+  if (!isLoaded || !canCreateJob) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        {!isLoaded ? (
+          <Loader2 className="w-8 h-8 animate-spin text-primary-container" />
+        ) : (
+          <>
+            <ShieldAlert className="w-12 h-12 text-red-500" />
+            <h2 className="text-xl font-bold text-text-primary">Access Denied</h2>
+            <p className="text-text-secondary text-center max-w-md">
+              You do not have permission to create jobs. If you believe this is an error, please contact your System Administrator.
+            </p>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const availableRecruiters = useQuery(api.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta"] });
+  const availableDirectors = useQuery(api.users.listByRoles, { roles: ["director", "admin", "ta_manager"] });
   const createJob = useMutation(api.jobs.createJob);
   const updateJobChannels = useMutation(api.jobs.updateJobChannels);
   const updateJobAiConfig = useMutation(api.jobs.updateJobAiConfig);
   const publishJob = useMutation(api.jobs.publishJob);
+  const assignTeamToJob = useMutation(api.jobs.assignTeamToJob);
 
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
@@ -40,7 +69,7 @@ export default function CreateJobWizard() {
     salaryRange: '',
     educationLevel: 'Bachelor',
     languages: '',
-    supportingRecruiters: '',
+    supportingRecruiters: [] as string[],
     primaryRecruiter: 'Shambra Ameen',
     hiringManager: '',
     director: '',
@@ -154,15 +183,19 @@ export default function CreateJobWizard() {
     setPublishError("");
     
     try {
-      const primaryRecruiterObj = teamMembers?.find(m => m.fullName === formData.primaryRecruiter) || teamMembers?.[0];
+      const primaryRecruiterObj = availableRecruiters?.find(m => m.fullName === formData.primaryRecruiter) || availableRecruiters?.[0];
       const primaryRecruiterId = primaryRecruiterObj?._id;
       
       if (!primaryRecruiterId) {
          throw new Error("No team members found in database to assign as Primary Recruiter.");
       }
 
-      const directorObj = teamMembers?.find(m => m.fullName === formData.director);
+      const directorObj = availableDirectors?.find(m => m.fullName === formData.director);
       const directorId = directorObj?._id;
+
+      const supportingRecruiterIds = formData.supportingRecruiters
+        .map(name => availableRecruiters?.find(m => m.fullName === name)?._id)
+        .filter(Boolean) as string[];
 
       // Step 1: createJob
       const { jobId } = await createJob({
@@ -182,6 +215,7 @@ export default function CreateJobWizard() {
         salaryMax: parseInt(formData.salaryRange.split("-")[1]?.replace(/[^0-9]/g, '')) || undefined,
         salaryCurrency: formData.salaryRange.replace(/[0-9\- ]/g, '').trim() || "LKR",
         primaryRecruiterId: primaryRecruiterId as any,
+        supportingRecruiterIds: supportingRecruiterIds as any,
         directorId: directorId as any,
         clientContactName: formData.clientContact || undefined,
         clientContactEmail: formData.clientContact || undefined,
@@ -272,6 +306,14 @@ export default function CreateJobWizard() {
         slaEsaDays: 3,
         slaInterviewDays: parseInt(formData.pipelineAlerts.interviewNotScheduled) || 3,
         slaOfferDays: parseInt(formData.pipelineAlerts.offerNotMade) || 2,
+      });
+
+      // Step 3.5: assignTeamToJob
+      await assignTeamToJob({
+        jobId,
+        primaryRecruiterId: primaryRecruiterId as any,
+        supportingRecruiterIds: supportingRecruiterIds as any,
+        directorId: directorId as any,
       });
 
       // Step 4: publishJob
@@ -461,17 +503,17 @@ export default function CreateJobWizard() {
               className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface disabled:opacity-50" 
               value={formData.primaryRecruiter} 
               onChange={e => updateFormData('primaryRecruiter', e.target.value)}
-              disabled={!teamMembers || teamMembers.length === 0}
+              disabled={!availableRecruiters || availableRecruiters.length === 0}
             >
-              {teamMembers === undefined ? (
+              {availableRecruiters === undefined ? (
                 <option>Loading team members...</option>
-              ) : teamMembers.length === 0 ? (
-                <option>No team members found in DB</option>
+              ) : availableRecruiters.length === 0 ? (
+                <option>No recruiters found in DB</option>
               ) : (
                 <>
                   <option value="">Select a Recruiter</option>
-                  {teamMembers.map(member => (
-                    <option key={member._id} value={member.fullName}>{member.fullName}</option>
+                  {availableRecruiters.map(member => (
+                    <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
                   ))}
                 </>
               )}
@@ -479,8 +521,20 @@ export default function CreateJobWizard() {
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">Supporting Recruiters (Optional)</label>
-            <input type="text" className="w-full border border-border rounded-md px-3 py-2 text-body" value={formData.supportingRecruiters} onChange={e => updateFormData('supportingRecruiters', e.target.value)} placeholder="Select team members..." />
-            <p className="text-[11px] text-text-secondary mt-1">Additional TAs who can access and work on this job.</p>
+            <select 
+              multiple 
+              className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface min-h-[80px]" 
+              value={formData.supportingRecruiters} 
+              onChange={e => {
+                const values = Array.from(e.target.selectedOptions, option => option.value);
+                updateFormData('supportingRecruiters', values);
+              }}
+            >
+              {availableRecruiters?.map(member => (
+                <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-text-secondary mt-1">Additional TAs who can access and work on this job. Hold Ctrl/Cmd to select multiple.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">Director / Reviewer *</label>
@@ -488,15 +542,15 @@ export default function CreateJobWizard() {
               className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface disabled:opacity-50" 
               value={formData.director} 
               onChange={e => updateFormData('director', e.target.value)}
-              disabled={!teamMembers || teamMembers.length === 0}
+              disabled={!availableDirectors || availableDirectors.length === 0}
             >
-              {teamMembers === undefined ? (
+              {availableDirectors === undefined ? (
                 <option value="">Loading...</option>
               ) : (
                 <>
                   <option value="">Select Director</option>
-                  {teamMembers.map(member => (
-                    <option key={member._id} value={member.fullName}>{member.fullName}</option>
+                  {availableDirectors.map(member => (
+                    <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
                   ))}
                 </>
               )}

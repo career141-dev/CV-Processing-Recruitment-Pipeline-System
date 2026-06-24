@@ -6,13 +6,26 @@ export default defineSchema({
 // ■■ USERS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 users: defineTable({
   tokenIdentifier: v.string(),
+  clerkUserId: v.optional(v.string()), // Optional for backwards compatibility
   email: v.string(),
-  fullName: v.string(),
-  role: v.union(v.literal("admin"), v.literal("director"), v.literal("ta"), v.literal("ops")),
+  fullName: v.string(), // Kept fullName to not break existing frontend
+  role: v.union(
+    v.literal("admin"),
+    v.literal("ta_manager"),
+    v.literal("senior_ta"),
+    v.literal("recruiter"),
+    v.literal("director"),
+    v.literal("client"),
+    v.literal("viewer"),
+    v.literal("ta"), // Legacy, kept temporarily if needed
+    v.literal("ops") // Legacy
+  ),
   phone: v.optional(v.string()),
   avatarUrl: v.optional(v.string()),
   isActive: v.boolean(),
+  isOnboarded: v.optional(v.boolean()),
   createdAt: v.string(),
+  updatedAt: v.optional(v.string()),
   lastLoginAt: v.optional(v.string()),
   notificationPrefs: v.optional(v.object({
     email: v.boolean(),
@@ -21,9 +34,72 @@ users: defineTable({
   })),
 })
   .index("by_token", ["tokenIdentifier"])
+  .index("by_clerkUserId", ["clerkUserId"])
   .index("by_email", ["email"])
   .index("by_role", ["role"])
   .index("by_active", ["isActive"]),
+
+// ■■ TEAMS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+teams: defineTable({
+  name: v.string(), // e.g. "FMCG Team", "Finance Desk"
+  description: v.optional(v.string()),
+  managerId: v.id("users"), // SENIOR_TA or TA_MANAGER who leads this team
+  isActive: v.boolean(),
+  createdBy: v.id("users"),
+  createdAt: v.string(),
+})
+  .index("by_managerId", ["managerId"])
+  .index("by_isActive", ["isActive"]),
+
+// ■■ TEAM_MEMBERS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+teamMembers: defineTable({
+  teamId: v.id("teams"),
+  userId: v.id("users"),
+  memberRole: v.union(
+    v.literal("lead"), // Team lead (SENIOR_TA or TA_MANAGER)
+    v.literal("recruiter"), // Standard team member
+    v.literal("support") // Occasional contributor
+  ),
+  addedBy: v.id("users"),
+  addedAt: v.string(),
+  removedAt: v.optional(v.string()),
+  isActive: v.boolean(),
+})
+  .index("by_teamId", ["teamId"])
+  .index("by_userId", ["userId"])
+  .index("by_teamId_userId", ["teamId", "userId"]),
+
+// ■■ JOB_ASSIGNMENTS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+jobAssignments: defineTable({
+  jobId: v.id("jobs"),
+  userId: v.id("users"),
+  assignmentRole: v.union(
+    v.literal("primary_recruiter"), // The TA responsible; receives all alerts
+    v.literal("supporting_recruiter"),// Additional TA with pipeline access
+    v.literal("director"), // Stage 5 Director Review access
+    v.literal("client_contact") // Stage 6 Client Review access
+  ),
+  assignedBy: v.id("users"),
+  assignedAt: v.string(),
+  revokedAt: v.optional(v.string()),
+  isActive: v.boolean(),
+})
+  .index("by_jobId", ["jobId"])
+  .index("by_userId", ["userId"])
+  .index("by_jobId_assignmentRole", ["jobId", "assignmentRole"])
+  .index("by_userId_isActive", ["userId", "isActive"]),
+
+// ■■ ROLE_AUDIT_LOG ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+roleAuditLog: defineTable({
+  targetUserId: v.id("users"),
+  changedBy: v.id("users"),
+  fromRole: v.string(),
+  toRole: v.string(),
+  reason: v.optional(v.string()),
+  occurredAt: v.string(),
+})
+  .index("by_targetUserId", ["targetUserId"])
+  .index("by_occurredAt", ["occurredAt"]),
 
 // ■■ JOBS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 jobs: defineTable({
@@ -64,6 +140,7 @@ v.literal("draft")),
 
 // Team Assignment
 primaryRecruiterId: v.id("users"),
+supportingRecruiterIds: v.optional(v.array(v.id("users"))),
 directorId: v.optional(v.id("users")),
 clientContactName: v.optional(v.string()),
 clientContactEmail: v.optional(v.string()),
@@ -358,6 +435,7 @@ generatedAt: v.string(),
     fileHash: v.optional(v.string()),
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
+    candidateConsent: v.optional(v.boolean()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -421,6 +499,14 @@ generatedAt: v.string(),
     secondShortlistAt: v.optional(v.number()),
     secondRejectReason: v.optional(v.string()),
     directorReviewId: v.optional(v.string()),
+    stageHistory: v.optional(v.array(
+      v.object({
+        stage: v.string(),
+        enteredAt: v.string(),
+        changedBy: v.id("users"),
+        note: v.optional(v.string()),
+      })
+    )),
     clientReviewId: v.optional(v.string()),
     interviewId: v.optional(v.string()),
     offerId: v.optional(v.string()),
@@ -691,6 +777,34 @@ generatedAt: v.string(),
     .index("by_job_time", ["jobId", "receivedAt"])
     .index("by_channel_time", ["channelType", "receivedAt"])
     .index("by_receivedAt", ["receivedAt"]),
+
+  systemLogs: defineTable({
+    type: v.string(),
+    message: v.string(),
+    data: v.any(),
+    timestamp: v.number(),
+  }),
+
+  // ■■ ACTIVITY_LOG ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  activityLog: defineTable({
+    actorId: v.id("users"),
+    actorName: v.string(),
+    action: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    metadata: v.optional(v.any()),
+    occurredAt: v.string(),
+  })
+    .index("by_actorId", ["actorId"])
+    .index("by_entityType_entityId", ["entityType", "entityId"]),
+
+  // ■■ CANDIDATE_CONSENT ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  candidateConsent: defineTable({
+    candidateId: v.id("candidates"),
+    consented: v.boolean(),
+    consentedAt: v.string(),
+    method: v.string(),
+  }).index("by_candidateId", ["candidateId"]),
 
   esaRecords: defineTable({
     clientName: v.string(),

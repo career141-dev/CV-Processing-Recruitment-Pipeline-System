@@ -4,6 +4,9 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'react-qr-code';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { useJobAccess, useRole } from '@/hooks/useRole';
+import { Id } from '../../../../../convex/_generated/dataModel';
 
 // MOCK DATA GENERATION
 const MOCK_DATA = {
@@ -81,7 +84,27 @@ const TABS = [
 ];
 
 export default function JobDetailsPage() {
-  const [activeTab, setActiveTab] = useState('New CVs');
+  const params = useParams();
+  const router = useRouter();
+  const jobId = params.jobId as Id<"jobs">;
+  
+  const { role } = useRole();
+  const { canViewPipeline, canDirectorReview, canClientReview } = useJobAccess(jobId);
+
+  // Redirect clients immediately to the isolated portal
+  React.useEffect(() => {
+    if (role === 'client') {
+      router.push(`/client-portal/${jobId}`);
+    }
+  }, [role, jobId, router]);
+
+  const VISIBLE_TABS = TABS.filter(tab => {
+    if (tab.id === 'Director Review') return canDirectorReview;
+    if (tab.id === 'Client Review') return canClientReview;
+    return canViewPipeline; // Standard TA tabs
+  });
+
+  const [activeTab, setActiveTab] = useState(VISIBLE_TABS[0]?.id || 'New CVs');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -450,7 +473,7 @@ export default function JobDetailsPage() {
       {/* SECTION 2: 10-STAGE PIPELINE TABS */}
       <div className="bg-surface border-b border-border sticky top-0 z-30 -mx-[32px] px-[32px] pt-2 mb-6 shadow-sm">
         <div className="flex gap-5 text-[13px] font-medium text-text-secondary overflow-x-auto custom-scrollbar">
-          {TABS.map((tab) => {
+          {VISIBLE_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             const count = MOCK_DATA[tab.id as keyof typeof MOCK_DATA]?.length || 0;
             return (

@@ -11,19 +11,17 @@ const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 // This component watches the Clerk auth state and fires our syncUser mutation
 function AuthSync({ children }: { children: ReactNode }) {
   const { user, isLoaded, isSignedIn } = useUser();
-  const syncUser = useMutation(api.users.syncUser);
+  const syncCurrentUser = useMutation(api.users.syncCurrentUser);
 
   useEffect(() => {
     if (isLoaded && isSignedIn && user) {
-      syncUser({
-        clerkId: user.id,
+      syncCurrentUser({
         email: user.primaryEmailAddress?.emailAddress || "",
-        fullName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown User",
-        // Pull the role dynamically from Clerk's publicMetadata. If you haven't assigned one yet, default to 'ta'
-        role: (user.publicMetadata?.role as string) || "ta", 
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown User",
+        avatarUrl: user.imageUrl,
       }).catch(console.error);
     }
-  }, [isLoaded, isSignedIn, user, syncUser]);
+  }, [isLoaded, isSignedIn, user, syncCurrentUser]);
 
   return <>{children}</>;
 }

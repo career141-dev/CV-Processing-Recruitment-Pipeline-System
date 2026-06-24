@@ -1,62 +1,128 @@
 // convex/users.ts
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireRole } from "./lib/permissions";
 
-// Called from Next.js after Clerk sign-in to ensure user exists in Convex
-export const syncUser = mutation({
-  args: {
-    clerkId: v.string(),
-    email: v.string(),
-    fullName: v.string(),
-    role: v.optional(v.string()), // "ta" | "director" | "admin" | "ops"
-  },
+// Called from Next.js on every login via useConvexAuth / onAuthStateChange
+export const syncCurrentUser = mutation({
+  args: { name: v.string(), email: v.string(), avatarUrl: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // Note: The existing schema uses `tokenIdentifier` instead of `clerkId`.
-    // We look up the user using the by_token index.
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
     const existing = await ctx.db
       .query("users")
-      .withIndex("by_token", (q) => q.eq("tokenIdentifier", args.clerkId))
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
       .unique();
 
-    if (existing) return existing._id;
+    if (existing) {
+      // Update login time and name/email if changed
+      await ctx.db.patch(existing._id, {
+        fullName: args.name,
+        email: args.email,
+        avatarUrl: args.avatarUrl,
+        lastLoginAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      return existing._id;
+    }
 
+    // First login — create with no role (isOnboarded: false)
     return await ctx.db.insert("users", {
-      tokenIdentifier: args.clerkId,
+      tokenIdentifier: identity.tokenIdentifier,
+      clerkUserId: identity.subject,
+      fullName: args.name,
       email: args.email,
-      fullName: args.fullName,
-      role: (args.role as any) ?? "ta",
+      avatarUrl: args.avatarUrl,
+      role: "viewer", // Default — Admin must promote
       isActive: true,
+      isOnboarded: false, // Blocks access until Admin assigns role
+      lastLoginAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
   },
 });
 
-// Use this helper inside any mutation to get the acting user
-export const getActingUser = async (ctx: any) => {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) throw new Error("Unauthenticated");
+// Admin only — assign role to a user
+export const assignRole = mutation({
+  args: { targetUserId: v.id("users"), newRole: v.string(), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const admin = await requireRole(ctx, ["admin"]);
+    const target = await ctx.db.get(args.targetUserId);
+    if (!target) throw new Error("Target user not found");
+    const fromRole = target.role;
 
-  // In Convex, identity.tokenIdentifier is what Clerk provides as the unique subject ID
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_token", (q: any) => q.eq("tokenIdentifier", identity.tokenIdentifier))
-    .unique();
+    await ctx.db.patch(args.targetUserId, {
+      role: args.newRole as any,
+      isOnboarded: true,
+      updatedAt: new Date().toISOString(),
+    });
 
-  if (!user) throw new Error("User not found in database");
-  return user;
-};
+    // Write to audit log
+    await ctx.db.insert("roleAuditLog", {
+      targetUserId: args.targetUserId,
+      changedBy: admin._id,
+      fromRole,
+      toRole: args.newRole,
+      reason: args.reason,
+      occurredAt: new Date().toISOString(),
+    });
+  },
+});
+
+export const deactivate = mutation({
+  args: { targetUserId: v.id("users"), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const admin = await requireRole(ctx, ["admin"]);
+    
+    await ctx.db.patch(args.targetUserId, {
+      isActive: false,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await ctx.db.insert("roleAuditLog", {
+      targetUserId: args.targetUserId,
+      changedBy: admin._id,
+      fromRole: "active",
+      toRole: "deactivated",
+      reason: args.reason,
+      occurredAt: new Date().toISOString(),
+    });
+  },
+});
 
 export const getTeamMembers = query({
   args: {},
   handler: async (ctx) => {
-    // Return users without any identity checks or complex promises to ensure it NEVER returns []
     const users = await ctx.db.query("users").collect();
-    
-    // Simplest possible return
     return users.map(u => ({
       ...u,
-      jobCount: 0 // hardcode jobCount to bypass index issues just in case
+      jobCount: 0 
     }));
+  },
+});
+
+export const getCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+
+    return user;
+  },
+});
+
+export const listByRoles = query({
+  args: { roles: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const users = await ctx.db.query("users").collect();
+    return users.filter((u) => args.roles.includes(u.role));
   },
 });
 

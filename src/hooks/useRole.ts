@@ -1,0 +1,37 @@
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+
+export function useCurrentUser() {
+  return useQuery(api.users.getCurrentUser);
+}
+
+export function useRole() {
+  const user = useCurrentUser();
+  const role = user?.role ?? null;
+  return {
+    role,
+    isAdmin: role === "admin",
+    isTAManager: role === "ta_manager",
+    isSeniorTA: role === "senior_ta",
+    isRecruiter: role === "recruiter",
+    isDirector: role === "director",
+    isClient: role === "client",
+    isViewer: role === "viewer",
+    canCreateJob: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    canManageUsers: role === "admin",
+    canViewAnalytics: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+  };
+}
+
+export function useJobAccess(jobId: Id<"jobs">) {
+  const assignment = useQuery(api.jobs.getMyAssignment, { jobId });
+  const { role, isAdmin, isTAManager } = useRole();
+  return {
+    canViewPipeline: isAdmin || isTAManager || !!assignment,
+    canShortlist: isAdmin || isTAManager || ["primary_recruiter", "supporting_recruiter"].includes(assignment?.assignmentRole ?? ""),
+    canDirectorReview: isAdmin || assignment?.assignmentRole === "director",
+    canClientReview: role === "client" && assignment?.assignmentRole === "client_contact",
+    isPrimaryRecruiter: assignment?.assignmentRole === "primary_recruiter",
+  };
+}
