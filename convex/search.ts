@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { action, query } from "../_generated/server";
-import { api } from "../_generated/api";
-import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
-import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
+import { action, query } from "./_generated/server";
+import { api } from "./_generated/api";
+import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "./lib/jdParser";
+import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "./cvs/cvScoring";
 
 export const searchCandidates = query({
   args: {

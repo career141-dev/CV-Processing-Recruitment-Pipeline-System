@@ -1,4 +1,5 @@
-import { mutation, query } from "../_generated/server";
+import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 // convex/jobs.ts — generateKeyword helper function
