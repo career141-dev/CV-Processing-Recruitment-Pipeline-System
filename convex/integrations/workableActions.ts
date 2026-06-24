@@ -140,7 +140,7 @@ export const startBulkImport = action({
       apiKey: args.apiKey,
     });
 
-    ctx.scheduler.runAfter(0, internal.integrations.workableActions.runImportBatch, {
+    await ctx.scheduler.runAfter(0, internal.integrations.workableActions.runImportBatch, {
       importId,
       subdomain: args.subdomain,
       apiKey: args.apiKey,
@@ -202,7 +202,7 @@ export const retryImport = action({
       apiKey,
     });
 
-    ctx.scheduler.runAfter(0, internal.integrations.workableActions.runImportBatch, {
+    await ctx.scheduler.runAfter(0, internal.integrations.workableActions.runImportBatch, {
       importId: args.importId,
       subdomain,
       apiKey,
@@ -244,7 +244,7 @@ export const retrySkipped = action({
       apiKey,
     });
 
-    ctx.scheduler.runAfter(0, internal.integrations.workableActions.runImportBatch, {
+    await ctx.scheduler.runAfter(0, internal.integrations.workableActions.runImportBatch, {
       importId: args.importId,
       subdomain,
       apiKey,
@@ -318,7 +318,7 @@ export const runImportBatch = internalAction({
           failed,
           lastCursor: args.nextUrl ?? undefined,
         });
-        ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
+        await ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
           ...args,
           imported,
           skipped,
@@ -373,7 +373,7 @@ export const runImportBatch = internalAction({
               failed,
               lastCursor: args.nextUrl ?? undefined,
             });
-            ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
+            await ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
               ...args,
               imported,
               skipped,
@@ -425,7 +425,7 @@ export const runImportBatch = internalAction({
           userId: args.userId,
         });
 
-        ctx.scheduler.runAfter(imported * 2000, api.cvs.cvExtraction.processCvExtraction, {
+        await ctx.scheduler.runAfter(imported * 2000, api.cvs.cvExtraction.processCvExtraction, {
           storageId,
           fileType: downloaded.fileType,
           sourceChannel: "Workable",
@@ -463,7 +463,7 @@ export const runImportBatch = internalAction({
         status: "done",
       });
     } else if (page.paging?.next) {
-      ctx.scheduler.runAfter(500, internal.integrations.workableActions.runImportBatch, {
+      await ctx.scheduler.runAfter(500, internal.integrations.workableActions.runImportBatch, {
         importId: args.importId,
         subdomain: args.subdomain,
         apiKey: args.apiKey,

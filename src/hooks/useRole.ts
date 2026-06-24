@@ -9,8 +9,15 @@ export function useCurrentUser() {
 export function useRole() {
   const user = useCurrentUser();
   const role = user?.role ?? null;
+  
+  if (typeof window !== 'undefined') {
+    console.log("DEBUG ROLE:", { user, role, identity_loaded: user !== undefined });
+  }
+
   return {
     role,
+    isOnboarded: user?.isOnboarded ?? false,
+    isActive: user?.isActive ?? false,
     isAdmin: role === "admin",
     isTAManager: role === "ta_manager",
     isSeniorTA: role === "senior_ta",

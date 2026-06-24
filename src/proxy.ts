@@ -1,11 +1,17 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
+const isPublicRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)", "/forgot-password(.*)", "/"]);
 
 export default clerkMiddleware(async (auth, req) => {
   const session = await auth();
+  
+  // If accessing a protected route without being logged in, redirect to sign-in
   if (isProtectedRoute(req) && !session.userId) {
-    return session.redirectToSignIn({ returnBackUrl: req.url });
+    const signInUrl = new URL('/sign-in', req.url);
+    signInUrl.searchParams.set('redirect_url', req.url);
+    return NextResponse.redirect(signInUrl);
   }
 })
 

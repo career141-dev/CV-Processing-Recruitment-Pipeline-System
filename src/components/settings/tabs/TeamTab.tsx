@@ -145,8 +145,13 @@ export function TeamTab() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 text-text-primary text-[13px]">
-                          <span className="text-[10px]">{member.isActive ? "🟢" : "🔴"}</span> 
-                          {member.isActive ? "Active" : "Inactive"}
+                          {!member.isActive ? (
+                            <><span className="text-[10px]">🔴</span> Inactive</>
+                          ) : !member.isOnboarded ? (
+                            <><span className="text-[10px]">🟡</span> Pending</>
+                          ) : (
+                            <><span className="text-[10px]">🟢</span> Active</>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">

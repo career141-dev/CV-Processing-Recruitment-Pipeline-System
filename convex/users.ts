@@ -5,10 +5,15 @@ import { requireRole } from "./lib/permissions";
 
 // Called from Next.js on every login via useConvexAuth / onAuthStateChange
 export const syncCurrentUser = mutation({
-  args: { name: v.string(), email: v.string(), avatarUrl: v.optional(v.string()) },
+  args: { 
+    name: v.string(), 
+    email: v.string(), 
+    avatarUrl: v.optional(v.string()),
+    invitedRole: v.optional(v.string())
+  },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
+    if (!identity) return null;
 
     const existing = await ctx.db
       .query("users")
@@ -27,16 +32,19 @@ export const syncCurrentUser = mutation({
       return existing._id;
     }
 
-    // First login — create with no role (isOnboarded: false)
+    // First login — assign the invited role if it exists, otherwise default to viewer
+    const roleToAssign = args.invitedRole || "viewer";
+    const isOnboarded = !!args.invitedRole;
+
     return await ctx.db.insert("users", {
       tokenIdentifier: identity.tokenIdentifier,
       clerkUserId: identity.subject,
       fullName: args.name,
       email: args.email,
       avatarUrl: args.avatarUrl,
-      role: "viewer", // Default — Admin must promote
+      role: roleToAssign as any,
       isActive: true,
-      isOnboarded: false, // Blocks access until Admin assigns role
+      isOnboarded: isOnboarded,
       lastLoginAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -53,6 +61,7 @@ export const assignRole = mutation({
     if (!target) throw new Error("Target user not found");
     const fromRole = target.role;
 
+    // Update role and mark as onboarded if they were pending
     await ctx.db.patch(args.targetUserId, {
       role: args.newRole as any,
       isOnboarded: true,

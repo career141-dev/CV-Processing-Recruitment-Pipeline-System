@@ -6,9 +6,14 @@ interface ProfileTabProps {
   fullName: string;
   email: string;
   initial: string;
+  role: string | null;
 }
 
-export function ProfileTab({ fullName, email, initial }: ProfileTabProps) {
+export function ProfileTab({ fullName, email, initial, role }: ProfileTabProps) {
+  // Format role for display: "ta_manager" -> "TA Manager", "senior_ta" -> "Senior TA", etc.
+  const displayRole = role 
+    ? role.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+    : "Loading...";
   return (
     <Card className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <h2 className="text-text-primary text-[14px] font-bold mb-6">My Profile</h2>
@@ -33,7 +38,7 @@ export function ProfileTab({ fullName, email, initial }: ProfileTabProps) {
             </div>
             <div>
               <label className="block text-[13px] font-medium text-text-secondary mb-2">Role <span className="text-text-disabled">(Locked)</span></label>
-              <input className="w-full px-3 py-2 bg-background border border-border rounded-md text-text-secondary cursor-not-allowed" disabled type="text" defaultValue="Super Admin" />
+              <input className="w-full px-3 py-2 bg-background border border-border rounded-md text-text-secondary cursor-not-allowed capitalize" disabled type="text" value={displayRole} />
             </div>
             <div>
               <label className="block text-[13px] font-medium text-text-secondary mb-2">Email Address</label>

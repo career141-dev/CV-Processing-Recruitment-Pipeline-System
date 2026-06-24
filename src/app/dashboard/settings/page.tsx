@@ -8,6 +8,7 @@ import { SettingsSidebar } from '@/components/settings/SettingsSidebar';
 import { ProfileTab } from '@/components/settings/tabs/ProfileTab';
 import { TeamTab } from '@/components/settings/tabs/TeamTab';
 import { Card } from '@/components/ui/Card';
+import { useRole } from '@/hooks/useRole';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile');
@@ -18,14 +19,19 @@ export default function SettingsPage() {
   const email = user?.primaryEmailAddress?.emailAddress || 'admin@career141.com';
   const initial = firstName.charAt(0);
 
+  const { role, isAdmin, isTAManager } = useRole();
+  const showAdminTabs = isAdmin || isTAManager;
+
   const tabs = [
     { id: 'profile', label: 'My Profile', icon: <User size={18} /> },
-    { id: 'team', label: 'Team Members', icon: <Users size={18} /> },
-    { id: 'ai', label: 'AI Agent Config', icon: <Bot size={18} /> },
-    { id: 'integrations', label: 'Channel Integrations', icon: <Puzzle size={18} /> },
-    { id: 'email', label: 'Email Templates', icon: <Mail size={18} /> },
-    { id: 'billing', label: 'Billing & Plan', icon: <CreditCard size={18} /> },
-    { id: 'audit', label: 'Audit Log', icon: <History size={18} /> },
+    ...(showAdminTabs ? [
+      { id: 'team', label: 'Team Members', icon: <Users size={18} /> },
+      { id: 'ai', label: 'AI Agent Config', icon: <Bot size={18} /> },
+      { id: 'integrations', label: 'Channel Integrations', icon: <Puzzle size={18} /> },
+      { id: 'email', label: 'Email Templates', icon: <Mail size={18} /> },
+      { id: 'billing', label: 'Billing & Plan', icon: <CreditCard size={18} /> },
+      { id: 'audit', label: 'Audit Log', icon: <History size={18} /> },
+    ] : []),
   ];
 
   return (
@@ -37,7 +43,7 @@ export default function SettingsPage() {
         {/* Content Area */}
         <div className="flex-grow">
           {activeTab === 'profile' && (
-            <ProfileTab fullName={fullName} email={email} initial={initial} />
+            <ProfileTab fullName={fullName} email={email} initial={initial} role={role} />
           )}
 
           {activeTab === 'team' && (

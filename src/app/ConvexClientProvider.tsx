@@ -19,6 +19,7 @@ function AuthSync({ children }: { children: ReactNode }) {
         email: user.primaryEmailAddress?.emailAddress || "",
         name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown User",
         avatarUrl: user.imageUrl,
+        invitedRole: (user.publicMetadata?.role as string) || undefined,
       }).catch(console.error);
     }
   }, [isLoaded, isSignedIn, user, syncCurrentUser]);
