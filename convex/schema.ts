@@ -13,8 +13,9 @@ export default defineSchema({
     ),
     avatarUrl: v.optional(v.string()),
     phone: v.optional(v.string()),
+    tokenIdentifier: v.optional(v.string()),
     isActive: v.boolean(),
-    createdAt: v.number(),
+    createdAt: v.union(v.string(), v.number()),
     lastLoginAt: v.optional(v.number()),
     notificationPrefs: v.optional(
       v.object({

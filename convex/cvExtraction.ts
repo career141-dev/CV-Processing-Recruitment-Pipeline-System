@@ -49,8 +49,12 @@ export const cvExtractionSchema = z.object({
   yearsOfExperience: z.number().nullable().optional(),
   industries: z.array(z.string()).nullable().optional(),
   sector: z.string().nullable().optional(),
+  expectedSalary: z.string().nullable().optional(),
+  noticePeriod: z.string().nullable().optional(),
+  employmentStatus: z.string().nullable().optional(),
   skills: z.array(z.string()).nullable().optional(),
   education: z.array(educationSchema).nullable().optional(),
+  certifications: z.array(z.string()).nullable().optional(),
   languages: z.array(z.string()).nullable().optional(),
   summary: z.string().nullable().optional(),
   jobHistory: z.array(jobHistorySchema).nullable().optional(),
@@ -351,9 +355,17 @@ ${textToSend}`,
 // null → undefined helper
 // ──────────────────────────────────────────────────
 
+type NullToUndefined<T> = T extends null
+  ? undefined
+  : T extends (infer U)[]
+    ? NullToUndefined<U>[]
+    : T extends Record<string, unknown>
+      ? { [K in keyof T]: NullToUndefined<T[K]> }
+      : T;
+
 function nullToUndefined<T extends Record<string, unknown>>(
   obj: T,
-): Record<string, unknown> {
+): { [K in keyof T]: NullToUndefined<T[K]> } {
   return Object.fromEntries(
     Object.entries(obj).map(([k, v]) => {
       if (v === null) return [k, undefined];
@@ -374,7 +386,7 @@ function nullToUndefined<T extends Record<string, unknown>>(
       }
       return [k, v];
     }),
-  );
+  ) as { [K in keyof T]: NullToUndefined<T[K]> };
 }
 
 // ──────────────────────────────────────────────────
