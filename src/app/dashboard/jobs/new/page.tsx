@@ -457,9 +457,24 @@ export default function CreateJobWizard() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">Primary Recruiter</label>
-            <select className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.primaryRecruiter} onChange={e => updateFormData('primaryRecruiter', e.target.value)}>
-              <option>Shambra Ameen</option>
-              <option>John Doe</option>
+            <select 
+              className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface disabled:opacity-50" 
+              value={formData.primaryRecruiter} 
+              onChange={e => updateFormData('primaryRecruiter', e.target.value)}
+              disabled={!teamMembers || teamMembers.length === 0}
+            >
+              {teamMembers === undefined ? (
+                <option>Loading team members...</option>
+              ) : teamMembers.length === 0 ? (
+                <option>No team members found in DB</option>
+              ) : (
+                <>
+                  <option value="">Select a Recruiter</option>
+                  {teamMembers.map(member => (
+                    <option key={member._id} value={member.fullName}>{member.fullName}</option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
           <div>
@@ -469,10 +484,22 @@ export default function CreateJobWizard() {
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">Director / Reviewer *</label>
-            <select className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.director} onChange={e => updateFormData('director', e.target.value)}>
-              <option value="">Select Director</option>
-              <option>Jane Smith</option>
-              <option>Michael Brown</option>
+            <select 
+              className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface disabled:opacity-50" 
+              value={formData.director} 
+              onChange={e => updateFormData('director', e.target.value)}
+              disabled={!teamMembers || teamMembers.length === 0}
+            >
+              {teamMembers === undefined ? (
+                <option value="">Loading...</option>
+              ) : (
+                <>
+                  <option value="">Select Director</option>
+                  {teamMembers.map(member => (
+                    <option key={member._id} value={member.fullName}>{member.fullName}</option>
+                  ))}
+                </>
+              )}
             </select>
             <p className="text-[11px] text-text-secondary mt-1">Person who does Level 2 review.</p>
           </div>

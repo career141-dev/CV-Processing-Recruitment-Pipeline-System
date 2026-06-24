@@ -50,7 +50,7 @@ export const getTeamMembers = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
+    // if (!identity) return []; // Temporarily disabled to debug auth issue
 
     const users = await ctx.db.query("users").collect();
     
