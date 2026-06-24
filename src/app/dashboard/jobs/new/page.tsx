@@ -12,7 +12,7 @@ export default function CreateJobWizard() {
   const [currentStep, setCurrentStep] = useState(1);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  const teamMembers = useQuery(api.users.getTeamMembers);
+  const teamMembers = useQuery(api.users.getAllUsers);
   const createJob = useMutation(api.jobs.createJob);
   const updateJobChannels = useMutation(api.jobs.updateJobChannels);
   const updateJobAiConfig = useMutation(api.jobs.updateJobAiConfig);
@@ -1866,3 +1866,4 @@ export default function CreateJobWizard() {
     </div>
   );
 }
+
