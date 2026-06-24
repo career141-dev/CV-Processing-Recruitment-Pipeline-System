@@ -19,7 +19,7 @@ const SOURCE_COLORS: Record<string, { bgColor: string; textColor: string }> = {
 
 export default function IngestionMonitorPage() {
   const stats = useQuery(api.stats.getIngestionStats);
-  const resumeFailedUploads = useAction(api.cvExtraction.resumeFailedUploads);
+  const resumeFailedUploads = useAction(api.cvs.cvExtraction.resumeFailedUploads);
   const [retrying, setRetrying] = useState(false);
 
   if (!stats) {

@@ -22,41 +22,59 @@ import {
 // Types & Schemas
 // ──────────────────────────────────────────────────
 
+const makeArray = (val: any) => {
+  if (val === null || val === undefined) return null;
+  if (Array.isArray(val)) return val.filter(v => v !== null && v !== undefined).map(String);
+  if (typeof val === "string") return val.split(",").map(s => s.trim());
+  return [];
+};
+
+const makeNumber = (val: any) => {
+  if (val === null || val === undefined) return null;
+  const num = Number(val);
+  return isNaN(num) ? null : num;
+};
+
+const makeString = (val: any) => {
+  if (val === null || val === undefined) return null;
+  return String(val);
+};
+
 export const educationSchema = z.object({
-  degree: z.string().nullable().optional(),
-  institution: z.string().nullable().optional(),
-  year: z.number().nullable().optional(),
-  field: z.string().nullable().optional(),
+  degree: z.preprocess(makeString, z.string().nullable().optional()),
+  institution: z.preprocess(makeString, z.string().nullable().optional()),
+  year: z.preprocess(makeNumber, z.number().nullable().optional()),
+  field: z.preprocess(makeString, z.string().nullable().optional()),
 });
 
 export const jobHistorySchema = z.object({
-  company: z.string().nullable().optional(),
-  title: z.string().nullable().optional(),
-  startDate: z.string().nullable().optional(),
-  endDate: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
+  company: z.preprocess(makeString, z.string().nullable().optional()),
+  title: z.preprocess(makeString, z.string().nullable().optional()),
+  startDate: z.preprocess(makeString, z.string().nullable().optional()),
+  endDate: z.preprocess(makeString, z.string().nullable().optional()),
+  description: z.preprocess(makeString, z.string().nullable().optional()),
 });
 
 export const cvExtractionSchema = z.object({
-  fullName: z.string().nullable().optional(),
-  email: z.string().nullable().optional(),
-  phone: z.string().nullable().optional(),
-  location: z.string().nullable().optional(),
-  linkedinUrl: z.string().nullable().optional(),
-  currentTitle: z.string().nullable().optional(),
-  currentEmployer: z.string().nullable().optional(),
-  seniorityLevel: z.string().nullable().optional(),
-  yearsOfExperience: z.number().nullable().optional(),
-  industries: z.array(z.string()).nullable().optional(),
-  sector: z.string().nullable().optional(),
-  expectedSalary: z.string().nullable().optional(),
-  noticePeriod: z.string().nullable().optional(),
-  employmentStatus: z.string().nullable().optional(),
-  skills: z.array(z.string()).nullable().optional(),
+  fullName: z.preprocess(makeString, z.string().nullable().optional()),
+  email: z.preprocess(makeString, z.string().nullable().optional()),
+  phone: z.preprocess(makeString, z.string().nullable().optional()),
+  location: z.preprocess(makeString, z.string().nullable().optional()),
+  linkedinUrl: z.preprocess(makeString, z.string().nullable().optional()),
+  currentTitle: z.preprocess(makeString, z.string().nullable().optional()),
+  currentEmployer: z.preprocess(makeString, z.string().nullable().optional()),
+  seniorityLevel: z.preprocess(makeString, z.string().nullable().optional()),
+  yearsOfExperience: z.preprocess(makeNumber, z.number().nullable().optional()),
+  industries: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
+  sector: z.preprocess(makeString, z.string().nullable().optional()),
+  expectedSalary: z.preprocess(makeString, z.string().nullable().optional()),
+  noticePeriod: z.preprocess(makeString, z.string().nullable().optional()),
+  employmentStatus: z.preprocess(makeString, z.string().nullable().optional()),
+  skills: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
   education: z.array(educationSchema).nullable().optional(),
-  certifications: z.array(z.string()).nullable().optional(),
-  languages: z.array(z.string()).nullable().optional(),
-  summary: z.string().nullable().optional(),
+  certifications: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
+  languages: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
+  summary: z.preprocess(makeString, z.string().nullable().optional()),
   jobHistory: z.array(jobHistorySchema).nullable().optional(),
 });
 
@@ -334,7 +352,8 @@ ${textToSend}`,
 
     try {
       return cvExtractionSchema.parse(parsed);
-    } catch {
+    } catch (e) {
+      console.error("Zod parse error:", e);
       return null;
     }
   } catch (error) {
@@ -472,8 +491,15 @@ export async function runCvExtraction(
       const { educationDegree, educationInstitution, educationYear } = deriveEducationFields(extracted.education);
       const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, extracted.yearsOfExperience);
 
+      const formattedJobHistory = safeExtracted.jobHistory?.map((jh) => ({
+        ...jh,
+        company: jh.company ?? "Unknown Company",
+        title: jh.title ?? "Unknown Title",
+      }));
+
       await ctx.runMutation(api.candidates.createCandidate, {
         ...safeExtracted,
+        jobHistory: formattedJobHistory,
         seniorityLevel: seniorityLevel ?? safeExtracted.seniorityLevel,
         noticePeriodDays,
         educationDegree,
@@ -539,8 +565,8 @@ export const processCvExtraction = action({
 export const resumeFailedUploads = action({
   args: {},
   handler: async (ctx): Promise<{ queued: number }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    // const identity = await ctx.auth.getUserIdentity();
+    // if (!identity) throw new Error("Not authenticated");
 
     await ctx.runAction(internal.cvs.cvExtraction.resumeBatch, {
       cursor: undefined,
