@@ -21,23 +21,7 @@ export default function CreateJobWizard() {
     }
   }, [isLoaded, canCreateJob, router]);
 
-  if (!isLoaded || !canCreateJob) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        {!isLoaded ? (
-          <Loader2 className="w-8 h-8 animate-spin text-primary-container" />
-        ) : (
-          <>
-            <ShieldAlert className="w-12 h-12 text-red-500" />
-            <h2 className="text-xl font-bold text-text-primary">Access Denied</h2>
-            <p className="text-text-secondary text-center max-w-md">
-              You do not have permission to create jobs. If you believe this is an error, please contact your System Administrator.
-            </p>
-          </>
-        )}
-      </div>
-    );
-  }
+
 
   const availableRecruiters = useQuery(api.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta"] });
   const availableDirectors = useQuery(api.users.listByRoles, { roles: ["director", "admin", "ta_manager"] });
@@ -1799,6 +1783,24 @@ export default function CreateJobWizard() {
           </div>
         </div>
 
+      </div>
+    );
+  }
+
+  if (!isLoaded || !canCreateJob) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        {!isLoaded ? (
+          <Loader2 className="w-8 h-8 animate-spin text-primary-container" />
+        ) : (
+          <>
+            <ShieldAlert className="w-12 h-12 text-red-500" />
+            <h2 className="text-xl font-bold text-text-primary">Access Denied</h2>
+            <p className="text-text-secondary text-center max-w-md">
+              You do not have permission to create jobs. If you believe this is an error, please contact your System Administrator.
+            </p>
+          </>
+        )}
       </div>
     );
   }

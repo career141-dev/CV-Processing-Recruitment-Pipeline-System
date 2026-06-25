@@ -25,6 +25,51 @@ export const getCandidate = query({
   },
 });
 
+export const getCandidateForParsing = query({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.candidateId);
+  },
+});
+
+export const updateCandidateAfterLazyParse = mutation({
+  args: {
+    candidateId: v.id("candidates"),
+    skills: v.optional(v.array(v.string())),
+    jobHistory: v.optional(
+      v.array(
+        v.object({
+          company: v.string(),
+          title: v.string(),
+          startDate: v.optional(v.string()),
+          endDate: v.optional(v.string()),
+          description: v.optional(v.string()),
+        })
+      )
+    ),
+    education: v.optional(
+      v.array(
+        v.object({
+          degree: v.optional(v.string()),
+          institution: v.optional(v.string()),
+          year: v.optional(v.float64()),
+          field: v.optional(v.string()),
+        })
+      )
+    ),
+    industries: v.optional(v.array(v.string())),
+    certifications: v.optional(v.array(v.string())),
+    languages: v.optional(v.array(v.string())),
+    summary: v.optional(v.string()),
+    parsingConfidence: v.optional(v.any()),
+    isParsed: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { candidateId, ...updates } = args;
+    await ctx.db.patch(candidateId, updates);
+  },
+});
+
 export const createCandidate = mutation({
   args: {
     fullName: v.optional(v.string()),
@@ -77,6 +122,8 @@ export const createCandidate = mutation({
     educationInstitution: v.optional(v.string()),
     educationYear: v.optional(v.number()),
     totalExperienceYears: v.optional(v.number()),
+    isParsed: v.optional(v.boolean()),
+    parsingConfidence: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     // 4-Factor Deduplication (Agent 6)

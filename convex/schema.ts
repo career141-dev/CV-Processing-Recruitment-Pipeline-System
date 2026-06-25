@@ -436,6 +436,7 @@ generatedAt: v.string(),
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     candidateConsent: v.optional(v.boolean()),
+    isParsed: v.optional(v.boolean()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])

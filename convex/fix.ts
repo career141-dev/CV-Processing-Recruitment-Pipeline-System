@@ -41,6 +41,39 @@ export const clearDatabase = mutation({
   }
 });
 
+export const clearCandidatesAndCVs = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const counts: Record<string, number> = {};
+
+    // 1. Delete storage files from cvUploads that have storageId
+    const uploads = await ctx.db.query("cvUploads").collect();
+    const storageIds = uploads
+      .map((u) => u.storageId)
+      .filter((id): id is Id<"_storage"> => !!id);
+    for (const sid of storageIds) {
+      try { await ctx.storage.delete(sid); } catch { }
+    }
+    counts.storageDeleted = storageIds.length;
+
+    // 2. Delete all candidates
+    const candidates = await ctx.db.query("candidates").collect();
+    for (const doc of candidates) {
+      await ctx.db.delete(doc._id);
+    }
+    counts.candidates = candidates.length;
+
+    // 3. Delete all cvUploads
+    const cvDocs = await ctx.db.query("cvUploads").collect();
+    for (const doc of cvDocs) {
+      await ctx.db.delete(doc._id);
+    }
+    counts.cvUploads = cvDocs.length;
+
+    return counts;
+  }
+});
+
 export const resetErroredCVs = mutation({
   args: {},
   handler: async (ctx) => {
