@@ -58,7 +58,7 @@ export function PageHeader({ title }: PageHeaderProps) {
           )}
         </div>
         <div className="flex flex-col shrink-0 items-start cursor-pointer">
-          <UserButton showName />
+          <UserButton />
         </div>
       </div>
     </div>

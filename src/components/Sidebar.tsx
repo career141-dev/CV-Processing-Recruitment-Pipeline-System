@@ -24,15 +24,14 @@ export default function Sidebar() {
   return (
     <div className="flex flex-col shrink-0 items-center bg-background pb-3 w-64 border-r border-border h-screen sticky top-0 overflow-y-auto">
       <div className="flex items-center py-4 border-b border-solid border-b-border w-full">
-        <button
-          className="flex flex-col shrink-0 items-center bg-primary-container text-left py-[5px] px-[11px] ml-5 mr-3 rounded-md border-0"
-          onClick={() => alert('Pressed!')}
-        >
-          <span className="text-on-primary text-sm font-bold">R</span>
-        </button>
-        <span className="text-primary-container text-base font-bold mr-[67px]">
-          Career141
-        </span>
+        <Link href="/dashboard" className="flex items-center cursor-pointer">
+          <span className="flex flex-col shrink-0 items-center bg-primary-container text-left py-[5px] px-[11px] ml-5 mr-3 rounded-md">
+            <span className="text-on-primary text-sm font-bold">R</span>
+          </span>
+          <span className="text-primary-container text-base font-bold mr-[67px]">
+            Career141
+          </span>
+        </Link>
       </div>
       <div className="flex items-center bg-surface-container-low py-3 mb-2 border-b border-solid border-b-border w-full">
         <button

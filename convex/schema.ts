@@ -158,16 +158,42 @@ v.literal("return_to_client_review"),
 v.literal("ask_ta_each_time")),
 
 // Agent 2 — AI Match Scoring Weights
-scoreWeightSkills: v.number(), // default 35
-scoreWeightExperience: v.number(), // default 25
-scoreWeightJobTitle: v.number(), // default 20
-scoreWeightIndustry: v.number(), // default 15
-scoreWeightLocation: v.number(), // default 5
-minMatchScoreToShow: v.number(), // default 60
-reverseMatchOnPublish: v.boolean(),
+scoreWeightSkills: v.optional(v.number()), // default 35
+scoreWeightExperience: v.optional(v.number()), // default 25
+scoreWeightJobTitle: v.optional(v.number()), // default 20
+scoreWeightIndustry: v.optional(v.number()), // default 15
+scoreWeightLocation: v.optional(v.number()), // default 5
+minMatchScoreToShow: v.optional(v.number()), // default 60
+reverseMatchOnPublish: v.optional(v.boolean()),
+
+reverseMatchStatus: v.optional(v.union(
+v.literal("running"), v.literal("done"), v.literal("error")
+)),
+reverseMatchedAt: v.optional(v.string()),
+reverseMatchResults: v.optional(v.array(v.object({
+cvId: v.string(),
+overallScore: v.number(),
+breakdown: v.object({
+skills: v.number(), experience: v.number(), seniority: v.number(), industry: v.number(), location: v.number()
+}),
+matchedSkills: v.array(v.string()),
+missingSkills: v.array(v.string()),
+reason: v.string(),
+sourceLevel1: v.optional(v.string()),
+sourceLevel2: v.optional(v.string()),
+}))),
+
 
 // Agent 3 — Follow-up Config
-agent3Enabled: v.boolean(),
+
+agent3TriggerStages: v.optional(v.array(v.string())),
+agent3InitialChannel: v.optional(v.string()),
+agent3InitialMessage: v.optional(v.string()),
+agent3Day2Message: v.optional(v.string()),
+agent3Day4Message: v.optional(v.string()),
+agent3Day7Message: v.optional(v.string()),
+
+agent3Enabled: v.optional(v.boolean()),
 agent3Day2Channel: v.optional(v.union(
 v.literal("email"), v.literal("whatsapp"), v.literal("sms"))),
 agent3Day4Channel: v.optional(v.union(
@@ -178,7 +204,7 @@ agent3AfterDay7: v.union(
 v.literal("mark_unresponsive"), v.literal("continue_weekly")),
 
 // Agent 5 — AI Phone Call Config
-agent5Enabled: v.boolean(),
+agent5Enabled: v.optional(v.boolean()),
 agent5Trigger: v.union(
 v.literal("all_new_applicants"),
 v.literal("database_matches_70_plus"),
@@ -191,18 +217,18 @@ agent5NoAnswerAction: v.union(
 v.literal("trigger_agent3"),
 v.literal("retry_after_2hrs"),
 v.literal("notify_ta")),
-agent5HideCompany: v.boolean(),
+agent5HideCompany: v.optional(v.boolean()),
 
 // SLA Thresholds (days)
-slaNoNewCvsDays: v.number(),
-slaTaReviewDays: v.number(),
-slaAiCallDays: v.number(),
-slaSecondShortlistDays: v.number(),
-slaDirectorReviewDays: v.number(),
-slaEsaDays: v.number(),
-slaClientReviewDays: v.number(),
-slaInterviewDays: v.number(),
-slaOfferDays: v.number(),
+slaNoNewCvsDays: v.optional(v.number()),
+slaTaReviewDays: v.optional(v.number()),
+slaAiCallDays: v.optional(v.number()),
+slaSecondShortlistDays: v.optional(v.number()),
+slaDirectorReviewDays: v.optional(v.number()),
+slaEsaDays: v.optional(v.number()),
+slaClientReviewDays: v.optional(v.number()),
+slaInterviewDays: v.optional(v.number()),
+slaOfferDays: v.optional(v.number()),
 
 // Headhunting
 headhuntingEnabled: v.boolean(),
@@ -239,6 +265,9 @@ cvCountToday: v.number(),
 cvCountTotal: v.number(),
 agentStatus: v.string(), // active | paused | error | not_configured
 lastError: v.optional(v.string()),
+
+configuredSourceLevel2: v.optional(v.string()),
+
 createdAt: v.string(),
 })
 .index("by_job", ["jobId"])
@@ -250,6 +279,10 @@ createdAt: v.string(),
 job_assets: defineTable({
 jobId: v.id("jobs"),
 whatsappQrUrl: v.optional(v.string()),
+
+whatsappQrStorageId: v.optional(v.id("_storage")),
+channelConfigHash: v.optional(v.string()),
+
 whatsappQrPdfUrl: v.optional(v.string()),
 whatsappDeepLink: v.optional(v.string()),
 shortApplyLink: v.optional(v.string()),
@@ -513,7 +546,7 @@ generatedAt: v.string(),
     loopIteration: v.number(),
     isActive: v.boolean(),
     notes: v.optional(v.string()),
-    createdAt: v.number(),
+    createdAt: v.union(v.number(), v.string()),
     lastStageChangedAt: v.number(),
   })
     .index("by_job_stage", ["jobId", "currentStage"])
@@ -536,6 +569,12 @@ generatedAt: v.string(),
     actorAgent: v.optional(v.string()),
     notes: v.optional(v.string()),
     metadata: v.optional(v.string()), // JSON stringified
+
+cvId: v.optional(v.id("cvs")),
+actorName: v.optional(v.string()),
+note: v.optional(v.string()),
+isBackwardMove: v.optional(v.boolean()),
+
     createdAt: v.number(),
   })
     .index("by_application", ["applicationId"])
@@ -622,8 +661,20 @@ generatedAt: v.string(),
     ),
     openedAt: v.optional(v.number()),
     repliedAt: v.optional(v.number()),
-    sentAt: v.number(),
+    sentAt: v.union(v.number(), v.string()),
     stoppedSequence: v.boolean(),
+
+cvId: v.optional(v.id("cvs")),
+sequenceId: v.optional(v.id("followUpSequences")),
+senderType: v.optional(v.union(v.literal("user"), v.literal("agent"), v.literal("candidate"))),
+senderName: v.optional(v.string()),
+status: v.optional(v.union(
+  v.literal("sent"), v.literal("delivered"), v.literal("read"), v.literal("replied"), v.literal("failed"), v.literal("cancelled")
+)),
+sequenceStep: v.optional(v.string()),
+cancelReason: v.optional(v.string()),
+errorMessage: v.optional(v.string()),
+
     fromCredentials: v.optional(v.string()),
   })
     .index("by_candidate_time", ["candidateId", "sentAt"])
@@ -881,4 +932,186 @@ generatedAt: v.string(),
     errorMessage: v.optional(v.string()),
     lastCursor: v.optional(v.string()),
   }).index("by_user", ["userId"]),
+
+  // ─── Hercules Tables Merged Below ───
+
+  cvs: defineTable({
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    fileType: v.string(),
+    fileSize: v.number(),
+    candidateId: v.optional(v.id("candidates")),
+    rawText: v.optional(v.string()),
+    candidateName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
+    currentEmployer: v.optional(v.string()),
+    location: v.optional(v.string()),
+    currentTitle: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    sector: v.optional(v.string()),
+    seniority: v.optional(v.string()),
+    yearsOfExperience: v.optional(v.number()),
+    skills: v.optional(v.array(v.string())),
+    languages: v.optional(v.array(v.string())),
+    summary: v.optional(v.string()),
+    sourceLevel1: v.optional(v.string()),
+    sourceLevel2: v.optional(v.string()),
+    status: v.union(
+      v.literal("uploading"), v.literal("processing"), v.literal("ready"), v.literal("error"), v.literal("paused")
+    ),
+    errorMessage: v.optional(v.string()),
+    isStructured: v.optional(v.boolean()),
+    uploadedBy: v.id("users"),
+    workableCandidateId: v.optional(v.string()),
+    fileHash: v.optional(v.string()),
+  })
+    .index("by_status", ["status"])
+    .index("by_uploaded_by", ["uploadedBy"])
+    .index("by_industry", ["industry"])
+    .index("by_seniority", ["seniority"])
+    .index("by_file_hash", ["fileHash"])
+    .index("by_candidate", ["candidateId"])
+    .searchIndex("search_text", { searchField: "rawText", filterFields: ["status", "industry", "seniority"] })
+    .searchIndex("search_summary", { searchField: "summary", filterFields: ["status"] }),
+
+  pipeline: defineTable({
+    jobId: v.id("jobs"),
+    cvId: v.id("cvs"),
+    candidateId: v.optional(v.id("candidates")),
+    stage: v.union(
+      v.literal("new"),
+      v.literal("shortlisted"),
+      v.literal("interview"),
+      v.literal("offered"),
+      v.literal("hired"),
+      v.literal("rejected")
+    ),
+    notes: v.optional(v.string()),
+    movedAt: v.string(),
+    slaDeadlineAt: v.optional(v.string()),
+    slaBreached: v.optional(v.boolean()),
+    movedBy: v.optional(v.id("users")),
+  })
+    .index("by_job", ["jobId"])
+    .index("by_job_and_cv", ["jobId", "cvId"])
+    .index("by_job_and_stage", ["jobId", "stage"])
+    .index("by_cv", ["cvId"])
+    .index("by_candidate", ["candidateId"]),
+
+  followUpSequences: defineTable({
+    candidateId: v.id("candidates"),
+    cvId: v.id("cvs"),
+    jobId: v.id("jobs"),
+    triggerStage: v.string(),
+    recruiterId: v.optional(v.id("users")),
+    recruiterName: v.optional(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("completed"),
+      v.literal("stopped_replied"),
+      v.literal("stopped_placed"),
+      v.literal("stopped_advanced"),
+      v.literal("stopped_job_closed"),
+      v.literal("unresponsive")
+    ),
+    startedAt: v.string(),
+    endedAt: v.optional(v.string()),
+    scheduledFunctionIds: v.optional(v.array(v.string())),
+    afterDay7: v.union(v.literal("mark_unresponsive"), v.literal("continue_weekly")),
+  })
+    .index("by_candidate", ["candidateId"])
+    .index("by_job_and_cv", ["jobId", "cvId"])
+    .index("by_status", ["status"]),
+
+  notifications: defineTable({
+    userId: v.id("users"),
+    type: v.union(
+      v.literal("candidate_placed_elsewhere"),
+      v.literal("candidate_placed"),
+      v.literal("sla_breached"),
+      v.literal("reverse_match_ready"),
+      v.literal("candidate_replied"),
+      v.literal("candidate_unresponsive")
+    ),
+    title: v.string(),
+    body: v.string(),
+    cvId: v.optional(v.id("cvs")),
+    candidateId: v.optional(v.id("candidates")),
+    jobId: v.optional(v.id("jobs")),
+    read: v.boolean(),
+    createdAt: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_read", ["userId", "read"]),
+
+  appSettings: defineTable({
+    key: v.string(),
+    commonWhatsappNumber: v.optional(v.string()),
+    commonWhatsappNumberId: v.optional(v.string()),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.optional(v.string()),
+  }).index("by_key", ["key"]),
+
+  searchHistory: defineTable({
+    userId: v.id("users"),
+    query: v.string(),
+    type: v.union(v.literal("natural_language"), v.literal("job_description")),
+    resultCount: v.number(),
+    results: v.optional(v.array(v.object({
+      cvId: v.string(),
+      score: v.number(),
+      reason: v.string(),
+    }))),
+    interpretation: v.optional(v.object({
+      searchText: v.string(),
+      industry: v.optional(v.string()),
+      seniority: v.optional(v.string()),
+      minYears: v.optional(v.number()),
+      interpretation: v.string(),
+      keywords: v.array(v.string()),
+    })),
+    jobRequirements: v.optional(v.object({
+      title: v.string(),
+      requiredSkills: v.array(v.string()),
+      preferredSkills: v.array(v.string()),
+      minYearsExperience: v.union(v.number(), v.null()),
+      industry: v.union(v.string(), v.null()),
+      seniority: v.union(v.string(), v.null()),
+      location: v.union(v.string(), v.null()),
+      education: v.union(v.string(), v.null()),
+      summary: v.string(),
+    })),
+    matchResults: v.optional(v.array(v.object({
+      cvId: v.string(),
+      overallScore: v.number(),
+      breakdown: v.object({
+        skills: v.number(), experience: v.number(), seniority: v.number(), industry: v.number(), location: v.number()
+      }),
+      matchedSkills: v.array(v.string()),
+      missingSkills: v.array(v.string()),
+      reason: v.string(),
+    }))),
+  }).index("by_user", ["userId"]),
+
+  oauthStates: defineTable({
+    state: v.string(),
+    userId: v.id("users"),
+    expiresAt: v.string(),
+  }).index("by_state", ["state"]),
+
+  m365Accounts: defineTable({
+    userId: v.id("users"),
+    email: v.string(),
+    displayName: v.optional(v.string()),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    tenantId: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_email", ["email"]),
+
 });
