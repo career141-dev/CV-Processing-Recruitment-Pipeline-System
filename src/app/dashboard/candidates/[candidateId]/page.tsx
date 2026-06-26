@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useQuery } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams } from "next/navigation";
 
@@ -25,6 +25,13 @@ export default function CandidateProfile() {
   // Fake IDs (like "1" from the dashboard dummy tables) crash Convex's v.id validator
   const isFakeId = params.candidateId.length < 10;
   const fetchedCandidate = useQuery(api.candidates.getCandidate, isFakeId ? "skip" : { id: params.candidateId as any });
+  const triggerLazyParse = useAction(api.cvs.lazyParsing.triggerLazyParse);
+
+  React.useEffect(() => {
+    if (fetchedCandidate && fetchedCandidate.isParsed === false) {
+      triggerLazyParse({ candidateId: fetchedCandidate._id }).catch(console.error);
+    }
+  }, [fetchedCandidate, triggerLazyParse]);
 
   const candidate = (isFakeId 
     ? {
@@ -73,6 +80,15 @@ export default function CandidateProfile() {
   return (
     <div className="flex flex-col bg-surface w-full pr-6 pt-6">
       <div className="flex-1 mt-2 min-w-0">
+        {candidate.isParsed === false && (
+          <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-md mb-4 flex items-center text-sm font-medium shadow-sm">
+            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            AI is extracting deeper details (skills & job history) in the background...
+          </div>
+        )}
         {/* Breadcrumb */}
             <div className="flex items-center self-stretch mb-4">
               <span className="text-text-secondary text-xs mr-2 cursor-pointer hover:underline">
@@ -200,7 +216,6 @@ export default function CandidateProfile() {
             <div className="flex items-center self-stretch mb-6 border-b border-gray-200">
               {[
                 { key: "overview", label: "Overview" },
-                { key: "cvPreview", label: "CV Preview" },
                 { key: "timeline", label: "Timeline" },
                 { key: "communications", label: "Communications" },
                 { key: "applications", label: "Job Applications", badge: "2" },
@@ -232,34 +247,6 @@ export default function CandidateProfile() {
             </div>
 
             {/* Main Content */}
-            {activeTab === "cvPreview" && (
-              <div className="flex flex-col gap-6">
-                <div className="flex flex-col bg-surface rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D] overflow-hidden">
-                  <div className="flex items-center justify-between py-3 px-6 border-b border-border bg-background">
-                    <span className="text-text-primary text-sm font-bold">CV Preview</span>
-                    {cvUpload && (
-                      <span className="text-text-secondary text-xs">{cvUpload.fileName}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-center bg-[#F8FAF2] min-h-[600px]">
-                    {cvUpload === undefined ? (
-                      <span className="text-text-disabled text-sm">Loading CV...</span>
-                    ) : cvUpload ? (
-                      <iframe
-                        src={cvUpload.url}
-                        className="w-full h-[800px] border-0"
-                        title="CV Preview"
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center gap-3 py-16">
-                        <span className="text-text-disabled text-sm">No CV file available for preview.</span>
-                        <span className="text-text-secondary text-xs">Upload a CV to enable preview.</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
 
             {activeTab === "overview" && (
               <div className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-6">
@@ -269,6 +256,25 @@ export default function CandidateProfile() {
                 
                 {/* Extracted Profile CV Snapshot */}
                 <div className="flex flex-col bg-surface rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D] overflow-hidden">
+                  <div className="flex flex-col bg-[#F8FAF2] relative border-b border-border">
+                    {cvUpload === undefined ? (
+                      <div className="flex items-center justify-center h-[600px]">
+                        <span className="text-text-disabled text-sm">Loading CV...</span>
+                      </div>
+                    ) : cvUpload ? (
+                      <iframe
+                        src={cvUpload.url}
+                        className="w-full h-[800px] border-0"
+                        title="CV Preview"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-3 h-[600px]">
+                        <span className="text-text-disabled text-sm">No CV file available for preview.</span>
+                        <span className="text-text-secondary text-xs">Upload a CV to enable preview.</span>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex flex-col p-8 pb-16 bg-[#F8FAF2] relative">
                     <div className="flex flex-col items-center text-center pb-6 border-b border-gray-200 mb-6">
                       <span className="text-primary-container text-2xl font-bold mb-1">{candidate.fullName || "Unknown"}</span>

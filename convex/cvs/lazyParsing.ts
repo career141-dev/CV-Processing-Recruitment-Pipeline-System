@@ -1,0 +1,84 @@
+"use node";
+
+import { v } from "convex/values";
+import { action } from "../_generated/server";
+import { api } from "../_generated/api";
+import { callNvidiaLLM } from "./cvExtraction";
+
+export const triggerLazyParse = action({
+  args: {
+    candidateId: v.id("candidates"),
+  },
+  handler: async (ctx, args) => {
+    // 1. Fetch candidate
+    const candidate = await ctx.runQuery(api.candidates.getCandidateForParsing, {
+      candidateId: args.candidateId,
+    });
+    
+    if (!candidate) {
+      throw new Error("Candidate not found");
+    }
+    
+    if (candidate.isParsed) {
+      return { status: "already_parsed" };
+    }
+    
+    if (!candidate.rawText) {
+      throw new Error("No raw text available for parsing");
+    }
+
+    // 2. Inject known context into the LLM prompt? 
+    // Wait, callNvidiaLLM currently just takes rawText. We can inject it into the raw text manually.
+    const injectedContext = `
+[KNOWN CANDIDATE DETAILS FROM ATS]
+Name: ${candidate.fullName || 'Unknown'}
+Email: ${candidate.email || 'Unknown'}
+Phone: ${candidate.phone || 'Unknown'}
+
+`;
+    const textToSend = injectedContext + candidate.rawText;
+
+    // 3. Call LLM with the raw text
+    const extracted = await callNvidiaLLM(textToSend);
+    
+    if (!extracted) {
+      throw new Error("LLM extraction failed or returned empty");
+    }
+
+    // 4. Format and update the candidate
+    const formattedSkills = extracted.skills?.map((s: any) => s.value) || [];
+    const parsingConfidence = {
+      ...(candidate.parsingConfidence || {}),
+      skills: extracted.skills?.map((s: any) => ({ skill: s.value, confidence: s.confidence })),
+      jobHistory: extracted.jobHistory?.map((jh: any) => ({ company: jh.company, title: jh.title, confidence: jh.confidence }))
+    };
+
+    const formattedJobHistory = extracted.jobHistory?.map((jh: any) => ({
+      company: jh.company ?? "Unknown Company",
+      title: jh.title ?? "Unknown Title",
+      startDate: jh.startDate,
+      endDate: jh.endDate,
+      description: jh.description,
+    }));
+
+    await ctx.runMutation(api.candidates.updateCandidateAfterLazyParse, {
+      candidateId: args.candidateId,
+      skills: formattedSkills,
+      jobHistory: formattedJobHistory,
+      education: extracted.education?.map((e: any) => ({
+        degree: e.degree,
+        institution: e.institution,
+        year: e.year,
+        field: e.field
+      })),
+      industries: extracted.industries ?? undefined,
+      certifications: extracted.certifications ?? undefined,
+      languages: extracted.languages ?? undefined,
+      summary: extracted.summary ?? undefined,
+      parsingConfidence,
+      isParsed: true,
+    });
+
+    return { status: "success" };
+  },
+});

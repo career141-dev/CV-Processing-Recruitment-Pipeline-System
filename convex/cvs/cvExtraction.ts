@@ -8,7 +8,7 @@ import { api, internal } from "../_generated/api";
 import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
-import PDFParser from "pdf2json";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import mammoth from "mammoth";
 import tesseract from "tesseract.js";
 import {
@@ -54,7 +54,19 @@ export const jobHistorySchema = z.object({
   startDate: z.preprocess(makeString, z.string().nullable().optional()),
   endDate: z.preprocess(makeString, z.string().nullable().optional()),
   description: z.preprocess(makeString, z.string().nullable().optional()),
+  confidence: z.preprocess(makeNumber, z.number().nullable().optional()),
 });
+
+const makeSkillArray = (val: any) => {
+  if (val === null || val === undefined) return null;
+  if (Array.isArray(val)) {
+    return val.filter(v => v && typeof v === 'object' && v.value).map(v => ({
+      value: String(v.value),
+      confidence: Number(v.confidence) || null
+    }));
+  }
+  return [];
+};
 
 export const cvExtractionSchema = z.object({
   fullName: z.preprocess(makeString, z.string().nullable().optional()),
@@ -71,7 +83,10 @@ export const cvExtractionSchema = z.object({
   expectedSalary: z.preprocess(makeString, z.string().nullable().optional()),
   noticePeriod: z.preprocess(makeString, z.string().nullable().optional()),
   employmentStatus: z.preprocess(makeString, z.string().nullable().optional()),
-  skills: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
+  skills: z.preprocess(makeSkillArray, z.array(z.object({
+    value: z.string(),
+    confidence: z.number().nullable().optional()
+  })).nullable().optional()),
   education: z.array(educationSchema).nullable().optional(),
   certifications: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
   languages: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
@@ -116,16 +131,52 @@ const ExtractionActionArgs = {
 // ──────────────────────────────────────────────────
 
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const pdfParser = new PDFParser(null, true);
-    
-    pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
-    pdfParser.on("pdfParser_dataReady", () => {
-      resolve(pdfParser.getRawTextContent());
-    });
-    
-    pdfParser.parseBuffer(Buffer.from(buffer));
+  const data = new Uint8Array(buffer);
+  const loadingTask = pdfjsLib.getDocument({
+    data,
+    useSystemFonts: true,
+    disableFontFace: true,
+    standardFontDataUrl: undefined,
   });
+  
+  try {
+    const pdf = await loadingTask.promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      
+      const items = textContent.items.map((item: any) => ({
+        str: item.str,
+        x: item.transform[4],
+        y: item.transform[5],
+      }));
+      
+      items.sort((a, b) => {
+        if (Math.abs(a.y - b.y) < 5) {
+          return a.x - b.x;
+        }
+        return b.y - a.y; // Y goes up in PDF
+      });
+
+      let lastY = null;
+      for (const item of items) {
+        if (lastY !== null && Math.abs(lastY - item.y) > 5) {
+          fullText += "\n";
+        } else if (lastY !== null) {
+          fullText += "  ";
+        }
+        fullText += item.str;
+        lastY = item.y;
+      }
+      fullText += "\n\n";
+    }
+    return fullText;
+  } catch (error) {
+    console.error("PDF extraction failed:", error);
+    throw error;
+  }
 }
 
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
@@ -304,8 +355,8 @@ export async function callNvidiaLLM(
           content: `Extract candidate information from the CV text below and return it as a JSON object.
 1. Return only valid JSON. No markdown, no backticks, no explanation.
 2. If a field is not found, return null. Never invent or guess.
-3. Return skills as an array of strings.
-4. Return jobHistory as an array of objects.
+3. Return skills as an array of objects with value and confidence (0.0 to 1.0).
+4. Return jobHistory as an array of objects, including a confidence field (0.0 to 1.0) on each job object.
 5. If currentTitle or currentEmployer are not explicitly stated as "current" or "present", infer them from the most recent job in their work experience by considering the dates.
 {
   "fullName": null,
@@ -319,7 +370,12 @@ export async function callNvidiaLLM(
   "yearsOfExperience": null,
   "industries": null,
   "sector": null,
-  "skills": null,
+  "skills": [
+    {
+      "value": "string",
+      "confidence": 0.0
+    }
+  ],
   "education": [
     {
       "degree": null,
@@ -336,7 +392,8 @@ export async function callNvidiaLLM(
       "title": null,
       "startDate": null,
       "endDate": null,
-      "description": null
+      "description": null,
+      "confidence": 0.0
     }
   ]
 }
@@ -448,6 +505,7 @@ export async function runCvExtraction(
       fileHash,
       cvUploadId,
       workableCandidateId: workableCandidateId ?? undefined,
+      isParsed: !skipLLM,
     });
 
     await ctx.runMutation(api.candidates.updateCvUpload, {
@@ -494,10 +552,18 @@ export async function runCvExtraction(
       const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, extracted.yearsOfExperience);
       const { derivedEmployer, derivedTitle } = deriveCurrentRole(extracted.jobHistory, extracted.currentEmployer, extracted.currentTitle);
 
+      const formattedSkills = safeExtracted.skills?.map((s: any) => s.value) || [];
+      const parsingConfidence = {
+        skills: safeExtracted.skills?.map((s: any) => ({ skill: s.value, confidence: s.confidence })),
+        jobHistory: safeExtracted.jobHistory?.map((jh: any) => ({ company: jh.company, title: jh.title, confidence: jh.confidence }))
+      };
+
       const formattedJobHistory = safeExtracted.jobHistory?.map((jh) => ({
-        ...jh,
         company: jh.company ?? "Unknown Company",
         title: jh.title ?? "Unknown Title",
+        startDate: jh.startDate,
+        endDate: jh.endDate,
+        description: jh.description,
       }));
 
       await ctx.runMutation(api.candidates.createCandidate, {
@@ -512,6 +578,9 @@ export async function runCvExtraction(
         educationYear,
         totalExperienceYears,
         fileHash,
+        skills: formattedSkills,
+        parsingConfidence,
+        isParsed: true,
       });
     }
 

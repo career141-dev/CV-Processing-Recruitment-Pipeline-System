@@ -95,7 +95,7 @@ export function CandidateManagementTable() {
                     </td>
                     <td className="px-6 py-4 text-gray-600">{candidate.location || "-"}</td>
                     <td className="px-6 py-4 text-gray-600">
-                      {candidate.yearsOfExperience ? `${candidate.yearsOfExperience} yrs` : "-"}
+                      {candidate.totalExperienceYears != null ? `${candidate.totalExperienceYears} yrs` : candidate.yearsOfExperience ? `${candidate.yearsOfExperience} yrs` : "-"}
                     </td>
                     <td className="px-6 py-4">
                       <Badge variant={getSourceVariant(candidate.sourceChannel)}>
