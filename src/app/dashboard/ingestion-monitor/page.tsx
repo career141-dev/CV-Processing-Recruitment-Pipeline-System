@@ -87,7 +87,6 @@ export default function IngestionMonitorPage() {
   const updateBatchProgress = useMutation(api.ingestionBatches.updateBatchProgress);
 
   const [retrying, setRetrying] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ongoing' | 'history'>('ongoing');
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   
   // Workable State
@@ -329,11 +328,18 @@ export default function IngestionMonitorPage() {
   const { statsBySource, activeUploads, failedUploads, recentDone } = stats;
 
   const handleRetryFailed = async () => {
+    if (failedUploads.length === 0) return;
     setRetrying(true);
     try {
-      await resumeFailedUploads();
+      const batchId = await createBatch({
+        sourceChannel: "Retry Failed",
+        totalCount: failedUploads.length,
+      });
+      setImportBatchId(batchId);
+      await resumeFailedUploads({ batchId });
       toast.success("Retry queued! Background process started.");
     } catch (err) {
+      console.error(err);
       toast.error("Failed to queue retries.");
     } finally {
       setRetrying(false);
@@ -357,14 +363,6 @@ export default function IngestionMonitorPage() {
     acc[s].push(curr);
     return acc;
   }, {});
-
-  let logsToShow = activeTab === 'ongoing' 
-    ? [...activeUploads].sort((a: any, b: any) => b._creationTime - a._creationTime)
-    : [...recentDone].sort((a: any, b: any) => b._creationTime - a._creationTime).slice(0, 50);
-
-  if (selectedChannel) {
-    logsToShow = logsToShow.filter((log: any) => (log.source || 'Manual') === selectedChannel);
-  }
 
   const getStats = (channel: string) => statsBySource[channel] || { todayCount: 0, lastReceived: null };
   const workableStats = getStats('Workable');
@@ -598,77 +596,6 @@ export default function IngestionMonitorPage() {
           </div>
         )}
 
-        <div className="bg-surface rounded-xl border border-border overflow-hidden shadow-sm mb-8">
-          <div className="px-6 py-4 border-b border-border flex flex-col sm:flex-row justify-between items-start sm:items-center bg-surface gap-4">
-            <h2 className="text-[15px] font-semibold text-text-primary">Real-time Parsing Log</h2>
-            <div className="flex gap-2 bg-surface-container-low p-1 rounded-lg border border-border">
-              <button 
-                onClick={() => setActiveTab('ongoing')} 
-                className={`px-4 py-1.5 rounded-md text-[13px] font-semibold transition-all ${activeTab === 'ongoing' ? 'bg-white text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-surface-container'}`}
-              >
-                Ongoing Parsings ({activeUploads.length})
-              </button>
-              <button 
-                onClick={() => setActiveTab('history')} 
-                className={`px-4 py-1.5 rounded-md text-[13px] font-semibold transition-all ${activeTab === 'history' ? 'bg-white text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-surface-container'}`}
-              >
-                Parsing History
-              </button>
-            </div>
-          </div>
-          
-          <div className="overflow-x-auto">
-            {logsToShow.length === 0 ? (
-              <div className="p-8 text-center text-text-secondary text-[13px]">
-                {activeTab === 'ongoing' ? "No CVs currently processing." : "No recent activity. Upload a CV or sync Workable to see logs."}
-              </div>
-            ) : (
-              <table className="w-full text-left">
-                <thead className="bg-surface-container-high border-b border-border">
-                  <tr>
-                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Time</th>
-                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Source</th>
-                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">File Name</th>
-                    <th className="px-6 py-3 text-[11px] font-semibold tracking-wider text-text-secondary uppercase">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E0E0E0]">
-                  {logsToShow.map((log: any) => {
-                    const sourceConfig = getSourceConfig(log.source || 'Manual');
-                    const isProcessing = log.status === 'processing' || log.status === 'uploaded';
-                    
-                    return (
-                      <tr key={log._id} className="hover:bg-surface-container-low transition-colors" style={{ backgroundColor: isProcessing ? '#F0FFF0' : 'transparent' }}>
-                        <td className="px-6 py-4 text-[13px] text-text-secondary whitespace-nowrap">
-                          {new Date(log._creationTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2 py-1 ${sourceConfig.bgColor} ${sourceConfig.textColor} rounded-md text-[11px] font-bold`}>
-                            {log.source || 'Manual'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-[13px] font-semibold truncate max-w-[300px]">
-                          {log.fileName}
-                        </td>
-                        <td className="px-6 py-4 flex items-center gap-2">
-                          {isProcessing ? (
-                            <div className="flex items-center gap-2 text-[#006E1C] font-bold text-[12px]">
-                              <Loader2 className="w-4 h-4 animate-spin" /> {log.status === 'uploaded' ? 'Queued...' : 'Extracting Text...'}
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2 text-text-secondary font-bold text-[12px]">
-                              <CheckCircle2 className="w-4 h-4 text-[#006E1C]" /> Parsed Successfully
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Workable Modal */}
