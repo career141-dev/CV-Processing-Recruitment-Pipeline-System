@@ -31,8 +31,8 @@ export function useRole() {
   };
 }
 
-export function useJobAccess(jobId: Id<"jobs">) {
-  const assignment = useQuery(api.jobs.getMyAssignment, { jobId });
+export function useJobAccess(jobId: Id<"jobs"> | undefined) {
+  const assignment = useQuery(api.jobs.getMyAssignment, jobId ? { jobId } : "skip");
   const { role, isAdmin, isTAManager } = useRole();
   return {
     canViewPipeline: isAdmin || isTAManager || !!assignment,

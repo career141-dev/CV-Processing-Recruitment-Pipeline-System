@@ -1,0 +1,5 @@
+        salaryMax: parseInt(formData.salaryRange.split("-")[1]?.replace(/[^0-9]/g, '')) || undefined,
+        salaryCurrency: formData.salaryRange.replace(/[0-9\- ]/g, '').trim() || "LKR",
+        educationLevel: formData.educationLevel.toLowerCase().replace(/ /g, "_").replace("-", "_"),
+        languagesRequired: formData.languages ? formData.languages.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        primaryRecruiterId: primaryRecruiterId as any,

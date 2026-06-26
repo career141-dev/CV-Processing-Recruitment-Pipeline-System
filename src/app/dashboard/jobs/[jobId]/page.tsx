@@ -7,6 +7,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useJobAccess, useRole } from '@/hooks/useRole';
 import { Id } from '../../../../../convex/_generated/dataModel';
+import { useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 
 // MOCK DATA GENERATION
 const MOCK_DATA = {
@@ -86,17 +88,20 @@ const TABS = [
 export default function JobDetailsPage() {
   const params = useParams();
   const router = useRouter();
-  const jobId = params.jobId as Id<"jobs">;
+  const keyword = params.jobId as string;
+  
+  const job = useQuery(api.jobs.getByKeyword, { keyword });
+  const actualJobId = job?._id;
   
   const { role } = useRole();
-  const { canViewPipeline, canDirectorReview, canClientReview } = useJobAccess(jobId);
+  const { canViewPipeline, canDirectorReview, canClientReview } = useJobAccess(actualJobId);
 
   // Redirect clients immediately to the isolated portal
   React.useEffect(() => {
     if (role === 'client') {
-      router.push(`/client-portal/${jobId}`);
+      router.push(`/client-portal/${keyword}`);
     }
-  }, [role, jobId, router]);
+  }, [role, keyword, router]);
 
   const VISIBLE_TABS = TABS.filter(tab => {
     if (tab.id === 'Director Review') return canDirectorReview;

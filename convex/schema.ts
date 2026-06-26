@@ -392,6 +392,7 @@ generatedAt: v.string(),
   candidates: defineTable({
     // New fields from PDF (kept optional to avoid breaking existing queries)
     fullName: v.optional(v.string()),
+    isParsed: v.optional(v.boolean()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     location: v.optional(v.string()),

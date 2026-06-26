@@ -1,0 +1,279 @@
+  const renderStep3 = () => {
+    const weightSum = formData.scoreWeights.skills + formData.scoreWeights.experience + formData.scoreWeights.jobTitle + formData.scoreWeights.industry + formData.scoreWeights.location;
+
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 max-w-4xl">
+        <div>
+          <h2 className="text-lg font-semibold mb-1 text-text-primary">AI & Pipeline Config</h2>
+          <p className="text-sm text-text-secondary">Configure how AI matches candidates and the pipeline gates.</p>
+        </div>
+
+        {/* Match weights */}
+        <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+              <span className="material-symbols-outlined text-[16px] text-primary-container">bolt</span> AI Match Weights
+            </h3>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${weightSum === 100 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+              {weightSum}/100
+            </span>
+          </div>
+          {[
+            { key: "skills", label: "Skills", value: formData.scoreWeights.skills },
+            { key: "experience", label: "Experience", value: formData.scoreWeights.experience },
+            { key: "jobTitle", label: "Job Title", value: formData.scoreWeights.jobTitle },
+            { key: "industry", label: "Industry", value: formData.scoreWeights.industry },
+            { key: "location", label: "Location", value: formData.scoreWeights.location },
+          ].map((w) => (
+            <div key={w.key} className="flex items-center gap-3">
+              <span className="text-xs w-20 shrink-0 text-text-primary">{w.label}</span>
+              <input 
+                type="range" min="0" max="100" step="5"
+                value={w.value}
+                onChange={(e) => updateNestedFormData('scoreWeights', w.key, parseInt(e.target.value))}
+                className="flex-1 h-1.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary-container"
+              />
+              <span className="text-xs font-mono w-8 text-right text-text-primary">{w.value}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-3 pt-2 border-t border-border">
+            <span className="text-xs w-20 shrink-0 text-text-primary">Min Score</span>
+            <input 
+                type="range" min="0" max="100" step="5"
+                value={formData.minMatchScore}
+                onChange={(e) => updateFormData('minMatchScore', parseInt(e.target.value))}
+                className="flex-1 h-1.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary-container"
+              />
+            <span className="text-xs font-mono w-8 text-right text-text-primary">{formData.minMatchScore}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input type="checkbox" className="sr-only peer" checked={formData.reverseMatchOnPublish} onChange={e => updateFormData('reverseMatchOnPublish', e.target.checked)} />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+            <label className="text-xs text-text-primary">Run reverse match on publish (scan existing CVs)</label>
+          </div>
+        </div>
+
+        {/* Pipeline gates */}
+        <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
+          <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+            <span className="material-symbols-outlined text-[16px] text-primary-container">group</span> Pipeline Gates
+          </h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-text-primary">Director review required</label>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input type="checkbox" className="sr-only peer" checked={formData.reviewLevels.directorReview} onChange={e => updateNestedFormData('reviewLevels', 'directorReview', e.target.checked)} />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+              </label>
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-text-primary">Client review required</label>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input type="checkbox" className="sr-only peer" checked={formData.reviewLevels.clientReview} onChange={e => updateNestedFormData('reviewLevels', 'clientReview', e.target.checked)} />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+              </label>
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-text-primary">ESA check required</label>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input type="checkbox" className="sr-only peer" checked={formData.reviewLevels.esaStatusCheck} onChange={e => updateNestedFormData('reviewLevels', 'esaStatusCheck', e.target.checked)} />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+              </label>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1.5 block text-text-primary">On Rejection</label>
+              <select 
+                value={formData.reviewLevels.offerRejectionLoop}
+                onChange={e => updateNestedFormData('reviewLevels', 'offerRejectionLoop', e.target.value)}
+                className="w-full text-sm border border-border rounded-md px-3 py-1.5 bg-surface text-text-primary h-9"
+              >
+                <option value="restart">Restart from new CVs</option>
+                <option value="clientReview">Return to client review</option>
+                <option value="ask_ta_each_time">Ask TA each time</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Agent 3 — Follow-Up Sequence */}
+        <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+              <span className="material-symbols-outlined text-[16px] text-primary-container">forum</span> Follow-Up Sequence
+            </h3>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input type="checkbox" className="sr-only peer" checked={formData.enableFollowUps} onChange={e => updateFormData('enableFollowUps', e.target.checked)} />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+          </div>
+          {formData.enableFollowUps && (
+            <div className="space-y-4 pt-2 border-t border-border animate-in fade-in">
+              <p className="text-xs text-text-secondary">
+                Automatically follow up with candidates after they reach a stage. Messages
+                stop the moment a candidate replies, is placed, or moves forward.
+              </p>
+
+              {/* Trigger stages */}
+              <div>
+                <label className="text-xs font-medium mb-1.5 block text-text-primary">Trigger when candidate reaches</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: "applied", label: "Applied" },
+                    { value: "shortlisted", label: "Shortlisted" },
+                    { value: "interview_scheduled", label: "Interview Scheduled" },
+                    { value: "offered", label: "Offered" }
+                  ].map((stage) => {
+                    const selected = stage.value === "shortlisted"; // Hardcoded default behavior
+                    return (
+                      <button
+                        key={stage.value}
+                        type="button"
+                        className={`text-xs px-3 py-1.5 rounded-full border transition-all cursor-pointer ${selected ? 'bg-primary-container text-white border-primary-container' : 'bg-surface text-text-secondary hover:border-primary-container/40'}`}
+                      >
+                        {stage.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Channel per step */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { key: "day0Channel", label: "Immediate", def: "WhatsApp" },
+                  { key: "day2Channel", label: "Day 2", def: formData.followUpSchedule.day2Channel },
+                  { key: "day4Channel", label: "Day 4", def: formData.followUpSchedule.day4Channel },
+                  { key: "day7Channel", label: "Day 7", def: formData.followUpSchedule.day7Channel },
+                ].map((step) => (
+                  <div key={step.key}>
+                    <label className="text-xs text-text-secondary mb-1 block">{step.label}</label>
+                    <select
+                      value={step.def}
+                      onChange={e => {
+                        if (step.key !== 'day0Channel') {
+                          updateNestedFormData('followUpSchedule', step.key, e.target.value);
+                        }
+                      }}
+                      className="w-full text-xs h-8 border border-border rounded-md px-2 bg-surface text-text-primary"
+                    >
+                      <option value="WhatsApp">WhatsApp</option>
+                      <option value="Email">Email</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              {/* After Day 7 */}
+              <div>
+                <label className="text-xs font-medium mb-1.5 block text-text-primary">After Day {formData.unresponsiveDays}</label>
+                <select
+                  value={formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "continue_weekly"}
+                  onChange={e => updateNestedFormData('followUpSchedule', 'markUnresponsive', e.target.value === 'mark_unresponsive')}
+                  className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary"
+                >
+                  <option value="mark_unresponsive">Mark as unresponsive & notify recruiter</option>
+                  <option value="continue_weekly">Continue with weekly follow-ups</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Agent 5 */}
+        <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+              <span className="material-symbols-outlined text-[16px] text-primary-container">smart_toy</span> AI Call Agent
+            </h3>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input type="checkbox" className="sr-only peer" checked={formData.enablePhoneScreening} onChange={e => updateFormData('enablePhoneScreening', e.target.checked)} />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+          </div>
+          {formData.enablePhoneScreening && (
+            <div className="space-y-3 pt-2 border-t border-border animate-in fade-in">
+              <div>
+                <label className="text-xs font-medium mb-1.5 block text-text-primary">Trigger</label>
+                <select
+                  value={formData.phoneScreeningTriggers.manualOnly ? 'manual_only' : 'all_new_applicants'}
+                  onChange={e => updateNestedFormData('phoneScreeningTriggers', 'manualOnly', e.target.value === 'manual_only')}
+                  className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary"
+                >
+                  <option value="all_new_applicants">All new applicants</option>
+                  <option value="database_matches_70_plus">Database matches 70+</option>
+                  <option value="manual_only">Manual only</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1.5 block text-text-primary">Call Script</label>
+                <textarea
+                  value={formData.callScript}
+                  onChange={e => updateFormData('callScript', e.target.value)}
+                  placeholder="Script for the AI to follow during calls..."
+                  className="w-full text-sm min-h-[80px] border border-border rounded-md p-3 bg-surface text-text-primary"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input type="checkbox" className="sr-only peer" checked={formData.phoneScreeningConfidential} onChange={e => updateFormData('phoneScreeningConfidential', e.target.checked)} />
+                  <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+                </label>
+                <label className="text-xs text-text-primary">Hide company name during call</label>
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1.5 block text-text-primary">No Answer Action</label>
+                <select
+                  value={formData.phoneScreeningNoAnswer}
+                  onChange={e => updateFormData('phoneScreeningNoAnswer', e.target.value)}
+                  className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary"
+                >
+                  <option value="triggerEmail">Trigger follow-up agent</option>
+                  <option value="retry_after_2hrs">Retry after 2 hours</option>
+                  <option value="notify_ta">Notify TA</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* SLA */}
+        <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+              <span className="material-symbols-outlined text-[16px] text-primary-container">schedule</span> SLA Thresholds (days)
+            </h3>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input type="checkbox" className="sr-only peer" checked={formData.enablePipelineHealth} onChange={e => updateFormData('enablePipelineHealth', e.target.checked)} />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+          </div>
+          {formData.enablePipelineHealth && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-border animate-in fade-in">
+              {[
+                { key: "noNewCvs", label: "No New CVs", def: formData.pipelineAlerts.noNewCvs },
+                { key: "taReviewPending", label: "TA Review", def: formData.pipelineAlerts.taReviewPending },
+                { key: "aiCallNotCompleted", label: "AI Call", def: formData.pipelineAlerts.aiCallNotCompleted },
+                { key: "secondShortlistPending", label: "2nd Shortlist", def: formData.pipelineAlerts.secondShortlistPending },
+                { key: "directorReviewPending", label: "Director Review", def: formData.pipelineAlerts.directorReviewPending },
+                { key: "clientReviewPending", label: "Client Review", def: formData.pipelineAlerts.clientReviewPending },
+                { key: "interviewNotScheduled", label: "Interview", def: formData.pipelineAlerts.interviewNotScheduled },
+                { key: "offerNotMade", label: "Offer", def: formData.pipelineAlerts.offerNotMade },
+              ].map((sla) => (
+                <div key={sla.key}>
+                  <label className="text-xs text-text-secondary mb-1 block">{sla.label}</label>
+                  <input
+                    type="number" min="1"
+                    value={sla.def}
+                    onChange={(e) => updateNestedFormData('pipelineAlerts', sla.key, e.target.value)}
+                    className="w-full text-sm h-8 border border-border rounded-md px-2 bg-surface text-text-primary"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };

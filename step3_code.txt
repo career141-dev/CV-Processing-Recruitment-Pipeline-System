@@ -1,0 +1,331 @@
+  const renderStep3 = () => (
+    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 max-w-4xl">
+      <div>
+        <h2 className="text-xl font-bold text-text-primary mb-1">AI & Pipeline Config</h2>
+        <p className="text-sm text-text-secondary">Configure how AI processes candidates and set up your pipeline gates.</p>
+      </div>
+
+      {/* AI Agents Container */}
+      <div className="border border-border rounded-xl p-5 space-y-5 bg-surface shadow-sm">
+        <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary mb-2">
+          <span className="material-symbols-outlined text-[18px] text-primary-container">smart_toy</span> AI Automation Agents
+        </h3>
+
+        {/* Agent 2 */}
+        <div className="flex items-center justify-between border-b border-border pb-5">
+          <div>
+            <label className="text-sm font-medium text-text-primary">Agent 2: AI Candidate Matching</label>
+            <p className="text-xs text-text-secondary mt-0.5">Auto-scores candidates against job description and matching criteria.</p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" className="sr-only peer" checked={formData.enableMatching} onChange={e => updateFormData('enableMatching', e.target.checked)} />
+            <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+          </label>
+        </div>
+
+        {/* Agent 3 */}
+        <div className="border-b border-border pb-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <label className="text-sm font-medium text-text-primary">Agent 3: Follow-Up Sequences</label>
+              <p className="text-xs text-text-secondary mt-0.5">Automated multi-channel nudges for candidates who are unresponsive.</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={formData.enableFollowUp} onChange={e => updateFormData('enableFollowUp', e.target.checked)} />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+          </div>
+          {formData.enableFollowUp && (
+            <div className="bg-surface-container-low p-4 rounded-md border border-border mt-2 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-text-primary">Escalate unresponsive after:</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" className="w-16 border border-border rounded px-2 py-1 text-sm bg-surface" value={formData.unresponsiveDays} onChange={e => updateFormData('unresponsiveDays', e.target.value)} />
+                  <span className="text-xs text-text-secondary">days</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Agent 5 */}
+        <div className="border-b border-border pb-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <label className="text-sm font-medium text-text-primary">Agent 5: AI Phone Screening</label>
+              <p className="text-xs text-text-secondary mt-0.5">Automated 3-minute voice call to candidates for initial validation.</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={formData.enablePhoneScreening} onChange={e => updateFormData('enablePhoneScreening', e.target.checked)} />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+          </div>
+          {formData.enablePhoneScreening && (
+            <div className="bg-surface-container-low p-4 rounded-md border border-border mt-2 animate-in fade-in slide-in-from-top-2">
+              <label className="block text-xs font-medium text-text-primary mb-2">Confidential Position (Call Script Behavior):</label>
+              <div className="space-y-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="radio" checked={formData.phoneScreeningConfidential} onChange={() => updateFormData('phoneScreeningConfidential', true)} className="mt-0.5 text-primary-container focus:ring-primary-container w-3.5 h-3.5" />
+                  <div>
+                    <span className="text-xs font-medium">Hide company name in call script</span>
+                    <p className="text-[10px] text-text-secondary italic">"...an exciting opportunity with a leading FMCG company..."</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="radio" checked={!formData.phoneScreeningConfidential} onChange={() => updateFormData('phoneScreeningConfidential', false)} className="mt-0.5 text-primary-container focus:ring-primary-container w-3.5 h-3.5" />
+                  <div>
+                    <span className="text-xs font-medium">Mention company name explicitly</span>
+                    <p className="text-[10px] text-text-secondary italic">"...a role at Atlas Holdings..."</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Agent 8 */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <label className="text-sm font-medium text-text-primary">Agent 8: Pipeline Health</label>
+              <p className="text-xs text-text-secondary mt-0.5">Monitors SLAs and prevents pipeline stagnation.</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={formData.enablePipelineHealth} onChange={e => updateFormData('enablePipelineHealth', e.target.checked)} />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+          </div>
+          {formData.enablePipelineHealth && (
+            <div className="bg-surface-container-low p-4 rounded-md border border-border mt-2 animate-in fade-in slide-in-from-top-2">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                {[
+                  { label: "No new CVs in:", key: "noNewCvs" },
+                  { label: "TA review pending:", key: "taReviewPending" },
+                  { label: "AI call not completed:", key: "aiCallNotCompleted" },
+                  { label: "2nd shortlist pending:", key: "secondShortlistPending" },
+                  { label: "Director review pending:", key: "directorReviewPending" },
+                  { label: "Client review pending:", key: "clientReviewPending" },
+                  { label: "Interview not scheduled:", key: "interviewNotScheduled" },
+                  { label: "Offer not made:", key: "offerNotMade" },
+                ].map(metric => (
+                  <div key={metric.key} className="flex items-center justify-between border-b border-border/50 pb-2">
+                    <span className="text-xs text-text-primary">{metric.label}</span>
+                    <div className="flex items-center gap-1.5">
+                      <input type="number" className="w-12 border border-border rounded px-2 py-1 text-xs text-center bg-surface" value={formData.pipelineAlerts[metric.key]} onChange={e => updateNestedFormData('pipelineAlerts', metric.key, e.target.value)} />
+                      <span className="text-[10px] text-text-secondary uppercase">Days</span>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between col-span-2 pt-2">
+                  <span className="text-xs font-medium text-text-primary">Include in daily health report</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={formData.pipelineAlerts.dailyReport} onChange={e => updateNestedFormData('pipelineAlerts', 'dailyReport', e.target.checked)} />
+                    <div className="w-7 h-4 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary-container"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Pipeline Gates Container */}
+      <div className="border border-border rounded-xl p-5 space-y-4 bg-surface shadow-sm">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary mb-1">
+            <span className="material-symbols-outlined text-[18px] text-primary-container">alt_route</span> Pipeline Gates (Review Levels)
+          </h3>
+          <p className="text-xs text-text-secondary">Candidates must pass these gates sequentially.</p>
+        </div>
+
+        <div className="space-y-2.5">
+          {/* Always Required Gates */}
+          {['Level 1 — TA Shortlist', 'Level 2 — AI Call', 'Level 3 — Second Shortlist', 'Level 6 — Interview'].map(level => (
+            <div key={level} className="flex items-center justify-between p-3 rounded-lg border border-border bg-surface-container-lowest opacity-70 cursor-not-allowed">
+              <span className="text-xs font-medium text-text-primary">{level}</span>
+              <span className="text-[9px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full uppercase">Always Required</span>
+            </div>
+          ))}
+
+          {/* Level 4: Director Review */}
+          <div className={`p-4 rounded-lg border transition-all ${formData.reviewLevels.directorReview ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-text-primary">Level 4 — Director Review</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={formData.reviewLevels.directorReview} onChange={e => updateNestedFormData('reviewLevels', 'directorReview', e.target.checked)} />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+              </label>
+            </div>
+            {formData.reviewLevels.directorReview && (
+              <div className="mt-4 pt-3 border-t border-border/50 grid grid-cols-2 gap-4 animate-in fade-in">
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">Director:</label>
+                  <select className="w-full border border-border rounded-md px-2 py-1.5 text-xs bg-surface" value={formData.director} onChange={e => updateFormData('director', e.target.value)}>
+                    <option value="">Select Director ▾</option>
+                    <option value="Jane Smith">Jane Smith</option>
+                    <option value="Michael Brown">Michael Brown</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">SLA Limit (Days):</label>
+                  <input type="number" className="w-full border border-border rounded-md px-2 py-1.5 text-xs bg-surface" value={formData.reviewLevels.directorSla} onChange={e => updateNestedFormData('reviewLevels', 'directorSla', e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Level 5: Client Review */}
+          <div className={`p-4 rounded-lg border transition-all ${formData.reviewLevels.clientReview ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-text-primary">Level 5 — Client Review</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={formData.reviewLevels.clientReview} onChange={e => updateNestedFormData('reviewLevels', 'clientReview', e.target.checked)} />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+              </label>
+            </div>
+            {formData.reviewLevels.clientReview && (
+              <div className="mt-4 pt-3 border-t border-border/50 grid grid-cols-2 gap-4 animate-in fade-in">
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">Client Name:</label>
+                  <input type="text" className="w-full border border-border rounded-md px-2 py-1.5 text-xs bg-surface" value={formData.reviewLevels.clientName} onChange={e => updateNestedFormData('reviewLevels', 'clientName', e.target.value)} placeholder="E.g. Acme Corp" />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">Client Email:</label>
+                  <input type="email" className="w-full border border-border rounded-md px-2 py-1.5 text-xs bg-surface" value={formData.reviewLevels.clientEmail} onChange={e => updateNestedFormData('reviewLevels', 'clientEmail', e.target.value)} placeholder="contact@acme.com" />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">Access Level:</label>
+                  <select className="w-full border border-border rounded-md px-2 py-1.5 text-xs bg-surface" value={formData.reviewLevels.clientAccess} onChange={e => updateNestedFormData('reviewLevels', 'clientAccess', e.target.value)}>
+                    <option>View Only</option>
+                    <option>View + Comment</option>
+                    <option>Approve/Reject</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">SLA Limit (Days):</label>
+                  <input type="number" className="w-full border border-border rounded-md px-2 py-1.5 text-xs bg-surface" value={formData.reviewLevels.clientSla} onChange={e => updateNestedFormData('reviewLevels', 'clientSla', e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-surface-container-lowest opacity-70 cursor-not-allowed">
+            <span className="text-xs font-medium text-text-primary">Level 7 — Offer</span>
+            <span className="text-[9px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full uppercase">Always Required</span>
+          </div>
+
+        </div>
+
+        <div className="pt-4 border-t border-border space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-medium text-text-primary">ESA Status Check Required</span>
+              <p className="text-[10px] text-text-secondary">Flag if ESA is not signed before client submission</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={formData.reviewLevels.esaStatusCheck} onChange={e => updateNestedFormData('reviewLevels', 'esaStatusCheck', e.target.checked)} />
+              <div className="w-7 h-4 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
+          </div>
+          
+          {formData.confidential && (
+            <div className="flex items-center justify-between animate-in fade-in">
+              <div>
+                <span className="text-sm font-medium text-text-primary">NDA Required Before Interview</span>
+                <p className="text-[10px] text-text-secondary">Candidate must sign NDA to see client details</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={formData.ndaRequired} onChange={e => updateFormData('ndaRequired', e.target.checked)} />
+                <div className="w-7 h-4 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary-container"></div>
+              </label>
+            </div>
+          )}
+
+          <div className="bg-surface-container-low p-3 rounded-lg border border-border">
+            <label className="block text-xs font-medium text-text-primary mb-2">On Offer Rejection / Client Rejection Loop Action:</label>
+            <select className="w-full border border-border rounded-md px-2 py-1.5 text-xs bg-surface" value={formData.reviewLevels.offerRejectionLoop} onChange={e => updateNestedFormData('reviewLevels', 'offerRejectionLoop', e.target.value)}>
+              <option value="restart">Restart sourcing from New CVs</option>
+              <option value="clientReview">Return to Client Review only</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Custom Filters Container */}
+      <div className="border border-border rounded-xl p-5 bg-surface shadow-sm space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary mb-1">
+            <span className="material-symbols-outlined text-[18px] text-primary-container">filter_list</span> Job-Specific Custom Filters
+          </h3>
+          <p className="text-xs text-text-secondary">Pre-load niche requirements for Advanced Search and AI Scoring.</p>
+        </div>
+        
+        <div className="bg-primary-container/5 border border-primary-container/20 p-3 rounded-lg">
+          <h4 className="text-[10px] font-bold text-primary-container uppercase tracking-wider mb-2">AI Suggested from Job Description:</h4>
+          <div className="flex flex-wrap gap-1.5">
+            {['P&L Management', 'Nielsen', 'Brand Strategy'].map(tag => (
+              <button key={tag} className="text-xs bg-white border border-primary-container/30 text-primary-container px-2 py-1 rounded-full flex items-center gap-1 hover:bg-primary-container/10 transition-colors" onClick={(e) => {
+                e.preventDefault();
+                if(!formData.customFilters.includes(tag as never)) {
+                  updateFormData('customFilters', [...formData.customFilters, tag]);
+                }
+              }}>
+                <span className="material-symbols-outlined text-[12px]">add</span> {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select className="border border-border rounded-md px-2 py-1.5 text-xs bg-surface w-24 shrink-0" value={formData.newFilterType} onChange={e => updateFormData('newFilterType', e.target.value)}>
+            <option>Qualification</option>
+            <option>Skill</option>
+            <option>License</option>
+            <option>Language</option>
+          </select>
+          <input type="text" className="flex-1 border border-border rounded-md px-2 py-1.5 text-xs bg-surface" placeholder="Enter custom filter value..." value={formData.newFilterValue} onChange={e => updateFormData('newFilterValue', e.target.value)} onKeyDown={(e) => {
+            if (e.key === 'Enter' && formData.newFilterValue.trim() !== '') {
+              e.preventDefault();
+              const newTag = \`\${formData.newFilterType}: \${formData.newFilterValue.trim()}\`;
+              if (!formData.customFilters.includes(newTag as never)) {
+                updateFormData('customFilters', [...formData.customFilters, newTag]);
+              }
+              updateFormData('newFilterValue', '');
+            }
+          }} />
+          <button className="bg-surface-variant text-text-primary px-3 py-1.5 rounded-md text-xs font-medium hover:bg-border transition-colors" onClick={(e) => {
+            e.preventDefault();
+            if (formData.newFilterValue.trim() !== '') {
+              const newTag = \`\${formData.newFilterType}: \${formData.newFilterValue.trim()}\`;
+              if (!formData.customFilters.includes(newTag as never)) {
+                updateFormData('customFilters', [...formData.customFilters, newTag]);
+              }
+              updateFormData('newFilterValue', '');
+            }
+          }}>Add</button>
+        </div>
+
+        <div className="pt-2">
+          <h4 className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider mb-2">Active Filters ({formData.customFilters.length}):</h4>
+          {formData.customFilters.length === 0 ? (
+             <p className="text-xs text-text-secondary italic text-center p-2 border border-dashed border-border rounded-lg bg-surface-container-low">No custom filters added yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {formData.customFilters.map((f, idx) => (
+                <div key={idx} className="flex items-center gap-1.5 bg-primary-container text-on-primary px-2.5 py-1 rounded-full text-xs shadow-sm">
+                  <span>{f}</span>
+                  <button className="hover:text-white/80 flex items-center justify-center bg-black/10 rounded-full w-4 h-4" onClick={(e) => {
+                    e.preventDefault();
+                    const newF = formData.customFilters.filter((_, i) => i !== idx);
+                    updateFormData('customFilters', newF);
+                  }}>
+                    <span className="material-symbols-outlined text-[10px]">close</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );

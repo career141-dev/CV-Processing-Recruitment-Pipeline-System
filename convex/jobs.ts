@@ -47,6 +47,8 @@ export const createJob = mutation({
     salaryMin: v.optional(v.number()),
     salaryMax: v.optional(v.number()),
     salaryCurrency: v.optional(v.string()),
+    educationLevel: v.optional(v.string()),
+    languagesRequired: v.optional(v.array(v.string())),
     primaryRecruiterId: v.id("users"),
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
     directorId: v.optional(v.id("users")),
@@ -98,6 +100,8 @@ export const createJob = mutation({
       updatedAt: new Date().toISOString(),
       recruitmentType: args.recruitmentType as any,
       seniorityLevel: args.seniorityLevel as any,
+      educationLevel: args.educationLevel as any,
+      languagesRequired: args.languagesRequired,
     });
 
     await ctx.db.insert("activityLog", {
@@ -291,8 +295,8 @@ export const assignTeamToJob = mutation({
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
 
     const primary = await ctx.db.get(args.primaryRecruiterId);
-    if (!primary || !["senior_ta", "recruiter"].includes(primary.role)) {
-      throw new Error("Primary Recruiter must be SENIOR_TA or RECRUITER role");
+    if (!primary || !["admin", "ta_manager", "senior_ta", "recruiter"].includes(primary.role)) {
+      throw new Error("Primary Recruiter must have a valid recruiter or admin role");
     }
 
     const now = new Date().toISOString();
