@@ -84,6 +84,7 @@ export default function IngestionMonitorPage() {
   const processCvExtraction = useAction(api.cvs.cvExtraction.processCvExtraction);
   const createBatch = useMutation(api.ingestionBatches.createBatch);
   const queueManualExtraction = useMutation(api.cvs.cvUploads.queueManualExtraction);
+  const updateBatchProgress = useMutation(api.ingestionBatches.updateBatchProgress);
 
   const [retrying, setRetrying] = useState(false);
   const [activeTab, setActiveTab] = useState<'ongoing' | 'history'>('ongoing');
@@ -270,35 +271,48 @@ export default function IngestionMonitorPage() {
       setImportBatchId(batchId);
 
       for (const file of filesToUpload) {
-        const uploadUrl = await generateUploadUrl();
-        const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
-        const { storageId } = await resp.json();
+        try {
+          const uploadUrl = await generateUploadUrl();
+          const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
+          const { storageId } = await resp.json();
 
-        const cvUploadId = await saveUpload({
-          storageId,
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type,
-          source: uploadSource,
-          campaignLabel: uploadCampaignLabel || undefined,
-          assignToJob: uploadAssignToJob || undefined,
-          uploadedBy: user.id,
-        });
+          const cvUploadId = await saveUpload({
+            storageId,
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            source: uploadSource,
+            campaignLabel: uploadCampaignLabel || undefined,
+            assignToJob: uploadAssignToJob || undefined,
+            uploadedBy: user.id,
+          });
 
-        await queueManualExtraction({
-          storageId,
-          fileType: normalizeFileType(file),
-          sourceChannel: uploadSource,
-          uploadedBy: user.id,
-          cvUploadId,
-          fileName: file.name,
-          batchId,
-        });
-        successCount++;
+          await queueManualExtraction({
+            storageId,
+            fileType: normalizeFileType(file),
+            sourceChannel: uploadSource,
+            uploadedBy: user.id,
+            cvUploadId,
+            fileName: file.name,
+            batchId,
+          });
+          successCount++;
+        } catch (err) {
+          console.error("Upload failed for file:", file.name, err);
+          // If queueing fails, mark it as failed in the batch so it doesn't hang forever
+          await updateBatchProgress({
+            batchId,
+            status: "failed"
+          });
+        }
       }
-      toast.success(`${successCount} CVs uploaded and processing started.`);
+      if (successCount === filesToUpload.length) {
+        toast.success(`${successCount} CVs uploaded and processing started.`);
+      } else {
+        toast.warning(`Uploaded ${successCount} out of ${filesToUpload.length} CVs.`);
+      }
     } catch (err) {
-      toast.error("Upload failed for some files.");
+      toast.error("Upload process encountered an error.");
     } finally {
       setIsUploading(false);
     }
