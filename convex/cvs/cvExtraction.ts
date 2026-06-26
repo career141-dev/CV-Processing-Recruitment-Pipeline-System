@@ -109,6 +109,8 @@ type ExtractionArgs = {
     email?: string;
     phone?: string;
   };
+  batchId?: Id<"ingestionBatches">;
+  logId?: Id<"ingestionLog">;
 };
 
 const ExtractionActionArgs = {
@@ -124,6 +126,8 @@ const ExtractionActionArgs = {
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
   })),
+  batchId: v.optional(v.id("ingestionBatches")),
+  logId: v.optional(v.id("ingestionLog")),
 };
 
 // ──────────────────────────────────────────────────
@@ -481,6 +485,13 @@ export async function runCvExtraction(
     status: "processing",
   });
 
+  if (args.logId) {
+    await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+      logId: args.logId,
+      stage: "parsing"
+    });
+  }
+
   try {
     const blob = await ctx.storage.get(storageId);
     if (!blob) throw new Error("File not found in Convex storage");
@@ -538,6 +549,12 @@ export async function runCvExtraction(
         jobHistory: null,
       } as unknown as CvExtractionResult;
     } else {
+      if (args.logId) {
+        await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+          logId: args.logId,
+          stage: "ai_extraction"
+        });
+      }
       extracted = await callNvidiaLLM(cappedRawText);
     }
 
@@ -566,6 +583,12 @@ export async function runCvExtraction(
       }));
 
       // Generate embedding using the new NVIDIA embedding function
+      if (args.logId) {
+        await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+          logId: args.logId,
+          stage: "indexing"
+        });
+      }
       const embedding = await generateNvidiaEmbedding(cappedRawText);
 
       await ctx.runMutation(api.candidates.createCandidate, {
@@ -601,6 +624,20 @@ export async function runCvExtraction(
       });
     }
 
+    if (args.logId) {
+      await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+        logId: args.logId,
+        stage: "completed",
+        candidateName: extracted?.fullName ?? undefined,
+      });
+    }
+    if (args.batchId) {
+      await ctx.runMutation(api.ingestionBatches.updateBatchProgress, {
+        batchId: args.batchId,
+        status: "completed"
+      });
+    }
+
     return candidateId;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -618,6 +655,20 @@ export async function runCvExtraction(
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : message,
     });
+
+    if (args.logId) {
+      await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+        logId: args.logId,
+        stage: isInsufficientBalance ? "completed" : "failed",
+        errorMessage: message
+      });
+    }
+    if (args.batchId) {
+      await ctx.runMutation(api.ingestionBatches.updateBatchProgress, {
+        batchId: args.batchId,
+        status: isInsufficientBalance ? "completed" : "failed"
+      });
+    }
 
     if (!isInsufficientBalance) throw err;
     return null;

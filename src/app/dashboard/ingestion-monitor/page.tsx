@@ -7,8 +7,10 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { RefreshCw, Upload, AlertCircle, Loader2, CheckCircle2, Info, Building2, Key, X, Play, RotateCcw, Copy, SkipForward, XCircle } from 'lucide-react';
 import { ChannelStatusCard } from '@/components/ingestion-monitor/ChannelStatusCard';
+import RealTimeBatchLog from "@/components/ingestion-monitor/RealTimeBatchLog";
 import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { Id } from '@/convex/_generated/dataModel';
 import { toast } from 'sonner';
 
 const SOURCE_OPTIONS = ["LinkedIn", "WhatsApp", "Meta", "Email", "Workable", "Manual", "Headhunting"];
@@ -80,6 +82,8 @@ export default function IngestionMonitorPage() {
   const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
   const processCvExtraction = useAction(api.cvs.cvExtraction.processCvExtraction);
+  const createBatch = useMutation(api.ingestionBatches.createBatch);
+  const queueManualExtraction = useMutation(api.cvs.cvUploads.queueManualExtraction);
 
   const [retrying, setRetrying] = useState(false);
   const [activeTab, setActiveTab] = useState<'ongoing' | 'history'>('ongoing');
@@ -96,6 +100,7 @@ export default function IngestionMonitorPage() {
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [importBatchId, setImportBatchId] = useState<Id<"ingestionBatches"> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Manual Upload Tags
@@ -244,6 +249,13 @@ export default function IngestionMonitorPage() {
     setIsUploading(true);
     let successCount = 0;
     try {
+      const batchId = await createBatch({
+        sourceChannel: source || "Manual",
+        totalCount: files.length,
+        jobId: (assignToJob as Id<"jobs">) || undefined,
+      });
+      setImportBatchId(batchId);
+
       for (const file of files) {
         const uploadUrl = await generateUploadUrl();
         const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
@@ -260,12 +272,14 @@ export default function IngestionMonitorPage() {
           uploadedBy: user.id,
         });
 
-        await processCvExtraction({
+        await queueManualExtraction({
           storageId,
           fileType: normalizeFileType(file),
           sourceChannel: source || "Manual",
           uploadedBy: user.id,
           cvUploadId,
+          fileName: file.name,
+          batchId,
         });
         successCount++;
       }
@@ -442,6 +456,12 @@ export default function IngestionMonitorPage() {
             }
           />
         </div>
+        
+        {importBatchId && (
+          <div className="mb-8">
+            <RealTimeBatchLog batchId={importBatchId} />
+          </div>
+        )}
 
         {Object.keys(failedBySource).length > 0 && (
           <div className="mb-8">

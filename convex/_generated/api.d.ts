@@ -18,6 +18,7 @@ import type * as cvs_cvUploads from "../cvs/cvUploads.js";
 import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
 import type * as fix from "../fix.js";
 import type * as http from "../http.js";
+import type * as ingestionBatches from "../ingestionBatches.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
 import type * as jobAssignments from "../jobAssignments.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   "cvs/lazyParsing": typeof cvs_lazyParsing;
   fix: typeof fix;
   http: typeof http;
+  ingestionBatches: typeof ingestionBatches;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
   jobAssignments: typeof jobAssignments;
