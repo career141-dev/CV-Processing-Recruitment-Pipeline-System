@@ -131,3 +131,13 @@ export const createApplication = mutation({
     });
   },
 });
+
+export const removeApplication = mutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    await ctx.db.delete(args.applicationId);
+  }
+});

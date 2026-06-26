@@ -488,7 +488,7 @@ generatedAt: v.string(),
       searchField: "skills",
     })
     .searchIndex("search_title", {
-      searchField: "currentTitle",
+      searchField: "currentJobTitle",
     })
     .searchIndex("search_summary", {
       searchField: "summary",

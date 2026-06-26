@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { 
   ChevronLeft, Check, Copy, ChevronRight, 
   Users, Layers, FileText, ListTodo, PhoneCall, 
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
-  QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot
+  QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -143,6 +143,153 @@ const StatusDot = ({ status }: { status: string }) => {
   );
 };
 
+const MatchRow = ({ match, jobId, applications }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined }) => {
+  const candidate = useQuery(api.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
+  const createApplication = useMutation(api.applications.createApplication);
+  const removeApplication = useMutation(api.applications.removeApplication);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isShortlisting, setIsShortlisting] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  const applicationForCandidate = applications?.find(app => app.candidateId === match.cvId);
+  const isAlreadyInPipeline = !!applicationForCandidate;
+
+  const handleShortlist = async () => {
+    setIsShortlisting(true);
+    try {
+      await createApplication({
+        candidateId: match.cvId as Id<"candidates">,
+        jobId,
+        sourceChannel: "database",
+      });
+    } catch (e: any) {
+      alert("Failed to shortlist: " + e.message);
+    } finally {
+      setIsShortlisting(false);
+    }
+  };
+
+  const handleRevert = async () => {
+    if (!applicationForCandidate) return;
+    if (!confirm("Are you sure you want to revert this shortlist? This will remove them from the pipeline for this job.")) return;
+    
+    setIsShortlisting(true);
+    try {
+      await removeApplication({ applicationId: applicationForCandidate._id });
+    } catch (e: any) {
+      alert("Failed to revert: " + e.message);
+    } finally {
+      setIsShortlisting(false);
+    }
+  };
+
+  return (
+    <>
+      <tr className="hover:bg-surface-bright transition-colors group">
+        <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
+        <td className="p-4 font-medium">
+          <Link href={`/dashboard/candidates/${match.cvId}`} className="text-text-primary hover:underline">
+            {candidate === undefined ? "Loading..." : (candidate?.fullName || candidate?.email || `Candidate ID: ${match.cvId.slice(0, 8)}...`)}
+          </Link>
+        </td>
+        <td className="p-4"><span className="text-[#0A66C2] font-medium">{match.sourceLevel1 || 'Database'}</span></td>
+        <td className="p-4"><ScoreRing score={match.overallScore} /></td>
+        <td className="p-4 text-[13px]">
+          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}>{(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}</div>
+          <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
+        </td>
+        <td className="p-4 text-[13px] text-text-secondary">
+          <div className="flex items-center gap-2">
+            <div className="max-w-[120px] sm:max-w-[180px] truncate" title={match.reason}>{match.reason || 'N/A'}</div>
+            {match.reason && (
+              <button 
+                onClick={() => setIsExpanded(!isExpanded)}
+                className={`text-primary hover:text-primary/80 transition-colors shrink-0 ${isExpanded ? 'bg-primary/10 rounded p-0.5' : ''}`}
+                title="View full reason"
+              >
+                <Info className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </td>
+        <td className="p-4 text-right">
+          <div className="flex items-center justify-end gap-2 relative">
+            {isAlreadyInPipeline && (
+              <div className="flex gap-1 items-center bg-green-500/10 text-green-700 px-2 py-1 rounded-[6px] border border-green-500/20">
+                <CheckCircle2 className="w-3.5 h-3.5" /> <span className="text-[12px] font-medium">Added</span>
+              </div>
+            )}
+            <div className="relative inline-block text-left" ref={dropdownRef}>
+              <button 
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="p-1.5 rounded-md hover:bg-surface-container transition-colors text-text-secondary hover:text-text-primary"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {isDropdownOpen && (
+                <div className="absolute right-0 mt-1 w-48 bg-surface rounded-lg shadow-lg shadow-black/5 border border-border py-1.5 z-50 text-left">
+                  <Link 
+                    href={`/dashboard/candidates/${match.cvId}`}
+                    onClick={() => setIsDropdownOpen(false)}
+                    className="w-full px-3 py-1.5 text-[13px] text-text-primary hover:bg-surface-bright flex items-center gap-2 transition-colors"
+                  >
+                    <User className="w-4 h-4 text-text-secondary" /> View Profile
+                  </Link>
+                  {!isAlreadyInPipeline ? (
+                    <button 
+                      onClick={() => { setIsDropdownOpen(false); handleShortlist(); }}
+                      disabled={isShortlisting}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-primary hover:bg-primary/5 flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> {isShortlisting ? "Adding..." : "Shortlist Candidate"}
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => { setIsDropdownOpen(false); handleRevert(); }}
+                      disabled={isShortlisting}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-red-600 hover:bg-red-500/5 flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      <XCircle className="w-4 h-4" /> {isShortlisting ? "Removing..." : "Remove Shortlist"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </td>
+      </tr>
+      {isExpanded && match.reason && (
+        <tr className="bg-surface-bright border-b border-border">
+          <td colSpan={7} className="p-4 px-12">
+            <div className="flex items-start gap-3 bg-green-500/10 border border-green-500/20 p-4 rounded-xl">
+              <Bot className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+              <p className="whitespace-pre-wrap leading-relaxed text-[13.5px] text-green-900 dark:text-green-300">
+                <strong className="font-medium block mb-1">AI Reasoning:</strong>
+                {match.reason}
+              </p>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+};
+
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -261,7 +408,7 @@ export default function JobDetailPage() {
               <th className="p-4 w-10"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></th>
               <th className="p-4">Candidate</th>
               <th className="p-4">Source</th>
-              <th className="p-4">Match Score</th>
+              <th className="p-4">JD Match Score</th>
               <th className="p-4">Role & Exp</th>
               <th className="p-4">AI Reason</th>
               <th className="p-4 text-right">Actions</th>
@@ -269,30 +416,29 @@ export default function JobDetailPage() {
           </thead>
           <tbody className="text-[13px] text-text-primary divide-y divide-border">
             {(!job?.reverseMatchResults || job.reverseMatchResults.length === 0) ? (
-              <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No AI matches found. Click 'Scan Database' to find candidates!</td></tr>
+              <tr>
+                <td colSpan={7} className="p-0">
+                  <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface-bright/30">
+                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                      <Bot className="w-8 h-8 text-primary" />
+                    </div>
+                    <h4 className="text-[16px] font-semibold text-text-primary mb-2">No Candidates Found</h4>
+                    <p className="text-[13px] text-text-secondary max-w-[400px] mb-6 leading-relaxed">
+                      We couldn't find any relevant matches for this role in your database. Click 'Scan Database' to let the AI search your entire talent pool against this job description.
+                    </p>
+                    <button 
+                      onClick={handleScanDatabase}
+                      disabled={isScanning}
+                      className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Bot className="w-4 h-4" /> {isScanning ? "Scanning Database..." : "Scan Database Now"}
+                    </button>
+                  </div>
+                </td>
+              </tr>
             ) : (
               job.reverseMatchResults.map((match: any) => (
-                <tr key={match.cvId} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
-                  <td className="p-4 font-medium">
-                    <Link href={`/dashboard/candidates/${match.cvId}`} className="text-text-primary hover:underline">
-                      Candidate ID: {match.cvId.slice(0, 8)}...
-                    </Link>
-                  </td>
-                  <td className="p-4"><span className="text-[#0A66C2] font-medium">{match.sourceLevel1 || 'Database'}</span></td>
-                  <td className="p-4"><ScoreRing score={match.overallScore} /></td>
-                  <td className="p-4 text-text-secondary">
-                    Matched: {match.matchedSkills?.length || 0} / Missing: {match.missingSkills?.length || 0}
-                  </td>
-                  <td className="p-4 text-xs text-text-secondary max-w-[200px] truncate" title={match.reason}>{match.reason || 'N/A'}</td>
-                  <td className="p-4 text-right">
-                    <Link href={`/dashboard/candidates/${match.cvId}`}>
-                      <button className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] hover:bg-surface-container transition-colors">
-                        View
-                      </button>
-                    </Link>
-                  </td>
-                </tr>
+                <MatchRow key={match.cvId} match={match} jobId={jobId} applications={applications} />
               ))
             )}
           </tbody>
