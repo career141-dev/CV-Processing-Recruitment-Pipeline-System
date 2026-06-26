@@ -18,6 +18,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../tier2Derivations";
+import { generateNvidiaEmbedding } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -77,7 +78,6 @@ export const cvExtractionSchema = z.object({
   currentTitle: z.preprocess(makeString, z.string().nullable().optional()),
   currentEmployer: z.preprocess(makeString, z.string().nullable().optional()),
   seniorityLevel: z.preprocess(makeString, z.string().nullable().optional()),
-  yearsOfExperience: z.preprocess(makeNumber, z.number().nullable().optional()),
   industries: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
   sector: z.preprocess(makeString, z.string().nullable().optional()),
   expectedSalary: z.preprocess(makeString, z.string().nullable().optional()),
@@ -367,7 +367,6 @@ export async function callNvidiaLLM(
   "currentTitle": null,
   "currentEmployer": null,
   "seniorityLevel": null,
-  "yearsOfExperience": null,
   "industries": null,
   "sector": null,
   "skills": [
@@ -526,7 +525,6 @@ export async function runCvExtraction(
         currentTitle: null,
         currentEmployer: null,
         seniorityLevel: null,
-        yearsOfExperience: null,
         industries: null,
         sector: null,
         expectedSalary: null,
@@ -547,9 +545,10 @@ export async function runCvExtraction(
       const safeExtracted = nullToUndefined(extracted);
       
       const noticePeriodDays = deriveNoticePeriodDays(extracted.noticePeriod);
-      const seniorityLevel = deriveSeniorityLevel(extracted.yearsOfExperience, extracted.currentTitle);
+      // We pass undefined for yearsOfExperience since we rely on derivation
+      const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, undefined);
+      const seniorityLevel = deriveSeniorityLevel(totalExperienceYears, extracted.currentTitle) ?? safeExtracted.seniorityLevel;
       const { educationDegree, educationInstitution, educationYear } = deriveEducationFields(extracted.education);
-      const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, extracted.yearsOfExperience);
       const { derivedEmployer, derivedTitle } = deriveCurrentRole(extracted.jobHistory, extracted.currentEmployer, extracted.currentTitle);
 
       const formattedSkills = safeExtracted.skills?.map((s: any) => s.value) || [];
@@ -566,6 +565,9 @@ export async function runCvExtraction(
         description: jh.description,
       }));
 
+      // Generate embedding using the new NVIDIA embedding function
+      const embedding = await generateNvidiaEmbedding(cappedRawText);
+
       await ctx.runMutation(api.candidates.createCandidate, {
         ...safeExtracted,
         currentEmployer: derivedEmployer,
@@ -581,6 +583,7 @@ export async function runCvExtraction(
         skills: formattedSkills,
         parsingConfidence,
         isParsed: true,
+        embedding,
       });
     }
 
