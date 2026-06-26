@@ -32,13 +32,18 @@ export const updateBatchProgress = mutation({
     if (!batch) return;
 
     const updates: any = {};
+    let newCompletedCount = batch.completedCount;
+    let newFailedCount = batch.failedCount;
+
     if (args.status === "completed") {
-      updates.completedCount = batch.completedCount + 1;
+      newCompletedCount += 1;
+      updates.completedCount = newCompletedCount;
     } else {
-      updates.failedCount = batch.failedCount + 1;
+      newFailedCount += 1;
+      updates.failedCount = newFailedCount;
     }
 
-    if (updates.completedCount + updates.failedCount >= batch.totalCount) {
+    if (newCompletedCount + newFailedCount >= batch.totalCount) {
       updates.status = "completed";
       updates.completedAt = Date.now();
     }

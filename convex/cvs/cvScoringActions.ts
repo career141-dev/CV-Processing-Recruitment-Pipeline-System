@@ -48,6 +48,7 @@ export const saveMatchScore = internalMutation({
       scoredBy: "system",
       scoreSource: "search",
       scoredAt: new Date().toISOString(),
+      trigger: "search",
     } as any);
 
     // If score >= minimum required, auto-advance pipeline to ta_shortlist
