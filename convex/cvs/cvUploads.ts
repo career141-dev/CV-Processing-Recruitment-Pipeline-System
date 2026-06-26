@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
+import { api } from "../_generated/api";
 
 export const generateUploadUrl = mutation({
   handler: async (ctx) => {
@@ -30,6 +31,42 @@ export const saveUpload = mutation({
       uploadedBy: args.uploadedBy,
       status: "uploaded",
     });
+  },
+});
+
+export const queueManualExtraction = mutation({
+  args: {
+    cvUploadId: v.id("cvUploads"),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    fileType: v.string(),
+    sourceChannel: v.string(),
+    uploadedBy: v.string(),
+    batchId: v.optional(v.id("ingestionBatches")),
+  },
+  handler: async (ctx, args) => {
+    const logId = await ctx.db.insert("ingestionLog", {
+      channelType: "manual_upload",
+      routingStatus: "routed",
+      cvFileId: args.cvUploadId,
+      receivedAt: Date.now(),
+      batchId: args.batchId,
+      stage: "queued",
+      candidateName: args.fileName,
+      rawSender: args.uploadedBy,
+    } as any);
+
+    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      storageId: args.storageId,
+      fileType: args.fileType,
+      sourceChannel: args.sourceChannel,
+      uploadedBy: args.uploadedBy,
+      cvUploadId: args.cvUploadId,
+      batchId: args.batchId,
+      logId,
+    });
+
+    return logId;
   },
 });
 

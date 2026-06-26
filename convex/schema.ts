@@ -495,7 +495,7 @@ generatedAt: v.string(),
     })
     .vectorIndex("vector_index_candidates", {
       vectorField: "embedding",
-      dimensions: 1536,
+      dimensions: 1024,
     }),
 
   applications: defineTable({
@@ -794,6 +794,18 @@ errorMessage: v.optional(v.string()),
   })
     .index("by_jobId", ["jobId"])
     .index("by_decidedBy", ["decidedBy"]),
+  ingestionBatches: defineTable({
+    sourceChannel: v.string(),
+    totalCount: v.number(),
+    completedCount: v.number(),
+    failedCount: v.number(),
+    status: v.union(v.literal("in_progress"), v.literal("completed"), v.literal("failed")),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    jobId: v.optional(v.id("jobs")),
+  })
+    .index("by_status", ["status"])
+    .index("by_startedAt", ["startedAt"]),
 
   ingestionLog: defineTable({
     jobId: v.optional(v.id("jobs")),
@@ -822,16 +834,17 @@ errorMessage: v.optional(v.string()),
     processingTimeMs: v.optional(v.number()),
     receivedAt: v.number(),
     processedAt: v.optional(v.number()),
-    batchId: v.optional(v.string()),
-    candidateName: v.optional(v.string()),
+    batchId: v.optional(v.id("ingestionBatches")),
     stage: v.optional(v.string()),
+    candidateName: v.optional(v.string()),
   })
     .index("by_job", ["jobId"])
     .index("by_channel", ["channelType"])
     .index("by_status", ["routingStatus"])
     .index("by_job_time", ["jobId", "receivedAt"])
     .index("by_channel_time", ["channelType", "receivedAt"])
-    .index("by_receivedAt", ["receivedAt"]),
+    .index("by_receivedAt", ["receivedAt"])
+    .index("by_batchId", ["batchId"]),
 
   systemLogs: defineTable({
     type: v.string(),

@@ -40,3 +40,24 @@ export async function logLLMUsage(
 ): Promise<void> {
   // No-op for target system to keep schema simple
 }
+
+export async function generateNvidiaEmbedding(text: string): Promise<number[] | undefined> {
+  try {
+    const openai = getOpenAI("cv_structuring");
+    const trimmed = text.trim();
+    if (!trimmed) return undefined;
+    
+    // Safety truncate to avoid token limits (bge-m3 has an 8192 token limit)
+    const safeText = trimmed.slice(0, 25000);
+    
+    const response = await openai.embeddings.create({
+      input: [safeText],
+      model: "baai/bge-m3",
+    });
+    
+    return response.data[0]?.embedding;
+  } catch (error) {
+    console.error("Embedding generation error:", error);
+    return undefined;
+  }
+}

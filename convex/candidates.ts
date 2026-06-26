@@ -124,6 +124,7 @@ export const createCandidate = mutation({
     totalExperienceYears: v.optional(v.number()),
     isParsed: v.optional(v.boolean()),
     parsingConfidence: v.optional(v.any()),
+    embedding: v.optional(v.array(v.float64())),
   },
   handler: async (ctx, args) => {
     // 4-Factor Deduplication (Agent 6)

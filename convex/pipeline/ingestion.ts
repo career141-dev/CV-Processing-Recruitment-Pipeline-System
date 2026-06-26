@@ -14,6 +14,7 @@ export const processCvIngestion = mutation({
     fileType: v.string(),
     fileSizeBytes: v.number(),
     metaCampaignId: v.optional(v.string()),
+    batchId: v.optional(v.id("ingestionBatches")),
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
@@ -28,6 +29,8 @@ export const processCvIngestion = mutation({
         routingStatus: "unrouted",
         errorMessage: "Job not active",
         receivedAt: startTime,
+        batchId: args.batchId,
+        stage: "failed",
       } as any);
       return { success: false, reason: "job_not_active" };
     }
@@ -47,6 +50,8 @@ export const processCvIngestion = mutation({
         routingStatus: "duplicate_file",
         cvFileId: existingFile._id,
         receivedAt: startTime,
+        batchId: args.batchId,
+        stage: "failed",
       } as any);
       return { success: false, reason: "duplicate_file", existingFileId: existingFile._id };
     }
@@ -104,7 +109,7 @@ export const processCvIngestion = mutation({
     }
 
     // 7. Log ingestion event
-    await ctx.db.insert("ingestionLog", {
+    const logId = await ctx.db.insert("ingestionLog", {
       jobId: args.jobId,
       channelType: args.sourceChannel as any,
       rawSender: args.rawSender,
@@ -114,7 +119,10 @@ export const processCvIngestion = mutation({
       metaCampaignId: args.metaCampaignId,
       processingTimeMs: Date.now() - startTime,
       receivedAt: startTime,
-      processedAt: Date.now(),
+      processedAt: undefined, // Will be set when fully processed
+      batchId: args.batchId,
+      stage: "queued",
+      candidateName: "Unknown — Pending Parse",
     } as any);
 
     // Trigger Agent 1 (CV Parsing) immediately using standard api
@@ -123,9 +131,10 @@ export const processCvIngestion = mutation({
       fileType: args.fileType,
       sourceChannel: args.sourceChannel,
       uploadedBy: "system",
-      candidateId,
-      jobId: args.jobId,
-    } as any);
+      cvUploadId,
+      batchId: args.batchId,
+      logId: logId,
+    });
 
     return { success: true, candidateId, cvUploadId };
   },

@@ -18,6 +18,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../tier2Derivations";
+import { generateNvidiaEmbedding } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -77,7 +78,6 @@ export const cvExtractionSchema = z.object({
   currentTitle: z.preprocess(makeString, z.string().nullable().optional()),
   currentEmployer: z.preprocess(makeString, z.string().nullable().optional()),
   seniorityLevel: z.preprocess(makeString, z.string().nullable().optional()),
-  yearsOfExperience: z.preprocess(makeNumber, z.number().nullable().optional()),
   industries: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
   sector: z.preprocess(makeString, z.string().nullable().optional()),
   expectedSalary: z.preprocess(makeString, z.string().nullable().optional()),
@@ -109,6 +109,8 @@ type ExtractionArgs = {
     email?: string;
     phone?: string;
   };
+  batchId?: Id<"ingestionBatches">;
+  logId?: Id<"ingestionLog">;
 };
 
 const ExtractionActionArgs = {
@@ -124,6 +126,8 @@ const ExtractionActionArgs = {
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
   })),
+  batchId: v.optional(v.id("ingestionBatches")),
+  logId: v.optional(v.id("ingestionLog")),
 };
 
 // ──────────────────────────────────────────────────
@@ -367,7 +371,6 @@ export async function callNvidiaLLM(
   "currentTitle": null,
   "currentEmployer": null,
   "seniorityLevel": null,
-  "yearsOfExperience": null,
   "industries": null,
   "sector": null,
   "skills": [
@@ -482,6 +485,13 @@ export async function runCvExtraction(
     status: "processing",
   });
 
+  if (args.logId) {
+    await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+      logId: args.logId,
+      stage: "parsing"
+    });
+  }
+
   try {
     const blob = await ctx.storage.get(storageId);
     if (!blob) throw new Error("File not found in Convex storage");
@@ -526,7 +536,6 @@ export async function runCvExtraction(
         currentTitle: null,
         currentEmployer: null,
         seniorityLevel: null,
-        yearsOfExperience: null,
         industries: null,
         sector: null,
         expectedSalary: null,
@@ -540,6 +549,12 @@ export async function runCvExtraction(
         jobHistory: null,
       } as unknown as CvExtractionResult;
     } else {
+      if (args.logId) {
+        await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+          logId: args.logId,
+          stage: "ai_extraction"
+        });
+      }
       extracted = await callNvidiaLLM(cappedRawText);
     }
 
@@ -547,9 +562,10 @@ export async function runCvExtraction(
       const safeExtracted = nullToUndefined(extracted);
       
       const noticePeriodDays = deriveNoticePeriodDays(extracted.noticePeriod);
-      const seniorityLevel = deriveSeniorityLevel(extracted.yearsOfExperience, extracted.currentTitle);
+      // We pass undefined for yearsOfExperience since we rely on derivation
+      const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, undefined);
+      const seniorityLevel = deriveSeniorityLevel(totalExperienceYears, extracted.currentTitle) ?? safeExtracted.seniorityLevel;
       const { educationDegree, educationInstitution, educationYear } = deriveEducationFields(extracted.education);
-      const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, extracted.yearsOfExperience);
       const { derivedEmployer, derivedTitle } = deriveCurrentRole(extracted.jobHistory, extracted.currentEmployer, extracted.currentTitle);
 
       const formattedSkills = safeExtracted.skills?.map((s: any) => s.value) || [];
@@ -566,6 +582,15 @@ export async function runCvExtraction(
         description: jh.description,
       }));
 
+      // Generate embedding using the new NVIDIA embedding function
+      if (args.logId) {
+        await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+          logId: args.logId,
+          stage: "indexing"
+        });
+      }
+      const embedding = await generateNvidiaEmbedding(cappedRawText);
+
       await ctx.runMutation(api.candidates.createCandidate, {
         ...safeExtracted,
         currentEmployer: derivedEmployer,
@@ -581,6 +606,7 @@ export async function runCvExtraction(
         skills: formattedSkills,
         parsingConfidence,
         isParsed: true,
+        embedding,
       });
     }
 
@@ -595,6 +621,20 @@ export async function runCvExtraction(
       await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
         candidateId,
         jobId: jobId as any,
+      });
+    }
+
+    if (args.logId) {
+      await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+        logId: args.logId,
+        stage: "completed",
+        candidateName: extracted?.fullName ?? undefined,
+      });
+    }
+    if (args.batchId) {
+      await ctx.runMutation(api.ingestionBatches.updateBatchProgress, {
+        batchId: args.batchId,
+        status: "completed"
       });
     }
 
@@ -615,6 +655,20 @@ export async function runCvExtraction(
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : message,
     });
+
+    if (args.logId) {
+      await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+        logId: args.logId,
+        stage: isInsufficientBalance ? "completed" : "failed",
+        errorMessage: message
+      });
+    }
+    if (args.batchId) {
+      await ctx.runMutation(api.ingestionBatches.updateBatchProgress, {
+        batchId: args.batchId,
+        status: isInsufficientBalance ? "completed" : "failed"
+      });
+    }
 
     if (!isInsufficientBalance) throw err;
     return null;
