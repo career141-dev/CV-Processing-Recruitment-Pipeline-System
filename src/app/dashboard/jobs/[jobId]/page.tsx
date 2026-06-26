@@ -13,7 +13,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
@@ -305,6 +305,8 @@ export default function JobDetailPage() {
   
   // Fetch candidates via applications
   const applications = useQuery(api.applications.getByJobId, { jobId });
+  const allUsers = useQuery(api.users.getAllUsers);
+  const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
   
   const runReverseMatch = useAction(api.reverseMatch.runReverseMatch);
@@ -341,6 +343,10 @@ export default function JobDetailPage() {
   }
 
   const newCvs = applications.filter(app => app.currentStage === "new_cvs");
+  
+  const avgAiScore = job?.reverseMatchResults && job.reverseMatchResults.length > 0 
+    ? Math.round(job.reverseMatchResults.reduce((sum: number, r: any) => sum + r.overallScore, 0) / job.reverseMatchResults.length)
+    : '--';
   
   const handleStageChange = async (appId: string, newStage: string) => {
     if (!appId.startsWith('dummy|')) {
@@ -869,24 +875,26 @@ export default function JobDetailPage() {
         <div className="text-[12px] text-text-secondary mb-2 font-body flex items-center gap-1">
           <Link className="hover:text-primary-container" href="/dashboard/jobs">Jobs</Link>
           <ChevronRight className="w-3.5 h-3.5" />
-          <span>{job.title} — {(job as any).client || 'Atlas Holdings'}</span>
+          <span>{job.title} — {job.clientName || 'Atlas Holdings'}</span>
         </div>
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-[22px] font-semibold text-text-primary mb-3">{job.title}</h1>
             <div className="flex items-center gap-4 text-body font-body text-text-secondary mb-4">
-              <div className="flex items-center gap-1"><Building2 className="w-4 h-4" /> {(job as any).client || 'Atlas Holdings'}</div>
-              <div className="flex items-center gap-1"><Tag className="w-4 h-4" /> Keyword: BRAND24</div>
-              <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Created: 12 Jun 2026</div>
-              <div className="flex items-center gap-1"><User className="w-4 h-4" /> TA: Shambra Ameen</div>
+              <div className="flex items-center gap-1"><Building2 className="w-4 h-4" /> {job.clientName || 'Atlas Holdings'}</div>
+              <div className="flex items-center gap-1"><Tag className="w-4 h-4" /> Keyword: {job.keyword}</div>
+              <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Created: {format(new Date(job._creationTime), 'dd MMM yyyy')}</div>
+              <div className="flex items-center gap-1"><User className="w-4 h-4" /> TA: {recruiter?.fullName || 'Loading...'}</div>
             </div>
             <div className="flex gap-2">
               <span className="bg-primary-container/15 text-primary-container px-3 py-1 rounded-full text-[12px] font-medium border border-primary-container/20">
                 {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
               </span>
               <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">{job.location}</span>
-              <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">FMCG</span>
-              <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">Confidential</span>
+              <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">{job.clientIndustry}</span>
+              {job.isConfidential && (
+                <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">Confidential</span>
+              )}
             </div>
           </div>
           <div className="flex flex-col items-end gap-4">
@@ -900,7 +908,7 @@ export default function JobDetailPage() {
                 <div className="text-[11px] text-text-secondary">Shortlisted</div>
               </div>
               <div className="bg-surface border border-border rounded-[8px] px-4 py-2 text-center min-w-[80px]">
-                <div className="text-[20px] font-bold text-primary-container">78<span className="text-[12px] text-text-secondary font-normal">/100</span></div>
+                <div className="text-[20px] font-bold text-primary-container">{avgAiScore}<span className="text-[12px] text-text-secondary font-normal">/100</span></div>
                 <div className="text-[11px] text-text-secondary">AI Avg Score</div>
               </div>
             </div>
