@@ -470,7 +470,6 @@ generatedAt: v.string(),
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     candidateConsent: v.optional(v.boolean()),
-    isParsed: v.optional(v.boolean()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -823,6 +822,9 @@ errorMessage: v.optional(v.string()),
     processingTimeMs: v.optional(v.number()),
     receivedAt: v.number(),
     processedAt: v.optional(v.number()),
+    batchId: v.optional(v.string()),
+    candidateName: v.optional(v.string()),
+    stage: v.optional(v.string()),
   })
     .index("by_job", ["jobId"])
     .index("by_channel", ["channelType"])

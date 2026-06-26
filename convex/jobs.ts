@@ -697,3 +697,44 @@ export const getByKeyword = query({
       .unique();
   }
 });
+export const saveReverseMatchResults = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    results: v.array(
+      v.object({
+        cvId: v.string(),
+        overallScore: v.number(),
+        breakdown: v.object({
+          skills: v.number(),
+          experience: v.number(),
+          seniority: v.number(),
+          industry: v.number(),
+          location: v.number(),
+        }),
+        matchedSkills: v.array(v.string()),
+        missingSkills: v.array(v.string()),
+        reason: v.string(),
+        sourceLevel1: v.optional(v.string()),
+        sourceLevel2: v.optional(v.string()),
+      })
+    ),
+    status: v.union(v.literal("done"), v.literal("error")),
+  },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    await ctx.db.patch(args.jobId, {
+      reverseMatchStatus: args.status,
+      reverseMatchedAt: new Date().toISOString(),
+      reverseMatchResults: args.results.map((r) => ({
+        cvId: r.cvId,
+        overallScore: r.overallScore,
+        breakdown: r.breakdown,
+        matchedSkills: r.matchedSkills,
+        missingSkills: r.missingSkills,
+        reason: r.reason,
+        sourceLevel1: r.sourceLevel1,
+        sourceLevel2: r.sourceLevel2,
+      })),
+    });
+  },
+});

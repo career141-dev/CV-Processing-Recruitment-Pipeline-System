@@ -2,20 +2,17 @@ import React from 'react';
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { format } from "date-fns";
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-function getSourceVariant(source?: string | null): "success" | "warning" | "error" | "info" | "default" {
-  switch (source?.toLowerCase()) {
-    case "linkedin": return "success";
-    case "whatsapp": return "warning";
-    case "email": return "info";
-    case "headhunting": return "error";
-    default: return "default";
-  }
-}
+const SOURCE_COLORS: Record<string, string> = {
+  linkedin: "bg-[#0A66C2] text-white",
+  whatsapp: "bg-[#25D366] text-white",
+  email_campaign: "bg-orange-400 text-white",
+  headhunting: "bg-purple-500 text-white",
+  manual_upload: "bg-surface-container text-text-secondary",
+  workable: "bg-sky-500 text-white",
+};
 
 export function CandidateManagementTable() {
   const router = useRouter();
@@ -53,12 +50,12 @@ export function CandidateManagementTable() {
   };
 
   return (
-    <div className="flex flex-col flex-1 w-full p-6">
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+    <div className="flex flex-col flex-1 w-full px-6 pb-6">
+      <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
-              <tr>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="px-6 py-4">Candidate</th>
                 <th className="px-6 py-4">Current Role</th>
                 <th className="px-6 py-4">Location</th>
@@ -68,58 +65,67 @@ export function CandidateManagementTable() {
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-border text-[13px] text-text-primary">
               {currentItems.length === 0 && status === "Exhausted" ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-10 text-center text-text-disabled">
                     No candidates found.
                   </td>
                 </tr>
               ) : (
                 currentItems.map((candidate) => (
-                  <tr key={candidate._id} className="hover:bg-gray-50 transition-colors group">
-                    <td className="px-6 py-4 font-medium text-gray-900">
+                  <tr key={candidate._id} className="hover:bg-surface-bright transition-colors group">
+                    <td className="px-6 py-4 font-medium">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary-container/10 flex items-center justify-center text-primary-container font-bold text-xs shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed font-bold text-xs shrink-0">
                           {candidate.fullName?.charAt(0) || "?"}
                         </div>
                         <div>
-                          <div className="text-gray-900 font-semibold">{candidate.fullName || "Unknown"}</div>
-                          <div className="text-gray-500 text-xs truncate max-w-[150px]">{candidate.email || candidate.phone || "No contact"}</div>
+                          <div className="text-text-primary font-semibold">{candidate.fullName || "Unknown"}</div>
+                          <div className="text-text-secondary text-xs truncate max-w-[150px]">{candidate.email || candidate.phone || "No contact"}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-gray-900">{candidate.currentTitle || "-"}</div>
-                      <div className="text-gray-500 text-xs">{candidate.currentEmployer || ""}</div>
+                      <div className="text-text-primary">{(candidate as any).currentTitle || (candidate as any).currentJobTitle || "—"}</div>
+                      <div className="text-text-secondary text-xs">{(candidate as any).currentEmployer || ""}</div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{candidate.location || "-"}</td>
-                    <td className="px-6 py-4 text-gray-600">
-                      {candidate.totalExperienceYears != null ? `${candidate.totalExperienceYears} yrs` : candidate.yearsOfExperience ? `${candidate.yearsOfExperience} yrs` : "-"}
+                    <td className="px-6 py-4 text-text-secondary">{candidate.location || "—"}</td>
+                    <td className="px-6 py-4 text-text-secondary">
+                      {(candidate as any).totalExperienceYears != null
+                        ? `${(candidate as any).totalExperienceYears} yrs`
+                        : (candidate as any).yearsOfExperience
+                        ? `${(candidate as any).yearsOfExperience} yrs`
+                        : "—"}
                     </td>
                     <td className="px-6 py-4">
-                      <Badge variant={getSourceVariant(candidate.sourceChannel)}>
-                        {(candidate.sourceChannel || "Manual").toUpperCase()}
-                      </Badge>
+                      {(() => {
+                        const src = ((candidate as any).firstSourceChannel || (candidate as any).sourceChannel || "manual_upload").toLowerCase();
+                        const color = SOURCE_COLORS[src] ?? "bg-surface-container text-text-secondary";
+                        return (
+                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold capitalize ${color}`}>
+                            {src.replace(/_/g, " ")}
+                          </span>
+                        );
+                      })()}
                     </td>
-                    <td className="px-6 py-4 text-gray-600">
+                    <td className="px-6 py-4 text-text-secondary">
                       {format(new Date(candidate._creationTime), 'MMM d, yyyy')}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Button
-                        variant="outline"
-                        className="h-8 text-xs px-3 py-1 bg-white border border-gray-200 hover:bg-gray-50 shadow-sm"
+                      <button
+                        className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[12px] font-medium hover:bg-surface-container transition-colors"
                         onClick={() => router.push(`/dashboard/candidates/${candidate._id}`)}
                       >
                         View Profile
-                      </Button>
+                      </button>
                     </td>
                   </tr>
                 ))
               )}
               {status === "LoadingMore" && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-4 text-center text-text-disabled text-sm">
                     Loading...
                   </td>
                 </tr>
@@ -129,27 +135,25 @@ export function CandidateManagementTable() {
         </div>
         
         {/* Pagination Controls */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
-          <div className="text-sm text-gray-500">
-            Showing <span className="font-medium text-gray-900">{Math.min(startIndex + 1, results.length)}</span> to <span className="font-medium text-gray-900">{Math.min(endIndex, results.length)}</span> candidates (Page {currentPage})
+        <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-surface-bright">
+          <div className="text-[13px] text-text-secondary">
+            Showing <span className="font-medium text-text-primary">{Math.min(startIndex + 1, results.length)}</span> to <span className="font-medium text-text-primary">{Math.min(endIndex, results.length)}</span> candidates
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
+            <button
+              className="flex items-center gap-1 border border-border px-3 py-1.5 rounded-[8px] text-[13px] text-text-secondary hover:bg-surface-container transition-colors disabled:opacity-40"
               onClick={handlePrev}
               disabled={!canGoPrev}
             >
-              <ChevronLeft className="w-4 h-4 mr-1" /> Prev
-            </Button>
-            <Button
-              variant="outline"
-              className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
+              <ChevronLeft className="w-4 h-4" /> Prev
+            </button>
+            <button
+              className="flex items-center gap-1 border border-border px-3 py-1.5 rounded-[8px] text-[13px] text-text-secondary hover:bg-surface-container transition-colors disabled:opacity-40"
               onClick={handleNext}
-              disabled={!canGoNext || (status === "LoadingMore")}
+              disabled={!canGoNext || status === "LoadingMore"}
             >
-              Next <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </div>

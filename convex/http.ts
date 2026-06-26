@@ -1,16 +1,32 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
-import { handleWhatsappWebhook } from "./communications/whatsappAgent";
-
+import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
 
 const http = httpRouter();
 
-// Twilio WhatsApp Webhook
+// Meta Webhook Verification
 http.route({
-  path: "/api/twilio/whatsapp",
+  path: "/api/whatsapp",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const mode = url.searchParams.get("hub.mode");
+    const token = url.searchParams.get("hub.verify_token");
+    const challenge = url.searchParams.get("hub.challenge");
+
+    if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
+      return new Response(challenge, { status: 200 });
+    }
+    return new Response("Forbidden", { status: 403 });
+  }),
+});
+
+// Meta Webhook Inbound Events
+http.route({
+  path: "/api/whatsapp",
   method: "POST",
-  handler: handleWhatsappWebhook,
+  handler: handleMetaWhatsappWebhook,
 });
 
 // A simple REST endpoint to test Job Creation via Postman

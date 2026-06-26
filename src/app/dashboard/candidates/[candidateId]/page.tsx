@@ -57,6 +57,12 @@ export default function CandidateProfile() {
     !isFakeId && candidate?.cvUploadId ? { cvUploadId: candidate.cvUploadId } : "skip"
   );
 
+  // Live data for profile tabs/sidebar
+  const candidateId = !isFakeId ? params.candidateId as any : "skip";
+  const applications = useQuery(api.applications.getByCandidate, candidateId !== "skip" ? { candidateId } : "skip");
+  const timeline = useQuery(api.applications.getCandidateTimeline, candidateId !== "skip" ? { candidateId } : "skip");
+  const aiCalls = useQuery(api.applications.getCandidateAiCalls, candidateId !== "skip" ? { candidateId } : "skip");
+
   if (candidate === undefined) {
     return (
       <div className="flex justify-center items-center h-64 text-text-disabled text-sm">
@@ -218,7 +224,7 @@ export default function CandidateProfile() {
                 { key: "overview", label: "Overview" },
                 { key: "timeline", label: "Timeline" },
                 { key: "communications", label: "Communications" },
-                { key: "applications", label: "Job Applications", badge: "2" },
+                { key: "applications", label: "Job Applications", badge: applications?.length?.toString() ?? "0" },
                 { key: "callLog", label: "AI Call Log" },
               ].map((tab) => (
                 <div
@@ -410,48 +416,30 @@ export default function CandidateProfile() {
                 {/* Active Applications */}
                 <div className="flex flex-col bg-surface rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D] overflow-hidden">
                   <div className="flex items-center bg-background py-3 px-4 border-b border-border">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/4jhtq7qv_expires_30_days.png" 
-                      className="w-3.5 h-4 mr-2 object-fill"
-                      alt="Icon"
-                    />
                     <span className="text-text-primary text-sm font-bold">Active Applications</span>
+                    {applications && <span className="ml-auto text-xs text-text-secondary">{applications.length} job{applications.length !== 1 ? 's' : ''}</span>}
                   </div>
                   <div className="flex flex-col divide-y divide-gray-100">
-                    <div className="flex flex-col py-4 px-4 hover:bg-surface-container-high transition-colors cursor-pointer">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-text-primary text-[14px] font-bold text-blue-700 hover:underline">Brand Manager</span>
-                        <div className="bg-primary-container py-0.5 px-2 rounded">
-                          <span className="text-on-primary text-[11px] font-bold">92</span>
+                    {applications === undefined ? (
+                      <div className="py-4 px-4 text-xs text-text-disabled">Loading...</div>
+                    ) : applications.length === 0 ? (
+                      <div className="py-6 px-4 text-center text-text-disabled text-xs">No active applications yet.</div>
+                    ) : (
+                      applications.filter(a => a.currentStage !== 'rejected').slice(0, 5).map((app) => (
+                        <div key={app._id} className="flex flex-col py-4 px-4 hover:bg-surface-container-high transition-colors cursor-pointer">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-text-primary text-[14px] font-bold text-blue-700 hover:underline">{app.jobTitle}</span>
+                            {app.aiMatchScore != null && (
+                              <div className={`py-0.5 px-2 rounded ${app.aiMatchScore >= 75 ? 'bg-primary-container' : 'bg-[#DADAD5]'}`}>
+                                <span className={`text-[11px] font-bold ${app.aiMatchScore >= 75 ? 'text-on-primary' : 'text-text-primary'}`}>{app.aiMatchScore}</span>
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-text-secondary text-xs mb-2">{app.clientName}</span>
+                          <span className="text-[#00450D] text-[11px] font-medium capitalize">Stage: {app.currentStage.replace(/_/g, ' ')}</span>
                         </div>
-                      </div>
-                      <span className="text-text-secondary text-xs mb-2">Atlas Holdings</span>
-                      <div className="flex items-center">
-                        <img
-                          src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/a818xgw0_expires_30_days.png" 
-                          className="w-3 h-3 mr-1.5 object-fill"
-                          alt="Icon"
-                        />
-                        <span className="text-[#00450D] text-[11px] font-medium">Stage: Shortlisted</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col py-4 px-4 hover:bg-surface-container-high transition-colors cursor-pointer">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-text-primary text-[14px] font-bold text-blue-700 hover:underline">GM Operations</span>
-                        <div className="bg-[#DADAD5] py-0.5 px-2 rounded">
-                          <span className="text-text-primary text-[11px] font-bold">67</span>
-                        </div>
-                      </div>
-                      <span className="text-text-secondary text-xs mb-2">LPI Group</span>
-                      <div className="flex items-center">
-                        <img
-                          src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/uq406u12_expires_30_days.png" 
-                          className="w-3 h-3 mr-1.5 object-fill"
-                          alt="Icon"
-                        />
-                        <span className="text-text-secondary text-[11px] font-medium">Stage: Applied</span>
-                      </div>
-                    </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -497,28 +485,31 @@ export default function CandidateProfile() {
                 {/* Source History */}
                 <div className="flex flex-col bg-surface p-5 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
                   <div className="flex items-center mb-5">
-                    <img
-                      src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/22j0bf3x_expires_30_days.png" 
-                      className="w-3.5 h-4 mr-2 object-fill"
-                      alt="Icon"
-                    />
                     <span className="text-text-primary text-sm font-bold">Source History</span>
                   </div>
                   <div className="flex flex-col gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-blue-500 w-2 h-2 rounded-full mt-1.5 shrink-0"></div>
-                      <div className="flex flex-col">
-                        <span className="text-text-primary text-[13px] font-medium leading-tight">Sourced via LinkedIn Extension</span>
-                        <span className="text-text-secondary text-xs mt-1">By Sarah Jenkins • Sep 15</span>
+                    {candidate?.firstSourceChannel ? (
+                      <div className="flex items-start gap-3">
+                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                          candidate.firstSourceChannel === 'linkedin' ? 'bg-blue-500' :
+                          candidate.firstSourceChannel === 'whatsapp' ? 'bg-[#25D366]' :
+                          candidate.firstSourceChannel === 'email_campaign' ? 'bg-orange-400' :
+                          'bg-gray-400'
+                        }`} />
+                        <div className="flex flex-col">
+                          <span className="text-text-primary text-[13px] font-medium leading-tight capitalize">
+                            {candidate.firstSourceChannel.replace(/_/g, ' ')}
+                          </span>
+                          {candidate.firstSeenAt && (
+                            <span className="text-text-secondary text-xs mt-1">
+                              {new Date(candidate.firstSeenAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="bg-[#CBFC06] w-2 h-2 rounded-full mt-1.5 shrink-0"></div>
-                      <div className="flex flex-col">
-                        <span className="text-text-primary text-[13px] font-medium leading-tight">Applied via WhatsApp Bot</span>
-                        <span className="text-text-secondary text-xs mt-1">Campaign: GMOPS • Oct 02</span>
-                      </div>
-                    </div>
+                    ) : (
+                      <span className="text-text-disabled text-xs">No source data recorded.</span>
+                    )}
                   </div>
                 </div>
 
@@ -527,9 +518,43 @@ export default function CandidateProfile() {
             )}
 
             {activeTab === "timeline" && (
-              <div className="flex flex-col items-center justify-center py-16 bg-surface rounded-xl border border-solid border-border">
-                <span className="text-text-primary text-sm font-bold mb-2">Timeline</span>
-                <span className="text-text-disabled text-xs">Candidate activity timeline coming soon.</span>
+              <div className="flex flex-col bg-surface rounded-xl border border-solid border-border overflow-hidden">
+                <div className="flex items-center px-6 py-4 border-b border-border">
+                  <span className="text-text-primary text-sm font-bold">Activity Timeline</span>
+                </div>
+                <div className="flex flex-col divide-y divide-border">
+                  {timeline === undefined ? (
+                    <div className="p-8 text-center text-text-disabled text-sm">Loading timeline...</div>
+                  ) : timeline.length === 0 ? (
+                    <div className="p-8 text-center text-text-disabled text-sm">No activity recorded yet.</div>
+                  ) : (
+                    timeline.map((event) => (
+                      <div key={event._id} className="flex items-start gap-4 px-6 py-4 hover:bg-surface-container-high transition-colors">
+                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                          event.eventType === 'stage_change' ? 'bg-primary-container' :
+                          event.eventType === 'note_added' ? 'bg-blue-400' :
+                          'bg-gray-300'
+                        }`} />
+                        <div className="flex flex-col flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-text-primary text-[13px] font-medium">
+                              {event.eventType === 'stage_change'
+                                ? `Moved to ${(event.toStage ?? '').replace(/_/g, ' ')}`
+                                : event.eventType === 'note_added'
+                                ? 'Note added'
+                                : event.eventType.replace(/_/g, ' ')}
+                            </span>
+                            <span className="text-text-secondary text-xs">
+                              {new Date(event.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                          <span className="text-text-secondary text-xs mt-0.5">{event.jobTitle}</span>
+                          {event.notes && <span className="text-text-secondary text-xs mt-1 italic">{event.notes}</span>}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
 
@@ -541,16 +566,94 @@ export default function CandidateProfile() {
             )}
 
             {activeTab === "applications" && (
-              <div className="flex flex-col items-center justify-center py-16 bg-surface rounded-xl border border-solid border-border">
-                <span className="text-text-primary text-sm font-bold mb-2">Job Applications</span>
-                <span className="text-text-disabled text-xs">Job application history coming soon.</span>
+              <div className="flex flex-col bg-surface rounded-xl border border-solid border-border overflow-hidden">
+                <div className="flex items-center px-6 py-4 border-b border-border">
+                  <span className="text-text-primary text-sm font-bold">Job Applications</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                        <th className="p-4">Job</th>
+                        <th className="p-4">Company</th>
+                        <th className="p-4">Stage</th>
+                        <th className="p-4">Score</th>
+                        <th className="p-4">Source</th>
+                        <th className="p-4">Applied</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border text-[13px] text-text-primary">
+                      {applications === undefined ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-text-disabled">Loading...</td></tr>
+                      ) : applications.length === 0 ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-text-disabled">No applications yet.</td></tr>
+                      ) : (
+                        applications.map((app) => (
+                          <tr key={app._id} className="hover:bg-surface-bright transition-colors">
+                            <td className="p-4 font-medium">{app.jobTitle}</td>
+                            <td className="p-4 text-text-secondary">{app.clientName || '—'}</td>
+                            <td className="p-4">
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-surface-container text-text-primary capitalize">
+                                {app.currentStage.replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              {app.aiMatchScore != null
+                                ? <span className={`font-bold ${app.aiMatchScore >= 75 ? 'text-primary-container' : 'text-text-secondary'}`}>{app.aiMatchScore}</span>
+                                : <span className="text-text-disabled">—</span>}
+                            </td>
+                            <td className="p-4 text-text-secondary capitalize">{app.sourceChannel.replace(/_/g, ' ')}</td>
+                            <td className="p-4 text-text-secondary">
+                              {new Date(typeof app.createdAt === 'number' ? app.createdAt : Number(app.createdAt)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
             {activeTab === "callLog" && (
-              <div className="flex flex-col items-center justify-center py-16 bg-surface rounded-xl border border-solid border-border">
-                <span className="text-text-primary text-sm font-bold mb-2">AI Call Log</span>
-                <span className="text-text-disabled text-xs">AI call log coming soon.</span>
+              <div className="flex flex-col bg-surface rounded-xl border border-solid border-border overflow-hidden">
+                <div className="flex items-center px-6 py-4 border-b border-border">
+                  <span className="text-text-primary text-sm font-bold">AI Call Log</span>
+                </div>
+                <div className="flex flex-col divide-y divide-border">
+                  {aiCalls === undefined ? (
+                    <div className="p-8 text-center text-text-disabled text-sm">Loading...</div>
+                  ) : aiCalls.length === 0 ? (
+                    <div className="p-8 text-center text-text-disabled text-sm">No AI calls recorded yet.</div>
+                  ) : (
+                    aiCalls.map((call) => {
+                      const statusColor = call.callStatus === 'completed' ? 'bg-[#91F78E1A] text-[#00450D] border-[#91F78E4D]' :
+                        call.callStatus === 'no_answer' ? 'bg-[#FFF3E0] text-[#E65100] border-orange-200' :
+                        call.callStatus === 'failed' ? 'bg-red-50 text-red-700 border-red-200' :
+                        'bg-surface-container text-text-secondary border-border';
+                      return (
+                        <div key={call._id} className="flex items-start gap-4 px-6 py-4 hover:bg-surface-container-high transition-colors">
+                          <div className="flex flex-col flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-text-primary text-[13px] font-medium">{call.jobTitle}</span>
+                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border capitalize ${statusColor}`}>
+                                {call.callStatus.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-text-secondary">
+                              <span>{new Date(call.calledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                              {call.callDurationSeconds != null && <span>{Math.round(call.callDurationSeconds / 60)}m {call.callDurationSeconds % 60}s</span>}
+                              {call.ivrResponse && <span className="capitalize">{call.ivrResponse.replace(/_/g, ' ')}</span>}
+                            </div>
+                            {call.transcript && (
+                              <p className="text-text-secondary text-xs mt-2 line-clamp-2">{call.transcript}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             )}
           </div>
