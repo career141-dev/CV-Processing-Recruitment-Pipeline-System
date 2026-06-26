@@ -834,7 +834,7 @@ errorMessage: v.optional(v.string()),
     processingTimeMs: v.optional(v.number()),
     receivedAt: v.number(),
     processedAt: v.optional(v.number()),
-    batchId: v.optional(v.id("ingestionBatches")),
+    batchId: v.optional(v.any()),
     stage: v.optional(v.string()),
     candidateName: v.optional(v.string()),
   })

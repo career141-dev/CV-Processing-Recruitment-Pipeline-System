@@ -56,13 +56,6 @@ export const processCvIngestion = mutation({
       return { success: false, reason: "duplicate_file", existingFileId: existingFile._id };
     }
 
-    // 3. Create placeholder candidate (will be enriched by Agent 1)
-    const candidateId = await ctx.db.insert("candidates", {
-      fullName: "Unknown — Pending Parse",
-      overallStatus: "active",
-      fileHash: sha256,
-    } as any);
-
     // 4. Store file metadata in cvUploads
     const cvUploadId = await ctx.db.insert("cvUploads", {
       storageId: args.storageId,
@@ -75,23 +68,6 @@ export const processCvIngestion = mutation({
       assignToJob: args.jobId,
       uploadedBy: "system",
       status: "pending",
-      candidateId: candidateId,
-    });
-
-    // Link back
-    await ctx.db.patch(candidateId, { cvUploadId } as any);
-
-    // 5. Create application (pipeline entry)
-    await ctx.db.insert("applications", {
-      candidateId,
-      jobId: args.jobId,
-      cvFileId: cvUploadId,
-      sourceChannel: args.sourceChannel,
-      currentStage: "new_cvs",
-      loopIteration: 1,
-      isActive: true,
-      lastStageChangedAt: startTime,
-      createdAt: startTime,
     });
 
     // 6. Update channel CV counts
@@ -115,7 +91,6 @@ export const processCvIngestion = mutation({
       rawSender: args.rawSender,
       routingStatus: "routed",
       cvFileId: cvUploadId,
-      candidateId,
       metaCampaignId: args.metaCampaignId,
       processingTimeMs: Date.now() - startTime,
       receivedAt: startTime,
@@ -136,6 +111,6 @@ export const processCvIngestion = mutation({
       logId: logId,
     });
 
-    return { success: true, candidateId, cvUploadId };
+    return { success: true, cvUploadId };
   },
 });

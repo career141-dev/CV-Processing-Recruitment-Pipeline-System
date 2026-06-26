@@ -1032,3 +1032,130 @@ export const jobs = mutation({
     }
   }
 });
+
+export const testJobs = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    if (users.length === 0) throw new Error("No users to assign jobs to.");
+    
+    const ta1 = users[0]._id;
+    const dir = users.length > 2 ? users[2]._id : users[0]._id;
+
+    const testJobs = [
+      {
+        title: "Senior Full-Stack Developer",
+        clientName: "Tech Test Corp",
+        clientIndustry: "Information Technology",
+        recruitmentType: "both",
+        isConfidential: false,
+        jobDescription: "Senior role needing React, Node.js and PostgreSQL.",
+        requiredSkills: ["React", "Node.js", "PostgreSQL"],
+        niceToHaveSkills: ["TypeScript", "AWS"],
+        seniorityLevel: "senior_manager",
+        experienceMinYears: 5,
+        location: "Remote",
+        salaryMin: 120000,
+        salaryMax: 150000,
+        salaryCurrency: "USD",
+        keyword: "TEST-FS-01",
+        status: "active",
+        primaryRecruiterId: ta1,
+        directorId: dir,
+        scoreWeightSkills: 40,
+        scoreWeightExperience: 30,
+        scoreWeightJobTitle: 20,
+        scoreWeightIndustry: 5,
+        scoreWeightLocation: 5,
+        minMatchScoreToShow: 50,
+        reverseMatchOnPublish: true,
+        directorReviewEnabled: false,
+        clientReviewEnabled: false,
+        esaCheckEnabled: false,
+        headhuntingEnabled: false,
+        rejectionLoopAction: "ask_ta_each_time",
+        agent3AfterDay7: "mark_unresponsive",
+        agent5CallScript: "default",
+        agent5NoAnswerAction: "notify_ta",
+        agent5Trigger: "manual_only",
+      },
+      {
+        title: "Digital Marketing Manager",
+        clientName: "Tech Test Corp",
+        clientIndustry: "Marketing",
+        recruitmentType: "both",
+        isConfidential: false,
+        jobDescription: "Digital marketing manager for SEO and Google Ads.",
+        requiredSkills: ["SEO", "Social Media", "Google Ads"],
+        niceToHaveSkills: ["Analytics", "Content Strategy"],
+        seniorityLevel: "manager",
+        experienceMinYears: 3,
+        location: "Remote",
+        salaryMin: 80000,
+        salaryMax: 100000,
+        salaryCurrency: "USD",
+        keyword: "TEST-MKT-01",
+        status: "active",
+        primaryRecruiterId: ta1,
+        directorId: dir,
+        scoreWeightSkills: 40,
+        scoreWeightExperience: 30,
+        scoreWeightJobTitle: 20,
+        scoreWeightIndustry: 5,
+        scoreWeightLocation: 5,
+        minMatchScoreToShow: 50,
+        reverseMatchOnPublish: true,
+        directorReviewEnabled: false,
+        clientReviewEnabled: false,
+        esaCheckEnabled: false,
+        headhuntingEnabled: false,
+        rejectionLoopAction: "ask_ta_each_time",
+        agent3AfterDay7: "mark_unresponsive",
+        agent5CallScript: "default",
+        agent5NoAnswerAction: "notify_ta",
+        agent5Trigger: "manual_only",
+      },
+      {
+        title: "Financial Analyst",
+        clientName: "Tech Test Corp",
+        clientIndustry: "Financial Services",
+        recruitmentType: "both",
+        isConfidential: false,
+        jobDescription: "Analyst with Excel, Financial Modeling, PowerBI.",
+        requiredSkills: ["Excel", "Financial Modeling", "PowerBI"],
+        niceToHaveSkills: ["Valuation", "Accounting"],
+        seniorityLevel: "mid_level",
+        experienceMinYears: 2,
+        location: "Remote",
+        salaryMin: 60000,
+        salaryMax: 80000,
+        salaryCurrency: "USD",
+        keyword: "TEST-FIN-01",
+        status: "active",
+        primaryRecruiterId: ta1,
+        directorId: dir,
+        scoreWeightSkills: 40,
+        scoreWeightExperience: 30,
+        scoreWeightJobTitle: 20,
+        scoreWeightIndustry: 5,
+        scoreWeightLocation: 5,
+        minMatchScoreToShow: 50,
+        reverseMatchOnPublish: true,
+        directorReviewEnabled: false,
+        clientReviewEnabled: false,
+        esaCheckEnabled: false,
+        headhuntingEnabled: false,
+        rejectionLoopAction: "ask_ta_each_time",
+        agent3AfterDay7: "mark_unresponsive",
+        agent5CallScript: "default",
+        agent5NoAnswerAction: "notify_ta",
+        agent5Trigger: "manual_only",
+      }
+    ];
+
+    for (const job of testJobs) {
+      const now = new Date().toISOString();
+      await ctx.db.insert("jobs", { ...job, createdAt: now, updatedAt: now } as any);
+    }
+  }
+});

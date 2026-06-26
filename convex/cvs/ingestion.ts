@@ -126,7 +126,6 @@ export const insertCvRecord = internalMutation({
       candidateId: candidate!._id,
       processingTimeMs: 0,
       receivedAt: Date.now(),
-      batchId: cvUploadId,
       candidateName: candidate!.fullName || "Unknown",
       stage: "queued",
     });

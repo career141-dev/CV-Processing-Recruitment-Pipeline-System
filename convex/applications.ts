@@ -1,4 +1,4 @@
-import { query } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireUser } from "./lib/permissions";
 
@@ -98,3 +98,36 @@ export const getCandidateAiCalls = query({
   },
 });
 
+export const createApplication = mutation({
+  args: {
+    candidateId: v.id("candidates"),
+    jobId: v.id("jobs"),
+    cvFileId: v.optional(v.id("cvUploads")),
+    sourceChannel: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Check if application already exists for this candidate and job
+    const existing = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+      .filter((q) => q.eq(q.field("jobId"), args.jobId))
+      .first();
+
+    if (existing) {
+      return existing._id;
+    }
+
+    const now = Date.now();
+    return await ctx.db.insert("applications", {
+      candidateId: args.candidateId,
+      jobId: args.jobId,
+      cvFileId: args.cvFileId,
+      sourceChannel: args.sourceChannel,
+      currentStage: "new_cvs",
+      loopIteration: 1,
+      isActive: true,
+      lastStageChangedAt: now,
+      createdAt: now,
+    });
+  },
+});

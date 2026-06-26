@@ -2,12 +2,8 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel.d.ts";
-import OpenAI from "openai";
+import { getOpenAI, getModelForTask } from "./lib/llm";
 
-const openai = new OpenAI({
-  baseURL: "https://ai-gateway.hercules.app/v1",
-  apiKey: process.env.HERCULES_API_KEY || "dummy",
-});
 
 type Breakdown = {
   skills: number;
@@ -112,8 +108,11 @@ export const runReverseMatch = action({
         summary: job.jobDescription.slice(0, 1500),
       };
 
+      const model = getModelForTask("jd_matching");
+      const openai = getOpenAI("jd_matching");
+
       const scoreResponse = await openai.chat.completions.create({
-        model: "openai/gpt-5-mini",
+        model,
         messages: [
           {
             role: "system",
