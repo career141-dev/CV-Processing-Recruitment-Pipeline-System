@@ -88,3 +88,30 @@ export const rejectCandidate = mutation({
     });
   },
 });
+
+export const setPipelineStage = mutation({
+  args: { 
+    applicationId: v.id("applications"), 
+    newStage: v.string(), // "new_cvs" | "ta_shortlist" | "interview" | "offer" | "placed" | "rejected" | etc
+    note: v.optional(v.string()) 
+  },
+  handler: async (ctx, { applicationId, newStage, note }) => {
+    const entry = await ctx.db.get(applicationId);
+    if (!entry) throw new Error("Application not found");
+
+    // Recruiter or higher
+    await requireJobAssignment(ctx, entry.jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
+    const user = await requireUser(ctx);
+
+    await ctx.db.patch(applicationId, {
+      currentStage: newStage as any,
+      lastStageChangedAt: Date.now(),
+      stageHistory: [...(entry.stageHistory ?? []), {
+        stage: newStage,
+        enteredAt: new Date().toISOString(),
+        changedBy: user._id,
+        note: note,
+      }],
+    });
+  },
+});

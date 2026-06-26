@@ -8,13 +8,17 @@
  * @module
  */
 
+import type * as applications from "../applications.js";
+import type * as candidateProfile from "../candidateProfile.js";
 import type * as candidates from "../candidates.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
+import type * as communications_metaWhatsappAgent from "../communications/metaWhatsappAgent.js";
 import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
 import type * as cvs_cvExtraction from "../cvs/cvExtraction.js";
 import type * as cvs_cvScoring from "../cvs/cvScoring.js";
 import type * as cvs_cvScoringActions from "../cvs/cvScoringActions.js";
 import type * as cvs_cvUploads from "../cvs/cvUploads.js";
+import type * as cvs_ingestion from "../cvs/ingestion.js";
 import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
 import type * as fix from "../fix.js";
 import type * as http from "../http.js";
@@ -32,8 +36,8 @@ import type * as lib_validate from "../lib/validate.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
+import type * as reverseMatch from "../reverseMatch.js";
 import type * as search from "../search.js";
-import type * as seed from "../seed.js";
 import type * as stats from "../stats.js";
 import type * as tier2Derivations from "../tier2Derivations.js";
 import type * as users from "../users.js";
@@ -45,13 +49,17 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  applications: typeof applications;
+  candidateProfile: typeof candidateProfile;
   candidates: typeof candidates;
   "communications/emailAgent": typeof communications_emailAgent;
+  "communications/metaWhatsappAgent": typeof communications_metaWhatsappAgent;
   "communications/whatsappAgent": typeof communications_whatsappAgent;
   "cvs/cvExtraction": typeof cvs_cvExtraction;
   "cvs/cvScoring": typeof cvs_cvScoring;
   "cvs/cvScoringActions": typeof cvs_cvScoringActions;
   "cvs/cvUploads": typeof cvs_cvUploads;
+  "cvs/ingestion": typeof cvs_ingestion;
   "cvs/lazyParsing": typeof cvs_lazyParsing;
   fix: typeof fix;
   http: typeof http;
@@ -69,8 +77,8 @@ declare const fullApi: ApiFromModules<{
   "pipeline/ingestion": typeof pipeline_ingestion;
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
+  reverseMatch: typeof reverseMatch;
   search: typeof search;
-  seed: typeof seed;
   stats: typeof stats;
   tier2Derivations: typeof tier2Derivations;
   users: typeof users;

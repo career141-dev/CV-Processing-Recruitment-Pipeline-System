@@ -18,45 +18,35 @@ export const searchCandidates = query({
 
     const searchWithFilters = (
       index: "search_text" | "search_skills" | "search_title" | "search_summary",
-      field: "rawText" | "skills" | "currentTitle" | "summary"
+      field: "rawText" | "skills" | "currentJobTitle" | "summary"
     ) =>
       ctx.db.query("candidates").withSearchIndex(index, (q) => {
         return q.search(field, args.query);
       }).take(limit);
 
-    const [textResults, skillsResults, titleResults, summaryResults] = await Promise.all([
+    const [textResults, titleResults, summaryResults] = await Promise.all([
       searchWithFilters("search_text", "rawText"),
-      searchWithFilters("search_skills", "skills"),
-      searchWithFilters("search_title", "currentTitle"),
+      searchWithFilters("search_title", "currentJobTitle"),
       searchWithFilters("search_summary", "summary"),
     ]);
 
-    // Weighted scoring: title match > skills match > rawText match > summary match
+    // Weighted scoring: title match > text match > summary match
     const weight = new Map<string, number>();
     for (const cv of titleResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 100);
-    for (const cv of skillsResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 80);
     for (const cv of textResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 50);
     for (const cv of summaryResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 30);
 
     const seen = new Set<string>();
     const merged: typeof textResults = [];
-    for (const cv of [...titleResults, ...skillsResults, ...textResults, ...summaryResults]) {
+    for (const cv of [...titleResults, ...textResults, ...summaryResults]) {
       if (!seen.has(cv._id)) {
         seen.add(cv._id);
         merged.push(cv);
       }
     }
     
-    // Apply optional simple filters in memory
+    // Apply optional simple filters in memory (Removed strict industry and seniority filters as they drop valid candidates due to enum mismatch. Let the LLM handle matching.)
     let filtered = merged;
-    if (args.industry) {
-      const indNorm = args.industry.toLowerCase();
-      filtered = filtered.filter(cv => cv.industries?.some(ind => ind.toLowerCase().includes(indNorm)));
-    }
-    if (args.seniority) {
-      const senNorm = args.seniority.toLowerCase();
-      filtered = filtered.filter(cv => cv.seniorityLevel?.toLowerCase() === senNorm);
-    }
 
     filtered.sort((a, b) => (weight.get(b._id) ?? 0) - (weight.get(a._id) ?? 0));
     return filtered.slice(0, limit);

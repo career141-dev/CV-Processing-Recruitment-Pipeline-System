@@ -623,6 +623,13 @@ export async function runCvExtraction(
     }) as string | undefined | null;
 
     if (jobId) {
+      await ctx.runMutation(api.applications.createApplication, {
+        candidateId,
+        jobId: jobId as any,
+        cvFileId: cvUploadId,
+        sourceChannel: sourceChannel ?? "manual_upload",
+      });
+
       await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
         candidateId,
         jobId: jobId as any,
