@@ -11,6 +11,8 @@ interface ChannelStatusCardProps {
   pulse?: boolean;
   actionButton?: React.ReactNode;
   children?: React.ReactNode;
+  onClick?: () => void;
+  isSelected?: boolean;
 }
 
 export function ChannelStatusCard({
@@ -22,13 +24,18 @@ export function ChannelStatusCard({
   borderClass = 'border-border',
   pulse = false,
   actionButton,
-  children
+  children,
+  onClick,
+  isSelected = false
 }: ChannelStatusCardProps) {
   const isCustomBorder = borderClass !== 'border-border';
 
   return (
-    <Card className={`relative overflow-hidden hover:shadow-md transition-shadow ${isCustomBorder ? borderClass : ''}`}>
-      {isCustomBorder && (
+    <Card 
+      onClick={onClick}
+      className={`relative overflow-hidden transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md' : ''} ${isSelected ? 'ring-2 ring-primary shadow-md' : ''} ${isCustomBorder && !isSelected ? borderClass : ''}`}
+    >
+      {isCustomBorder && !isSelected && (
         <div className={`absolute top-0 left-0 w-full h-1 ${statusColor.replace('text-', 'bg-')}`}></div>
       )}
       <div className="flex items-center justify-between mb-3">

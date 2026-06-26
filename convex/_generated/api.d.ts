@@ -32,7 +32,6 @@ import type * as lib_validate from "../lib/validate.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
-import type * as scratch from "../scratch.js";
 import type * as search from "../search.js";
 import type * as seed from "../seed.js";
 import type * as stats from "../stats.js";
@@ -70,7 +69,6 @@ declare const fullApi: ApiFromModules<{
   "pipeline/ingestion": typeof pipeline_ingestion;
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
-  scratch: typeof scratch;
   search: typeof search;
   seed: typeof seed;
   stats: typeof stats;

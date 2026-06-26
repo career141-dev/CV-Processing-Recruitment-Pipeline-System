@@ -5,7 +5,7 @@ import { useUser } from '@clerk/nextjs';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { RefreshCw, Upload, AlertCircle, Loader2, CheckCircle2, Info, Building2, Key, X, Play, RotateCcw, Copy, SkipForward, XCircle } from 'lucide-react';
+import { RefreshCw, Upload, AlertCircle, Loader2, CheckCircle2, Info, Building2, Key, X, Play, RotateCcw, Copy, SkipForward, XCircle, Link2, Mail, MessageCircle, Share2 } from 'lucide-react';
 import { ChannelStatusCard } from '@/components/ingestion-monitor/ChannelStatusCard';
 import RealTimeBatchLog from "@/components/ingestion-monitor/RealTimeBatchLog";
 import { useQuery, useAction, useMutation } from 'convex/react';
@@ -87,6 +87,7 @@ export default function IngestionMonitorPage() {
 
   const [retrying, setRetrying] = useState(false);
   const [activeTab, setActiveTab] = useState<'ongoing' | 'history'>('ongoing');
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   
   // Workable State
   const [isWorkableModalOpen, setIsWorkableModalOpen] = useState(false);
@@ -246,17 +247,29 @@ export default function IngestionMonitorPage() {
 
   const handleManualUpload = async () => {
     if (files.length === 0 || !user?.id) return;
+    
+    const filesToUpload = [...files];
+    const uploadSource = source || "Manual";
+    const uploadCampaignLabel = campaignLabel;
+    const uploadAssignToJob = assignToJob;
+
     setIsUploading(true);
+    setIsManualModalOpen(false);
+    setFiles([]);
+    setSource("Manual");
+    setCampaignLabel("");
+    setAssignToJob("");
+    
     let successCount = 0;
     try {
       const batchId = await createBatch({
-        sourceChannel: source || "Manual",
-        totalCount: files.length,
-        jobId: (assignToJob as Id<"jobs">) || undefined,
+        sourceChannel: uploadSource,
+        totalCount: filesToUpload.length,
+        jobId: (uploadAssignToJob as Id<"jobs">) || undefined,
       });
       setImportBatchId(batchId);
 
-      for (const file of files) {
+      for (const file of filesToUpload) {
         const uploadUrl = await generateUploadUrl();
         const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
         const { storageId } = await resp.json();
@@ -266,16 +279,16 @@ export default function IngestionMonitorPage() {
           fileName: file.name,
           fileSize: file.size,
           fileType: file.type,
-          source: source || "Manual",
-          campaignLabel: campaignLabel || undefined,
-          assignToJob: assignToJob || undefined,
+          source: uploadSource,
+          campaignLabel: uploadCampaignLabel || undefined,
+          assignToJob: uploadAssignToJob || undefined,
           uploadedBy: user.id,
         });
 
         await queueManualExtraction({
           storageId,
           fileType: normalizeFileType(file),
-          sourceChannel: source || "Manual",
+          sourceChannel: uploadSource,
           uploadedBy: user.id,
           cvUploadId,
           fileName: file.name,
@@ -284,8 +297,6 @@ export default function IngestionMonitorPage() {
         successCount++;
       }
       toast.success(`${successCount} CVs uploaded and processing started.`);
-      setFiles([]);
-      setIsManualModalOpen(false);
     } catch (err) {
       toast.error("Upload failed for some files.");
     } finally {
@@ -317,9 +328,6 @@ export default function IngestionMonitorPage() {
 
   const getSourceConfig = (sourceName: string) => SOURCE_COLORS[sourceName] || SOURCE_COLORS.default;
 
-  const workableStats = statsBySource['Workable'] || { todayCount: 0, lastReceived: null };
-  const manualStats = statsBySource['Manual'] || { todayCount: 0, lastReceived: null };
-
   const formatTime = (ts: number | null) => {
     if (!ts) return "N/A";
     const mins = Math.floor((Date.now() - ts) / 60000);
@@ -336,9 +344,21 @@ export default function IngestionMonitorPage() {
     return acc;
   }, {});
 
-  const logsToShow = activeTab === 'ongoing' 
+  let logsToShow = activeTab === 'ongoing' 
     ? [...activeUploads].sort((a: any, b: any) => b._creationTime - a._creationTime)
     : [...recentDone].sort((a: any, b: any) => b._creationTime - a._creationTime).slice(0, 50);
+
+  if (selectedChannel) {
+    logsToShow = logsToShow.filter((log: any) => (log.source || 'Manual') === selectedChannel);
+  }
+
+  const getStats = (channel: string) => statsBySource[channel] || { todayCount: 0, lastReceived: null };
+  const workableStats = getStats('Workable');
+  const manualStats = getStats('Manual');
+  const linkStats = getStats('Link');
+  const emailStats = getStats('Email');
+  const whatsappStats = getStats('WhatsApp');
+  const metaStats = getStats('Meta');
 
   return (
     <div className="self-stretch bg-background min-h-screen w-full flex flex-col">
@@ -356,9 +376,11 @@ export default function IngestionMonitorPage() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           <ChannelStatusCard
             title="Workable Sync"
+            isSelected={selectedChannel === 'Workable'}
+            onClick={() => setSelectedChannel(selectedChannel === 'Workable' ? null : 'Workable')}
             status={workableStats.lastReceived ? "Active" : "Awaiting Data"}
             statusColor={workableStats.lastReceived ? "text-[#1565C0]" : "text-text-secondary"}
             icon={<RefreshCw size={20} />}
@@ -369,7 +391,7 @@ export default function IngestionMonitorPage() {
             ]}
             actionButton={
               <button 
-                onClick={() => setIsWorkableModalOpen(true)}
+                onClick={(e) => { e.stopPropagation(); setIsWorkableModalOpen(true); }}
                 className="w-full mt-2 py-2 text-sm font-semibold text-[#1565C0] bg-[#E3F2FD] hover:bg-[#BBDEFB] rounded-md transition-colors"
               >
                 Import Data
@@ -391,7 +413,7 @@ export default function IngestionMonitorPage() {
                 <div className="mt-3 flex justify-between items-center">
                   {importStatus.status === "running" && (
                     <button 
-                      onClick={handleStopWorkable} 
+                      onClick={(e) => { e.stopPropagation(); handleStopWorkable(); }}
                       className="text-[11px] font-bold text-[#D32F2F] flex items-center gap-1 hover:underline"
                     >
                       <XCircle className="w-3 h-3" /> Pause
@@ -399,7 +421,7 @@ export default function IngestionMonitorPage() {
                   )}
                   {importStatus.status === "stopped" && (
                     <button 
-                      onClick={handleRetryWorkable} 
+                      onClick={(e) => { e.stopPropagation(); handleRetryWorkable(); }}
                       disabled={isWorkableImporting}
                       className="text-[11px] font-bold text-[#1565C0] flex items-center gap-1 hover:underline disabled:opacity-50"
                     >
@@ -409,7 +431,7 @@ export default function IngestionMonitorPage() {
                   )}
                   {importStatus.status === "error" && (
                     <button 
-                      onClick={handleRetryWorkable} 
+                      onClick={(e) => { e.stopPropagation(); handleRetryWorkable(); }}
                       disabled={isWorkableImporting}
                       className="text-[11px] font-bold text-[#D32F2F] flex items-center gap-1 hover:underline disabled:opacity-50"
                     >
@@ -419,7 +441,7 @@ export default function IngestionMonitorPage() {
                   )}
                   {importStatus.status === "done" && (
                     <button 
-                      onClick={() => setImportStatus(null)} 
+                      onClick={(e) => { e.stopPropagation(); setImportStatus(null); }}
                       className="text-[11px] font-bold text-[#1B5E20] flex items-center gap-1 hover:underline"
                     >
                       <CheckCircle2 className="w-3 h-3" /> Clear
@@ -427,7 +449,7 @@ export default function IngestionMonitorPage() {
                   )}
                   
                   <button 
-                    onClick={() => setIsWorkableModalOpen(true)}
+                    onClick={(e) => { e.stopPropagation(); setIsWorkableModalOpen(true); }}
                     className="text-[11px] font-bold text-text-secondary hover:text-text-primary underline"
                   >
                     View Details
@@ -436,8 +458,11 @@ export default function IngestionMonitorPage() {
               </div>
             )}
           </ChannelStatusCard>
+          
           <ChannelStatusCard
-            title="Manual Bulk Upload"
+            title="Direct-to (Manual)"
+            isSelected={selectedChannel === 'Manual'}
+            onClick={() => setSelectedChannel(selectedChannel === 'Manual' ? null : 'Manual')}
             status={manualStats.lastReceived ? "Active" : "Ready"}
             statusColor={manualStats.lastReceived ? "text-[#0277BD]" : "text-text-secondary"}
             icon={<Upload size={20} />}
@@ -448,12 +473,68 @@ export default function IngestionMonitorPage() {
             ]}
             actionButton={
               <button 
-                onClick={() => setIsManualModalOpen(true)}
+                onClick={(e) => { e.stopPropagation(); setIsManualModalOpen(true); }}
                 className="w-full mt-2 py-2 text-sm font-semibold text-[#0277BD] bg-[#E1F5FE] hover:bg-[#B3E5FC] rounded-md transition-colors"
               >
                 Import Data
               </button>
             }
+          />
+
+          <ChannelStatusCard
+            title="Link / Portal"
+            isSelected={selectedChannel === 'Link'}
+            onClick={() => setSelectedChannel(selectedChannel === 'Link' ? null : 'Link')}
+            status={linkStats.lastReceived ? "Active" : "Monitoring"}
+            statusColor={linkStats.lastReceived ? "text-[#2E7D32]" : "text-text-secondary"}
+            icon={<Link2 size={20} />}
+            pulse={!!activeUploads.find((u: any) => u.source === 'Link')}
+            stats={[
+              { label: 'CVs Uploaded Today', value: linkStats.todayCount.toString() },
+              { label: 'Last received', value: formatTime(linkStats.lastReceived) }
+            ]}
+          />
+
+          <ChannelStatusCard
+            title="Email"
+            isSelected={selectedChannel === 'Email'}
+            onClick={() => setSelectedChannel(selectedChannel === 'Email' ? null : 'Email')}
+            status={emailStats.lastReceived ? "Active" : "Monitoring"}
+            statusColor={emailStats.lastReceived ? "text-[#E65100]" : "text-text-secondary"}
+            icon={<Mail size={20} />}
+            pulse={!!activeUploads.find((u: any) => u.source === 'Email')}
+            stats={[
+              { label: 'CVs Received Today', value: emailStats.todayCount.toString() },
+              { label: 'Last received', value: formatTime(emailStats.lastReceived) }
+            ]}
+          />
+
+          <ChannelStatusCard
+            title="WhatsApp"
+            isSelected={selectedChannel === 'WhatsApp'}
+            onClick={() => setSelectedChannel(selectedChannel === 'WhatsApp' ? null : 'WhatsApp')}
+            status={whatsappStats.lastReceived ? "Active" : "Monitoring"}
+            statusColor={whatsappStats.lastReceived ? "text-[#1B5E20]" : "text-text-secondary"}
+            icon={<MessageCircle size={20} />}
+            pulse={!!activeUploads.find((u: any) => u.source === 'WhatsApp')}
+            stats={[
+              { label: 'CVs Received Today', value: whatsappStats.todayCount.toString() },
+              { label: 'Last received', value: formatTime(whatsappStats.lastReceived) }
+            ]}
+          />
+
+          <ChannelStatusCard
+            title="Meta Campaign"
+            isSelected={selectedChannel === 'Meta'}
+            onClick={() => setSelectedChannel(selectedChannel === 'Meta' ? null : 'Meta')}
+            status={metaStats.lastReceived ? "Active" : "Monitoring"}
+            statusColor={metaStats.lastReceived ? "text-[#01579B]" : "text-text-secondary"}
+            icon={<Share2 size={20} />}
+            pulse={!!activeUploads.find((u: any) => u.source === 'Meta')}
+            stats={[
+              { label: 'CVs Captured Today', value: metaStats.todayCount.toString() },
+              { label: 'Last received', value: formatTime(metaStats.lastReceived) }
+            ]}
           />
         </div>
         
