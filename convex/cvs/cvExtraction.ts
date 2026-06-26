@@ -184,8 +184,13 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
 }
 
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
-  const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
-  return result.value;
+  try {
+    const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
+    return result.value;
+  } catch (error) {
+    console.error("Docx extraction failed:", error);
+    throw new Error("Docx extraction failed: " + (error as any).message);
+  }
 }
 
 async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
@@ -707,6 +712,7 @@ export const resumeFailedUploads = action({
 export const resumeBatch = internalAction({
   args: { cursor: v.optional(v.string()), totalQueued: v.number() },
   handler: async (ctx, args): Promise<void> => {
+    return; // STOP EXECUTION to kill the loop
     const result = await ctx.runQuery(api.candidates.listFailedUploads, {
       limit: 5,
       cursor: args.cursor,
