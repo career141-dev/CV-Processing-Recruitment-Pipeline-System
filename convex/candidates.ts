@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { checkAndAdvanceFollowUp } from "./pipeline/followUpHelper";
 
 export const listCandidates = query({
   handler: async (ctx) => {
@@ -22,6 +23,20 @@ export const getCandidate = query({
   args: { id: v.id("candidates") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id);
+  },
+});
+
+export const updateCandidateDetails = mutation({
+  args: {
+    candidateId: v.id("candidates"),
+    currentSalary: v.optional(v.number()),
+    expectedSalary: v.optional(v.number()),
+    noticePeriodDays: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { candidateId, ...updates } = args;
+    await ctx.db.patch(candidateId, updates);
+    await checkAndAdvanceFollowUp(ctx, candidateId);
   },
 });
 
@@ -171,13 +186,16 @@ export const createCandidate = mutation({
         ...args,
         status: "new",
       });
+      await checkAndAdvanceFollowUp(ctx, existingCandidateId);
       return existingCandidateId;
     }
 
-    return await ctx.db.insert("candidates", {
+    const newId = await ctx.db.insert("candidates", {
       ...args,
       status: "new",
     });
+    await checkAndAdvanceFollowUp(ctx, newId);
+    return newId;
   },
 });
 

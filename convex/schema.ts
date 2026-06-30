@@ -406,7 +406,7 @@ generatedAt: v.string(),
     educationYear: v.optional(v.number()),
     certifications: v.optional(v.array(v.string())),
     languages: v.optional(v.array(v.string())),
-    expectedSalary: v.optional(v.union(v.number(), v.string())),
+    expectedSalary: v.optional(v.number()),
     expectedSalaryCurrency: v.optional(v.string()),
     currentSalary: v.optional(v.number()),
     currentSalaryCurrency: v.optional(v.string()),
@@ -506,10 +506,12 @@ generatedAt: v.string(),
 
     currentStage: v.union(
       v.literal("new_cvs"),
+      v.literal("matched_candidates"),
       v.literal("ta_shortlist"),
       v.literal("ai_call"),
+      v.literal("follow_up"),
       v.literal("second_shortlist"),
-      v.literal("director_review"),
+      v.literal("director_shortlist"),
       v.literal("client_review"),
       v.literal("interview"),
       v.literal("offer"),
@@ -518,6 +520,7 @@ generatedAt: v.string(),
     ),
     aiMatchScore: v.optional(v.number()),
     aiMatchExplanation: v.optional(v.string()),
+    manualCallOutcome: v.optional(v.string()),
     taShortlistStatus: v.optional(
       v.union(v.literal("pending"), v.literal("shortlisted"), v.literal("rejected"))
     ),
@@ -549,6 +552,19 @@ generatedAt: v.string(),
     notes: v.optional(v.string()),
     createdAt: v.union(v.number(), v.string()),
     lastStageChangedAt: v.number(),
+    followUpState: v.optional(v.object({
+      lastContactDay: v.number(),
+      firstChannelUsed: v.optional(v.string())
+    })),
+    rejectedFromStage: v.optional(v.string()),
+    aiCallIvrResponse: v.optional(v.string()),
+    salaryNoticeEditHistory: v.optional(v.array(v.object({
+      field: v.string(),
+      oldValue: v.string(),
+      newValue: v.string(),
+      editedBy: v.id("users"),
+      editedAt: v.string(),
+    }))),
   })
     .index("by_job_stage", ["jobId", "currentStage"])
     .index("by_candidateId", ["candidateId"])
@@ -593,7 +609,8 @@ isBackwardMove: v.optional(v.boolean()),
     triggerType: v.union(
       v.literal("automatic_new_applicant"),
       v.literal("automatic_database_match"),
-      v.literal("manual_ta_trigger")
+      v.literal("manual_ta_trigger"),
+      v.literal("followup_retry")
     ),
     callStatus: v.union(
       v.literal("scheduled"),
@@ -633,6 +650,9 @@ isBackwardMove: v.optional(v.boolean()),
     calledAt: v.number(),
     completedAt: v.optional(v.number()),
     followUpTriggered: v.boolean(),
+    attempts: v.optional(v.number()),
+    elevenlabsConversationId: v.optional(v.string()),
+    elevenlabsAgentId: v.optional(v.string()),
   })
     .index("by_candidate", ["candidateId"])
     .index("by_application", ["applicationId"])

@@ -139,4 +139,79 @@ http.route({
   }),
 });
 
+// Twilio Call Status Callback — auto-advances AI Call → 2nd Shortlist on success
+http.route({
+  path: "/api/twilio-callback",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const body = await request.text();
+      const params = new URLSearchParams(body);
+
+      const callStatus = params.get("CallStatus"); // completed | no-answer | busy | failed | canceled
+      const callSid = params.get("CallSid");
+      const digits = params.get("Digits"); // IVR response: 1=interested, 2=declined, 3=connect recruiter
+
+      // Find the aiCalls record matching this CallSid
+      const aiCallRecord = callSid
+        ? await ctx.runQuery(api.applications.findAiCallBySid, { twilioCallSid: callSid })
+        : null;
+
+      if (!aiCallRecord) {
+        console.warn("[Twilio] No aiCalls record found for CallSid:", callSid);
+        return new Response("OK", { status: 200 });
+      }
+
+      const applicationId = aiCallRecord.applicationId;
+      const ivrResponse = digits === "1"
+        ? "pressed_1_interested"
+        : digits === "2"
+        ? "pressed_2_declined"
+        : digits === "3"
+        ? "pressed_3_connect_recruiter"
+        : "no_response";
+
+      // Map Twilio callStatus → our enum
+      const mappedStatus =
+        callStatus === "completed" ? "completed"
+        : callStatus === "no-answer" ? "no_answer"
+        : callStatus === "busy" ? "no_answer"
+        : callStatus === "failed" ? "failed"
+        : callStatus === "canceled" ? "failed"
+        : "in_progress";
+
+      // Update the aiCalls record
+      await ctx.runMutation(api.applications.updateAiCallStatus, {
+        aiCallId: aiCallRecord._id,
+        callStatus: mappedStatus as any,
+        ivrResponse: ivrResponse as any,
+        twilioCallSid: callSid ?? undefined,
+      });
+
+      // Auto-advance: completed + pressed_1 → second_shortlist
+      if (applicationId && mappedStatus === "completed" && ivrResponse === "pressed_1_interested") {
+        await ctx.runMutation(api.pipeline.stages.setPipelineStage, {
+          applicationId,
+          newStage: "second_shortlist",
+          note: "Auto-advanced: AI call completed, candidate pressed 1 (Interested)",
+        });
+      }
+
+      // Auto-reject: pressed_2 (declined)
+      if (applicationId && ivrResponse === "pressed_2_declined") {
+        await ctx.runMutation(api.applications.rejectApplication, {
+          applicationId,
+          reason: "Candidate pressed 2 — Declined during AI call",
+          stage: "ai_call",
+        });
+      }
+
+      return new Response("OK", { status: 200 });
+    } catch (e: any) {
+      console.error("[Twilio] Callback error:", e);
+      return new Response("Error", { status: 500 });
+    }
+  }),
+});
+
 export default http;

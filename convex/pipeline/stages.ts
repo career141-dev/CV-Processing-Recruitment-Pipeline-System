@@ -46,8 +46,8 @@ export const directorApprove = mutation({
       await requireJobAssignment(ctx, entry.jobId, ["director"]);
     }
 
-    if (entry.currentStage !== "director_review") {
-      throw new Error("Candidate is not at Director Review stage");
+    if (entry.currentStage !== "director_shortlist") {
+      throw new Error("Candidate is not at Director Shortlist stage");
     }
 
     await ctx.db.patch(args.applicationId, {
@@ -112,6 +112,182 @@ export const setPipelineStage = mutation({
         changedBy: user._id,
         note: note,
       }],
+    });
+  },
+});
+
+export const directorReject = mutation({
+  args: { applicationId: v.id("applications"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const entry = await ctx.db.get(args.applicationId);
+    if (!entry) throw new Error("Pipeline entry not found");
+
+    const user = await requireUser(ctx);
+    if (user.role !== "admin") {
+      await requireJobAssignment(ctx, entry.jobId, ["director"]);
+    }
+
+    if (entry.currentStage !== "director_shortlist") {
+      throw new Error("Candidate is not at Director Shortlist stage");
+    }
+
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "rejected",
+      taRejectionReason: args.reason,
+      rejectedFromStage: "director_shortlist",
+      lastStageChangedAt: Date.now(),
+      stageHistory: [...(entry.stageHistory ?? []), {
+        stage: "rejected",
+        enteredAt: new Date().toISOString(),
+        changedBy: user._id,
+        note: args.reason,
+      }],
+    });
+
+    await ctx.db.insert("pipelineEvents", {
+      applicationId: args.applicationId,
+      candidateId: entry.candidateId,
+      jobId: entry.jobId,
+      eventType: "rejected",
+      fromStage: "director_shortlist",
+      toStage: "rejected",
+      actorType: "user",
+      actorId: user._id,
+      notes: args.reason,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const directorRequestChanges = mutation({
+  args: { applicationId: v.id("applications"), note: v.string() },
+  handler: async (ctx, args) => {
+    const entry = await ctx.db.get(args.applicationId);
+    if (!entry) throw new Error("Pipeline entry not found");
+
+    const user = await requireUser(ctx);
+    if (user.role !== "admin") {
+      await requireJobAssignment(ctx, entry.jobId, ["director"]);
+    }
+
+    // Send back to TA Shortlist for review
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "ta_shortlist",
+      lastStageChangedAt: Date.now(),
+      stageHistory: [...(entry.stageHistory ?? []), {
+        stage: "ta_shortlist",
+        enteredAt: new Date().toISOString(),
+        changedBy: user._id,
+        note: `Director requested changes: ${args.note}`,
+      }],
+    });
+
+    await ctx.db.insert("pipelineEvents", {
+      applicationId: args.applicationId,
+      candidateId: entry.candidateId,
+      jobId: entry.jobId,
+      eventType: "director_request_changes",
+      fromStage: "director_shortlist",
+      toStage: "ta_shortlist",
+      isBackwardMove: true,
+      actorType: "user",
+      actorId: user._id,
+      notes: args.note,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const clientApprove = mutation({
+  args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const entry = await ctx.db.get(args.applicationId);
+    if (!entry) throw new Error("Pipeline entry not found");
+
+    const user = await requireUser(ctx);
+    // Admin, recruiter, or client contact can approve
+    await requireJobAssignment(ctx, entry.jobId, ["primary_recruiter", "supporting_recruiter", "director", "client_contact"]);
+
+    if (entry.currentStage !== "client_review") {
+      throw new Error("Candidate is not at Client Review stage");
+    }
+
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "interview",
+      lastStageChangedAt: Date.now(),
+      stageHistory: [...(entry.stageHistory ?? []), {
+        stage: "interview",
+        enteredAt: new Date().toISOString(),
+        changedBy: user._id,
+        note: args.note ?? "Client approved — selected for interview",
+      }],
+    });
+  },
+});
+
+export const clientHold = mutation({
+  args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const entry = await ctx.db.get(args.applicationId);
+    if (!entry) throw new Error("Pipeline entry not found");
+
+    const user = await requireUser(ctx);
+    await requireJobAssignment(ctx, entry.jobId, ["primary_recruiter", "supporting_recruiter", "director", "client_contact"]);
+
+    if (entry.currentStage !== "client_review") {
+      throw new Error("Candidate is not at Client Review stage");
+    }
+
+    // Stay at client_review but mark as held — we'll use a note in stageHistory
+    await ctx.db.patch(args.applicationId, {
+      lastStageChangedAt: Date.now(),
+      stageHistory: [...(entry.stageHistory ?? []), {
+        stage: "client_review",
+        enteredAt: new Date().toISOString(),
+        changedBy: user._id,
+        note: `Client placed on hold: ${args.note ?? "No reason given"}`,
+      }],
+    });
+  },
+});
+
+export const clientReject = mutation({
+  args: { applicationId: v.id("applications"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const entry = await ctx.db.get(args.applicationId);
+    if (!entry) throw new Error("Pipeline entry not found");
+
+    const user = await requireUser(ctx);
+    await requireJobAssignment(ctx, entry.jobId, ["primary_recruiter", "supporting_recruiter", "director", "client_contact"]);
+
+    if (entry.currentStage !== "client_review") {
+      throw new Error("Candidate is not at Client Review stage");
+    }
+
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "rejected",
+      taRejectionReason: args.reason,
+      rejectedFromStage: "client_review",
+      lastStageChangedAt: Date.now(),
+      stageHistory: [...(entry.stageHistory ?? []), {
+        stage: "rejected",
+        enteredAt: new Date().toISOString(),
+        changedBy: user._id,
+        note: args.reason,
+      }],
+    });
+
+    await ctx.db.insert("pipelineEvents", {
+      applicationId: args.applicationId,
+      candidateId: entry.candidateId,
+      jobId: entry.jobId,
+      eventType: "rejected",
+      fromStage: "client_review",
+      toStage: "rejected",
+      actorType: "user",
+      actorId: user._id,
+      notes: args.reason,
+      createdAt: Date.now(),
     });
   },
 });
