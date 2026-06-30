@@ -514,7 +514,8 @@ generatedAt: v.string(),
       v.literal("interview"),
       v.literal("offer"),
       v.literal("placed"),
-      v.literal("rejected")
+      v.literal("rejected"),
+      v.literal("follow_up")
     ),
     aiMatchScore: v.optional(v.number()),
     aiMatchExplanation: v.optional(v.string()),

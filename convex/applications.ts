@@ -3,13 +3,20 @@ import { v } from "convex/values";
 import { requireUser } from "./lib/permissions";
 
 export const getByJobId = query({
-  args: { jobId: v.id("jobs") },
+  args: { jobId: v.string() },
   handler: async (ctx, args) => {
     await requireUser(ctx);
 
+    let actualJobId = ctx.db.normalizeId("jobs", args.jobId);
+    if (!actualJobId) {
+      const job = await ctx.db.query("jobs").withIndex("by_keyword", q => q.eq("keyword", args.jobId)).first();
+      if (!job) return [];
+      actualJobId = job._id;
+    }
+
     const applications = await ctx.db
       .query("applications")
-      .withIndex("by_job_active", (q) => q.eq("jobId", args.jobId).eq("isActive", true))
+      .withIndex("by_job_active", (q) => q.eq("jobId", actualJobId!).eq("isActive", true))
       .collect();
 
     // Enrich with candidate and cv details

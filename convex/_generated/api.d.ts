@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as agent2_matching from "../agent2_matching.js";
+import type * as agent2_matching_queries from "../agent2_matching_queries.js";
 import type * as applications from "../applications.js";
 import type * as candidateProfile from "../candidateProfile.js";
 import type * as candidates from "../candidates.js";
@@ -49,6 +51,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agent2_matching: typeof agent2_matching;
+  agent2_matching_queries: typeof agent2_matching_queries;
   applications: typeof applications;
   candidateProfile: typeof candidateProfile;
   candidates: typeof candidates;

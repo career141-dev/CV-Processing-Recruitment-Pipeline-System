@@ -157,3 +157,105 @@ export const aiSearch = action({
     return { interpretation: interp, results };
   },
 });
+
+export const parseNLQuery = action({
+  args: { query: v.string() },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.NVIDIA_API_KEY;
+    if (!apiKey) throw new Error("NVIDIA_API_KEY not set.");
+
+    const FILTER_SCHEMA = {
+      skills: ["string"],
+      minYearsExperience: "number",
+      maxYearsExperience: "number",
+      location: "string",
+      currentJobTitle: "string",
+      seniority: "Junior | Mid | Senior | Lead | Director",
+    };
+
+    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "nvidia/llama-3.1-nemotron-70b-instruct",
+        messages: [{
+          role: "user",
+          content: `Extract search filters from this query as JSON: "${args.query}"\nSchema: ${JSON.stringify(FILTER_SCHEMA)}\nRespond ONLY with valid JSON. Do not add markdown backticks.`
+        }],
+        max_tokens: 500,
+      })
+    });
+
+    if (!response.ok) throw new Error("NVIDIA API failed");
+    
+    const data = await response.json();
+    try {
+      let content = data.choices[0].message.content;
+      // Strip markdown code blocks if any
+      content = content.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(content);
+    } catch (e) {
+      console.error("Failed to parse NVIDIA response:", e);
+      return {};
+    }
+  }
+});
+
+export const semanticSearch = action({
+  args: { 
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // 1. Embed query
+    const { embedText } = await import("./agent2_matching.js");
+    const queryEmbedding = await embedText(args.query);
+
+    // 2. Vector search
+    const results = await ctx.vectorSearch("candidates", "vector_index_candidates", {
+      vector: queryEmbedding,
+      limit: args.limit ?? 100,
+    });
+
+    // 3. Return IDs and scores
+    return results.map(r => ({
+      candidateId: r._id,
+      matchScore: Math.round(r._score * 100),
+      matchReason: `Semantic match based on vector similarity (${(r._score * 100).toFixed(1)}%)`,
+    }));
+  }
+});
+
+import { mutation } from "./_generated/server";
+export const bulkAddToPipeline = mutation({
+  args: {
+    candidateIds: v.array(v.id("candidates")),
+    jobId: v.id("jobs"),
+    sourceChannel: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Basic bulk insert to applications
+    for (const candidateId of args.candidateIds) {
+      // Check existing
+      const existing = await ctx.db.query("applications")
+        .withIndex("by_candidate_job", q => q.eq("candidateId", candidateId).eq("jobId", args.jobId))
+        .first();
+        
+      if (!existing) {
+        await ctx.db.insert("applications", {
+          candidateId,
+          jobId: args.jobId,
+          sourceChannel: args.sourceChannel,
+          currentStage: "new_cvs",
+          loopIteration: 0,
+          isActive: true,
+          createdAt: Date.now(),
+          lastStageChangedAt: Date.now(),
+        });
+      }
+    }
+  }
+});

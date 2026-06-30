@@ -2,7 +2,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { requireRole, requireUser } from "./lib/permissions";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 
 // convex/jobs.ts — generateKeyword helper function
 function generateKeyword(title: string): string {
@@ -567,8 +567,7 @@ export const publishJob = mutation({
 
     if (job.reverseMatchOnPublish) {
       await ctx.db.patch(jobId, { reverseMatchStatus: "running" });
-      // Schedule reverse match (will be implemented in Phase 6)
-      // await ctx.scheduler.runAfter(0, internal.reverseMatch.runReverseMatch, { jobId });
+      await ctx.scheduler.runAfter(0, api.agent2_matching.runReverseMatch, { jobId });
     }
 
     return { success: true, keyword: job.keyword };
@@ -643,9 +642,13 @@ export const list = query({
 });
 
 export const getJob = query({
-  args: { jobId: v.id("jobs") },
+  args: { jobId: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.jobId);
+    const normalizedId = ctx.db.normalizeId("jobs", args.jobId);
+    if (normalizedId) {
+      return await ctx.db.get(normalizedId);
+    }
+    return await ctx.db.query("jobs").withIndex("by_keyword", q => q.eq("keyword", args.jobId)).first();
   },
 });
 
