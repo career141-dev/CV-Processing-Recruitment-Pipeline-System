@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import { v } from "convex/values";
 // Force sync
 export const getSystemStats = query({
   args: {},
@@ -61,4 +62,23 @@ export const getIngestionStats = query({
       recentDone
     };
   },
+});
+
+export const getRecentChannelLogs = query({
+  args: { channelType: v.string() },
+  handler: async (ctx, args) => {
+    const logs = await ctx.db.query("ingestionLog")
+      .withIndex("by_channel_time", q => q.eq("channelType", args.channelType as any))
+      .order("desc")
+      .take(20);
+      
+    return logs.map(l => ({
+      _id: l._id,
+      candidateName: l.candidateName,
+      rawSender: l.rawSender,
+      stage: l.stage || l.routingStatus,
+      errorMessage: l.errorMessage,
+      receivedAt: l.receivedAt || l._creationTime,
+    }));
+  }
 });

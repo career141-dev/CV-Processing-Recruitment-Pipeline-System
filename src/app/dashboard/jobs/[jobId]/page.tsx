@@ -7,26 +7,44 @@ import {
   Users, Layers, FileText, ListTodo, PhoneCall, 
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
-  QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X
+  QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
+  Phone, Upload, AlertTriangle, ArrowRight, Clock
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
+  { id: "matched_candidates", label: "Matched Candidates" },
   { id: "ta_shortlist", label: "TA Shortlist" },
   { id: "ai_call", label: "AI Phone Screen" },
+  { id: "follow_up", label: "Follow-up" },
   { id: "second_shortlist", label: "2nd Shortlist" },
-  { id: "director_review", label: "Director Review" },
+  { id: "director_shortlist", label: "Director Shortlist" },
   { id: "client_review", label: "Client Review" },
   { id: "interview", label: "Interview" },
   { id: "offer", label: "Offer" },
   { id: "placed", label: "Placed" },
   { id: "rejected", label: "Rejected" },
 ];
+
+// Stages that can be manually moved to — new_cvs excluded (entry point only, not a target)
+const MOVEABLE_STAGES = PIPELINE_STAGES.filter(s => s.id !== "new_cvs" && s.id !== "director_shortlist" && s.id !== "client_review");
+
+// AI call status → color config
+const AI_CALL_STATUS: Record<string, { label: string; color: string; bg: string; pulse?: boolean }> = {
+  scheduled:   { label: "Scheduled",    color: "text-blue-600",   bg: "bg-blue-500/10",   pulse: true },
+  in_progress: { label: "In Progress",  color: "text-yellow-600", bg: "bg-yellow-500/10", pulse: true },
+  completed:   { label: "Completed",    color: "text-green-600",  bg: "bg-green-500/10" },
+  no_answer:   { label: "No Answer",    color: "text-orange-600", bg: "bg-orange-500/10" },
+  failed:      { label: "Failed",       color: "text-red-600",    bg: "bg-red-500/10" },
+  declined:    { label: "Declined",     color: "text-red-600",    bg: "bg-red-500/10" },
+  not_called:  { label: "Not Called",   color: "text-text-secondary", bg: "bg-surface-container" },
+};
+
 
 const MOCK_DATA = {
   'New CVs': [
@@ -45,12 +63,24 @@ const MOCK_DATA = {
        id: `t${i}`, name: `Candidate T${i}`, score: 85, status: 'Not Called'
     }))
   ],
+  'Matched Candidates': [
+    { id: '1', name: 'Kasun Fernando', expectedSalary: '$3,200', noticePeriod: '1 month' },
+    ...Array.from({ length: 4 }).map((_, i) => ({
+       id: `m${i}`, name: `Candidate M${i}`, expectedSalary: '$3,000', noticePeriod: '1 month'
+    }))
+  ],
   'AI Call': [
-    { id: '1', name: 'Kasun Fernando', currentSalary: '$2,500', expectedSalary: '$3,200', noticePeriod: '1 month', budgetFit: true },
-    { id: '2', name: 'Priya Sharma', currentSalary: '$4,000', expectedSalary: '$6,500', noticePeriod: '2 months', budgetFit: false },
-    { id: '3', name: 'Ashan Mendis', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', budgetFit: null },
+    { id: '1', name: 'Kasun Fernando', status: 'Scheduled' },
+    { id: '2', name: 'Priya Sharma', status: 'Not Called' },
+    { id: '3', name: 'Ashan Mendis', status: 'No Answer' },
     ...Array.from({ length: 5 }).map((_, i) => ({
-       id: `a${i}`, name: `Candidate A${i}`, currentSalary: '$2,800', expectedSalary: '$3,000', noticePeriod: '1 month', budgetFit: true
+       id: `a${i}`, name: `Candidate A${i}`, status: 'Completed'
+    }))
+  ],
+  'Follow-up': [
+    { id: '1', name: 'Kasun Fernando', currentSalary: '$2,500', expectedSalary: '$3,200', noticePeriod: '1 month', fit: 'Good' },
+    ...Array.from({ length: 3 }).map((_, i) => ({
+       id: `f${i}`, name: `Candidate F${i}`, currentSalary: '$2,800', expectedSalary: '$3,000', noticePeriod: '1 month', fit: 'Good'
     }))
   ],
   '2nd Shortlist': [
@@ -59,7 +89,7 @@ const MOCK_DATA = {
        id: `s2_${i}`, name: `Candidate S${i}`, expectedSalary: '$3,000', noticePeriod: '1 month', fit: 'Good'
     }))
   ],
-  'Director Review': [
+  'Director Shortlist': [
     { id: '1', name: 'Kasun Fernando', score: 92, salaryFit: 'Good', decision: 'Pending' },
     ...Array.from({ length: 5 }).map((_, i) => ({
        id: `d${i}`, name: `Candidate D${i}`, score: 88, salaryFit: 'Good', decision: 'Pending'
@@ -91,10 +121,12 @@ const MOCK_DATA = {
 
 const TABS = [
   { id: 'New CVs', label: 'New CVs', icon: FileText },
+  { id: 'Matched Candidates', label: 'Matched Candidates', icon: Users },
   { id: 'TA Shortlist', label: 'TA Shortlist', icon: ListTodo },
   { id: 'AI Call', label: 'AI Call', icon: PhoneCall },
+  { id: 'Follow-up', label: 'Follow-up', icon: PhoneCall },
   { id: '2nd Shortlist', label: 'Second Shortlist', icon: CheckCircle2 },
-  { id: 'Director Review', label: 'Director Review', icon: UserCheck },
+  { id: 'Director Shortlist', label: 'Director Shortlist', icon: UserCheck },
   { id: 'Client Review', label: 'Client Review', icon: Building2 },
   { id: 'Interview', label: 'Interview', icon: Video },
   { id: 'Offer', label: 'Offer', icon: Award },
@@ -143,7 +175,7 @@ const StatusDot = ({ status }: { status: string }) => {
   );
 };
 
-const MatchRow = ({ match, jobId, applications }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined }) => {
+const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
   const candidate = useQuery(api.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
   const createApplication = useMutation(api.applications.createApplication);
   const removeApplication = useMutation(api.applications.removeApplication);
@@ -177,6 +209,7 @@ const MatchRow = ({ match, jobId, applications }: { match: any, jobId: Id<"jobs"
         jobId,
         sourceChannel: "database",
       });
+      onNavigate();
     } catch (e: any) {
       alert("Failed to shortlist: " + e.message);
     } finally {
@@ -203,9 +236,12 @@ const MatchRow = ({ match, jobId, applications }: { match: any, jobId: Id<"jobs"
       <tr className="hover:bg-surface-bright transition-colors group">
         <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
         <td className="p-4 font-medium">
-          <Link href={`/dashboard/candidates/${match.cvId}`} className="text-text-primary hover:underline">
-            {candidate === undefined ? "Loading..." : (candidate?.fullName || candidate?.email || `Candidate ID: ${match.cvId.slice(0, 8)}...`)}
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href={`/dashboard/candidates/${match.cvId}`} className="text-text-primary hover:underline">
+              {candidate === undefined ? "Loading..." : (candidate?.fullName || candidate?.email || `Candidate ID: ${match.cvId.slice(0, 8)}...`)}
+            </Link>
+            <CvViewButton cvUploadId={candidate?.cvUploadId as Id<"cvUploads"> | undefined} />
+          </div>
         </td>
         <td className="p-4"><span className="text-[#0A66C2] font-medium">{match.sourceLevel1 || 'Database'}</span></td>
         <td className="p-4"><ScoreRing score={match.overallScore} /></td>
@@ -228,48 +264,34 @@ const MatchRow = ({ match, jobId, applications }: { match: any, jobId: Id<"jobs"
           </div>
         </td>
         <td className="p-4 text-right">
-          <div className="flex items-center justify-end gap-2 relative">
-            {isAlreadyInPipeline && (
-              <div className="flex gap-1 items-center bg-green-500/10 text-green-700 px-2 py-1 rounded-[6px] border border-green-500/20">
-                <CheckCircle2 className="w-3.5 h-3.5" /> <span className="text-[12px] font-medium">Added</span>
+          <div className="flex items-center justify-end gap-2">
+            {!isAlreadyInPipeline ? (
+              <button 
+                onClick={handleShortlist}
+                disabled={isShortlisting}
+                className="text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isShortlisting ? "Adding..." : "Add to Shortlist"}
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={onNavigate}
+                  className="text-[12px] font-medium text-green-600 bg-green-500/10 hover:bg-green-500/20 px-2 py-1.5 rounded-[6px] flex items-center gap-1 border border-green-500/20 transition-colors"
+                  title="View in Pipeline"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Added to Matched
+                </button>
+                <button 
+                  onClick={handleRevert}
+                  disabled={isShortlisting}
+                  className="text-text-secondary hover:text-error hover:bg-error/10 p-1.5 rounded-[6px] transition-colors"
+                  title="Remove from Pipeline"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
-            <div className="relative inline-block text-left" ref={dropdownRef}>
-              <button 
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="p-1.5 rounded-md hover:bg-surface-container transition-colors text-text-secondary hover:text-text-primary"
-              >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-              {isDropdownOpen && (
-                <div className="absolute right-0 mt-1 w-48 bg-surface rounded-lg shadow-lg shadow-black/5 border border-border py-1.5 z-50 text-left">
-                  <Link 
-                    href={`/dashboard/candidates/${match.cvId}`}
-                    onClick={() => setIsDropdownOpen(false)}
-                    className="w-full px-3 py-1.5 text-[13px] text-text-primary hover:bg-surface-bright flex items-center gap-2 transition-colors"
-                  >
-                    <User className="w-4 h-4 text-text-secondary" /> View Profile
-                  </Link>
-                  {!isAlreadyInPipeline ? (
-                    <button 
-                      onClick={() => { setIsDropdownOpen(false); handleShortlist(); }}
-                      disabled={isShortlisting}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-primary hover:bg-primary/5 flex items-center gap-2 transition-colors disabled:opacity-50"
-                    >
-                      <CheckCircle2 className="w-4 h-4" /> {isShortlisting ? "Adding..." : "Shortlist Candidate"}
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => { setIsDropdownOpen(false); handleRevert(); }}
-                      disabled={isShortlisting}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-red-600 hover:bg-red-500/5 flex items-center gap-2 transition-colors disabled:opacity-50"
-                    >
-                      <XCircle className="w-4 h-4" /> {isShortlisting ? "Removing..." : "Remove Shortlist"}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         </td>
       </tr>
@@ -290,22 +312,483 @@ const MatchRow = ({ match, jobId, applications }: { match: any, jobId: Id<"jobs"
   );
 };
 
+const CvViewButton = ({ cvUploadId }: { cvUploadId?: Id<"cvUploads"> | null }) => {
+  const cvUpload = useQuery(api.candidates.getCvUploadUrl, cvUploadId ? { cvUploadId } : "skip");
+  
+  if (!cvUploadId) return (
+    <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface/50 text-text-disabled text-[11px] font-medium" title="No CV attached">
+      <FileText className="w-3 h-3" />
+      View CV
+    </button>
+  );
+  
+  if (cvUpload === undefined) return (
+    <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface/50 text-text-disabled text-[11px] font-medium animate-pulse">
+      <FileText className="w-3 h-3" />
+      View CV
+    </button>
+  );
+  
+  if (!cvUpload?.url) return (
+    <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-red-200 bg-red-50 text-red-400 text-[11px] font-medium" title="CV file not found">
+      <FileText className="w-3 h-3" />
+      View CV
+    </button>
+  );
+  
+  return (
+    <a 
+      href={cvUpload.url} 
+      target="_blank" 
+      rel="noreferrer" 
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface hover:bg-surface-container transition-colors text-[11px] font-medium text-text-secondary hover:text-text-primary whitespace-nowrap"
+      title="View CV (Opens in new tab)"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <FileText className="w-3 h-3" />
+      View CV
+    </a>
+  );
+};
+
+const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, renderKanbanDropdown: any }) => {
+  const [isLoggingCall, setIsLoggingCall] = useState(false);
+  const [outcome, setOutcome] = useState<string>('');
+  const [currentSalary, setCurrentSalary] = useState(item.currentSalary !== '—' ? item.currentSalary : '');
+  const [expectedSalary, setExpectedSalary] = useState(item.expectedSalary !== '—' ? item.expectedSalary : '');
+  const [noticePeriod, setNoticePeriod] = useState(item.noticePeriod !== '—' ? item.noticePeriod : '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  
+  const logManualCall = useMutation(api.applications.logManualCall);
+  const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
+
+  const isCallLogged = item.manualCallOutcome === "Interested";
+  const hasOutcome = !!item.manualCallOutcome;
+
+  const handleSaveLog = async () => {
+    setIsSaving(true);
+    try {
+      const parsedCurrentSalary = currentSalary ? parseFloat(currentSalary.replace(/[^0-9.]/g, '')) : undefined;
+      const parsedNoticePeriod = noticePeriod ? parseInt(noticePeriod.replace(/[^0-9]/g, '')) : undefined;
+
+      await logManualCall({
+        applicationId: item.id,
+        candidateId: item.candidateId,
+        outcome,
+        currentSalary: isNaN(parsedCurrentSalary as number) ? undefined : parsedCurrentSalary,
+        expectedSalary: expectedSalary || undefined,
+        noticePeriodDays: isNaN(parsedNoticePeriod as number) ? undefined : parsedNoticePeriod,
+      });
+      setIsLoggingCall(false);
+    } catch (e: any) {
+      alert('Failed to save log: ' + e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleMoveToFollowUp = async () => {
+    try {
+      await setPipelineStage({ applicationId: item.id, newStage: "follow_up" });
+    } catch (e: any) {
+      alert("Failed to move to follow-up: " + e.message);
+    }
+  };
+
+  const handleReject = () => {
+    const reason = window.prompt("Rejection reason:");
+    if (reason) {
+      setPipelineStage({ applicationId: item.id, newStage: "rejected" });
+      // In a real app we'd also call a reject mutation to save the reason.
+      // We can rely on the newly created rejectApplication mutation.
+    }
+  };
+
+  return (
+    <tr className="hover:bg-surface-bright transition-colors group border-b border-border">
+      <td className="p-4 font-medium align-top">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            {item.name}
+            <CvViewButton cvUploadId={item.cvUploadId} />
+          </div>
+          <span className="text-[11px] text-text-secondary font-normal">
+            Match: {item.score} • Database Candidate
+          </span>
+        </div>
+      </td>
+      
+      <td className="p-4 align-top">
+        {!isLoggingCall ? (
+          <div className="flex flex-col gap-1">
+            {hasOutcome ? (
+              <div className="text-[12px] text-text-primary">
+                <span className="inline-flex items-center gap-1 text-green-600 font-medium mb-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Logged — {item.manualCallOutcome}
+                </span>
+                {item.manualCallOutcome === "Interested" && (
+                  <div className="text-text-secondary">
+                    Salary: {item.expectedSalary} • Notice: {item.noticePeriod}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-text-secondary text-[12px]">
+                <div className="w-2 h-2 rounded-full border border-text-tertiary" /> Not yet logged
+              </span>
+            )}
+            
+            {!hasOutcome && (
+              <button 
+                onClick={() => setIsLoggingCall(true)}
+                className="mt-2 text-[12px] font-medium bg-surface-container hover:bg-border text-text-primary px-3 py-1.5 rounded-[6px] w-fit transition-colors border border-border"
+              >
+                Log Call
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 bg-surface-container p-3 rounded-lg border border-border mt-1">
+            <select 
+              value={outcome}
+              onChange={e => setOutcome(e.target.value)}
+              className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container"
+            >
+              <option value="" disabled>Select Outcome...</option>
+              <option value="Interested">Interested</option>
+              <option value="Not Interested">Not Interested</option>
+              <option value="No Answer">No Answer</option>
+            </select>
+            
+            {outcome === "Interested" && (
+              <div className="grid grid-cols-2 gap-2">
+                <input type="text" placeholder="Current Salary" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
+                <input type="text" placeholder="Expected Salary" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
+                <input type="text" placeholder="Notice Period" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container col-span-2" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-1">
+              <button 
+                onClick={() => setIsLoggingCall(false)}
+                className="text-[11px] font-medium text-text-secondary hover:text-text-primary px-2 py-1"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveLog} 
+                disabled={isSaving || !outcome}
+                className="text-[11px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[4px] hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
+              >
+                {isSaving ? "Saving..." : "Save Log"}
+              </button>
+            </div>
+          </div>
+        )}
+      </td>
+      
+      <td className="p-4 text-right align-top">
+        <div className="flex flex-col items-end gap-2">
+          <button
+            disabled={!isCallLogged}
+            onClick={handleMoveToFollowUp}
+            className={`text-[12px] font-medium px-4 py-2 rounded-[6px] transition-all shadow-sm ${
+              isCallLogged 
+                ? 'bg-green-600 text-white hover:bg-green-700' 
+                : 'bg-surface-container text-text-disabled cursor-not-allowed border border-border'
+            }`}
+          >
+            Move to Follow-up
+          </button>
+          
+          <button 
+            onClick={handleReject}
+            className="text-[12px] font-medium text-text-secondary hover:text-error px-4 py-1.5 rounded-[6px] transition-colors"
+          >
+            Reject
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+};
+
+// ─── Reject Modal ─────────────────────────────────────────────────────────────
+const RejectModal = ({ 
+  isOpen, onClose, onConfirm, candidateName, stage 
+}: { 
+  isOpen: boolean; onClose: () => void; onConfirm: (reason: string) => void; 
+  candidateName: string; stage: string; 
+}) => {
+  const [reason, setReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => { if (!isOpen) setReason(''); }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async () => {
+    if (!reason.trim()) return;
+    setIsSubmitting(true);
+    await onConfirm(reason.trim());
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div 
+        className="relative bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-error/10 rounded-full flex items-center justify-center">
+            <XCircle className="w-5 h-5 text-error" />
+          </div>
+          <div>
+            <h3 className="text-[15px] font-semibold text-text-primary">Reject Candidate</h3>
+            <p className="text-[12px] text-text-secondary">{candidateName} · from {stage.replace(/_/g, ' ')}</p>
+          </div>
+        </div>
+
+        <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+          Rejection Reason <span className="text-error">*</span>
+        </label>
+        <textarea
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          placeholder="e.g. Expected salary exceeds budget, overqualified for role..."
+          rows={3}
+          className="w-full bg-surface-container border border-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary placeholder:text-text-secondary/60 focus:outline-none focus:border-primary resize-none"
+          autoFocus
+        />
+        <div className="flex gap-2 justify-end mt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-[13px] font-medium text-text-secondary hover:text-text-primary border border-border rounded-[8px] hover:bg-surface-container transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!reason.trim() || isSubmitting}
+            className="px-4 py-2 text-[13px] font-medium bg-error text-white rounded-[8px] hover:bg-error/90 disabled:opacity-50 transition-colors"
+          >
+            {isSubmitting ? 'Rejecting...' : 'Confirm Reject'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Headhunt Upload Modal ─────────────────────────────────────────────────────
+const HeadhuntModal = ({
+  isOpen, onClose, jobId
+}: {
+  isOpen: boolean; onClose: () => void; jobId: Id<"jobs">;
+}) => {
+  const createHeadhunt = useMutation(api.applications.createHeadhuntApplication);
+  const [form, setForm] = useState({ fullName: '', email: '', phone: '', currentSalary: '', expectedSalary: '', noticePeriodDays: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => { if (!isOpen) { setForm({ fullName: '', email: '', phone: '', currentSalary: '', expectedSalary: '', noticePeriodDays: '' }); setError(''); } }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const field = (key: keyof typeof form, label: string, placeholder: string, required = false, type = 'text') => (
+    <div>
+      <label className="block text-[12px] font-medium text-text-secondary mb-1">
+        {label} {required && <span className="text-error">*</span>}
+      </label>
+      <input
+        type={type}
+        value={form[key]}
+        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        placeholder={placeholder}
+        className="w-full bg-surface-container border border-border rounded-lg px-3 py-2 text-[13px] text-text-primary placeholder:text-text-secondary/60 focus:outline-none focus:border-primary"
+      />
+    </div>
+  );
+
+  const handleSubmit = async () => {
+    if (!form.fullName.trim()) return setError('Candidate name is required.');
+    if (!form.currentSalary || !form.expectedSalary || !form.noticePeriodDays) return setError('Salary and notice period are required.');
+
+    setIsSubmitting(true);
+    setError('');
+    try {
+      await createHeadhunt({
+        jobId,
+        fullName: form.fullName.trim(),
+        email: form.email || undefined,
+        phone: form.phone || undefined,
+        currentSalary: parseFloat(form.currentSalary.replace(/[^0-9.]/g, '')),
+        expectedSalary: parseFloat(form.expectedSalary.replace(/[^0-9.]/g, '')),
+        noticePeriodDays: parseInt(form.noticePeriodDays.replace(/[^0-9]/g, '')),
+      });
+      onClose();
+    } catch (e: any) {
+      setError(e.message || 'Failed to add headhunt candidate.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95 duration-200"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+              <Upload className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold text-text-primary">Upload Headhunt CV</h3>
+              <p className="text-[12px] text-text-secondary">Drops candidate directly into 2nd Shortlist</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-surface-container rounded-lg transition-colors">
+            <X className="w-4 h-4 text-text-secondary" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">{field('fullName', 'Candidate Name', 'e.g. Kasun Fernando', true)}</div>
+          {field('email', 'Email', 'optional@email.com', false, 'email')}
+          {field('phone', 'Phone', '+94 77 xxx xxxx')}
+          {field('currentSalary', 'Current Salary', 'e.g. 250000', true)}
+          {field('expectedSalary', 'Expected Salary', 'e.g. 320000', true)}
+          <div className="col-span-2">{field('noticePeriodDays', 'Notice Period (days)', 'e.g. 30', true, 'number')}</div>
+        </div>
+
+        <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
+          <p className="text-[12px] text-yellow-700 dark:text-yellow-400">CV file upload not yet wired — candidate record will be created without a file attachment. You can upload via the candidate profile after creation.</p>
+        </div>
+
+        {error && (
+          <p className="mt-3 text-[12px] text-error bg-error/10 border border-error/20 px-3 py-2 rounded-lg">{error}</p>
+        )}
+
+        <div className="flex gap-2 justify-end mt-4">
+          <button onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-text-secondary hover:text-text-primary border border-border rounded-[8px] hover:bg-surface-container transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="px-5 py-2 text-[13px] font-medium bg-primary text-on-primary rounded-[8px] hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+          >
+            {isSubmitting ? 'Adding...' : <><Upload className="w-3.5 h-3.5" /> Add to 2nd Shortlist</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── AI Call Status Badge ──────────────────────────────────────────────────────
+const AiCallStatusBadge = ({ status }: { status?: string }) => {
+  const key = (status ?? 'not_called').toLowerCase().replace(/ /g, '_');
+  const cfg = AI_CALL_STATUS[key] ?? AI_CALL_STATUS['not_called'];
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full ${cfg.color} ${cfg.bg}`}>
+      <span className={`w-1.5 h-1.5 rounded-full bg-current ${cfg.pulse ? 'animate-pulse' : ''}`} />
+      {cfg.label}
+    </span>
+  );
+};
+
+// ─── Pipeline Tracker (stage count bar) ───────────────────────────────────────
+const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; onTabClick: (tab: string) => void }) => {
+  const stages = [
+    { id: 'new_cvs',          label: 'New CVs',         tab: 'New CVs' },
+    { id: 'matched_candidates', label: 'Matched',        tab: 'Matched Candidates' },
+    { id: 'ta_shortlist',     label: 'TA Shortlist',    tab: 'TA Shortlist' },
+    { id: 'ai_call',          label: 'AI Call',         tab: 'AI Call' },
+    { id: 'follow_up',        label: 'Follow-up',       tab: 'Follow-up' },
+    { id: 'second_shortlist', label: '2nd Shortlist',   tab: '2nd Shortlist' },
+    { id: 'director_shortlist', label: 'Director',      tab: 'Director Shortlist' },
+    { id: 'client_review',    label: 'Client Review',   tab: 'Client Review' },
+    { id: 'interview',        label: 'Interview',       tab: 'Interview' },
+    { id: 'offer',            label: 'Offer',           tab: 'Offer' },
+    { id: 'placed',           label: 'Placed',          tab: 'Placed', highlight: true },
+  ];
+
+  return (
+    <div className="flex items-center gap-0 overflow-x-auto pb-1 mb-5 scrollbar-hide">
+      {stages.map((s, i) => {
+        const count = applications.filter(a => a.currentStage === s.id).length;
+        const isLast = i === stages.length - 1;
+        return (
+          <React.Fragment key={s.id}>
+            <button
+              onClick={() => onTabClick(s.tab)}
+              className={`flex flex-col items-center px-3 py-2 rounded-lg hover:bg-surface-container transition-colors shrink-0 group min-w-[70px] ${
+                s.highlight && count > 0 ? 'bg-green-500/10' : ''
+              }`}
+            >
+              <span className={`text-[17px] font-bold ${
+                s.highlight && count > 0 ? 'text-green-600' : count > 0 ? 'text-text-primary' : 'text-text-secondary/40'
+              }`}>{count}</span>
+              <span className={`text-[10px] font-medium leading-tight text-center mt-0.5 ${
+                count > 0 ? 'text-text-secondary' : 'text-text-secondary/40'
+              }`}>{s.label}</span>
+            </button>
+            {!isLast && (
+              <ArrowRight className="w-3 h-3 text-border shrink-0 mx-0.5" />
+            )}
+          </React.Fragment>
+        );
+      })}
+      <div className="ml-2 pl-2 border-l border-border shrink-0">
+        <button onClick={() => onTabClick('Rejected')} className="flex flex-col items-center px-3 py-2 rounded-lg hover:bg-error/5 transition-colors">
+          <span className="text-[17px] font-bold text-error/70">{applications.filter(a => a.currentStage === 'rejected').length}</span>
+          <span className="text-[10px] font-medium text-text-secondary/60">Rejected</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
   const jobId = params.jobId as Id<"jobs">;
 
   const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
-  const [activePipelineTab, setActivePipelineTab] = useState('TA Shortlist');
+  const [activePipelineTab, setActivePipelineTab] = useState('Matched Candidates');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
+
+  // Modal state
+  const [rejectModal, setRejectModal] = useState<{ isOpen: boolean; itemId: string; name: string; stage: string } | null>(null);
+  const [showHeadhuntModal, setShowHeadhuntModal] = useState(false);
 
   // Fetch job details
   const job = useQuery(api.jobs.getJob, { jobId });
   
   // Fetch candidates via applications
   const applications = useQuery(api.applications.getByJobId, { jobId });
+  const allUsers = useQuery(api.users.getAllUsers);
+  const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
+  const rejectApplication = useMutation(api.applications.rejectApplication);
+  const triggerAiCallMutation = useMutation(api.applications.triggerAiCall);
+  const directorApproveMutation = useMutation(api.pipeline.stages.directorApprove);
+  const directorRejectMutation = useMutation(api.pipeline.stages.directorReject);
+  const directorRequestChangesMutation = useMutation(api.pipeline.stages.directorRequestChanges);
+  const clientApproveMutation = useMutation(api.pipeline.stages.clientApprove);
+  const clientHoldMutation = useMutation(api.pipeline.stages.clientHold);
+  const clientRejectMutation = useMutation(api.pipeline.stages.clientReject);
   
   const runReverseMatch = useAction(api.agent2_matching.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
@@ -341,6 +824,34 @@ export default function JobDetailPage() {
   }
 
   const newCvs = applications.filter(app => app.currentStage === "new_cvs");
+  
+  // Issue #10: Average across ALL applications with an AI match score, not just reverseMatchResults
+  const scoredApps = applications.filter(a => a.aiMatchScore != null);
+  const avgAiScore = scoredApps.length > 0
+    ? Math.round(scoredApps.reduce((sum, a) => sum + (a.aiMatchScore ?? 0), 0) / scoredApps.length)
+    : '--';
+
+  // Reject handler — opens modal
+  const openRejectModal = (itemId: string, name: string, stage: string) => {
+    setRejectModal({ isOpen: true, itemId, name, stage });
+  };
+
+  const handleRejectConfirm = async (reason: string) => {
+    if (!rejectModal) return;
+    try {
+      await rejectApplication({ applicationId: rejectModal.itemId as Id<"applications">, reason, stage: rejectModal.stage });
+    } catch (e: any) {
+      alert('Failed to reject: ' + e.message);
+    }
+  };
+
+  const handleTriggerAiCall = async (appId: string) => {
+    try {
+      await triggerAiCallMutation({ applicationId: appId as Id<"applications"> });
+    } catch (e: any) {
+      alert('Failed to trigger AI call: ' + e.message);
+    }
+  };
   
   const handleStageChange = async (appId: string, newStage: string) => {
     if (!appId.startsWith('dummy|')) {
@@ -438,7 +949,16 @@ export default function JobDetailPage() {
               </tr>
             ) : (
               job.reverseMatchResults.map((match: any) => (
-                <MatchRow key={match.cvId} match={match} jobId={jobId} applications={applications} />
+                <MatchRow 
+                  key={match.cvId} 
+                  match={match} 
+                  jobId={jobId} 
+                  applications={applications} 
+                  onNavigate={() => {
+                    setActiveMainTab('pipeline');
+                    setActivePipelineTab('Matched Candidates');
+                  }}
+                />
               ))
             )}
           </tbody>
@@ -497,9 +1017,12 @@ export default function JobDetailPage() {
                       <tr key={app._id} className="hover:bg-surface-bright transition-colors group">
                         <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
                         <td className="p-4 font-medium">
-                          <Link href={`/dashboard/candidates/${app.candidateId}`} className="text-text-primary hover:underline">
-                            {app.candidate?.fullName || 'Unknown Candidate'}
-                          </Link>
+                          <div className="flex items-center gap-2">
+                            <Link href={`/dashboard/candidates/${app.candidateId}`} className="text-text-primary hover:underline">
+                              {app.candidate?.fullName || 'Unknown Candidate'}
+                            </Link>
+                            <CvViewButton cvUploadId={(app.candidate as any)?.cvUploadId} />
+                          </div>
                         </td>
                         <td className="p-4"><span className="text-[#0A66C2] font-medium">{(app.candidate as any)?.source || 'LinkedIn'}</span></td>
                         <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} /></td>
@@ -536,9 +1059,11 @@ export default function JobDetailPage() {
     const stageMap: Record<string, string> = {
       'New CVs': 'new_cvs',
       'TA Shortlist': 'ta_shortlist',
+      'Matched Candidates': 'matched_candidates',
       'AI Call': 'ai_call',
+      'Follow-up': 'follow_up',
       '2nd Shortlist': 'second_shortlist',
-      'Director Review': 'director_review',
+      'Director Shortlist': 'director_shortlist',
       'Client Review': 'client_review',
       'Interview': 'interview',
       'Offer': 'offer',
@@ -555,6 +1080,8 @@ export default function JobDetailPage() {
     if (stageApps.length > 0) {
       itemsToRender = stageApps.map(app => ({
         id: app._id,
+        candidateId: app.candidateId,
+        cvUploadId: app.candidate?.cvUploadId,
         name: app.candidate?.fullName || 'Unknown Candidate',
         score: app.aiMatchScore || 'Pending',
         status: app.taShortlistStatus || 'Pending',
@@ -565,7 +1092,12 @@ export default function JobDetailPage() {
         fit: 'Good',
         salaryFit: 'Good',
         decision: 'Pending',
+        manualCallOutcome: app.manualCallOutcome,
+        aiCallStatus: app.aiCallStatus,
+        aiCallIvrResponse: (app as any).aiCallIvrResponse,
+        sourceChannel: app.sourceChannel,
         date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
+        timeInStageRaw: app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0,
         feedback: 'Pending',
         salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
         startDate: 'TBD',
@@ -575,13 +1107,14 @@ export default function JobDetailPage() {
     } else {
       // Use MOCK DATA as dummy data
       itemsToRender = MOCK_DATA[activePipelineTab as keyof typeof MOCK_DATA] || [];
-      itemsToRender = itemsToRender.map(item => ({...item, id: 'dummy|' + item.id}));
+      itemsToRender = itemsToRender.map(item => ({...item, id: 'dummy|' + item.id, candidateId: 'dummy', cvUploadId: null}));
     }
 
     const totalItems = itemsToRender.length;
     const startIndex = (currentPage - 1) * itemsPerPage;
     const currentItems = itemsToRender.slice(startIndex, startIndex + itemsPerPage);
 
+    // Issue #6: Use MOVEABLE_STAGES — new_cvs excluded from dropdown targets
     const renderKanbanDropdown = (itemId: string, defaultStage: string) => (
       <div className="flex justify-end">
         <select 
@@ -590,7 +1123,7 @@ export default function JobDetailPage() {
           value={defaultStage}
         >
           <option value="" disabled>Move To...</option>
-          {PIPELINE_STAGES.map(s => (
+          {MOVEABLE_STAGES.map(s => (
             <option key={s.id} value={s.id}>{s.label}</option>
           ))}
         </select>
@@ -612,20 +1145,41 @@ export default function JobDetailPage() {
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
                 <th className="p-4">Match Score</th>
-                <th className="p-4">AI Call Status</th>
                 <th className="p-4 text-right">Move To Stage</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
+                  <td className="p-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      <CvViewButton cvUploadId={item.cvUploadId} />
+                    </div>
+                  </td>
                   <td className="p-4"><ScoreRing score={item.score} /></td>
-                  <td className="p-4"><StatusDot status={item.status} /></td>
                   <td className="p-4 text-right">
                     {renderKanbanDropdown(item.id, 'ta_shortlist')}
                   </td>
                 </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+        break;
+      case 'Matched Candidates':
+        tableContent = (
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                <th className="p-4">Candidate</th>
+                <th className="p-4">Call Status</th>
+                <th className="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="text-[13px] text-text-primary divide-y divide-border">
+              {currentItems.map((item: any) => (
+                <MatchedCandidateRow key={item.id} item={item} renderKanbanDropdown={renderKanbanDropdown} />
               ))}
             </tbody>
           </table>
@@ -637,60 +1191,222 @@ export default function JobDetailPage() {
             <thead>
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
-                <th className="p-4">Current Salary</th>
-                <th className="p-4">Expected Salary</th>
+                <th className="p-4">AI Call Status</th>
+                <th className="p-4">Intake Data</th>
+                <th className="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="text-[13px] text-text-primary divide-y divide-border">
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No candidates at AI Call stage.</td></tr>
+              ) : currentItems.map((item: any) => {
+                const hasSalary = item.currentSalary !== '—' && item.expectedSalary !== '—';
+                const hasNotice = item.noticePeriod !== '—';
+                const hasCV = !!item.cvUploadId;
+                const isAutoAdvancing = item.aiCallStatus === 'completed' && hasSalary && hasNotice && hasCV;
+                const alreadyCalled = !!item.aiCallStatus && item.aiCallStatus !== 'not_called';
+                return (
+                  <React.Fragment key={item.id}>
+                    <tr className="hover:bg-surface-bright transition-colors group">
+                      <td className="p-4 font-medium">
+                        <div className="flex items-center gap-2">
+                          {item.name}
+                          <CvViewButton cvUploadId={item.cvUploadId} />
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <AiCallStatusBadge status={item.aiCallStatus} />
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1.5 text-[12px]">
+                          <span className={hasSalary ? 'text-green-600 font-medium' : 'text-text-secondary'}>
+                            {hasSalary ? `💰 ${item.currentSalary} → ${item.expectedSalary}` : '💰 Salary: Pending'}
+                          </span>
+                          <span className={hasNotice ? 'text-green-600 font-medium' : 'text-text-secondary'}>
+                            {hasNotice ? `⏳ Notice: ${item.noticePeriod}` : '⏳ Notice: Pending'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {!alreadyCalled && (
+                            <button
+                              onClick={() => handleTriggerAiCall(item.id)}
+                              className="inline-flex items-center gap-1.5 text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm"
+                            >
+                              <Phone className="w-3.5 h-3.5" /> Call Now
+                            </button>
+                          )}
+                          {alreadyCalled && !isAutoAdvancing && (
+                            <button
+                              onClick={() => handleTriggerAiCall(item.id)}
+                              className="inline-flex items-center gap-1.5 text-[12px] font-medium border border-border text-text-secondary px-3 py-1.5 rounded-[6px] hover:bg-surface-container transition-colors"
+                            >
+                              <Phone className="w-3.5 h-3.5" /> Retry Call
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openRejectModal(item.id, item.name, 'ai_call')}
+                            className="text-[12px] font-medium text-text-secondary hover:text-error px-2 py-1.5 rounded-[6px] transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isAutoAdvancing && (
+                      <tr className="bg-green-500/5 border-b border-border">
+                        <td colSpan={4} className="px-6 py-2">
+                          <div className="flex items-center gap-2 text-[12px] text-green-700 dark:text-green-400">
+                            <Clock className="w-3.5 h-3.5 animate-spin" />
+                            Auto-advancing to 2nd Shortlist — candidate data fully collected
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        );
+        break;
+      case 'Follow-up':
+        tableContent = (
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                <th className="p-4">Candidate</th>
+                <th className="p-4">Source</th>
+                <th className="p-4">CV Status</th>
+                <th className="p-4">Salary Info</th>
                 <th className="p-4">Notice Period</th>
+                <th className="p-4">Timeout</th>
                 <th className="p-4 text-right">Move To Stage</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
-                <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
-                  <td className="p-4">{item.currentSalary}</td>
-                  <td className="p-4">
-                    {item.expectedSalary}
-                    {item.budgetFit === false && <span className="ml-2 text-error text-[11px] font-medium bg-error/10 px-2 py-0.5 rounded-full">Over Budget</span>}
-                  </td>
-                  <td className="p-4">{item.noticePeriod}</td>
-                  <td className="p-4 text-right">
-                    {renderKanbanDropdown(item.id, 'ai_call')}
-                  </td>
-                </tr>
-              ))}
+              {currentItems.map((item: any) => {
+                const daysInStage = Math.floor((item.timeInStageRaw || 0) / (1000 * 60 * 60 * 24));
+                const daysLeft = Math.max(0, 7 - daysInStage);
+                const hasCV = !!item.cvUploadId;
+                const hasSalary = item.currentSalary !== '—' && item.expectedSalary !== '—';
+                const hasNotice = item.noticePeriod !== '—';
+                const isDbMatch = item.sourceChannel === 'database' || item.sourceChannel === 'headhunting';
+
+                return (
+                  <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
+                    <td className="p-4 font-medium">
+                      <div className="flex items-center gap-2">
+                        {item.name}
+                        <CvViewButton cvUploadId={item.cvUploadId} />
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      {/* Issue #9 — source badge */}
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                        isDbMatch ? 'bg-blue-500/10 text-blue-600' : 'bg-green-500/10 text-green-600'
+                      }`}>
+                        {isDbMatch ? 'DB Match' : 'External'}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-1.5">
+                        {hasCV ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-orange-400" />}
+                        <span className={hasCV ? 'text-text-primary' : 'text-orange-600 font-medium'}>
+                          {hasCV ? 'Uploaded' : 'Missing'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-1.5">
+                        {hasSalary ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-orange-400" />}
+                        <span className={hasSalary ? 'text-text-primary' : 'text-orange-600 font-medium'}>
+                          {item.currentSalary} → {item.expectedSalary}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-1.5">
+                        {hasNotice ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-orange-400" />}
+                        <span className={hasNotice ? 'text-text-primary' : 'text-orange-600 font-medium'}>
+                          {item.noticePeriod}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <div className={`text-[12px] font-medium px-2 py-0.5 rounded-full w-fit ${
+                        daysLeft <= 2 ? 'bg-error/10 text-error' : 'bg-surface-container text-text-secondary'
+                      }`}>
+                        {daysLeft}d left
+                      </div>
+                    </td>
+                    <td className="p-4 text-right">
+                      {renderKanbanDropdown(item.id, 'follow_up')}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         );
         break;
       case '2nd Shortlist':
         tableContent = (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                <th className="p-4">Candidate</th>
-                <th className="p-4">Expected Salary</th>
-                <th className="p-4">Notice Period</th>
-                <th className="p-4">Fit</th>
-                <th className="p-4 text-right">Move To Stage</th>
-              </tr>
-            </thead>
-            <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
-                <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
-                  <td className="p-4">{item.expectedSalary}</td>
-                  <td className="p-4">{item.noticePeriod}</td>
-                  <td className="p-4"><span className="text-green-500 font-medium">✅ {item.fit}</span></td>
-                  <td className="p-4 text-right">
-                    {renderKanbanDropdown(item.id, 'second_shortlist')}
-                  </td>
+          <>
+            {/* Headhunt upload toolbar */}
+            <div className="p-4 border-b border-border flex justify-between items-center bg-surface">
+              <div className="text-[13px] font-medium text-text-secondary">
+                {currentItems.length} candidates in 2nd Shortlist
+              </div>
+              <button
+                onClick={() => setShowHeadhuntModal(true)}
+                className="inline-flex items-center gap-2 text-[13px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[8px] hover:bg-primary/90 transition-colors shadow-sm"
+              >
+                <Upload className="w-4 h-4" /> Upload Headhunt CV
+              </button>
+            </div>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                  <th className="p-4">Candidate</th>
+                  <th className="p-4">Expected Salary</th>
+                  <th className="p-4">Notice Period</th>
+                  <th className="p-4">Fit</th>
+                  <th className="p-4 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="text-[13px] text-text-primary divide-y divide-border">
+                {currentItems.map((item: any) => (
+                  <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
+                    <td className="p-4 font-medium">
+                      <div className="flex items-center gap-2">
+                        {item.name}
+                        <CvViewButton cvUploadId={item.cvUploadId} />
+                      </div>
+                    </td>
+                    <td className="p-4">{item.expectedSalary}</td>
+                    <td className="p-4">{item.noticePeriod}</td>
+                    <td className="p-4"><span className="text-green-500 font-medium">✅ {item.fit}</span></td>
+                    <td className="p-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {renderKanbanDropdown(item.id, 'second_shortlist')}
+                        <button
+                          onClick={() => openRejectModal(item.id, item.name, 'second_shortlist')}
+                          className="text-[12px] font-medium text-text-secondary hover:text-error px-2 py-1.5 rounded-[6px] transition-colors border border-border"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         );
         break;
-      case 'Director Review':
+      case 'Director Shortlist':
         tableContent = (
           <table className="w-full text-left border-collapse">
             <thead>
@@ -698,19 +1414,45 @@ export default function JobDetailPage() {
                 <th className="p-4">Candidate</th>
                 <th className="p-4">Score</th>
                 <th className="p-4">Salary Fit</th>
-                <th className="p-4">Director Decision</th>
-                <th className="p-4 text-right">Move To Stage</th>
+                <th className="p-4 text-right">Director Actions</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
+                  <td className="p-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      <CvViewButton cvUploadId={item.cvUploadId} />
+                    </div>
+                  </td>
                   <td className="p-4"><ScoreRing score={item.score} /></td>
                   <td className="p-4">✅ {item.salaryFit}</td>
-                  <td className="p-4"><StatusDot status={item.decision} /></td>
                   <td className="p-4 text-right">
-                    {renderKanbanDropdown(item.id, 'director_review')}
+                    {/* Issue #7: Gated Director actions — no free-form dropdown */}
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={async () => { try { await directorApproveMutation({ applicationId: item.id }); } catch(e: any) { alert(e.message); } }}
+                        className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                      </button>
+                      <button
+                        onClick={() => openRejectModal(item.id, item.name, 'director_shortlist')}
+                        className="inline-flex items-center gap-1 text-[12px] font-medium border border-error/40 text-error px-3 py-1.5 rounded-[6px] hover:bg-error/10 transition-colors"
+                      >
+                        <XCircle className="w-3.5 h-3.5" /> Reject
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const note = window.prompt('Note for TA (changes requested):');
+                          if (note) { try { await directorRequestChangesMutation({ applicationId: item.id, note }); } catch(e: any) { alert(e.message); } }
+                        }}
+                        className="inline-flex items-center gap-1 text-[12px] font-medium border border-border text-text-secondary px-3 py-1.5 rounded-[6px] hover:bg-surface-container transition-colors"
+                      >
+                        🔄 Changes
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -725,18 +1467,41 @@ export default function JobDetailPage() {
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
                 <th className="p-4">Score</th>
-                <th className="p-4">Client Decision</th>
-                <th className="p-4 text-right">Move To Stage</th>
+                <th className="p-4 text-right">Client Actions</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
+                  <td className="p-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      <CvViewButton cvUploadId={item.cvUploadId} />
+                    </div>
+                  </td>
                   <td className="p-4"><ScoreRing score={item.score} /></td>
-                  <td className="p-4"><StatusDot status={item.decision} /></td>
                   <td className="p-4 text-right">
-                    {renderKanbanDropdown(item.id, 'client_review')}
+                    {/* Issue #7: Gated Client actions */}
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={async () => { try { await clientApproveMutation({ applicationId: item.id }); } catch(e: any) { alert(e.message); } }}
+                        className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Select for Interview
+                      </button>
+                      <button
+                        onClick={async () => { try { await clientHoldMutation({ applicationId: item.id, note: 'Client placed on hold' }); } catch(e: any) { alert(e.message); } }}
+                        className="inline-flex items-center gap-1 text-[12px] font-medium border border-yellow-500/40 text-yellow-600 px-3 py-1.5 rounded-[6px] hover:bg-yellow-500/10 transition-colors"
+                      >
+                        ⏸ Hold
+                      </button>
+                      <button
+                        onClick={() => openRejectModal(item.id, item.name, 'client_review')}
+                        className="inline-flex items-center gap-1 text-[12px] font-medium border border-error/40 text-error px-3 py-1.5 rounded-[6px] hover:bg-error/10 transition-colors"
+                      >
+                        <XCircle className="w-3.5 h-3.5" /> Reject
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -758,7 +1523,12 @@ export default function JobDetailPage() {
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
+                  <td className="p-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      <CvViewButton cvUploadId={item.cvUploadId} />
+                    </div>
+                  </td>
                   <td className="p-4">{item.date}</td>
                   <td className="p-4"><StatusDot status={item.feedback} /></td>
                   <td className="p-4 text-right">
@@ -785,7 +1555,12 @@ export default function JobDetailPage() {
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
+                  <td className="p-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      <CvViewButton cvUploadId={item.cvUploadId} />
+                    </div>
+                  </td>
                   <td className="p-4 font-bold">{item.salary}</td>
                   <td className="p-4">{item.startDate}</td>
                   <td className="p-4"><StatusDot status={item.status} /></td>
@@ -812,7 +1587,12 @@ export default function JobDetailPage() {
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
+                  <td className="p-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      <CvViewButton cvUploadId={item.cvUploadId} />
+                    </div>
+                  </td>
                   <td className="p-4">{item.role}</td>
                   <td className="p-4">{item.date}</td>
                   <td className="p-4 text-right">
@@ -837,7 +1617,12 @@ export default function JobDetailPage() {
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">{item.name}</td>
+                  <td className="p-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      <CvViewButton cvUploadId={item.cvUploadId} />
+                    </div>
+                  </td>
                   <td className="p-4 text-error">{item.reason}</td>
                   <td className="p-4 text-right">
                     {renderKanbanDropdown(item.id, 'rejected')}
@@ -864,29 +1649,44 @@ export default function JobDetailPage() {
 
   return (
     <div className="flex-1 w-full bg-background p-8 min-h-screen font-body max-w-[1400px] mx-auto pb-32">
+      {/* Global Modals */}
+      <RejectModal
+        isOpen={!!rejectModal?.isOpen}
+        onClose={() => setRejectModal(null)}
+        onConfirm={handleRejectConfirm}
+        candidateName={rejectModal?.name ?? ''}
+        stage={rejectModal?.stage ?? ''}
+      />
+      <HeadhuntModal
+        isOpen={showHeadhuntModal}
+        onClose={() => setShowHeadhuntModal(false)}
+        jobId={jobId}
+      />
       {/* Header */}
       <div className="bg-surface rounded-[12px] border border-border shadow-subtle p-[24px] mb-[24px]">
         <div className="text-[12px] text-text-secondary mb-2 font-body flex items-center gap-1">
           <Link className="hover:text-primary-container" href="/dashboard/jobs">Jobs</Link>
           <ChevronRight className="w-3.5 h-3.5" />
-          <span>{job.title} — {(job as any).client || 'Atlas Holdings'}</span>
+          <span>{job.title} — {job.clientName || 'Atlas Holdings'}</span>
         </div>
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-[22px] font-semibold text-text-primary mb-3">{job.title}</h1>
             <div className="flex items-center gap-4 text-body font-body text-text-secondary mb-4">
-              <div className="flex items-center gap-1"><Building2 className="w-4 h-4" /> {(job as any).client || 'Atlas Holdings'}</div>
-              <div className="flex items-center gap-1"><Tag className="w-4 h-4" /> Keyword: BRAND24</div>
-              <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Created: 12 Jun 2026</div>
-              <div className="flex items-center gap-1"><User className="w-4 h-4" /> TA: Shambra Ameen</div>
+              <div className="flex items-center gap-1"><Building2 className="w-4 h-4" /> {job.clientName || 'Atlas Holdings'}</div>
+              <div className="flex items-center gap-1"><Tag className="w-4 h-4" /> Keyword: {job.keyword}</div>
+              <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Created: {format(new Date(job._creationTime), 'dd MMM yyyy')}</div>
+              <div className="flex items-center gap-1"><User className="w-4 h-4" /> TA: {recruiter?.fullName || 'Loading...'}</div>
             </div>
             <div className="flex gap-2">
               <span className="bg-primary-container/15 text-primary-container px-3 py-1 rounded-full text-[12px] font-medium border border-primary-container/20">
                 {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
               </span>
               <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">{job.location}</span>
-              <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">FMCG</span>
-              <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">Confidential</span>
+              <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">{job.clientIndustry}</span>
+              {job.isConfidential && (
+                <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">Confidential</span>
+              )}
             </div>
           </div>
           <div className="flex flex-col items-end gap-4">
@@ -900,7 +1700,7 @@ export default function JobDetailPage() {
                 <div className="text-[11px] text-text-secondary">Shortlisted</div>
               </div>
               <div className="bg-surface border border-border rounded-[8px] px-4 py-2 text-center min-w-[80px]">
-                <div className="text-[20px] font-bold text-primary-container">78<span className="text-[12px] text-text-secondary font-normal">/100</span></div>
+                <div className="text-[20px] font-bold text-primary-container">{avgAiScore}<span className="text-[12px] text-text-secondary font-normal">/100</span></div>
                 <div className="text-[11px] text-text-secondary">AI Avg Score</div>
               </div>
             </div>
@@ -955,10 +1755,24 @@ export default function JobDetailPage() {
       {activeMainTab === 'pipeline' && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
 
+      {/* Issue #8: Pipeline stage count tracker */}
+      <PipelineTracker
+        applications={applications}
+        onTabClick={(tab) => setActivePipelineTab(tab)}
+      />
+
       {/* Secondary Navigation (Pipeline Sub-tabs) */}
       <div className="flex flex-wrap gap-2 mb-6 sticky top-0 bg-background/95 backdrop-blur z-10 py-4 border-b border-border shadow-sm">
         {TABS.map(tab => {
           const Icon = tab.icon;
+          const stageId = {
+            'New CVs': 'new_cvs', 'Matched Candidates': 'matched_candidates',
+            'TA Shortlist': 'ta_shortlist', 'AI Call': 'ai_call',
+            'Follow-up': 'follow_up', '2nd Shortlist': 'second_shortlist',
+            'Director Shortlist': 'director_shortlist', 'Client Review': 'client_review',
+            'Interview': 'interview', 'Offer': 'offer', 'Placed': 'placed', 'Rejected': 'rejected'
+          }[tab.id];
+          const count = stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
           return (
             <button
               key={tab.id}
@@ -971,6 +1785,11 @@ export default function JobDetailPage() {
             >
               <Icon className="w-4 h-4" />
               {tab.label}
+              {count > 0 && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${
+                  activePipelineTab === tab.id ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+                }`}>{count}</span>
+              )}
             </button>
           );
         })}
