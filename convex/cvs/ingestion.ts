@@ -1,5 +1,5 @@
 import { internalAction, internalMutation } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { internal, api } from "../_generated/api";
 import { v } from "convex/values";
 
 export const processInboundCV = internalAction({

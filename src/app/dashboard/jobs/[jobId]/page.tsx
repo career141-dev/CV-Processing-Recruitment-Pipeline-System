@@ -790,7 +790,7 @@ export default function JobDetailPage() {
   const clientHoldMutation = useMutation(api.pipeline.stages.clientHold);
   const clientRejectMutation = useMutation(api.pipeline.stages.clientReject);
   
-  const runReverseMatch = useAction(api.reverseMatch.runReverseMatch);
+  const runReverseMatch = useAction(api.agent2_matching.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
 
   const handleScanDatabase = async () => {

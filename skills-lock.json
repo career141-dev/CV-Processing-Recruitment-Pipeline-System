@@ -6,6 +6,30 @@
       "sourceType": "github",
       "skillPath": "agents/SKILL.md",
       "computedHash": "0a9e5710012e5ad3c5ad374d2dc2456893748118aa6454b242e199e1f6121099"
+    },
+    "setup-api-key": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "setup-api-key/SKILL.md",
+      "computedHash": "7dd0a26da03b0265933059b85b8c90078b19191acce74270615e80679c9d3bf3"
+    },
+    "speech-engine": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "speech-engine/SKILL.md",
+      "computedHash": "6b26a7796235f2fd916338656e579547a9ba560931cded7fee88b3b7c3cac006"
+    },
+    "speech-to-text": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "speech-to-text/SKILL.md",
+      "computedHash": "a4dc0d8bd590650610050344e26587b2dc5d8b0a1b88bcad10f9f1013d9e679f"
+    },
+    "text-to-speech": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "text-to-speech/SKILL.md",
+      "computedHash": "58648bd4ced042dc17c035505a2984ca82f1a373be68e6e083e0a317b76893a4"
     }
   }
 }
