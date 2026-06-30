@@ -703,23 +703,20 @@ export const processCvExtraction = action({
 // ──────────────────────────────────────────────────
 
 export const resumeFailedUploads = action({
-  args: {},
-  handler: async (ctx): Promise<{ queued: number }> => {
-    // const identity = await ctx.auth.getUserIdentity();
-    // if (!identity) throw new Error("Not authenticated");
-
+  args: { batchId: v.optional(v.id("ingestionBatches")) },
+  handler: async (ctx, args): Promise<{ queued: number }> => {
     await ctx.runAction(internal.cvs.cvExtraction.resumeBatch, {
       cursor: undefined,
       totalQueued: 0,
+      batchId: args.batchId,
     });
     return { queued: 0 };
   },
 });
 
 export const resumeBatch = internalAction({
-  args: { cursor: v.optional(v.string()), totalQueued: v.number() },
+  args: { cursor: v.optional(v.string()), totalQueued: v.number(), batchId: v.optional(v.id("ingestionBatches")) },
   handler: async (ctx, args): Promise<void> => {
-    return; // STOP EXECUTION to kill the loop
     const result = await ctx.runQuery(api.candidates.listFailedUploads, {
       limit: 5,
       cursor: args.cursor,
@@ -727,12 +724,14 @@ export const resumeBatch = internalAction({
 
     for (let i = 0; i < result.page.length; i++) {
       const upload = result.page[i];
-      ctx.scheduler.runAfter(i * 1000, api.cvs.cvExtraction.processCvExtraction, {
-        storageId: upload.storageId as Id<"_storage">,
-        fileType: upload.fileType,
-        sourceChannel: upload.source,
-        uploadedBy: upload.uploadedBy,
+      await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
         cvUploadId: upload._id,
+        storageId: upload.storageId as Id<"_storage">,
+        fileName: upload.fileName,
+        fileType: upload.fileType,
+        sourceChannel: upload.source || "Retry Failed",
+        uploadedBy: upload.uploadedBy,
+        batchId: args.batchId,
       });
     }
 
@@ -743,6 +742,7 @@ export const resumeBatch = internalAction({
         {
           cursor: result.continueCursor,
           totalQueued: args.totalQueued + result.page.length,
+          batchId: args.batchId,
         },
       );
     }
