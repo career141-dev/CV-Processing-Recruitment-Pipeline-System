@@ -19,3 +19,15 @@ export const updateCandidateEmbedding = internalMutation({
     });
   },
 });
+
+export const updateJobEmbedding = internalMutation({
+  args: { 
+    jobId: v.id("jobs"),
+    embedding: v.array(v.number())
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      embedding: args.embedding,
+    });
+  },
+});

@@ -565,6 +565,9 @@ export const publishJob = mutation({
       occurredAt: new Date().toISOString(),
     });
 
+    // Always generate the embedding for AI semantic search
+    await ctx.scheduler.runAfter(0, api.agent2_matching.generateJobEmbedding, { jobId });
+
     if (job.reverseMatchOnPublish) {
       await ctx.db.patch(jobId, { reverseMatchStatus: "running" });
       await ctx.scheduler.runAfter(0, api.agent2_matching.runReverseMatch, { jobId });

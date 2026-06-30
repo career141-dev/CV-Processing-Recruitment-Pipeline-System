@@ -307,7 +307,7 @@ export default function JobDetailPage() {
   const applications = useQuery(api.applications.getByJobId, { jobId });
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
   
-  const runReverseMatch = useAction(api.reverseMatch.runReverseMatch);
+  const runReverseMatch = useAction(api.agent2_matching.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
 
   const handleScanDatabase = async () => {

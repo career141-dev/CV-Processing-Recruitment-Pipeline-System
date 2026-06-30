@@ -61,6 +61,30 @@ export const generateAndStoreEmbedding = internalAction({
   },
 });
 
+export const generateJobEmbedding = action({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args): Promise<void> => {
+    const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
+    if (!job) return;
+
+    const jobRequirementsText = `
+      Title: ${job.title}
+      Description: ${job.jobDescription}
+      Required Skills: ${(job.requiredSkills || []).join(", ")}
+      Nice to have Skills: ${(job.niceToHaveSkills || []).join(", ")}
+      Industry: ${job.clientIndustry || ""}
+      Seniority: ${job.seniorityLevel || ""}
+    `;
+
+    const jobEmbedding = await embedText(jobRequirementsText);
+    
+    await ctx.runMutation(internal.agent2_matching_queries.updateJobEmbedding, {
+      jobId: args.jobId,
+      embedding: jobEmbedding,
+    });
+  }
+});
+
 /**
  * Reverse Match using Vector Search
  */
@@ -71,17 +95,27 @@ export const runReverseMatch = action({
       const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
       if (!job) return;
 
-      const jobRequirementsText = `
-        Title: ${job.title}
-        Description: ${job.jobDescription}
-        Required Skills: ${(job.requiredSkills || []).join(", ")}
-        Nice to have Skills: ${(job.niceToHaveSkills || []).join(", ")}
-        Industry: ${job.clientIndustry || ""}
-        Seniority: ${job.seniorityLevel || ""}
-      `;
+      let jobEmbedding = job.embedding;
 
-      const jobEmbedding = await embedText(jobRequirementsText);
-      
+      if (!jobEmbedding || jobEmbedding.length === 0) {
+        const jobRequirementsText = `
+          Title: ${job.title}
+          Description: ${job.jobDescription}
+          Required Skills: ${(job.requiredSkills || []).join(", ")}
+          Nice to have Skills: ${(job.niceToHaveSkills || []).join(", ")}
+          Industry: ${job.clientIndustry || ""}
+          Seniority: ${job.seniorityLevel || ""}
+        `;
+
+        jobEmbedding = await embedText(jobRequirementsText);
+        
+        // Save the embedding to the job record
+        await ctx.runMutation(internal.agent2_matching_queries.updateJobEmbedding, {
+          jobId: args.jobId,
+          embedding: jobEmbedding,
+        });
+      }
+
       const minScore = job.minMatchScoreToShow ?? 60;
 
       // Perform Vector Search across all candidates
