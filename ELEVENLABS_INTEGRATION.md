@@ -1,7 +1,7 @@
-# Career141 — ElevenLabs AI Voice Agent Integration Reference
-## v2.1 — Reviewed & Aligned to Production Codebase
+# Career141 ï¿½ ElevenLabs AI Voice Agent Integration Reference
+## v2.1 ï¿½ Reviewed & Aligned to Production Codebase
 
-> **Status:** Reference document — integration pending carrier selection.
+> **Status:** Reference document ï¿½ integration pending carrier selection.
 > **API Key:** Set (ELEVENLABS_API_KEY stored in .env and pushed to Convex environment)
 > **Last reviewed:** 2026-06-30
 
@@ -9,16 +9,16 @@
 
 ## What Changed in v2.1 (Codebase Alignment Review)
 
-| # | Finding | Action |
-|---|---------|--------|
+| # | Finding  |  Action |
+|---| ---------|--------|
 | 1 | Crons already run retryAiCalls twice daily with a TODO comment for the actual ElevenLabs dial | Added triggerIntakeCall action reference |
-| 2 | followUpHelper.ts already implements the 4-field gate (CV + currentSalary + expectedSalary + noticePeriodDays) | Confirmed — tool endpoints must write to candidates table fields directly |
+| 2 | followUpHelper.ts already implements the 4-field gate (CV + currentSalary + expectedSalary + noticePeriodDays) | Confirmed ï¿½ tool endpoints must write to candidates table fields directly |
 | 3 | Stage is ai_call in the DB (not ai_call_intake) | Corrected throughout |
 | 4 | aiCalls.ivrResponse enum is for Twilio DTMF; ElevenLabs uses tool calls instead | Clarified in architecture |
 | 5 | applications.aiCallStatus exists; post-call webhook must call updateAiCallStatus mutation | Added to webhook handler |
 | 6 | aiCalls table now has elevenlabsConversationId + elevenlabsAgentId fields | Already added to schema |
 | 7 | doNotContact field does not exist on candidates table yet | Added to schema additions section |
-| 8 | Retry cron rejects after 6 attempts over 3 days — plan calls for 7-day Day 2/4/7 window | Noted — cron needs update |
+| 8 | Retry cron rejects after 6 attempts over 3 days ï¿½ plan calls for 7-day Day 2/4/7 window | Noted ï¿½ cron needs update |
 | 9 | File path should be convex/integrations/elevenlabs.ts not convex/calls/ | Path corrected |
 | 10 | No shared-secret verification on any HTTP endpoint currently | Added implementation pattern |
 
@@ -504,7 +504,6 @@ Week 3 (production readiness):
   10. End-to-end integration test with internal team
   11. Add disclosure line to prompt if required by law
   12. Go live
-
 ---
 
 ## Scope Boundaries (NOT in this phase)
@@ -514,7 +513,6 @@ Week 3 (production readiness):
 - Multiple agents/numbers: Future expansion only
 - Multi-language: Future phase
 - Twilio: Not used in this flow at all
-
 ---
 
 Career141 - ElevenLabs Voice Agent Integration Reference
