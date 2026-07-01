@@ -1,4 +1,5 @@
 import { Id } from "../_generated/dataModel";
+import { syncCandidateOverallStatus } from "../candidates";
 
 /**
  * Checks per-application follow-up completion flags.
@@ -39,6 +40,7 @@ export async function checkAndAdvanceFollowUp(
           },
         ],
       });
+      await syncCandidateOverallStatus(ctx, candidateId);
     }
   }
 }

@@ -442,7 +442,23 @@ generatedAt: v.string(),
     }))),
     sector: v.optional(v.string()),
     overallStatus: v.optional(
-      v.union(v.literal("active"), v.literal("placed"), v.literal("not_available"), v.literal("merged"))
+      v.union(
+        v.literal("active"),
+        v.literal("placed"),
+        v.literal("not_available"),
+        v.literal("merged"),
+        v.literal("new_cvs"),
+        v.literal("matched_candidates"),
+        v.literal("ta_shortlist"),
+        v.literal("ai_call"),
+        v.literal("follow_up"),
+        v.literal("second_shortlist"),
+        v.literal("director_shortlist"),
+        v.literal("client_review"),
+        v.literal("interview"),
+        v.literal("offer"),
+        v.literal("rejected")
+      )
     ),
 
     // Existing legacy fields to prevent breaking changes

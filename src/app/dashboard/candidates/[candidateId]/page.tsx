@@ -19,6 +19,24 @@ function formatYoe(years?: number | null): string {
   return `${y} Years, ${m} Months`;
 }
 
+const STAGE_LABELS: Record<string, string> = {
+  new_cvs: "New CVs",
+  matched_candidates: "Matched Candidates",
+  ta_shortlist: "TA Shortlisted",
+  ai_call: "AI Call",
+  follow_up: "Follow-up",
+  second_shortlist: "Second Shortlist",
+  director_shortlist: "Director Shortlist",
+  client_review: "Client Review",
+  interview: "Interview",
+  offer: "Offer",
+  placed: "Placed",
+  rejected: "Rejected",
+  active: "Active",
+  not_available: "Not Available",
+  merged: "Merged"
+};
+
 export default function CandidateProfile() {
   const params = useParams<{ candidateId: string }>();
   
@@ -175,10 +193,12 @@ export default function CandidateProfile() {
                         </div>
                       </div>
                     )}
-                    {candidate.status && (
+                    {(candidate.overallStatus || candidate.status) && (
                       <div className="flex items-center">
                         <span className="text-text-primary text-xs mr-2 w-24">Status:</span>
-                        <span className="text-text-secondary text-xs font-medium capitalize">{candidate.status}</span>
+                        <span className="text-text-secondary text-xs font-medium">
+                          {STAGE_LABELS[candidate.overallStatus || candidate.status] || candidate.overallStatus || candidate.status}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -436,7 +456,7 @@ export default function CandidateProfile() {
                             )}
                           </div>
                           <span className="text-text-secondary text-xs mb-2">{app.clientName}</span>
-                          <span className="text-[#00450D] text-[11px] font-medium capitalize">Stage: {app.currentStage.replace(/_/g, ' ')}</span>
+                          <span className="text-[#00450D] text-[11px] font-medium">Stage: {STAGE_LABELS[app.currentStage] || app.currentStage}</span>
                         </div>
                       ))
                     )}
@@ -593,8 +613,8 @@ export default function CandidateProfile() {
                             <td className="p-4 font-medium">{app.jobTitle}</td>
                             <td className="p-4 text-text-secondary">{app.clientName || '—'}</td>
                             <td className="p-4">
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-surface-container text-text-primary capitalize">
-                                {app.currentStage.replace(/_/g, ' ')}
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-surface-container text-text-primary">
+                                {STAGE_LABELS[app.currentStage] || app.currentStage}
                               </span>
                             </td>
                             <td className="p-4">

@@ -1,6 +1,7 @@
 import { cronJobs } from "convex/server";
 import { internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { syncCandidateOverallStatus } from "./candidates";
 
 const crons = cronJobs();
 
@@ -69,6 +70,7 @@ export const retryAiCalls = internalMutation({
                 note: "Unreachable after 7 days of attempts",
               }],
             });
+            await syncCandidateOverallStatus(ctx, app.candidateId);
           }
         }
       }
@@ -144,6 +146,7 @@ export const evaluateFollowUpStage = internalMutation({
             },
           ],
         });
+        await syncCandidateOverallStatus(ctx, app.candidateId);
         continue;
       }
 
@@ -168,6 +171,7 @@ export const evaluateFollowUpStage = internalMutation({
             },
           ],
         });
+        await syncCandidateOverallStatus(ctx, app.candidateId);
         continue;
       }
 

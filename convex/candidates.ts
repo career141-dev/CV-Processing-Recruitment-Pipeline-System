@@ -327,3 +327,44 @@ export const seedDummyAdmin = mutation({
     });
   },
 });
+
+export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"candidates">) {
+  const applications = await ctx.db
+    .query("applications")
+    .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+    .collect();
+
+  if (applications.length === 0) {
+    await ctx.db.patch(candidateId, { overallStatus: "active" });
+    return;
+  }
+
+  const STAGE_PRIORITY: Record<string, number> = {
+    placed: 11,
+    offer: 10,
+    interview: 9,
+    client_review: 8,
+    director_shortlist: 7,
+    second_shortlist: 6,
+    follow_up: 5,
+    ai_call: 4,
+    ta_shortlist: 3,
+    matched_candidates: 2,
+    new_cvs: 1,
+    rejected: 0,
+  };
+
+  let highestStage = "rejected";
+  let highestPriority = -1;
+
+  for (const app of applications) {
+    const priority = STAGE_PRIORITY[app.currentStage] ?? -1;
+    if (priority > highestPriority) {
+      highestPriority = priority;
+      highestStage = app.currentStage;
+    }
+  }
+
+  await ctx.db.patch(candidateId, { overallStatus: highestStage as any });
+}
+
