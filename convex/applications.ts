@@ -1,7 +1,8 @@
 import { query, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "./lib/permissions";
-import { checkAndAdvanceFollowUp } from "./pipeline/followUpHelper";
+import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "./pipeline/followUpHelper";
 
 export const getByJobId = query({
   args: { jobId: v.string() },
@@ -156,28 +157,80 @@ export const logManualCall = mutation({
     currentSalary: v.optional(v.number()),
     expectedSalary: v.optional(v.number()),
     noticePeriodDays: v.optional(v.number()),
+    cvUploadId: v.optional(v.id("cvUploads")),
   },
   handler: async (ctx, args) => {
-    // 1. Update Candidate
-    await ctx.db.patch(args.candidateId, {
-      currentSalary: args.currentSalary,
-      expectedSalary: args.expectedSalary,
-      noticePeriodDays: args.noticePeriodDays,
-    });
+    const now = Date.now();
 
-    // 2. Update Application and optionally auto-reject
-    const appUpdates: any = {
-      manualCallOutcome: args.outcome,
-    };
-    
-    if (args.outcome === "Not Interested") {
-      appUpdates.currentStage = "rejected";
-      appUpdates.taRejectionReason = "Not Interested during initial call";
-      appUpdates.lastStageChangedAt = Date.now();
+    // 1. Update candidate global profile
+    const candidateUpdates: any = {};
+    if (args.currentSalary !== undefined) candidateUpdates.currentSalary = args.currentSalary;
+    if (args.expectedSalary !== undefined) candidateUpdates.expectedSalary = args.expectedSalary;
+    if (args.noticePeriodDays !== undefined) candidateUpdates.noticePeriodDays = args.noticePeriodDays;
+    if (args.cvUploadId) candidateUpdates.cvUploadId = args.cvUploadId;
+    if (Object.keys(candidateUpdates).length > 0) {
+      await ctx.db.patch(args.candidateId, candidateUpdates);
     }
 
-    await ctx.db.patch(args.applicationId, appUpdates);
-    await checkAndAdvanceFollowUp(ctx, args.candidateId);
+    const candidate = await ctx.db.get(args.candidateId);
+
+    // 2. Determine next stage based on outcome
+    if (args.outcome === "Not Interested") {
+      await ctx.db.patch(args.applicationId, {
+        manualCallOutcome: args.outcome,
+        currentStage: "rejected",
+        taRejectionReason: "Not Interested during initial call",
+        lastStageChangedAt: now,
+      });
+      return;
+    }
+
+    // For "Interested" or "No Answer" — update per-application flags first
+    await updateFollowUpFlags(ctx, args.applicationId, candidate);
+    const updatedApp = await ctx.db.get(args.applicationId);
+
+    const allComplete =
+      updatedApp?.followUpCvReceived === true &&
+      updatedApp?.followUpCurrentSalary === true &&
+      updatedApp?.followUpExpectedSalary === true &&
+      updatedApp?.followUpNoticePeriod === true;
+
+    if (args.outcome === "Interested" && allComplete) {
+      // All 4 fields captured on the first TA call — skip Follow-up, go straight to 2nd Shortlist
+      await ctx.db.patch(args.applicationId, {
+        manualCallOutcome: args.outcome,
+        currentStage: "second_shortlist",
+        lastStageChangedAt: now,
+        stageHistory: [
+          ...(updatedApp?.stageHistory ?? []),
+          {
+            stage: "second_shortlist",
+            enteredAt: new Date().toISOString(),
+            changedBy: "system" as any,
+            note: "All 4 data points collected on first TA call — skipped Follow-up.",
+          },
+        ],
+      });
+    } else {
+      // Incomplete — move to Follow-up and start 7-day clock
+      const appBeforeUpdate = await ctx.db.get(args.applicationId);
+      const alreadyInFollowUp = appBeforeUpdate?.currentStage === "follow_up";
+      await ctx.db.patch(args.applicationId, {
+        manualCallOutcome: args.outcome,
+        currentStage: "follow_up",
+        lastStageChangedAt: now,
+        followUpEnteredAt: alreadyInFollowUp ? (appBeforeUpdate?.followUpEnteredAt ?? now) : now,
+        stageHistory: [
+          ...(updatedApp?.stageHistory ?? []),
+          {
+            stage: "follow_up",
+            enteredAt: new Date().toISOString(),
+            changedBy: "system" as any,
+            note: `TA call logged (${args.outcome}) — missing data, entering Follow-up.`,
+          },
+        ],
+      });
+    }
   },
 });
 
@@ -228,7 +281,7 @@ export const triggerAiCall = mutation({
 
     await requireJobAssignment(ctx, app.jobId, ["primary_recruiter", "supporting_recruiter"]);
 
-    // Insert aiCalls record — actual Twilio dial is handled by a separate outbound action
+    // Insert aiCalls record
     const callId = await ctx.db.insert("aiCalls", {
       candidateId: app.candidateId,
       applicationId: args.applicationId,
@@ -239,6 +292,8 @@ export const triggerAiCall = mutation({
       callScriptUsed: "default",
       companyHidden: false,
       calledAt: Date.now(),
+      firstAttemptAt: Date.now(),
+      attemptNumber: 1,
       followUpTriggered: false,
     });
 
@@ -246,6 +301,13 @@ export const triggerAiCall = mutation({
     await ctx.db.patch(args.applicationId, {
       aiCallStatus: "scheduled",
       aiCallId: callId,
+    });
+
+    // Schedule ElevenLabs trigger
+    await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
+      applicationId: args.applicationId,
+      candidateId: app.candidateId,
+      jobId: app.jobId,
     });
 
     await ctx.db.insert("pipelineEvents", {
@@ -272,13 +334,22 @@ export const createHeadhuntApplication = mutation({
     currentSalary: v.number(),
     expectedSalary: v.number(),
     noticePeriodDays: v.number(),
-    cvUploadId: v.optional(v.id("cvUploads")),
+    cvUploadId: v.id("cvUploads"),          // Hard-required: no follow-up chase at 2nd shortlist
+    candidateConsent: v.boolean(),           // Must confirm awareness of opportunity
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     await requireJobAssignment(ctx, args.jobId, ["primary_recruiter", "supporting_recruiter"]);
+
+    // Hard gates — the 2nd Shortlist is the final validation point before Director review
+    if (!args.candidateConsent) {
+      throw new Error("Candidate consent is required for headhunted uploads.");
+    }
+    if (!args.currentSalary || !args.expectedSalary || !args.noticePeriodDays) {
+      throw new Error("Current salary, expected salary, and notice period are required for headhunted uploads.");
+    }
 
     // Create candidate record
     const candidateId = await ctx.db.insert("candidates", {
@@ -294,18 +365,26 @@ export const createHeadhuntApplication = mutation({
       lastUpdatedAt: Date.now(),
       overallStatus: "active",
       cvUploadId: args.cvUploadId,
+      candidateConsent: true,
     });
 
-    // Create application directly at second_shortlist
+    // Create application directly at second_shortlist with all flags set
+    const now = Date.now();
     const applicationId = await ctx.db.insert("applications", {
       candidateId,
       jobId: args.jobId,
+      cvFileId: args.cvUploadId,
       sourceChannel: "headhunting",
       currentStage: "second_shortlist",
       loopIteration: 1,
       isActive: true,
-      lastStageChangedAt: Date.now(),
-      createdAt: Date.now(),
+      lastStageChangedAt: now,
+      createdAt: now,
+      // Mark all follow-up flags as complete (headhunted candidates skip follow-up)
+      followUpCvReceived: true,
+      followUpCurrentSalary: true,
+      followUpExpectedSalary: true,
+      followUpNoticePeriod: true,
     });
 
     // Log pipeline event
@@ -318,7 +397,7 @@ export const createHeadhuntApplication = mutation({
       actorType: "user",
       actorId: user._id,
       notes: `Headhunt candidate added directly to 2nd Shortlist by ${user.fullName}`,
-      createdAt: Date.now(),
+      createdAt: now,
     });
 
     return { candidateId, applicationId };
@@ -359,7 +438,7 @@ export const updatePipelineCandidateDetails = mutation({
 
     if (oldValue === newValue) return;
 
-    // 1. Patch candidate
+    // 1. Patch candidate global profile
     await ctx.db.patch(args.candidateId, {
       [args.field]: args.value,
     });
@@ -378,7 +457,13 @@ export const updatePipelineCandidateDetails = mutation({
       salaryNoticeEditHistory: [...history, newEntry],
     });
 
-    // 3. Since candidate details updated, run Follow-up gate check if they happen to be in follow_up
+    // 3. Update per-application follow-up flags with the fresh candidate data
+    const updatedCandidate = await ctx.db.get(args.candidateId);
+    if (updatedCandidate) {
+      await updateFollowUpFlags(ctx, args.applicationId, updatedCandidate);
+    }
+
+    // 4. Since a field was updated, check if we can auto-advance from follow_up
     await checkAndAdvanceFollowUp(ctx, args.candidateId);
   },
 });
@@ -391,6 +476,14 @@ export const findAiCallBySid = query({
       .query("aiCalls")
       .collect();
     return calls.find(c => c.twilioCallSid === args.twilioCallSid) ?? null;
+  },
+});
+
+export const findAiCallByElevenLabsId = query({
+  args: { conversationId: v.string() },
+  handler: async (ctx, args) => {
+    const calls = await ctx.db.query("aiCalls").collect();
+    return calls.find(c => c.elevenlabsConversationId === args.conversationId) ?? null;
   },
 });
 
@@ -432,3 +525,46 @@ export const updateAiCallStatus = mutation({
     }
   },
 });
+
+// ─── Per-application follow-up helpers ────────────────────────────────────────
+
+/** Sets the timestamp when a candidate entered the Follow-up stage.
+ *  Used by webhooks and mutations to start the precise 7-day clock. */
+export const setFollowUpEnteredAt = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    enteredAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) return;
+    // Only set if not already set (don't reset clock on re-entry signals)
+    if (!app.followUpEnteredAt) {
+      await ctx.db.patch(args.applicationId, { followUpEnteredAt: args.enteredAt });
+    }
+  },
+});
+
+/** Writes individual per-application follow-up completion flags.
+ *  Called by ElevenLabs webhooks after a call captures partial data. */
+export const setApplicationFlags = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    followUpCvReceived: v.optional(v.boolean()),
+    followUpCurrentSalary: v.optional(v.boolean()),
+    followUpExpectedSalary: v.optional(v.boolean()),
+    followUpNoticePeriod: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { applicationId, ...flags } = args;
+    const updates: Record<string, boolean> = {};
+    if (flags.followUpCvReceived !== undefined) updates.followUpCvReceived = flags.followUpCvReceived;
+    if (flags.followUpCurrentSalary !== undefined) updates.followUpCurrentSalary = flags.followUpCurrentSalary;
+    if (flags.followUpExpectedSalary !== undefined) updates.followUpExpectedSalary = flags.followUpExpectedSalary;
+    if (flags.followUpNoticePeriod !== undefined) updates.followUpNoticePeriod = flags.followUpNoticePeriod;
+    if (Object.keys(updates).length > 0) {
+      await ctx.db.patch(applicationId, updates);
+    }
+  },
+});
+

@@ -80,7 +80,7 @@ export const cvExtractionSchema = z.object({
   seniorityLevel: z.preprocess(makeString, z.string().nullable().optional()),
   industries: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
   sector: z.preprocess(makeString, z.string().nullable().optional()),
-  expectedSalary: z.preprocess(makeString, z.string().nullable().optional()),
+  expectedSalary: z.preprocess(makeNumber, z.number().nullable().optional()),
   noticePeriod: z.preprocess(makeString, z.string().nullable().optional()),
   employmentStatus: z.preprocess(makeString, z.string().nullable().optional()),
   skills: z.preprocess(makeSkillArray, z.array(z.object({

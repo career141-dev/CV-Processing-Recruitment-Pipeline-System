@@ -214,4 +214,219 @@ http.route({
   }),
 });
 
+// ==========================================
+// ELEVENLABS WEBHOOKS
+// ==========================================
+
+const verifyElevenLabsSecret = (request: Request) => {
+  const secret = request.headers.get("x-webhook-secret");
+  if (secret !== process.env.ELEVENLABS_WEBHOOK_SECRET) {
+    throw new Error("Unauthorized");
+  }
+};
+
+http.route({
+  path: "/api/elevenlabs/save-intake",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      verifyElevenLabsSecret(request);
+      const body = await request.json();
+      
+      const {
+        candidate_id,
+        application_id,
+        current_salary,
+        expected_salary,
+        notice_period_days,
+      } = body;
+      if (!candidate_id) throw new Error("Missing candidate_id");
+
+      // 1. Write to global candidate profile
+      await ctx.runMutation(api.candidates.updateCandidateDetails, {
+        candidateId: candidate_id as any,
+        currentSalary: current_salary,
+        expectedSalary: expected_salary,
+        noticePeriodDays: notice_period_days,
+      });
+
+      // 2. If application_id is present, update per-application flags too
+      if (application_id) {
+        const flagUpdates: any = {};
+        if (current_salary !== undefined && current_salary !== null) flagUpdates.followUpCurrentSalary = true;
+        if (expected_salary !== undefined && expected_salary !== null) flagUpdates.followUpExpectedSalary = true;
+        if (notice_period_days !== undefined && notice_period_days !== null) flagUpdates.followUpNoticePeriod = true;
+
+        if (Object.keys(flagUpdates).length > 0) {
+          await ctx.runMutation(api.applications.setApplicationFlags, {
+            applicationId: application_id as any,
+            ...flagUpdates,
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e.message }), { status: e.message === "Unauthorized" ? 401 : 500 });
+    }
+  }),
+});
+
+http.route({
+  path: "/api/elevenlabs/mark-declined",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      verifyElevenLabsSecret(request);
+      const body = await request.json();
+      
+      const { candidate_id, application_id, reason } = body;
+      if (!candidate_id) throw new Error("Missing candidate_id");
+
+      if (reason === "opt_out") {
+        await ctx.runMutation(api.candidates.setDoNotContact, {
+          candidateId: candidate_id as any,
+          reason: "Opted out via AI Call",
+        });
+        
+        if (application_id) {
+          await ctx.runMutation(api.applications.rejectApplication, {
+            applicationId: application_id as any,
+            reason: "Candidate opted out via AI Call",
+            stage: "rejected",
+          });
+        }
+      } else if (reason === "bad_timing" || reason === "not_interested") {
+        if (application_id) {
+          const now = Date.now();
+          await ctx.runMutation(api.pipeline.stages.setPipelineStage, {
+            applicationId: application_id as any,
+            newStage: "follow_up",
+            note: `AI call declined. Reason: ${reason}`,
+          });
+          // Set the 7-day clock entry point
+          await ctx.runMutation(api.applications.setFollowUpEnteredAt, {
+            applicationId: application_id as any,
+            enteredAt: now,
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e.message }), { status: e.message === "Unauthorized" ? 401 : 500 });
+    }
+  }),
+});
+
+http.route({
+  path: "/api/elevenlabs/post-call-webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      verifyElevenLabsSecret(request);
+      const body = await request.json();
+      
+      const conversationId = body.conversation_id;
+      const status = body.status; // "done" | "failed"
+      // Data extracted by ElevenLabs agent and passed back in the webhook
+      const currentSalary = body.current_salary;
+      const expectedSalary = body.expected_salary;
+      const noticePeriodDays = body.notice_period_days;
+      
+      const aiCall = await ctx.runQuery(api.applications.findAiCallByElevenLabsId, { conversationId });
+      if (!aiCall) {
+        console.warn("[ElevenLabs] No aiCalls record found for conversation:", conversationId);
+        return new Response("OK", { status: 200 });
+      }
+
+      let mappedStatus = "in_progress";
+      if (status === "done" || status === "success") mappedStatus = "completed";
+      else if (status === "failed") mappedStatus = "failed";
+
+      await ctx.runMutation(api.applications.updateAiCallStatus, {
+        aiCallId: aiCall._id,
+        callStatus: mappedStatus as any,
+      });
+
+      // Path 2 routing: complete call → check if all 3 fields captured
+      if (mappedStatus === "completed" && aiCall.applicationId) {
+        const allThreeCaptured =
+          (currentSalary !== undefined && currentSalary !== null) &&
+          (expectedSalary !== undefined && expectedSalary !== null) &&
+          (noticePeriodDays !== undefined && noticePeriodDays !== null);
+
+        // Write salary/notice to candidate global profile
+        if (currentSalary !== undefined || expectedSalary !== undefined || noticePeriodDays !== undefined) {
+          await ctx.runMutation(api.candidates.updateCandidateDetails, {
+            candidateId: aiCall.candidateId,
+            currentSalary,
+            expectedSalary,
+            noticePeriodDays,
+          });
+        }
+
+        const now = Date.now();
+
+        if (allThreeCaptured) {
+          // All 3 collected on first AI call → skip Follow-up, go straight to 2nd Shortlist
+          await ctx.runMutation(api.applications.setApplicationFlags, {
+            applicationId: aiCall.applicationId,
+            followUpCurrentSalary: true,
+            followUpExpectedSalary: true,
+            followUpNoticePeriod: true,
+          });
+          await ctx.runMutation(api.pipeline.stages.setPipelineStage, {
+            applicationId: aiCall.applicationId,
+            newStage: "second_shortlist",
+            note: "AI call completed — all 3 fields captured. Skipping Follow-up.",
+          });
+        } else {
+          // Partial or no answer → move to Follow-up and start 7-day clock
+          const flagUpdates: any = {};
+          if (currentSalary !== undefined && currentSalary !== null) flagUpdates.followUpCurrentSalary = true;
+          if (expectedSalary !== undefined && expectedSalary !== null) flagUpdates.followUpExpectedSalary = true;
+          if (noticePeriodDays !== undefined && noticePeriodDays !== null) flagUpdates.followUpNoticePeriod = true;
+
+          if (Object.keys(flagUpdates).length > 0) {
+            await ctx.runMutation(api.applications.setApplicationFlags, {
+              applicationId: aiCall.applicationId,
+              ...flagUpdates,
+            });
+          }
+
+          await ctx.runMutation(api.pipeline.stages.setPipelineStage, {
+            applicationId: aiCall.applicationId,
+            newStage: "follow_up",
+            note: "AI call completed — missing data fields. Entering Follow-up.",
+          });
+          // Set precise 7-day clock start
+          await ctx.runMutation(api.applications.setFollowUpEnteredAt, {
+            applicationId: aiCall.applicationId,
+            enteredAt: now,
+          });
+        }
+      } else if (mappedStatus === "failed" || mappedStatus === "no_answer") {
+        // Call not answered or failed → move to Follow-up
+        if (aiCall.applicationId) {
+          const now = Date.now();
+          await ctx.runMutation(api.pipeline.stages.setPipelineStage, {
+            applicationId: aiCall.applicationId,
+            newStage: "follow_up",
+            note: `AI call ${mappedStatus} — entering Follow-up for outreach.`,
+          });
+          await ctx.runMutation(api.applications.setFollowUpEnteredAt, {
+            applicationId: aiCall.applicationId,
+            enteredAt: now,
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e.message }), { status: e.message === "Unauthorized" ? 401 : 500 });
+    }
+  }),
+});
+
 export default http;

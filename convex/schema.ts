@@ -470,6 +470,9 @@ generatedAt: v.string(),
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     candidateConsent: v.optional(v.boolean()),
+    doNotContact: v.optional(v.boolean()),
+    doNotContactReason: v.optional(v.string()),
+    doNotContactAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -516,9 +519,7 @@ generatedAt: v.string(),
       v.literal("interview"),
       v.literal("offer"),
       v.literal("placed"),
-      v.literal("rejected"),
-      v.literal("follow_up"),
-      v.literal("matched_candidates")
+      v.literal("rejected")
     ),
     aiMatchScore: v.optional(v.number()),
     aiMatchExplanation: v.optional(v.string()),
@@ -558,6 +559,13 @@ generatedAt: v.string(),
       lastContactDay: v.number(),
       firstChannelUsed: v.optional(v.string())
     })),
+    // Per-application follow-up completion flags (scoped per-job to avoid cross-job contamination)
+    followUpCvReceived: v.optional(v.boolean()),
+    followUpCurrentSalary: v.optional(v.boolean()),
+    followUpExpectedSalary: v.optional(v.boolean()),
+    followUpNoticePeriod: v.optional(v.boolean()),
+    followUpEnteredAt: v.optional(v.number()),    // timestamp when candidate entered follow_up stage
+    followUpAiCallAttempts: v.optional(v.number()), // count of AI call retries within follow_up
     rejectedFromStage: v.optional(v.string()),
     aiCallIvrResponse: v.optional(v.string()),
     salaryNoticeEditHistory: v.optional(v.array(v.object({
@@ -653,6 +661,8 @@ isBackwardMove: v.optional(v.boolean()),
     completedAt: v.optional(v.number()),
     followUpTriggered: v.boolean(),
     attempts: v.optional(v.number()),
+    firstAttemptAt: v.optional(v.number()),
+    attemptNumber: v.optional(v.number()),
     elevenlabsConversationId: v.optional(v.string()),
     elevenlabsAgentId: v.optional(v.string()),
   })

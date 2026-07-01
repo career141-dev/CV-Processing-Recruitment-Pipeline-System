@@ -40,6 +40,20 @@ export const updateCandidateDetails = mutation({
   },
 });
 
+export const setDoNotContact = mutation({
+  args: {
+    candidateId: v.id("candidates"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.candidateId, {
+      doNotContact: true,
+      doNotContactReason: args.reason,
+      doNotContactAt: Date.now(),
+    });
+  },
+});
+
 export const getCandidateForParsing = query({
   args: { candidateId: v.id("candidates") },
   handler: async (ctx, args) => {
@@ -97,7 +111,7 @@ export const createCandidate = mutation({
     seniorityLevel: v.optional(v.string()),
     yearsOfExperience: v.optional(v.float64()),
     industries: v.optional(v.array(v.string())),
-    expectedSalary: v.optional(v.string()),
+    expectedSalary: v.optional(v.number()),
     noticePeriod: v.optional(v.string()),
     employmentStatus: v.optional(v.string()),
     skills: v.optional(v.array(v.string())),

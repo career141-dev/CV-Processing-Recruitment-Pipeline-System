@@ -1,0 +1,73 @@
+"use node";
+
+import { internalAction } from "../_generated/server";
+import { api } from "../_generated/api";
+import { v } from "convex/values";
+
+export const triggerIntakeCall = internalAction({
+  args: {
+    applicationId: v.id("applications"),
+    candidateId: v.id("candidates"),
+    jobId: v.id("jobs"),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; conversationId: string }> => {
+    // 1. Fetch data for dynamic variables
+    const candidate: any = await ctx.runQuery(api.candidates.getCandidate, { id: args.candidateId });
+    const job: any = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
+    
+    if (!candidate || !candidate.phone) {
+      throw new Error("Candidate has no phone number");
+    }
+
+    if (!job) {
+      throw new Error("Job not found");
+    }
+
+    const agentId = process.env.ELEVENLABS_INTAKE_AGENT_ID;
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+
+    if (!agentId || !apiKey) {
+      throw new Error("ElevenLabs credentials not configured");
+    }
+
+    // 2. Call ElevenLabs API
+    const response = await fetch("https://api.elevenlabs.io/v1/convai/outbound-call", {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        agent_id: agentId,
+        recipient_phone_number: candidate.phone,
+        dynamic_variables: {
+          candidate_name: candidate.fullName || "Candidate",
+          job_title: job.title || "the open role",
+          company_name: "Career141",
+          candidate_id: args.candidateId,
+          job_id: args.jobId,
+          application_id: args.applicationId,
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[ElevenLabs] Failed to trigger call:", errorText);
+      throw new Error(`ElevenLabs API error: ${response.status} ${errorText}`);
+    }
+
+    const data: any = await response.json();
+    const conversationId: string = data.conversation_id;
+
+    // 3. Log the call in our DB
+    // We already have a mutation in applications to update this!
+    // But we need to make sure we create or update an aiCall.
+    // Wait, the UI might have already created an aiCalls record and then called this.
+    // Let's just return the conversation ID, and the caller can update the aiCall record.
+    return {
+      success: true,
+      conversationId
+    };
+  }
+});
