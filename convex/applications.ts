@@ -581,3 +581,11 @@ export const setApplicationFlags = mutation({
   },
 });
 
+export const getApplication = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const actualId = ctx.db.normalizeId("applications", args.id);
+    if (!actualId) return null;
+    return await ctx.db.get(actualId);
+  },
+});

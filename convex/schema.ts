@@ -559,7 +559,7 @@ generatedAt: v.string(),
       v.object({
         stage: v.string(),
         enteredAt: v.string(),
-        changedBy: v.id("users"),
+        changedBy: v.union(v.id("users"), v.literal("system")),
         note: v.optional(v.string()),
       })
     )),
