@@ -42,10 +42,12 @@ export const retryAiCalls = internalMutation({
         await ctx.db.patch(call._id, {
           attemptNumber: attempts + 1,
         });
-        await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
+        await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerFollowUpCall, {
           applicationId: call.applicationId as any,
           candidateId: call.candidateId as any,
           jobId: call.jobId as any,
+          attemptNumber: attempts + 1,
+          lastContactChannel: "phone call"
         });
         console.log(`Triggering AI call for ${call.candidateId}, attempt ${attempts + 1} on Day ${elapsedDays}`);
       } else if (elapsedDays > 7) {

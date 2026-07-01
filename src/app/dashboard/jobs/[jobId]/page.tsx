@@ -70,11 +70,11 @@ const MOCK_DATA = {
     }))
   ],
   'AI Call': [
-    { id: '1', name: 'Kasun Fernando', status: 'Scheduled' },
-    { id: '2', name: 'Priya Sharma', status: 'Not Called' },
-    { id: '3', name: 'Ashan Mendis', status: 'No Answer' },
+    { id: '1', name: 'Kasun Fernando', status: 'Scheduled', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: 'scheduled' },
+    { id: '2', name: 'Priya Sharma', status: 'Not Called', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: undefined },
+    { id: '3', name: 'Ashan Mendis', status: 'No Answer', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: 'no_answer' },
     ...Array.from({ length: 5 }).map((_, i) => ({
-       id: `a${i}`, name: `Candidate A${i}`, status: 'Completed'
+       id: `a${i}`, name: `Candidate A${i}`, status: 'Completed', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: 'completed', sourceChannel: 'whatsapp'
     }))
   ],
   'Follow-up': [
@@ -1302,8 +1302,8 @@ export default function JobDetailPage() {
               {currentItems.length === 0 ? (
                 <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No candidates at AI Call stage.</td></tr>
               ) : currentItems.map((item: any) => {
-                const hasSalary = item.currentSalary !== '—' && item.expectedSalary !== '—';
-                const hasNotice = item.noticePeriod !== '—';
+                const hasSalary = !!item.currentSalary && item.currentSalary !== '—' && !!item.expectedSalary && item.expectedSalary !== '—';
+                const hasNotice = !!item.noticePeriod && item.noticePeriod !== '—';
                 const hasCV = !!item.cvUploadId;
                 const isAutoAdvancing = item.aiCallStatus === 'completed' && hasSalary && hasNotice && hasCV;
                 const alreadyCalled = !!item.aiCallStatus && item.aiCallStatus !== 'not_called';
