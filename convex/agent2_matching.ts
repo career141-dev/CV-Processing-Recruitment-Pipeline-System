@@ -109,6 +109,13 @@ export const runReverseMatch = action({
       const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
       if (!job) return;
 
+      // Set status to running immediately
+      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
+        jobId: args.jobId,
+        results: job.reverseMatchResults || [],
+        status: "running",
+      });
+
       let jobEmbedding = job.embedding;
 
       // 1. Generate job embedding if missing
@@ -226,11 +233,11 @@ export const runReverseMatch = action({
       const matchResults = enrichedCandidates
         .map(c => {
           const cv = c.candidate;
-          // Stretch similarity (usually 0.25 - 0.70) to 0 - 100 range
+          // Stretch similarity (usually 0.20 - 0.55) to 0 - 100 range
           const sim = c.vectorScore;
           let matchScore = 0;
-          if (sim > 0.25) {
-            matchScore = Math.min(Math.round(((sim - 0.25) / 0.45) * 100), 100);
+          if (sim > 0.20) {
+            matchScore = Math.min(Math.round(((sim - 0.20) / 0.35) * 100), 100);
           }
 
           return {
@@ -262,9 +269,10 @@ export const runReverseMatch = action({
 
     } catch (e) {
       console.error("Reverse match vector search error:", e);
+      const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
       await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
-        results: [],
+        results: job?.reverseMatchResults || [],
         status: "error",
       });
     }

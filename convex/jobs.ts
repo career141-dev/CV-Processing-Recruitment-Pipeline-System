@@ -724,7 +724,7 @@ export const saveReverseMatchResults = internalMutation({
         sourceLevel2: v.optional(v.string()),
       })
     ),
-    status: v.union(v.literal("done"), v.literal("error")),
+    status: v.union(v.literal("done"), v.literal("error"), v.literal("running")),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.jobId, {
