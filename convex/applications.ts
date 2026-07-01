@@ -4,6 +4,13 @@ import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "./lib/permissions";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "./pipeline/followUpHelper";
 
+export const getApplication = query({
+  args: { id: v.id("applications") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
 export const getByJobId = query({
   args: { jobId: v.string() },
   handler: async (ctx, args) => {

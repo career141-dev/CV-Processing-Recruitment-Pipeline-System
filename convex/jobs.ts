@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { requireRole, requireUser } from "./lib/permissions";
@@ -323,8 +323,8 @@ export const assignTeamToJob = mutation({
 
     if (args.directorId) {
       const director = await ctx.db.get(args.directorId);
-      if (!director || director.role !== "director") {
-        throw new Error("Director must have DIRECTOR role");
+      if (!director || (director.role !== "director" && director.role !== "admin")) {
+        throw new Error("Director must have DIRECTOR or ADMIN role");
       }
       await ctx.db.insert("jobAssignments", {
         jobId: args.jobId,
@@ -703,7 +703,7 @@ export const getByKeyword = query({
       .unique();
   }
 });
-export const saveReverseMatchResults = mutation({
+export const saveReverseMatchResults = internalMutation({
   args: {
     jobId: v.id("jobs"),
     results: v.array(
@@ -727,7 +727,6 @@ export const saveReverseMatchResults = mutation({
     status: v.union(v.literal("done"), v.literal("error")),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
     await ctx.db.patch(args.jobId, {
       reverseMatchStatus: args.status,
       reverseMatchedAt: new Date().toISOString(),

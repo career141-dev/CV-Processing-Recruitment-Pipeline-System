@@ -125,7 +125,7 @@ export const runReverseMatch = action({
       });
 
       if (results.length === 0) {
-        await ctx.runMutation(api.jobs.saveReverseMatchResults, {
+        await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
           jobId: args.jobId,
           results: [],
           status: "done",
@@ -175,7 +175,7 @@ export const runReverseMatch = action({
         .sort((a, b) => b.overallScore - a.overallScore)
         .slice(0, 30); // Store top 30
 
-      await ctx.runMutation(api.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results: matchResults,
         status: "done",
@@ -183,7 +183,7 @@ export const runReverseMatch = action({
 
     } catch (e) {
       console.error("Reverse match vector search error:", e);
-      await ctx.runMutation(api.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results: [],
         status: "error",

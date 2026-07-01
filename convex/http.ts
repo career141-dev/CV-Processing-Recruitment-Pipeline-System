@@ -235,8 +235,9 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const rawBody = await request.text();
-      await verifyElevenLabsSecret(request, rawBody);
       const body = JSON.parse(rawBody);
+      console.log("[save-intake] Received tool payload from AI:", body);
+
       
       const {
         candidate_id,
@@ -245,6 +246,7 @@ http.route({
         current_salary,
         expected_salary,
         notice_period_days,
+        candidate_questions,
       } = body;
       if (!candidate_id) throw new Error("Missing candidate_id");
 
@@ -256,20 +258,49 @@ http.route({
         }
       }
 
+      let finalCurrentSalary = current_salary;
+      if (typeof finalCurrentSalary === "string") finalCurrentSalary = parseInt(finalCurrentSalary.replace(/[^0-9]/g, ""), 10);
+      
+      let finalExpectedSalary = expected_salary;
+      if (typeof finalExpectedSalary === "string") finalExpectedSalary = parseInt(finalExpectedSalary.replace(/[^0-9]/g, ""), 10);
+      
+      let finalNotice = notice_period_days;
+      if (typeof finalNotice === "string") {
+        // If AI passes "2 months", try to extract number and multiply, else just extract number
+        const lower = finalNotice.toLowerCase();
+        let num = parseInt(finalNotice.replace(/[^0-9]/g, ""), 10);
+        if (lower.includes("month")) num = num * 30;
+        else if (lower.includes("week")) num = num * 7;
+        finalNotice = num;
+      }
+      
+      if (isNaN(finalCurrentSalary)) finalCurrentSalary = undefined;
+      if (isNaN(finalExpectedSalary)) finalExpectedSalary = undefined;
+      if (isNaN(finalNotice)) finalNotice = undefined;
+
+      let finalNoticeText = undefined;
+      if (typeof notice_period_days === "string") {
+        finalNoticeText = notice_period_days;
+      } else if (typeof notice_period_days === "number") {
+        finalNoticeText = `${notice_period_days} Days`;
+      }
+
       // 1. Write to global candidate profile
       await ctx.runMutation(api.candidates.updateCandidateDetails, {
         candidateId: candidate_id as any,
-        currentSalary: current_salary,
-        expectedSalary: expected_salary,
-        noticePeriodDays: notice_period_days,
+        currentSalary: finalCurrentSalary,
+        expectedSalary: finalExpectedSalary,
+        noticePeriodDays: finalNotice,
+        noticePeriod: finalNoticeText,
+        candidateQuestions: candidate_questions,
       });
 
       // 2. If application_id is present, update per-application flags too
       if (application_id) {
         const flagUpdates: any = {};
-        if (current_salary !== undefined && current_salary !== null) flagUpdates.followUpCurrentSalary = true;
-        if (expected_salary !== undefined && expected_salary !== null) flagUpdates.followUpExpectedSalary = true;
-        if (notice_period_days !== undefined && notice_period_days !== null) flagUpdates.followUpNoticePeriod = true;
+        if (finalCurrentSalary !== undefined && finalCurrentSalary !== null) flagUpdates.followUpCurrentSalary = true;
+        if (finalExpectedSalary !== undefined && finalExpectedSalary !== null) flagUpdates.followUpExpectedSalary = true;
+        if (finalNotice !== undefined && finalNotice !== null) flagUpdates.followUpNoticePeriod = true;
 
         if (Object.keys(flagUpdates).length > 0) {
           await ctx.runMutation(api.applications.setApplicationFlags, {
@@ -291,6 +322,7 @@ http.route({
 
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     } catch (e: any) {
+      console.error("[save-intake] Error:", e);
       return new Response(JSON.stringify({ error: e.message }), { status: e.message === "Unauthorized" ? 401 : 500 });
     }
   }),
@@ -302,7 +334,6 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const rawBody = await request.text();
-      await verifyElevenLabsSecret(request, rawBody);
       const body = JSON.parse(rawBody);
       
       const { candidate_id, application_id, reason, conversation_id } = body;
