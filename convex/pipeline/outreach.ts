@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
+import { internal } from "../_generated/api";
 
 // Get AI Calls for Outreach dashboard
 export const getAiCalls = query({
@@ -93,8 +94,24 @@ export const triggerAiCall = mutation({
       callScriptUsed: args.callScriptUsed,
       companyHidden: args.companyHidden,
       calledAt: Date.now(),
+      firstAttemptAt: Date.now(),
+      attemptNumber: 1,
       followUpTriggered: false,
     });
+
+    const app = await ctx.db.query("applications")
+      .withIndex("by_candidate_job", q => q.eq("candidateId", args.candidateId).eq("jobId", args.jobId))
+      .first();
+
+    if (app) {
+      await ctx.db.patch(newCallId, { applicationId: app._id });
+      await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
+        applicationId: app._id,
+        candidateId: args.candidateId,
+        jobId: args.jobId,
+      });
+    }
+
     return newCallId;
   },
 });

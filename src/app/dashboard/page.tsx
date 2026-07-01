@@ -13,6 +13,9 @@ import { FileText, Briefcase, UserCheck, Trophy } from 'lucide-react';
 
 import { useRouter } from 'next/navigation';
 
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+
 export default function Dashboard() {
   const { user } = useUser();
   const router = useRouter();
@@ -20,6 +23,8 @@ export default function Dashboard() {
 
   const [dateRange, setDateRange] = React.useState('This Week');
   const [jobFilter, setJobFilter] = React.useState('All Jobs');
+
+  const stats = useQuery(api.stats.getDashboardStats);
 
   return (
     <div className="self-stretch bg-background pb-[133px] min-h-screen w-full">
@@ -32,7 +37,7 @@ export default function Dashboard() {
             Good morning, {firstName} 👋
           </span>
           <span className="text-text-secondary text-[13px]">
-            Tuesday, 16 June 2026
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </span>
         </div>
         <div className="flex-1"></div>
@@ -85,10 +90,10 @@ export default function Dashboard() {
 
       {/* Stats Cards */}
       <div className="flex items-center self-stretch mb-[25px] ml-5 mr-12 gap-4">
-        <StatCard title="CANDIDATES IN DATABASE" value={115247} trendText="1,043 this week" trendType="up" bgColorClass="bg-[#E8F5E9] dark:bg-[#1B5E20]/20" href="/dashboard/candidates" icon={<UserCheck size={20} />} />
-        <StatCard title="CVS TODAY" value={43} trendText="8 vs yesterday" trendType="neutral" bgColorClass="bg-[#E3F2FD] dark:bg-blue-900/20" href="/dashboard/candidates?filter=today" icon={<FileText size={20} />} />
-        <StatCard title="ACTIVE JOBS" value={12} trendText="2 added this week" trendType="up" bgColorClass="bg-[#FFF3E0] dark:bg-orange-900/20" href="/dashboard/jobs?status=active" icon={<Briefcase size={20} />} />
-        <StatCard title="PLACED THIS MONTH" value={7} trendText="2 vs last month" trendType="up" bgColorClass="bg-[#F3E5F5] dark:bg-purple-900/20" href="/dashboard/jobs?status=placed" icon={<Trophy size={20} />} />
+        <StatCard title="CANDIDATES IN DATABASE" value={stats?.candidates.total ?? 0} trendText={stats?.candidates.trendText ?? '...'} trendType={stats?.candidates.trendType as any ?? 'neutral'} bgColorClass="bg-[#E8F5E9] dark:bg-[#1B5E20]/20" href="/dashboard/candidates" icon={<UserCheck size={20} />} />
+        <StatCard title="CVS TODAY" value={stats?.cvsToday.total ?? 0} trendText={stats?.cvsToday.trendText ?? '...'} trendType={stats?.cvsToday.trendType as any ?? 'neutral'} bgColorClass="bg-[#E3F2FD] dark:bg-blue-900/20" href="/dashboard/candidates?filter=today" icon={<FileText size={20} />} />
+        <StatCard title="ACTIVE JOBS" value={stats?.activeJobs.total ?? 0} trendText={stats?.activeJobs.trendText ?? '...'} trendType={stats?.activeJobs.trendType as any ?? 'neutral'} bgColorClass="bg-[#FFF3E0] dark:bg-orange-900/20" href="/dashboard/jobs?status=active" icon={<Briefcase size={20} />} />
+        <StatCard title="PLACED THIS MONTH" value={stats?.placedThisMonth.total ?? 0} trendText={stats?.placedThisMonth.trendText ?? '...'} trendType={stats?.placedThisMonth.trendType as any ?? 'neutral'} bgColorClass="bg-[#F3E5F5] dark:bg-purple-900/20" href="/dashboard/jobs?status=placed" icon={<Trophy size={20} />} />
       </div>
 
       {/* Main Content Area */}

@@ -82,3 +82,63 @@ export const getRecentChannelLogs = query({
     }));
   }
 });
+
+export const getDashboardStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    const oneWeek = 7 * oneDay;
+    const thirtyDays = 30 * oneDay;
+
+    // 1. CANDIDATES IN DATABASE
+    const candidates = await ctx.db.query("candidates").collect();
+    const totalCandidates = candidates.length;
+    const candidatesThisWeek = candidates.filter(c => c._creationTime > now - oneWeek).length;
+
+    // 2. CVS TODAY
+    const cvs = await ctx.db.query("cvUploads").collect();
+    const startOfToday = new Date().setHours(0, 0, 0, 0);
+    const startOfYesterday = startOfToday - oneDay;
+    const cvsToday = cvs.filter(c => c._creationTime >= startOfToday).length;
+    const cvsYesterday = cvs.filter(c => c._creationTime >= startOfYesterday && c._creationTime < startOfToday).length;
+    const cvsVsYesterday = cvsToday - cvsYesterday;
+    const cvsTrendType = cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral";
+
+    // 3. ACTIVE JOBS
+    const jobs = await ctx.db.query("jobs").withIndex("by_status", q => q.eq("status", "active")).collect();
+    const activeJobsCount = jobs.length;
+    const jobsAddedThisWeek = jobs.filter(j => j._creationTime > now - oneWeek).length;
+
+    // 4. PLACED THIS MONTH
+    const applications = await ctx.db.query("applications").collect(); // Assuming placements are applications with "placed" stage
+    const placedApplications = applications.filter(a => a.currentStage === "placed");
+    const placedThisMonth = placedApplications.filter(a => a.lastStageChangedAt > now - thirtyDays).length;
+    const placedLastMonth = placedApplications.filter(a => a.lastStageChangedAt > now - 60 * oneDay && a.lastStageChangedAt <= now - thirtyDays).length;
+    const placedVsLastMonth = placedThisMonth - placedLastMonth;
+    const placedTrendType = placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral";
+
+    return {
+      candidates: {
+        total: totalCandidates,
+        trendText: `${candidatesThisWeek.toLocaleString()} this week`,
+        trendType: "up", // generally up
+      },
+      cvsToday: {
+        total: cvsToday,
+        trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
+        trendType: cvsTrendType,
+      },
+      activeJobs: {
+        total: activeJobsCount,
+        trendText: `${jobsAddedThisWeek} added this week`,
+        trendType: jobsAddedThisWeek > 0 ? "up" : "neutral",
+      },
+      placedThisMonth: {
+        total: placedThisMonth,
+        trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
+        trendType: placedTrendType,
+      },
+    };
+  }
+});

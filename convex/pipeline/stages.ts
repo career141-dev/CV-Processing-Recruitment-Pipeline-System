@@ -2,6 +2,7 @@
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
+import { internal } from "../_generated/api";
 
 export const moveToTAShortlist = mutation({
   args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
@@ -17,20 +18,92 @@ export const moveToTAShortlist = mutation({
     }
 
     const user = await requireUser(ctx);
+    const now = Date.now();
 
-    await ctx.db.patch(args.applicationId, {
-      currentStage: "ta_shortlist",
-      stageHistory: [...(entry.stageHistory ?? []), {
-        stage: "ta_shortlist",
-        enteredAt: new Date().toISOString(),
-        changedBy: user._id,
-        note: args.note,
-      }],
-      taShortlistStatus: "shortlisted",
-      taShortlistById: user._id,
-      taShortlistAt: Date.now(),
-      lastStageChangedAt: Date.now(),
-    });
+    const isPathTwo = entry.sourceChannel !== "database";
+
+    if (isPathTwo) {
+      // PATH 2 — New CV: shortlist AND immediately auto-trigger the AI call
+      // Stage jumps directly to ai_call; the TA does not need to manually dial
+      await ctx.db.patch(args.applicationId, {
+        currentStage: "ai_call",
+        stageHistory: [
+          ...(entry.stageHistory ?? []),
+          {
+            stage: "ta_shortlist",
+            enteredAt: new Date().toISOString(),
+            changedBy: user._id,
+            note: args.note,
+          },
+          {
+            stage: "ai_call",
+            enteredAt: new Date().toISOString(),
+            changedBy: user._id,
+            note: "AI call auto-triggered on TA shortlist confirm.",
+          },
+        ],
+        taShortlistStatus: "shortlisted",
+        taShortlistById: user._id,
+        taShortlistAt: now,
+        lastStageChangedAt: now,
+        aiCallStatus: "scheduled",
+      });
+
+      // Insert aiCalls record and schedule ElevenLabs outbound call
+      const callId = await ctx.db.insert("aiCalls", {
+        candidateId: entry.candidateId,
+        applicationId: args.applicationId,
+        jobId: entry.jobId,
+        triggeredBy: user._id,
+        triggerType: "automatic_new_applicant",
+        callStatus: "scheduled",
+        callScriptUsed: "initial_screening",
+        companyHidden: false,
+        calledAt: now,
+        firstAttemptAt: now,
+        attemptNumber: 1,
+        followUpTriggered: false,
+      });
+
+      await ctx.db.patch(args.applicationId, { aiCallId: callId as any });
+
+      await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
+        applicationId: args.applicationId,
+        candidateId: entry.candidateId,
+        jobId: entry.jobId,
+      });
+
+      await ctx.db.insert("pipelineEvents", {
+        applicationId: args.applicationId,
+        candidateId: entry.candidateId,
+        jobId: entry.jobId,
+        eventType: "ai_call_triggered",
+        fromStage: "new_cvs",
+        toStage: "ai_call",
+        actorType: "user",
+        actorId: user._id,
+        notes: "AI call auto-triggered on TA shortlist confirm (Path 2).",
+        createdAt: now,
+      });
+    } else {
+      // PATH 1 — Matched Candidate: just mark TA shortlisted, TA will call manually
+      await ctx.db.patch(args.applicationId, {
+        currentStage: "ta_shortlist",
+        stageHistory: [
+          ...(entry.stageHistory ?? []),
+          {
+            stage: "ta_shortlist",
+            enteredAt: new Date().toISOString(),
+            changedBy: user._id,
+            note: args.note,
+          },
+        ],
+        taShortlistStatus: "shortlisted",
+        taShortlistById: user._id,
+        taShortlistAt: now,
+        lastStageChangedAt: now,
+      });
+    }
   },
 });
 

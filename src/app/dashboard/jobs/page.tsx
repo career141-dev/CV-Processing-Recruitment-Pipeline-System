@@ -107,7 +107,7 @@ export default function JobsPage() {
   const tabs = ['All Jobs', 'Active', 'On Hold', 'Fins', 'Lost'];
 
   return (
-    <div className="p-8 mx-auto w-full space-y-[24px]">
+    <div className="p-8 w-full space-y-[24px]">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>

@@ -15,11 +15,11 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { formatDistanceToNow, format } from 'date-fns';
+import { useUser } from '@clerk/nextjs';
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
-  { id: "matched_candidates", label: "Matched Candidates" },
-  { id: "ta_shortlist", label: "TA Shortlist" },
+  { id: "ta_shortlist", label: "TA Shortlisted" },
   { id: "ai_call", label: "AI Phone Screen" },
   { id: "follow_up", label: "Follow-up" },
   { id: "second_shortlist", label: "2nd Shortlist" },
@@ -119,12 +119,13 @@ const MOCK_DATA = {
   ]
 };
 
+// Pipeline tab list — Matched Candidates is NOT a pipeline stage;
+// it lives in the Matches main tab as a separate entry point.
 const TABS = [
   { id: 'New CVs', label: 'New CVs', icon: FileText },
-  { id: 'Matched Candidates', label: 'Matched Candidates', icon: Users },
-  { id: 'TA Shortlist', label: 'TA Shortlist', icon: ListTodo },
+  { id: 'TA Shortlist', label: 'TA Shortlisted', icon: ListTodo },
   { id: 'AI Call', label: 'AI Call', icon: PhoneCall },
-  { id: 'Follow-up', label: 'Follow-up', icon: PhoneCall },
+  { id: 'Follow-up', label: 'Follow-up', icon: Clock },
   { id: '2nd Shortlist', label: 'Second Shortlist', icon: CheckCircle2 },
   { id: 'Director Shortlist', label: 'Director Shortlist', icon: UserCheck },
   { id: 'Client Review', label: 'Client Review', icon: Building2 },
@@ -352,16 +353,20 @@ const CvViewButton = ({ cvUploadId }: { cvUploadId?: Id<"cvUploads"> | null }) =
 };
 
 const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, renderKanbanDropdown: any }) => {
+  const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState<string>('');
   const [currentSalary, setCurrentSalary] = useState(item.currentSalary !== '—' ? item.currentSalary : '');
   const [expectedSalary, setExpectedSalary] = useState(item.expectedSalary !== '—' ? item.expectedSalary : '');
   const [noticePeriod, setNoticePeriod] = useState(item.noticePeriod !== '—' ? item.noticePeriod : '');
+  const [cvFile, setCvFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   
   const logManualCall = useMutation(api.applications.logManualCall);
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
+  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
 
   const isCallLogged = item.manualCallOutcome === "Interested";
   const hasOutcome = !!item.manualCallOutcome;
@@ -370,17 +375,36 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
     setIsSaving(true);
     try {
       const parsedCurrentSalary = currentSalary ? parseFloat(currentSalary.replace(/[^0-9.]/g, '')) : undefined;
+      const parsedExpectedSalary = expectedSalary ? parseFloat(expectedSalary.replace(/[^0-9.]/g, '')) : undefined;
       const parsedNoticePeriod = noticePeriod ? parseInt(noticePeriod.replace(/[^0-9]/g, '')) : undefined;
+
+      let cvUploadId: Id<"cvUploads"> | undefined = undefined;
+      if (cvFile && user?.id) {
+        const uploadUrl = await generateUploadUrl();
+        const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": cvFile.type }, body: cvFile });
+        const { storageId } = await resp.json();
+        
+        cvUploadId = await saveUpload({
+          storageId,
+          fileName: cvFile.name,
+          fileSize: cvFile.size,
+          fileType: cvFile.type,
+          source: "Manual",
+          uploadedBy: user.id,
+        });
+      }
 
       await logManualCall({
         applicationId: item.id,
         candidateId: item.candidateId,
         outcome,
         currentSalary: isNaN(parsedCurrentSalary as number) ? undefined : parsedCurrentSalary,
-        expectedSalary: expectedSalary || undefined,
+        expectedSalary: isNaN(parsedExpectedSalary as number) ? undefined : parsedExpectedSalary,
         noticePeriodDays: isNaN(parsedNoticePeriod as number) ? undefined : parsedNoticePeriod,
+        cvUploadId,
       });
       setIsLoggingCall(false);
+      setCvFile(null);
     } catch (e: any) {
       alert('Failed to save log: ' + e.message);
     } finally {
@@ -466,6 +490,17 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
                 <input type="text" placeholder="Current Salary" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
                 <input type="text" placeholder="Expected Salary" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
                 <input type="text" placeholder="Notice Period" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container col-span-2" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
+                
+                <div className="col-span-2 mt-1">
+                  <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5">
+                    <Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)
+                  </label>
+                  <input 
+                    type="file" 
+                    onChange={e => setCvFile(e.target.files?.[0] || null)}
+                    className="w-full text-[11px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-surface-container-high file:text-text-primary hover:file:bg-border transition-colors cursor-pointer" 
+                  />
+                </div>
               </div>
             )}
 
@@ -591,11 +626,23 @@ const HeadhuntModal = ({
   isOpen: boolean; onClose: () => void; jobId: Id<"jobs">;
 }) => {
   const createHeadhunt = useMutation(api.applications.createHeadhuntApplication);
+  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
+  const { user } = useUser();
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', currentSalary: '', expectedSalary: '', noticePeriodDays: '' });
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [candidateConsent, setCandidateConsent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => { if (!isOpen) { setForm({ fullName: '', email: '', phone: '', currentSalary: '', expectedSalary: '', noticePeriodDays: '' }); setError(''); } }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) {
+      setForm({ fullName: '', email: '', phone: '', currentSalary: '', expectedSalary: '', noticePeriodDays: '' });
+      setCvFile(null);
+      setCandidateConsent(false);
+      setError('');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -617,10 +664,25 @@ const HeadhuntModal = ({
   const handleSubmit = async () => {
     if (!form.fullName.trim()) return setError('Candidate name is required.');
     if (!form.currentSalary || !form.expectedSalary || !form.noticePeriodDays) return setError('Salary and notice period are required.');
+    if (!cvFile) return setError('A CV file is required for headhunted uploads.');
+    if (!candidateConsent) return setError('You must confirm the candidate is aware of this opportunity.');
 
     setIsSubmitting(true);
     setError('');
     try {
+      // Upload CV first
+      const uploadUrl = await generateUploadUrl();
+      const resp = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': cvFile.type }, body: cvFile });
+      const { storageId } = await resp.json();
+      const cvUploadId = await saveUpload({
+        storageId,
+        fileName: cvFile.name,
+        fileSize: cvFile.size,
+        fileType: cvFile.type,
+        source: 'Headhunting',
+        uploadedBy: user?.id || 'system',
+      });
+
       await createHeadhunt({
         jobId,
         fullName: form.fullName.trim(),
@@ -629,6 +691,8 @@ const HeadhuntModal = ({
         currentSalary: parseFloat(form.currentSalary.replace(/[^0-9.]/g, '')),
         expectedSalary: parseFloat(form.expectedSalary.replace(/[^0-9.]/g, '')),
         noticePeriodDays: parseInt(form.noticePeriodDays.replace(/[^0-9]/g, '')),
+        cvUploadId,
+        candidateConsent: true,
       });
       onClose();
     } catch (e: any) {
@@ -669,9 +733,35 @@ const HeadhuntModal = ({
           <div className="col-span-2">{field('noticePeriodDays', 'Notice Period (days)', 'e.g. 30', true, 'number')}</div>
         </div>
 
-        <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
-          <p className="text-[12px] text-yellow-700 dark:text-yellow-400">CV file upload not yet wired — candidate record will be created without a file attachment. You can upload via the candidate profile after creation.</p>
+        {/* CV File Upload — required for headhunted candidates */}
+        <div className="mt-4">
+          <label className="block text-[12px] font-medium text-text-secondary mb-1">
+            CV File <span className="text-error">*</span>
+          </label>
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx"
+            onChange={e => setCvFile(e.target.files?.[0] || null)}
+            className="w-full text-[12px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 transition-colors cursor-pointer border border-border rounded-lg px-2 py-1.5"
+          />
+          {cvFile && (
+            <p className="mt-1 text-[11px] text-green-600">✅ {cvFile.name} selected</p>
+          )}
+        </div>
+
+        {/* Consent checkbox — required gate */}
+        <div className="mt-4 p-3 bg-surface-container border border-border rounded-lg">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={candidateConsent}
+              onChange={e => setCandidateConsent(e.target.checked)}
+              className="mt-0.5 rounded border-border text-primary focus:ring-primary"
+            />
+            <span className="text-[12px] text-text-primary leading-relaxed">
+              I confirm this candidate has been contacted and is <strong>aware of this specific opportunity</strong>. They have expressed interest and consent to being submitted into this pipeline.
+            </span>
+          </label>
         </div>
 
         {error && (
@@ -684,7 +774,7 @@ const HeadhuntModal = ({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !cvFile || !candidateConsent}
             className="px-5 py-2 text-[13px] font-medium bg-primary text-on-primary rounded-[8px] hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2"
           >
             {isSubmitting ? 'Adding...' : <><Upload className="w-3.5 h-3.5" /> Add to 2nd Shortlist</>}
@@ -711,7 +801,6 @@ const AiCallStatusBadge = ({ status }: { status?: string }) => {
 const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; onTabClick: (tab: string) => void }) => {
   const stages = [
     { id: 'new_cvs',          label: 'New CVs',         tab: 'New CVs' },
-    { id: 'matched_candidates', label: 'Matched',        tab: 'Matched Candidates' },
     { id: 'ta_shortlist',     label: 'TA Shortlist',    tab: 'TA Shortlist' },
     { id: 'ai_call',          label: 'AI Call',         tab: 'AI Call' },
     { id: 'follow_up',        label: 'Follow-up',       tab: 'Follow-up' },
@@ -724,7 +813,7 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
   ];
 
   return (
-    <div className="flex items-center gap-0 overflow-x-auto pb-1 mb-5 scrollbar-hide">
+    <div className="flex items-center gap-1 overflow-x-auto pb-1 mb-5 scrollbar-hide">
       {stages.map((s, i) => {
         const count = applications.filter(a => a.currentStage === s.id).length;
         const isLast = i === stages.length - 1;
@@ -732,26 +821,32 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
           <React.Fragment key={s.id}>
             <button
               onClick={() => onTabClick(s.tab)}
-              className={`flex flex-col items-center px-3 py-2 rounded-lg hover:bg-surface-container transition-colors shrink-0 group min-w-[70px] ${
-                s.highlight && count > 0 ? 'bg-green-500/10' : ''
+              className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg hover:bg-surface-container transition-colors shrink-0 group min-w-[76px] ${
+                s.highlight && count > 0 ? 'bg-green-500/5' : ''
               }`}
             >
-              <span className={`text-[17px] font-bold ${
-                s.highlight && count > 0 ? 'text-green-600' : count > 0 ? 'text-text-primary' : 'text-text-secondary/40'
+              <span className={`text-[14px] font-bold px-3 py-0.5 rounded-md mb-1.5 transition-colors ${
+                s.highlight && count > 0 
+                  ? 'bg-green-500/20 text-green-700 dark:text-green-400' 
+                  : count > 0 
+                    ? 'bg-primary/10 text-primary' 
+                    : 'bg-surface-container text-text-secondary/50 border border-border/50'
               }`}>{count}</span>
-              <span className={`text-[10px] font-medium leading-tight text-center mt-0.5 ${
-                count > 0 ? 'text-text-secondary' : 'text-text-secondary/40'
+              <span className={`text-[10px] font-medium leading-tight text-center ${
+                count > 0 ? 'text-text-secondary' : 'text-text-secondary/50'
               }`}>{s.label}</span>
             </button>
             {!isLast && (
-              <ArrowRight className="w-3 h-3 text-border shrink-0 mx-0.5" />
+              <ArrowRight className="w-3 h-3 text-border shrink-0" />
             )}
           </React.Fragment>
         );
       })}
-      <div className="ml-2 pl-2 border-l border-border shrink-0">
-        <button onClick={() => onTabClick('Rejected')} className="flex flex-col items-center px-3 py-2 rounded-lg hover:bg-error/5 transition-colors">
-          <span className="text-[17px] font-bold text-error/70">{applications.filter(a => a.currentStage === 'rejected').length}</span>
+      <div className="ml-1 pl-2 border-l border-border shrink-0">
+        <button onClick={() => onTabClick('Rejected')} className="flex flex-col items-center justify-center px-2 py-2 rounded-lg hover:bg-error/5 transition-colors min-w-[76px]">
+          <span className="text-[14px] font-bold px-3 py-0.5 rounded-md mb-1.5 bg-error/10 text-error border border-error/20">
+            {applications.filter(a => a.currentStage === 'rejected').length}
+          </span>
           <span className="text-[10px] font-medium text-text-secondary/60">Rejected</span>
         </button>
       </div>
@@ -765,7 +860,7 @@ export default function JobDetailPage() {
   const jobId = params.jobId as Id<"jobs">;
 
   const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
-  const [activePipelineTab, setActivePipelineTab] = useState('Matched Candidates');
+  const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
@@ -1059,7 +1154,6 @@ export default function JobDetailPage() {
     const stageMap: Record<string, string> = {
       'New CVs': 'new_cvs',
       'TA Shortlist': 'ta_shortlist',
-      'Matched Candidates': 'matched_candidates',
       'AI Call': 'ai_call',
       'Follow-up': 'follow_up',
       '2nd Shortlist': 'second_shortlist',
@@ -1097,7 +1191,15 @@ export default function JobDetailPage() {
         aiCallIvrResponse: (app as any).aiCallIvrResponse,
         sourceChannel: app.sourceChannel,
         date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
-        timeInStageRaw: app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0,
+        // Use followUpEnteredAt for accurate 7-day clock; fall back to lastStageChangedAt
+        timeInStageRaw: (app as any).followUpEnteredAt
+          ? Date.now() - (app as any).followUpEnteredAt
+          : (app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0),
+        // Per-application completion flags (the source of truth for follow-up)
+        followUpCvReceived: (app as any).followUpCvReceived,
+        followUpCurrentSalary: (app as any).followUpCurrentSalary,
+        followUpExpectedSalary: (app as any).followUpExpectedSalary,
+        followUpNoticePeriod: (app as any).followUpNoticePeriod,
         feedback: 'Pending',
         salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
         startDate: 'TBD',
@@ -1213,6 +1315,13 @@ export default function JobDetailPage() {
                           {item.name}
                           <CvViewButton cvUploadId={item.cvUploadId} />
                         </div>
+                        {/* Auto-trigger indicator for Path 2 (non-database) candidates */}
+                        {!alreadyCalled && item.sourceChannel !== 'database' && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full w-fit">
+                            <Bot className="w-3 h-3" />
+                            AI call auto-triggered on shortlist confirm
+                          </div>
+                        )}
                       </td>
                       <td className="p-4">
                         <AiCallStatusBadge status={item.aiCallStatus} />
@@ -1259,7 +1368,7 @@ export default function JobDetailPage() {
                         <td colSpan={4} className="px-6 py-2">
                           <div className="flex items-center gap-2 text-[12px] text-green-700 dark:text-green-400">
                             <Clock className="w-3.5 h-3.5 animate-spin" />
-                            Auto-advancing to 2nd Shortlist — candidate data fully collected
+                            Auto-advancing to 2nd Shortlist — all 3 fields captured
                           </div>
                         </td>
                       </tr>
@@ -1278,32 +1387,49 @@ export default function JobDetailPage() {
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
                 <th className="p-4">Source</th>
-                <th className="p-4">CV Status</th>
-                <th className="p-4">Salary Info</th>
-                <th className="p-4">Notice Period</th>
-                <th className="p-4">Timeout</th>
+                <th className="p-4">4-Field Completion</th>
+                <th className="p-4">Days Remaining</th>
                 <th className="p-4 text-right">Move To Stage</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => {
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No candidates in Follow-up.</td></tr>
+              ) : currentItems.map((item: any) => {
                 const daysInStage = Math.floor((item.timeInStageRaw || 0) / (1000 * 60 * 60 * 24));
                 const daysLeft = Math.max(0, 7 - daysInStage);
-                const hasCV = !!item.cvUploadId;
-                const hasSalary = item.currentSalary !== '—' && item.expectedSalary !== '—';
-                const hasNotice = item.noticePeriod !== '—';
                 const isDbMatch = item.sourceChannel === 'database' || item.sourceChannel === 'headhunting';
 
+                // Prefer per-application flags; fall back to candidate field presence for legacy records
+                const hasCV = item.followUpCvReceived === true || (item.followUpCvReceived === undefined && !!item.cvUploadId);
+                const hasCurrentSalary = item.followUpCurrentSalary === true || (item.followUpCurrentSalary === undefined && item.currentSalary !== '—');
+                const hasExpectedSalary = item.followUpExpectedSalary === true || (item.followUpExpectedSalary === undefined && item.expectedSalary !== '—');
+                const hasNoticePeriod = item.followUpNoticePeriod === true || (item.followUpNoticePeriod === undefined && item.noticePeriod !== '—');
+                const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
+
+                const flagItem = (label: string, done: boolean) => (
+                  <div className="flex items-center gap-1 text-[11px]">
+                    {done
+                      ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                      : <XCircle className="w-3.5 h-3.5 text-orange-400 shrink-0" />}
+                    <span className={done ? 'text-green-700 dark:text-green-400' : 'text-orange-600 font-medium'}>{label}</span>
+                  </div>
+                );
+
                 return (
-                  <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
+                  <tr key={item.id} className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
                     <td className="p-4 font-medium">
                       <div className="flex items-center gap-2">
                         {item.name}
                         <CvViewButton cvUploadId={item.cvUploadId} />
                       </div>
+                      {allComplete && (
+                        <div className="mt-1 text-[10px] text-green-600 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> All complete — advancing to 2nd Shortlist
+                        </div>
+                      )}
                     </td>
                     <td className="p-4">
-                      {/* Issue #9 — source badge */}
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
                         isDbMatch ? 'bg-blue-500/10 text-blue-600' : 'bg-green-500/10 text-green-600'
                       }`}>
@@ -1311,34 +1437,21 @@ export default function JobDetailPage() {
                       </span>
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center gap-1.5">
-                        {hasCV ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-orange-400" />}
-                        <span className={hasCV ? 'text-text-primary' : 'text-orange-600 font-medium'}>
-                          {hasCV ? 'Uploaded' : 'Missing'}
-                        </span>
+                      <div className="flex flex-col gap-1">
+                        {flagItem('CV', hasCV)}
+                        {flagItem('Current Salary', hasCurrentSalary)}
+                        {flagItem('Expected Salary', hasExpectedSalary)}
+                        {flagItem('Notice Period', hasNoticePeriod)}
                       </div>
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center gap-1.5">
-                        {hasSalary ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-orange-400" />}
-                        <span className={hasSalary ? 'text-text-primary' : 'text-orange-600 font-medium'}>
-                          {item.currentSalary} → {item.expectedSalary}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-1.5">
-                        {hasNotice ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-orange-400" />}
-                        <span className={hasNotice ? 'text-text-primary' : 'text-orange-600 font-medium'}>
-                          {item.noticePeriod}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className={`text-[12px] font-medium px-2 py-0.5 rounded-full w-fit ${
-                        daysLeft <= 2 ? 'bg-error/10 text-error' : 'bg-surface-container text-text-secondary'
+                      <div className={`inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1 rounded-full ${
+                        daysLeft <= 1 ? 'bg-error/10 text-error' :
+                        daysLeft <= 3 ? 'bg-yellow-500/10 text-yellow-600' :
+                        'bg-surface-container text-text-secondary'
                       }`}>
-                        {daysLeft}d left
+                        <Clock className="w-3 h-3" />
+                        {daysLeft === 0 ? 'Expires today' : `${daysLeft}d left`}
                       </div>
                     </td>
                     <td className="p-4 text-right">
