@@ -38,6 +38,7 @@ import type * as lib_jdParser from "../lib/jdParser.js";
 import type * as lib_llm from "../lib/llm.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_validate from "../lib/validate.js";
+import type * as lib_webhookSecurity from "../lib/webhookSecurity.js";
 import type * as pipeline_followUpHelper from "../pipeline/followUpHelper.js";
 import type * as pipeline_headhunt from "../pipeline/headhunt.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   "lib/llm": typeof lib_llm;
   "lib/permissions": typeof lib_permissions;
   "lib/validate": typeof lib_validate;
+  "lib/webhookSecurity": typeof lib_webhookSecurity;
   "pipeline/followUpHelper": typeof pipeline_followUpHelper;
   "pipeline/headhunt": typeof pipeline_headhunt;
   "pipeline/ingestion": typeof pipeline_ingestion;
