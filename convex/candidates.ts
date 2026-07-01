@@ -349,7 +349,7 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
     follow_up: 5,
     ai_call: 4,
     ta_shortlist: 3,
-    matched_candidates: 2,
+    matched_candidates: 3,
     new_cvs: 1,
     rejected: 0,
   };
@@ -365,6 +365,10 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
     }
   }
 
-  await ctx.db.patch(candidateId, { overallStatus: highestStage as any });
+  const finalStatus = (highestStage === "ta_shortlist" || highestStage === "matched_candidates")
+    ? "shortlisted"
+    : highestStage;
+
+  await ctx.db.patch(candidateId, { overallStatus: finalStatus as any });
 }
 

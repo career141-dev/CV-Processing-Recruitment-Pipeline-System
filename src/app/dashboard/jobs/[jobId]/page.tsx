@@ -743,7 +743,9 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
   return (
     <div className="flex items-center gap-1 overflow-x-auto pb-1 mb-5 scrollbar-hide">
       {stages.map((s, i) => {
-        const count = applications.filter(a => a.currentStage === s.id).length;
+        const count = s.id === 'ta_shortlist'
+          ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'matched_candidates').length
+          : applications.filter(a => a.currentStage === s.id).length;
         const isLast = i === stages.length - 1;
         return (
           <React.Fragment key={s.id}>
@@ -979,7 +981,7 @@ export default function JobDetailPage() {
                   applications={applications} 
                   onNavigate={() => {
                     setActiveMainTab('pipeline');
-                    setActivePipelineTab('Matched Candidates');
+                    setActivePipelineTab('TA Shortlist');
                   }}
                 />
               ))
@@ -1095,7 +1097,12 @@ export default function JobDetailPage() {
     };
 
     const currentStageId = stageMap[activePipelineTab];
-    const stageApps = applications.filter(app => app.currentStage === currentStageId);
+    const stageApps = applications.filter(app => {
+      if (activePipelineTab === 'TA Shortlist') {
+        return app.currentStage === 'ta_shortlist' || app.currentStage === 'matched_candidates';
+      }
+      return app.currentStage === currentStageId;
+    });
     
     // Map real data to mock data format to reuse the tables
     const itemsToRender = stageApps.map(app => ({
@@ -1116,6 +1123,7 @@ export default function JobDetailPage() {
       aiCallStatus: app.aiCallStatus,
       aiCallIvrResponse: (app as any).aiCallIvrResponse,
       sourceChannel: app.sourceChannel,
+      currentStage: app.currentStage,
       date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
       // Use followUpEnteredAt for accurate 7-day clock; fall back to lastStageChangedAt
       timeInStageRaw: (app as any).followUpEnteredAt
@@ -1167,47 +1175,34 @@ export default function JobDetailPage() {
             <thead>
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
-                <th className="p-4">Match Score</th>
-                <th className="p-4 text-right">Move To Stage</th>
-              </tr>
-            </thead>
-            <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.length === 0 ? (
-                <tr><td colSpan={3} className="p-8 text-center text-text-secondary">No candidates in TA Shortlist.</td></tr>
-              ) : currentItems.map((item: any) => (
-                <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
-                  </td>
-                  <td className="p-4"><ScoreRing score={item.score} /></td>
-                  <td className="p-4 text-right">
-                    {renderKanbanDropdown(item.id, 'ta_shortlist')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        );
-        break;
-      case 'Matched Candidates':
-        tableContent = (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                <th className="p-4">Candidate</th>
-                <th className="p-4">Call Status</th>
+                <th className="p-4">Status / Score</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.length === 0 ? (
-                <tr><td colSpan={3} className="p-8 text-center text-text-secondary">No matched candidates.</td></tr>
-              ) : currentItems.map((item: any) => (
-                <MatchedCandidateRow key={item.id} item={item} renderKanbanDropdown={renderKanbanDropdown} />
-              ))}
+                <tr><td colSpan={3} className="p-8 text-center text-text-secondary">No candidates in TA Shortlist.</td></tr>
+              ) : currentItems.map((item: any) => {
+                if (item.currentStage === 'matched_candidates') {
+                  return (
+                    <MatchedCandidateRow key={item.id} item={item} renderKanbanDropdown={renderKanbanDropdown} />
+                  );
+                }
+                return (
+                  <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
+                    <td className="p-4 font-medium">
+                      <div className="flex items-center gap-2">
+                        {item.name}
+                        <CvViewButton cvUploadId={item.cvUploadId} />
+                      </div>
+                    </td>
+                    <td className="p-4"><ScoreRing score={item.score} /></td>
+                    <td className="p-4 text-right">
+                      {renderKanbanDropdown(item.id, 'ta_shortlist')}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         );
@@ -1818,13 +1813,15 @@ export default function JobDetailPage() {
         {TABS.map(tab => {
           const Icon = tab.icon;
           const stageId = {
-            'New CVs': 'new_cvs', 'Matched Candidates': 'matched_candidates',
+            'New CVs': 'new_cvs',
             'TA Shortlist': 'ta_shortlist', 'AI Call': 'ai_call',
             'Follow-up': 'follow_up', '2nd Shortlist': 'second_shortlist',
             'Director Shortlist': 'director_shortlist', 'Client Review': 'client_review',
             'Interview': 'interview', 'Offer': 'offer', 'Placed': 'placed', 'Rejected': 'rejected'
           }[tab.id];
-          const count = stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
+          const count = tab.id === 'TA Shortlist'
+            ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'matched_candidates').length
+            : stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
           return (
             <button
               key={tab.id}

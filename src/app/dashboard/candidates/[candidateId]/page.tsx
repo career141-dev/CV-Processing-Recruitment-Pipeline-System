@@ -21,9 +21,10 @@ function formatYoe(years?: number | null): string {
 
 const STAGE_LABELS: Record<string, string> = {
   new_cvs: "New CVs",
-  matched_candidates: "Matched Candidates",
+  matched_candidates: "TA Shortlisted",
   ta_shortlist: "TA Shortlisted",
-  ai_call: "AI Call",
+  shortlisted: "TA Shortlisted",
+  ai_call: "AI Phone Screen",
   follow_up: "Follow-up",
   second_shortlist: "Second Shortlist",
   director_shortlist: "Director Shortlist",
