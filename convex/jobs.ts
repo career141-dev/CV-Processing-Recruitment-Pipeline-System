@@ -323,8 +323,8 @@ export const assignTeamToJob = mutation({
 
     if (args.directorId) {
       const director = await ctx.db.get(args.directorId);
-      if (!director || director.role !== "director") {
-        throw new Error("Director must have DIRECTOR role");
+      if (!director || !["director", "admin", "ta_manager"].includes(director.role)) {
+        throw new Error("Director must have DIRECTOR, ADMIN, or TA_MANAGER role");
       }
       await ctx.db.insert("jobAssignments", {
         jobId: args.jobId,
