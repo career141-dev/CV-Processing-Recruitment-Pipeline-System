@@ -75,7 +75,7 @@ export const runReverseMatch = action({
       }
 
       if (candidates.length === 0) {
-        await ctx.runMutation(api.jobs.saveReverseMatchResults, {
+        await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
           jobId: args.jobId,
           results: [],
           status: "done",
@@ -178,14 +178,14 @@ Only include candidates with overallScore >= ${minScore}. Sort by overallScore d
         .sort((a, b) => b.overallScore - a.overallScore)
         .slice(0, 30);
 
-      await ctx.runMutation(api.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results,
         status: "done",
       });
     } catch (e) {
       console.error(e);
-      await ctx.runMutation(api.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results: [],
         status: "error",
