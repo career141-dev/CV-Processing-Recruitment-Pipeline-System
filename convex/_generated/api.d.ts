@@ -45,6 +45,7 @@ import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as reverseMatch from "../reverseMatch.js";
+import type * as scratch from "../scratch.js";
 import type * as search from "../search.js";
 import type * as stats from "../stats.js";
 import type * as tier2Derivations from "../tier2Derivations.js";
@@ -94,6 +95,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
   reverseMatch: typeof reverseMatch;
+  scratch: typeof scratch;
   search: typeof search;
   stats: typeof stats;
   tier2Derivations: typeof tier2Derivations;

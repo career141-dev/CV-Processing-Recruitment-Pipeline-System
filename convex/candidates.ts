@@ -32,6 +32,8 @@ export const updateCandidateDetails = mutation({
     currentSalary: v.optional(v.number()),
     expectedSalary: v.optional(v.number()),
     noticePeriodDays: v.optional(v.number()),
+    noticePeriod: v.optional(v.string()),
+    candidateQuestions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { candidateId, ...updates } = args;
