@@ -811,6 +811,8 @@ export default function JobDetailPage() {
   const clientApproveMutation = useMutation(api.pipeline.stages.clientApprove);
   const clientHoldMutation = useMutation(api.pipeline.stages.clientHold);
   const clientRejectMutation = useMutation(api.pipeline.stages.clientReject);
+  const triggerWhatsAppFollowUp = useMutation(api.pipeline.outreach.triggerWhatsAppFollowUp);
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   
   const runReverseMatch = useAction(api.agent2_matching.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
@@ -1278,7 +1280,27 @@ export default function JobDetailPage() {
                       </div>
                     </td>
                     <td className="p-4 text-right">
-                      {renderKanbanDropdown(item.id, 'follow_up')}
+                      <div className="flex flex-col items-end gap-1.5">
+                        {renderKanbanDropdown(item.id, 'follow_up')}
+                        <button
+                          disabled={sendingWhatsAppId === item.id}
+                          onClick={async () => {
+                            setSendingWhatsAppId(item.id);
+                            try {
+                              await triggerWhatsAppFollowUp({ applicationId: item.id });
+                              alert("WhatsApp follow-up sent successfully!");
+                            } catch (err: any) {
+                              console.error(err);
+                              alert(`Failed to send WhatsApp: ${err.message}`);
+                            } finally {
+                              setSendingWhatsAppId(null);
+                            }
+                          }}
+                          className="inline-flex items-center text-[11px] font-bold text-green-600 hover:text-green-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer"
+                        >
+                          {sendingWhatsAppId === item.id ? "Sending..." : "Send WhatsApp"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

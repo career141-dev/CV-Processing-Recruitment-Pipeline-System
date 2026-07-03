@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { initiateFollowUpOutreach } from "./followUpHelper";
 
 // Get AI Calls for Outreach dashboard
 export const getAiCalls = query({
@@ -171,4 +172,15 @@ export const sendMessage = mutation({
     });
     return commId;
   }
+});
+
+// Trigger manual follow-up WhatsApp message
+export const triggerWhatsAppFollowUp = mutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await initiateFollowUpOutreach(ctx, args.applicationId);
+    return { success: true };
+  },
 });
