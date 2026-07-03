@@ -68,11 +68,14 @@ export const sendWhatsApp = internalAction({
         throw new Error(`Local bridge returned status ${res.status}: ${errorText}`);
       }
 
+      const data = await res.json();
+      console.log(`[WhatsApp Outbound] Local bridge response:`, JSON.stringify(data));
+
       // Success
       await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
         communicationId: args.communicationId,
         status: "sent",
-        error: isTestMode ? `Test mode active.${logNote}` : undefined,
+        error: isTestMode ? `Test mode active.${logNote} [Msg ID: ${data?.messageId || 'unknown'}]` : undefined,
       });
       console.log(`[WhatsApp Outbound] Message successfully sent to local bridge.`);
     } catch (err: any) {

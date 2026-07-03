@@ -1,3 +1,10 @@
+process.on('uncaughtException', (err) => {
+  console.error('[WhatsApp Bridge] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[WhatsApp Bridge] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcodeTerminal = require('qrcode-terminal');
@@ -93,13 +100,18 @@ app.post('/send', async (req, res) => {
     console.log(`[WhatsApp Bridge] Sending message to +${digits}: "${message}"`);
     
     // Check if the number is on WhatsApp (optional but recommended)
-    const [result] = await sock.onWhatsApp(jid);
-    if (!result || !result.exists) {
-      console.warn(`[WhatsApp Bridge] Warning: ${digits} does not seem to be a registered WhatsApp account.`);
+    try {
+      const [result] = await sock.onWhatsApp(jid);
+      if (!result || !result.exists) {
+        console.warn(`[WhatsApp Bridge] Warning: ${digits} does not seem to be a registered WhatsApp account.`);
+      }
+    } catch (verifyErr) {
+      console.warn(`[WhatsApp Bridge] Failed to verify number status on WhatsApp:`, verifyErr.message);
     }
 
-    await sock.sendMessage(jid, { text: message });
-    return res.status(200).json({ success: true });
+    const response = await sock.sendMessage(jid, { text: message });
+    console.log('[WhatsApp Bridge] Message sent successfully! Response:', JSON.stringify(response));
+    return res.status(200).json({ success: true, messageId: response?.key?.id, jid: response?.key?.remoteJid });
   } catch (err) {
     console.error('[WhatsApp Bridge] Error sending message:', err);
     return res.status(500).json({ success: false, error: err.message });
