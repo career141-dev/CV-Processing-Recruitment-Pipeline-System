@@ -158,18 +158,28 @@ export const evaluateFollowUpStage = internalMutation({
       }
 
       if (triggerWhatsApp) {
-        await ctx.db.insert("communications", {
+        const commId = await ctx.db.insert("communications", {
           candidateId: app.candidateId,
           jobId: app.jobId,
+          applicationId: app._id,
           direction: "outbound",
           channel: "whatsapp",
           subject: `Action Required: Missing info for your ${job.title} application`,
           body,
-          deliveryStatus: "sent",
+          deliveryStatus: "pending",
           sentAt: now,
           stoppedSequence: false,
+          sequenceDay: targetDay,
         });
-        console.log(`[Follow-up Day ${targetDay}] Sent WhatsApp to ${candidate.fullName ?? "unknown"}`);
+
+        await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+          communicationId: commId,
+          candidateId: app.candidateId,
+          jobId: app.jobId,
+          body,
+        });
+
+        console.log(`[Follow-up Day ${targetDay}] Scheduled WhatsApp to ${candidate.fullName ?? "unknown"}`);
       }
 
       // ── Follow-up AI call (Day 2) ─────────────────────────

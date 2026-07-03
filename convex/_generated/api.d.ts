@@ -17,6 +17,7 @@ import type * as cleanup from "../cleanup.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
 import type * as communications_metaWhatsappAgent from "../communications/metaWhatsappAgent.js";
 import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
+import type * as communications_whatsappOutbound from "../communications/whatsappOutbound.js";
 import type * as crons from "../crons.js";
 import type * as cvs_cvExtraction from "../cvs/cvExtraction.js";
 import type * as cvs_cvScoring from "../cvs/cvScoring.js";
@@ -67,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   "communications/emailAgent": typeof communications_emailAgent;
   "communications/metaWhatsappAgent": typeof communications_metaWhatsappAgent;
   "communications/whatsappAgent": typeof communications_whatsappAgent;
+  "communications/whatsappOutbound": typeof communications_whatsappOutbound;
   crons: typeof crons;
   "cvs/cvExtraction": typeof cvs_cvExtraction;
   "cvs/cvScoring": typeof cvs_cvScoring;

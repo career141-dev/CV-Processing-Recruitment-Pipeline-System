@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates";
+import { initiateFollowUpOutreach } from "./followUpHelper";
 
 export const moveToTAShortlist = mutation({
   args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
@@ -81,6 +82,9 @@ export const moveToTAShortlist = mutation({
       });
     }
     await syncCandidateOverallStatus(ctx, entry.candidateId);
+    if (isPathTwo) {
+      await initiateFollowUpOutreach(ctx, args.applicationId);
+    }
   },
 });
 
@@ -166,6 +170,9 @@ export const setPipelineStage = mutation({
       }],
     });
     await syncCandidateOverallStatus(ctx, entry.candidateId);
+    if (newStage === "follow_up") {
+      await initiateFollowUpOutreach(ctx, applicationId);
+    }
   },
 });
 
