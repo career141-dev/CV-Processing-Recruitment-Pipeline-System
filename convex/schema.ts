@@ -442,7 +442,7 @@ generatedAt: v.string(),
     }))),
     sector: v.optional(v.string()),
     overallStatus: v.optional(
-      v.union(v.literal("active"), v.literal("placed"), v.literal("not_available"), v.literal("merged"))
+      v.union(v.literal("active"), v.literal("placed"), v.literal("not_available"), v.literal("merged"), v.literal("matched_candidates"))
     ),
 
     // Existing legacy fields to prevent breaking changes
@@ -544,7 +544,7 @@ generatedAt: v.string(),
       v.object({
         stage: v.string(),
         enteredAt: v.string(),
-        changedBy: v.id("users"),
+        changedBy: v.union(v.id("users"), v.literal("system")),
         note: v.optional(v.string()),
       })
     )),
