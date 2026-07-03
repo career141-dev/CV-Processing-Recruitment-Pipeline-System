@@ -18,7 +18,7 @@ export function BulkMessageModal({ isOpen, onClose, selectedCount, onSuccess }: 
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
 
-  // Mock warning: imagine 1 of the selected candidates was contacted recently
+
   const hasDuplicateWarning = selectedCount > 1;
 
   const handleSend = () => {

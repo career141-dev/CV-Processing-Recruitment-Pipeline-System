@@ -5,6 +5,8 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Search, Briefcase } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 
 interface AddToJobModalProps {
   isOpen: boolean;
@@ -15,15 +17,16 @@ interface AddToJobModalProps {
 
 export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: AddToJobModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedJob, setSelectedJob] = useState<number | null>(null);
+  const [selectedJob, setSelectedJob] = useState<string | null>(null);
 
-  // Mock jobs list
-  const jobs = [
-    { id: 1, title: 'Senior Software Engineer', client: 'FinTech Global', status: 'Active' },
-    { id: 2, title: 'Product Lead', client: 'Oasis Digital', status: 'Active' },
-    { id: 3, title: 'Brand Manager', client: 'Atlas', status: 'Urgent' },
-    { id: 4, title: 'Sales Manager', client: 'Confidential', status: 'Active' },
-  ];
+  const dbJobs = useQuery(api.jobs.list);
+
+  const jobs = dbJobs ? dbJobs.map((j: any) => ({
+    id: j._id,
+    title: j.title,
+    client: j.clientName,
+    status: j.status === 'active' ? 'Active' : (j.status === 'on_hold' ? 'On Hold' : j.status),
+  })) : [];
 
   const filteredJobs = jobs.filter(job => 
     job.title.toLowerCase().includes(searchQuery.toLowerCase()) || 

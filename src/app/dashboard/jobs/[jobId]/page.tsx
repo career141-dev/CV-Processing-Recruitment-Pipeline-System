@@ -879,14 +879,10 @@ export default function JobDetailPage() {
   };
   
   const handleStageChange = async (appId: string, newStage: string) => {
-    if (!appId.startsWith('dummy|')) {
-      try {
-        await setPipelineStage({ applicationId: appId as Id<"applications">, newStage });
-      } catch (e: any) {
-        alert("Error changing stage: " + e.message);
-      }
-    } else {
-      alert("Cannot move mock dummy data!");
+    try {
+      await setPipelineStage({ applicationId: appId as Id<"applications">, newStage });
+    } catch (e: any) {
+      alert("Error changing stage: " + e.message);
     }
   };
 
@@ -1104,7 +1100,7 @@ export default function JobDetailPage() {
       return app.currentStage === currentStageId;
     });
     
-    // Map real data to mock data format to reuse the tables
+
     const itemsToRender = stageApps.map(app => ({
       id: app._id,
       candidateId: app.candidateId,

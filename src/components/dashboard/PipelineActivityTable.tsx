@@ -3,60 +3,40 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: string }) {
   const [activeTab, setActiveTab] = useState('All Jobs');
   
-  const allPipelineJobs = [
-    {
-      id: 1,
-      title: "Brand\nManager",
-      client: "Atlas",
-      source: "LinkedIn",
+  const dbJobs = useQuery(api.jobs.list);
+  const users = useQuery(api.users.getAllUsers);
+
+  const allPipelineJobs = dbJobs && users ? dbJobs.map((j: any) => {
+    const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);
+    
+    let statusFormatted = 'Active';
+    if (j.status === 'on_hold') statusFormatted = 'On Hold';
+    else if (j.status === 'urgent') statusFormatted = 'Urgent';
+    else if (j.status === 'closed') statusFormatted = 'Closed';
+    else if (j.status === 'lost') statusFormatted = 'Lost';
+    else if (j.status === 'draft') statusFormatted = 'Draft';
+
+    return {
+      id: j._id,
+      title: j.title,
+      client: j.clientName,
+      source: "Organic",
       sourceColor: "bg-primary-container/15 text-primary-container",
-      newCvs: "8",
-      stage: "TA\nReview",
-      assigned: "Shambra",
-      status: "Active",
+      newCvs: "-",
+      stage: "Active",
+      assigned: recruiter ? recruiter.fullName.split(' ')[0] : 'Unassigned',
+      status: statusFormatted,
       arrowIcon: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/4bcb42b0-c2ac-4b8f-98da-45b3b425c9f4"
-    },
-    {
-      id: 2,
-      title: "CFO —\nGroup\nLevel",
-      client: "Confidential",
-      source: "Headhunting",
-      sourceColor: "bg-blue-500/15 text-blue-700",
-      newCvs: "3",
-      stage: "Director\nReview",
-      assigned: "Shambra",
-      status: "Urgent",
-      arrowIcon: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/321fb4eb-1318-48c1-8fc3-75c2d41643d1"
-    },
-    {
-      id: 3,
-      title: "Senior\nEngineer",
-      client: "CBL",
-      source: "WhatsApp",
-      sourceColor: "bg-yellow-500/15 text-yellow-700",
-      newCvs: "snippet",
-      stage: "New\nCVs",
-      assigned: "Rayan",
-      status: "On Hold",
-      arrowIcon: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/127b2312-62bf-4f47-bc66-04007a3faacb"
-    },
-    {
-      id: 4,
-      title: "GM\nOperations",
-      client: "LPI",
-      source: "EmailCampaign",
-      sourceColor: "bg-purple-500/15 text-purple-700",
-      newCvs: "5",
-      stage: "Client\nReview",
-      assigned: "Ana",
-      status: "Active",
-      arrowIcon: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/e3ae3020-315d-4c26-94fb-8ebe1f6081c8"
-    }
-  ];
+    };
+  }) : [];
+  
+
 
   const pipelineJobs = jobFilter === 'Active Jobs' 
     ? allPipelineJobs.filter(job => job.status === 'Active' || job.status === 'Urgent')

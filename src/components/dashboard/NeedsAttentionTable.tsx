@@ -5,14 +5,8 @@ import { AvatarBadge } from '@/components/ui/Badge';
 import Link from 'next/link';
 
 export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: { jobFilter?: string }) {
-  const allData = [
-    { id: 1, candidate: "Priya Nair", job: "Fullstack\nEngineer", stage: "Technical\nTest", days: "8 days", daysColor: "text-[#BA1A1A]", initials: "SK", avatarColor: "bg-[#96F592] text-[#0A7320]" },
-    { id: 2, candidate: "James Chen", job: "Sales Manager", stage: "Final Round", days: "5 days", daysColor: "text-[#E65100]", initials: "MK", avatarColor: "bg-accent-teal text-on-primary" },
-    { id: 3, candidate: "Fatima Al\nRashid", job: "HR Lead", stage: "Initial Screen", days: "4 days", daysColor: "text-[#E65100]", initials: "SK", avatarColor: "bg-[#96F592] text-[#0A7320]" },
-  ];
-
-  // Dummy logic: if Active Jobs is selected, let's just show fewer items to simulate filtering
-  const data = jobFilter === 'Active Jobs' ? allData.slice(0, 2) : jobFilter === 'My Jobs' ? allData.slice(1, 2) : allData;
+  // Placeholder for real backend query (e.g., api.applications.getNeedsAttention)
+  const data: any[] = [];
 
   return (
     <Card noPadding className="p-[1px]">

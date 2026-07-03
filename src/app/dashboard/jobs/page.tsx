@@ -27,7 +27,7 @@ type Job = {
   created: string;
 };
 
-// Mock jobs removed in favor of real DB jobs.];
+
 
 export default function JobsPage() {
   const [activeTab, setActiveTab] = useState<string>('All Jobs');
@@ -50,7 +50,7 @@ export default function JobsPage() {
   }, []);
   const users = useQuery(api.users.getAllUsers);
 
-  const MOCK_JOBS: Job[] = dbJobs && users ? dbJobs.map((j: any) => {
+  const formattedJobs: Job[] = dbJobs && users ? dbJobs.map((j: any) => {
     const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);
     
     // Map status to formatted text and badge
@@ -102,7 +102,7 @@ export default function JobsPage() {
     }
   };
 
-  const filteredJobs = MOCK_JOBS.filter(job => {
+  const filteredJobs = formattedJobs.filter(job => {
     if (activeTab === 'All Jobs') return true;
     if (activeTab === 'Active') return job.status === 'Active';
     if (activeTab === 'On Hold') return job.status === 'On Hold';
@@ -112,8 +112,8 @@ export default function JobsPage() {
   });
 
   const getTabCount = (tabName: string) => {
-    if (tabName === 'All Jobs') return MOCK_JOBS.length;
-    return MOCK_JOBS.filter(j => j.status === tabName).length;
+    if (tabName === 'All Jobs') return formattedJobs.length;
+    return formattedJobs.filter(j => j.status === tabName).length;
   };
 
   const tabs = ['All Jobs', 'Active', 'On Hold', 'Fins', 'Lost'];

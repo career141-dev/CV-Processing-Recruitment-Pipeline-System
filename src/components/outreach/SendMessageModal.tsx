@@ -22,8 +22,9 @@ export function SendMessageModal({ onClose, candidateId, jobId }: SendMessageMod
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
-  // Mock data for preview/UI
-  const candidateName = "Dr. Ebrahim Samir Abdu-Allah";
+
+  const candidate = useQuery(api.candidates.getCandidate, candidateId ? { id: candidateId } : "skip");
+  const candidateName = candidate?.fullName || "Candidate";
 
   const handleSend = async () => {
     if (!candidateId) {

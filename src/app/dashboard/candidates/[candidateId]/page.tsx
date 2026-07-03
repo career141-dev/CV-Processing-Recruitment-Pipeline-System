@@ -41,9 +41,7 @@ const STAGE_LABELS: Record<string, string> = {
 export default function CandidateProfile() {
   const params = useParams<{ candidateId: string }>();
   
-  // Fake IDs (like "1" from the dashboard dummy tables) crash Convex's v.id validator
-  const isFakeId = params.candidateId.length < 10;
-  const fetchedCandidate = useQuery(api.candidates.getCandidate, isFakeId ? "skip" : { id: params.candidateId as any });
+  const fetchedCandidate = useQuery(api.candidates.getCandidate, { id: params.candidateId as Id<"candidates"> });
   const triggerLazyParse = useAction(api.cvs.lazyParsing.triggerLazyParse);
 
   React.useEffect(() => {
@@ -52,35 +50,20 @@ export default function CandidateProfile() {
     }
   }, [fetchedCandidate, triggerLazyParse]);
 
-  const candidate = (isFakeId 
-    ? {
-        fullName: params.candidateId === "1" ? "Priya Nair" : params.candidateId === "2" ? "James Chen" : "Mock Candidate",
-        currentTitle: "Candidate Profile Preview",
-        currentEmployer: "Demo Employer",
-        location: "Dubai, UAE",
-        yearsOfExperience: 5,
-        email: "demo@example.com",
-        phone: "+971 50 123 4567",
-        sourceChannel: "LinkedIn",
-        status: "Active",
-        summary: "This is a dummy candidate profile because a non-database ID was provided in the URL.",
-        skills: ["React", "Next.js", "Recruitment"],
-        education: [{ degree: "BSc Computer Science", institution: "University of Tech", year: "2020" }],
-      }
-    : fetchedCandidate) as any;
+  const candidate = fetchedCandidate as any;
 
   const [activeTab, setActiveTab] = useState("overview");
 
   const cvUpload = useQuery(
     api.candidates.getCvUploadUrl,
-    !isFakeId && candidate?.cvUploadId ? { cvUploadId: candidate.cvUploadId } : "skip"
+    candidate?.cvUploadId ? { cvUploadId: candidate.cvUploadId } : "skip"
   );
 
   // Live data for profile tabs/sidebar
-  const candidateId = !isFakeId ? params.candidateId as any : "skip";
-  const applications = useQuery(api.applications.getByCandidate, candidateId !== "skip" ? { candidateId } : "skip");
-  const timeline = useQuery(api.applications.getCandidateTimeline, candidateId !== "skip" ? { candidateId } : "skip");
-  const aiCalls = useQuery(api.applications.getCandidateAiCalls, candidateId !== "skip" ? { candidateId } : "skip");
+  const candidateId = params.candidateId as Id<"candidates">;
+  const applications = useQuery(api.applications.getByCandidate, candidate ? { candidateId } : "skip");
+  const timeline = useQuery(api.applications.getCandidateTimeline, candidate ? { candidateId } : "skip");
+  const aiCalls = useQuery(api.applications.getCandidateAiCalls, candidate ? { candidateId } : "skip");
 
   if (candidate === undefined) {
     return (

@@ -266,9 +266,20 @@ http.route({
       
       let finalNotice = notice_period_days;
       if (typeof finalNotice === "string") {
-        // If AI passes "2 months", try to extract number and multiply, else just extract number
-        const lower = finalNotice.toLowerCase();
-        let num = parseInt(finalNotice.replace(/[^0-9]/g, ""), 10);
+        // If AI passes "2 months" or "two months", convert words to digits then extract number
+        let lower = finalNotice.toLowerCase();
+        
+        // Map common spelled-out numbers
+        const wordToNum: Record<string, string> = {
+          "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", 
+          "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+          "a month": "1 month", "a week": "1 week"
+        };
+        for (const [word, digit] of Object.entries(wordToNum)) {
+          lower = lower.replace(new RegExp(`\\b${word}\\b`, 'g'), digit);
+        }
+
+        let num = parseInt(lower.replace(/[^0-9]/g, ""), 10);
         if (lower.includes("month")) num = num * 30;
         else if (lower.includes("week")) num = num * 7;
         finalNotice = num;
@@ -403,6 +414,7 @@ http.route({
       const currentSalary = body.current_salary;
       const expectedSalary = body.expected_salary;
       const noticePeriodDays = body.notice_period_days;
+      const candidateQuestions = body.candidate_questions;
       
       const aiCall = await ctx.runQuery(api.applications.findAiCallByElevenLabsId, { conversationId });
       if (!aiCall) {
@@ -431,13 +443,14 @@ http.route({
           (expectedSalary !== undefined && expectedSalary !== null) &&
           (noticePeriodDays !== undefined && noticePeriodDays !== null);
 
-        // Write salary/notice to candidate global profile
-        if (currentSalary !== undefined || expectedSalary !== undefined || noticePeriodDays !== undefined) {
+        // Write salary/notice and questions to candidate global profile
+        if (currentSalary !== undefined || expectedSalary !== undefined || noticePeriodDays !== undefined || candidateQuestions !== undefined) {
           await ctx.runMutation(api.candidates.updateCandidateDetails, {
             candidateId: aiCall.candidateId,
             currentSalary,
             expectedSalary,
             noticePeriodDays,
+            candidateQuestions,
           });
         }
 
