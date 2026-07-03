@@ -239,10 +239,10 @@ http.route({
       console.log("[save-intake] Received tool payload from AI:", body);
 
       
+      const candidate_id = body.candidate_id;
+      const application_id = body.application_id;
+      const conversation_id = body.conversation_id;
       const {
-        candidate_id,
-        application_id,
-        conversation_id,
         current_salary,
         expected_salary,
         notice_period_days,
@@ -288,9 +288,9 @@ http.route({
         finalNotice = num;
       }
       
-      if (isNaN(finalCurrentSalary)) finalCurrentSalary = undefined;
-      if (isNaN(finalExpectedSalary)) finalExpectedSalary = undefined;
-      if (isNaN(finalNotice)) finalNotice = undefined;
+      if (finalCurrentSalary === null || isNaN(finalCurrentSalary)) finalCurrentSalary = undefined;
+      if (finalExpectedSalary === null || isNaN(finalExpectedSalary)) finalExpectedSalary = undefined;
+      if (finalNotice === null || isNaN(finalNotice)) finalNotice = undefined;
 
       let finalNoticeText = undefined;
       if (typeof notice_period_days === "string") {
@@ -357,8 +357,11 @@ http.route({
     try {
       const rawBody = await request.text();
       const body = JSON.parse(rawBody);
+      const candidate_id = body.candidate_id;
+      const application_id = body.application_id;
+      const conversation_id = body.conversation_id || body.system__conversation_id;
+      const { reason } = body;
       
-      const { candidate_id, application_id, reason, conversation_id } = body;
       if (!candidate_id) throw new Error("Missing candidate_id");
 
       if (conversation_id) {

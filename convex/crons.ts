@@ -21,6 +21,7 @@ export const evaluateFollowUpStage = internalMutation({
 
       const job = await ctx.db.get(app.jobId);
       if (!job) continue;
+      if (job.status !== "active") continue;
 
       // ── Per-application completion flags (not global candidate fields) ──────
       // Falls back to candidate record for legacy apps that predate the flags.

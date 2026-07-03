@@ -1306,6 +1306,7 @@ export default function JobDetailPage() {
               <thead>
                 <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                   <th className="p-4">Candidate</th>
+                  <th className="p-4">Current Salary</th>
                   <th className="p-4">Expected Salary</th>
                   <th className="p-4">Notice Period</th>
                   <th className="p-4">Fit</th>
@@ -1314,7 +1315,7 @@ export default function JobDetailPage() {
               </thead>
               <tbody className="text-[13px] text-text-primary divide-y divide-border">
                 {currentItems.length === 0 ? (
-                  <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No candidates in 2nd Shortlist.</td></tr>
+                  <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No candidates in 2nd Shortlist.</td></tr>
                 ) : currentItems.map((item: any) => (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
@@ -1323,6 +1324,7 @@ export default function JobDetailPage() {
                         <CvViewButton cvUploadId={item.cvUploadId} />
                       </div>
                     </td>
+                    <td className="p-4">{item.currentSalary}</td>
                     <td className="p-4">{item.expectedSalary}</td>
                     <td className="p-4">{item.noticePeriod}</td>
                     <td className="p-4"><span className="text-green-500 font-medium">✅ {item.fit}</span></td>

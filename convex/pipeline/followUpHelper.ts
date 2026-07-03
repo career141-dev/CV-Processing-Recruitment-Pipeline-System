@@ -19,7 +19,10 @@ export async function checkAndAdvanceFollowUp(
     .collect();
 
   for (const app of apps) {
-    if (app.currentStage !== "follow_up") continue;
+    const isFollowUp = app.currentStage === "follow_up";
+    const isAutoRejected = app.currentStage === "rejected" && app.taRejectionReason === "Did not complete requirements within 7-day window";
+
+    if (!isFollowUp && !isAutoRejected) continue;
 
     const allComplete =
       app.followUpCvReceived === true &&
@@ -28,8 +31,13 @@ export async function checkAndAdvanceFollowUp(
       app.followUpNoticePeriod === true;
 
     if (allComplete) {
+      const note = isAutoRejected 
+        ? "Candidate provided late response. Reopened to Second Shortlist."
+        : "Auto-advanced from Follow-up: all 4 data points completed.";
+
       await ctx.db.patch(app._id, {
         currentStage: "second_shortlist",
+        taRejectionReason: undefined, // Clear rejection reason if reopening
         lastStageChangedAt: Date.now(),
         stageHistory: [
           ...(app.stageHistory ?? []),
@@ -37,7 +45,7 @@ export async function checkAndAdvanceFollowUp(
             stage: "second_shortlist",
             enteredAt: new Date().toISOString(),
             changedBy: "system" as any,
-            note: "Auto-advanced from Follow-up: all 4 data points completed.",
+            note,
           },
         ],
       });

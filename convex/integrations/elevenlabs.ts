@@ -98,6 +98,7 @@ export const triggerFollowUpCall = internalAction({
 
     // Determine missing fields
     const missing: string[] = [];
+    if (!application.followUpCvReceived && !candidate.cvUploadId) missing.push("CV");
     if (!application.followUpCurrentSalary) missing.push("current salary");
     if (!application.followUpExpectedSalary) missing.push("expected salary");
     if (!application.followUpNoticePeriod) missing.push("notice period");
@@ -125,10 +126,12 @@ export const triggerFollowUpCall = internalAction({
         agent_id: agentId,
         recipient_phone_number: candidate.phone,
         dynamic_variables: {
-          candidate_name: candidate.fullName || "Candidate",
+          candidate_name: candidate.fullName ? candidate.fullName.split(' ')[0] : "Candidate",
           job_title: job.title || "the open role",
           company_name: "Career141",
           missing_fields_list: missing.join(", "),
+          custom_questions: job.agent5CustomQuestions?.join(", ") || "",
+          company_hidden: job.agent5HideCompany ? "true" : "false",
           attempt_number: String(args.attemptNumber),
           last_contact_channel: args.lastContactChannel,
           candidate_id: args.candidateId,
