@@ -5,8 +5,6 @@ import { syncCandidateOverallStatus } from "./candidates";
 
 const crons = cronJobs();
 
-const crons = cronJobs();
-
 export const evaluateFollowUpStage = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -102,9 +100,9 @@ export const evaluateFollowUpStage = internalMutation({
 
       if (targetDay === null) continue; // Off-days (1, 3, 5) intentionally silent
 
-      // Idempotency: skip if this day tier was already dispatched
-      const followUpState = app.followUpState ?? {};
-      if (followUpState[`day${targetDay}Done`]) continue;
+      // Idempotency: skip if this day tier (or later) was already dispatched
+      const followUpState = app.followUpState;
+      if (followUpState !== undefined && followUpState.lastContactDay >= targetDay) continue;
 
       let triggerWhatsApp = false;
       let triggerEmail = false;
@@ -124,7 +122,10 @@ export const evaluateFollowUpStage = internalMutation({
 
       // Persist updated state
       await ctx.db.patch(app._id, {
-        followUpState: { ...followUpState, [`day${targetDay}Done`]: true },
+        followUpState: {
+          lastContactDay: targetDay,
+          firstChannelUsed: followUpState?.firstChannelUsed ?? (triggerWhatsApp ? "whatsapp" : "email"),
+        },
       });
 
       // ── Send message (only about MISSING fields) ─────────────────────────────
