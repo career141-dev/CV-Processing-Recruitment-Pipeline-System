@@ -288,9 +288,9 @@ http.route({
         finalNotice = num;
       }
       
-      if (isNaN(finalCurrentSalary)) finalCurrentSalary = undefined;
-      if (isNaN(finalExpectedSalary)) finalExpectedSalary = undefined;
-      if (isNaN(finalNotice)) finalNotice = undefined;
+      if (finalCurrentSalary === null || isNaN(finalCurrentSalary)) finalCurrentSalary = undefined;
+      if (finalExpectedSalary === null || isNaN(finalExpectedSalary)) finalExpectedSalary = undefined;
+      if (finalNotice === null || isNaN(finalNotice)) finalNotice = undefined;
 
       let finalNoticeText = undefined;
       if (typeof notice_period_days === "string") {

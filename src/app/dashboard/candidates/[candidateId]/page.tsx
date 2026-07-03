@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams } from "next/navigation";
+import { Id } from "@/convex/_generated/dataModel";
 
 function getInitials(name?: string | null): string {
   if (!name) return "?";

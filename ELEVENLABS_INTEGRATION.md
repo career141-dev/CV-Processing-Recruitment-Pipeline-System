@@ -1,7 +1,7 @@
-# Career141 � ElevenLabs AI Voice Agent Integration Reference
-## v2.1 � Reviewed & Aligned to Production Codebase
+# Career141 — ElevenLabs Follow-up Voice Agent Integration Reference
+## v3.0 — Updated for Follow-up First Workflow
 
-> **Status:** Reference document � integration pending carrier selection.
+> **Status:** Reference document  integration pending carrier selection.
 > **API Key:** Set (ELEVENLABS_API_KEY stored in .env and pushed to Convex environment)
 > **Last reviewed:** 2026-06-30
 
@@ -73,7 +73,7 @@ No Twilio in this flow. The ivrResponse enum on aiCalls is legacy from a previou
 |---|---|
 | ElevenLabs API key | SET - in .env + Convex env |
 | ElevenLabs Conversational AI (paid plan) | Confirm plan tier |
-| Agent created (ELEVENLABS_INTAKE_AGENT_ID) | Pending - see Agent Setup section |
+| Agent created (ELEVENLABS_FOLLOWUP_AGENT_ID) | Pending - see Agent Setup section |
 | Phone number imported (ELEVENLABS_PHONE_NUMBER_ID) | Pending carrier selection |
 | SIP trunk carrier account | DECISION NEEDED |
 | Webhook secret (ELEVENLABS_WEBHOOK_SECRET) | Pending |
@@ -99,14 +99,14 @@ It has a dedicated ElevenLabs connector (no manual SIP config) and best local nu
 ## Step-by-Step: Create the ElevenLabs Agent
 
 1. ElevenLabs Dashboard -> Conversational AI -> Agents -> Create Agent
-2. Name: "Career141 - Salary & Notice Intake"
+2. Name: "Career141 - Follow-up Agent"
 3. Language: English (single language for this phase)
 4. Configure Voice tab (see Voice Configuration section)
 5. Configure Prompt tab (paste system prompt below + set First Message)
 6. Configure Tools tab (add both tools from Tools section)
 7. Configure Webhooks tab (post-call webhook URL)
 8. Leave in draft/test until number is imported
-9. Copy agent ID -> store as ELEVENLABS_INTAKE_AGENT_ID
+9. Copy agent ID -> store as ELEVENLABS_FOLLOWUP_AGENT_ID
 
 ---
 
@@ -124,7 +124,7 @@ IF using generic SIP trunk (Telnyx, Plivo, other):
    - Transport: TLS
    - Authentication: Digest auth - username/password from carrier
 3. Click Import
-4. Assign imported number to "Career141 - Salary & Notice Intake" agent
+4. Assign imported number to "Career141 - Follow-up Agent"
 5. Copy phone number ID -> store as ELEVENLABS_PHONE_NUMBER_ID
 
 FINAL STEP (both paths):
@@ -149,19 +149,18 @@ FINAL STEP (both paths):
 
 ```
 # Personality
-You are a professional recruitment intake specialist from Career141.
+You are a professional recruitment follow-up specialist from Career141.
 You are warm, respectful, and efficient - not a salesperson.
 
 # Environment
-You are making an outbound phone call to a job candidate whose profile
-matched a specific role. You have their first name and the job title.
+You are making an outbound follow-up phone call to a job candidate whose profile
+matched the {{job_title}} role. We previously reached out to them via {{last_contact_channel}}.
 The call is short (target under 4 minutes).
 
 # Goal
-Collect exactly three pieces of information:
-1. Current salary (what they earn now)
-2. Expected salary (what they are looking for)
-3. Notice period (how soon they could start)
+Collect the missing information we need to progress their application.
+The missing fields are specifically: {{missing_fields_list}}.
+Do NOT ask for information that is not in the missing fields list.
 
 Then end the call cleanly, telling them the recruiter will follow up shortly.
 
@@ -170,32 +169,21 @@ Then end the call cleanly, telling them the recruiter will follow up shortly.
 2. Confirm it is a good time to talk.
    - If not: politely ask for a preferred callback time, note it, call
      mark_call_declined("bad_timing"), thank them, and end the call.
-3. Briefly explain why you are calling: their profile matched the
-   {{job_title}} role and you need a few quick details to progress.
-4. Ask for current salary.
-   - If they decline: acknowledge politely, do not press, move on.
-5. Ask for expected salary.
-   - If they decline: same - note and move on.
-6. Ask for notice period.
-   - If they decline: same.
-7. Always call save_candidate_intake_data before ending, even if fields
+3. Explain why you are calling: you are following up on the {{last_contact_channel}} message regarding the {{job_title}} role, and just need a few quick details.
+4. Ask for the items listed in {{missing_fields_list}} (e.g. current salary, expected salary, notice period).
+5. Always call save_candidate_intake_data before ending, even if fields
    are empty. Pass whatever was collected.
-8. Thank them. Tell them Career141 will follow up via email or WhatsApp
-   with next steps. End the call.
+6. Thank them. Tell them Career141 will be in touch with next steps. End the call.
 
 # Rules
 - Maximum 3 sentences per turn. Keep it short.
+- Only ask for the specific items listed in {{missing_fields_list}}.
 - Do not repeat the same question more than twice.
 - If the candidate says they are not interested in the role:
   call mark_call_declined("not_interested") and end the call gracefully.
 - If the candidate asks to be removed from contact:
   call mark_call_declined("opt_out") immediately, apologize for
   the interruption, and end the call.
-- If the candidate asks a question you cannot answer (salary details,
-  interview process, company name if confidential), say:
-  "That is a great question - the recruiter will cover that in the
-  follow-up message." Do not improvise or make promises.
-- Never commit to timelines, salaries, or offers.
 - Always call save_candidate_intake_data before hanging up.
   This step is important.
 - This step is important: do not exceed 5 minutes total.
@@ -206,7 +194,7 @@ Friendly, concise, human-sounding. No corporate jargon.
 
 First Message field (set separately in agent settings):
 ```
-Hi {{candidate_name}}, this is calling from Career141 regarding the {{job_title}} role. Do you have a quick minute to chat?
+Hi {{candidate_name}}, this is calling from Career141 regarding the {{job_title}} role. We reached out recently and I'm just following up. Do you have a quick minute to chat?
 ```
 
 ---
@@ -254,13 +242,13 @@ ElevenLabs post-call webhook -> /api/elevenlabs/post-call-webhook
 |---|---|---|
 | candidate_name | "Sarah" | Spoken aloud - first name only |
 | job_title | "Senior React Developer" | Spoken aloud |
-| company_name | "Career141" or "our client" | Spoken aloud (hidden if confidential) |
+| company_name | "Career141" | Spoken aloud |
+| missing_fields_list | "current salary, notice period" | Spoken aloud to prompt candidate |
+| last_contact_channel | "WhatsApp" or "Email" | Spoken aloud to reference previous outreach |
+| attempt_number | "1" | Passed silently |
 | candidate_id | Convex ID | Passed silently to tool calls |
 | job_id | Convex ID | Passed silently to tool calls |
 | application_id | Convex ID | Passed silently to tool calls |
-| custom_questions | "Are you willing to relocate?" | Passed aloud to agent so it knows what additional questions to ask |
-| recruiter_name | "Mike Johnson" | Optional closing line |
-| is_confidential | "true"/"false" | Controls company name visibility |
 
 ---
 
@@ -478,7 +466,7 @@ Already set:
   ELEVENLABS_API_KEY=sk_f24493c1a8145410473726e64ba466232c01779ad0c3b458
 
 Set after agent creation:
-  ELEVENLABS_INTAKE_AGENT_ID=
+  ELEVENLABS_FOLLOWUP_AGENT_ID=
 
 Set after number import:
   ELEVENLABS_PHONE_NUMBER_ID=
@@ -492,7 +480,7 @@ SIP carrier credentials (depends on carrier choice):
   SIP_TRUNK_PASSWORD=
 
 Push to Convex when ready:
-  npx convex env set ELEVENLABS_INTAKE_AGENT_ID <value>
+  npx convex env set ELEVENLABS_FOLLOWUP_AGENT_ID <value>
   npx convex env set ELEVENLABS_PHONE_NUMBER_ID <value>
   npx convex env set ELEVENLABS_WEBHOOK_SECRET <value>
 

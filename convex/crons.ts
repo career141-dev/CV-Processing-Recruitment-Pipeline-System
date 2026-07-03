@@ -5,8 +5,6 @@ import { syncCandidateOverallStatus } from "./candidates";
 
 const crons = cronJobs();
 
-const crons = cronJobs();
-
 export const evaluateFollowUpStage = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -23,6 +21,7 @@ export const evaluateFollowUpStage = internalMutation({
 
       const job = await ctx.db.get(app.jobId);
       if (!job) continue;
+      if (job.status !== "active") continue;
 
       // ── Per-application completion flags (not global candidate fields) ──────
       // Falls back to candidate record for legacy apps that predate the flags.
@@ -103,7 +102,7 @@ export const evaluateFollowUpStage = internalMutation({
       if (targetDay === null) continue; // Off-days (1, 3, 5) intentionally silent
 
       // Idempotency: skip if this day tier was already dispatched
-      const followUpState = app.followUpState ?? {};
+      const followUpState = (app.followUpState as any) || {};
       if (followUpState[`day${targetDay}Done`]) continue;
 
       let triggerWhatsApp = false;
@@ -124,7 +123,7 @@ export const evaluateFollowUpStage = internalMutation({
 
       // Persist updated state
       await ctx.db.patch(app._id, {
-        followUpState: { ...followUpState, [`day${targetDay}Done`]: true },
+        followUpState: { ...followUpState, [`day${targetDay}Done`]: true, lastContactDay: targetDay },
       });
 
       // ── Send message (only about MISSING fields) ─────────────────────────────

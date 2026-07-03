@@ -37,7 +37,15 @@ export const updateCandidateDetails = mutation({
   },
   handler: async (ctx, args) => {
     const { candidateId, ...updates } = args;
-    await ctx.db.patch(candidateId, updates);
+    
+    // Filter out undefined values to prevent overwriting existing data with empty AI intake payloads
+    const definedUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([_, v]) => v !== undefined)
+    );
+
+    if (Object.keys(definedUpdates).length > 0) {
+      await ctx.db.patch(candidateId, definedUpdates);
+    }
     await checkAndAdvanceFollowUp(ctx, candidateId);
   },
 });
