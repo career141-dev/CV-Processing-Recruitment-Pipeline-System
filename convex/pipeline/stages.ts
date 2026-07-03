@@ -3,6 +3,7 @@ import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { internal } from "../_generated/api";
+import { syncCandidateOverallStatus } from "../candidates";
 
 export const moveToTAShortlist = mutation({
   args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
@@ -104,6 +105,7 @@ export const moveToTAShortlist = mutation({
         lastStageChangedAt: now,
       });
     }
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -134,6 +136,7 @@ export const directorApprove = mutation({
       directorReviewId: user._id,
       lastStageChangedAt: Date.now(),
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -159,6 +162,7 @@ export const rejectCandidate = mutation({
         note: reason,
       }],
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -186,6 +190,7 @@ export const setPipelineStage = mutation({
         note: note,
       }],
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -229,6 +234,7 @@ export const directorReject = mutation({
       notes: args.reason,
       createdAt: Date.now(),
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -268,6 +274,7 @@ export const directorRequestChanges = mutation({
       notes: args.note,
       createdAt: Date.now(),
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -295,6 +302,7 @@ export const clientApprove = mutation({
         note: args.note ?? "Client approved — selected for interview",
       }],
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -321,6 +329,7 @@ export const clientHold = mutation({
         note: `Client placed on hold: ${args.note ?? "No reason given"}`,
       }],
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
 
@@ -362,5 +371,6 @@ export const clientReject = mutation({
       notes: args.reason,
       createdAt: Date.now(),
     });
+    await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });

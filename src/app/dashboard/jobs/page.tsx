@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 
 type Source = { id: string, label: string, bgClass: string, textClass: string };
@@ -33,9 +33,21 @@ export default function JobsPage() {
   const [activeTab, setActiveTab] = useState<string>('All Jobs');
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [activeDropdownJobId, setActiveDropdownJobId] = useState<string | null>(null);
   const router = useRouter();
   
   const dbJobs = useQuery(api.jobs.list);
+  const deleteJob = useMutation(api.jobs.deleteJob);
+
+  React.useEffect(() => {
+    const handleWindowClick = () => {
+      setActiveDropdownJobId(null);
+    };
+    window.addEventListener('click', handleWindowClick);
+    return () => {
+      window.removeEventListener('click', handleWindowClick);
+    };
+  }, []);
   const users = useQuery(api.users.getAllUsers);
 
   const MOCK_JOBS: Job[] = dbJobs && users ? dbJobs.map((j: any) => {
@@ -260,8 +272,51 @@ export default function JobsPage() {
                     <td className="px-5 py-3 whitespace-nowrap"><span className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-medium border ${job.stage.bgClass} ${job.stage.textClass} ${job.stage.borderClass}`}>{job.stage.label}</span></td>
                     <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{job.taAssigned}</td>
                     <td className="px-5 py-3 whitespace-nowrap"><span className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-medium border ${job.statusBadge.bgClass} ${job.statusBadge.textClass} ${job.statusBadge.borderClass}`}>{job.statusBadge.label}</span></td>
-                    <td className="px-5 py-3 text-center">
-                      <button className="text-text-disabled hover:text-primary-container transition-colors p-1"><span className="material-symbols-outlined text-[18px]">more_vert</span></button>
+                    <td className="px-5 py-3 text-center relative" onClick={(e) => e.stopPropagation()}>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveDropdownJobId(prev => prev === job.id ? null : job.id);
+                        }}
+                        className="text-text-disabled hover:text-primary-container transition-colors p-1"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">more_vert</span>
+                      </button>
+
+                      {activeDropdownJobId === job.id && (
+                        <div 
+                          className="absolute right-5 mt-1 w-32 bg-surface border border-border rounded-lg shadow-lg z-50 py-1 text-left"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => {
+                              alert("Edit Job feature coming soon!");
+                              setActiveDropdownJobId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs hover:bg-surface-container-high transition-colors text-text-primary flex items-center gap-2"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">edit</span>
+                            Edit Job
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (confirm("Are you sure you want to completely delete this job? This cannot be undone.")) {
+                                try {
+                                  await deleteJob({ jobId: job.id as any });
+                                  alert("Job deleted successfully.");
+                                } catch (err: any) {
+                                  alert("Failed to delete job: " + err.message);
+                                }
+                              }
+                              setActiveDropdownJobId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs hover:bg-error/10 text-error transition-colors flex items-center gap-2"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">delete</span>
+                            Delete Job
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -295,11 +350,49 @@ export default function JobsPage() {
                     </span>
                   </div>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); }}
-                    className="absolute top-4 right-4 text-text-disabled hover:text-primary-container transition-colors p-1 bg-surface rounded-full hover:bg-surface-container-low"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveDropdownJobId(prev => prev === job.id ? null : job.id);
+                    }}
+                    className="absolute top-4 right-4 text-text-disabled hover:text-primary-container transition-colors p-1 bg-surface rounded-full hover:bg-surface-container-low z-20"
                   >
                     <span className="material-symbols-outlined text-[18px]">more_vert</span>
                   </button>
+
+                  {activeDropdownJobId === job.id && (
+                    <div 
+                      className="absolute top-12 right-4 w-32 bg-surface border border-border rounded-lg shadow-lg z-30 py-1 text-left"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => {
+                          alert("Edit Job feature coming soon!");
+                          setActiveDropdownJobId(null);
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs hover:bg-surface-container-high transition-colors text-text-primary flex items-center gap-2"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                        Edit Job
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (confirm("Are you sure you want to completely delete this job? This cannot be undone.")) {
+                            try {
+                              await deleteJob({ jobId: job.id as any });
+                              alert("Job deleted successfully.");
+                            } catch (err: any) {
+                              alert("Failed to delete job: " + err.message);
+                            }
+                          }
+                          setActiveDropdownJobId(null);
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs hover:bg-error/10 text-error transition-colors flex items-center gap-2"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">delete</span>
+                        Delete Job
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-2 mt-1">

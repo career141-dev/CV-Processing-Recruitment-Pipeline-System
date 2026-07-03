@@ -3,13 +3,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "./lib/permissions";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "./pipeline/followUpHelper";
-
-export const getApplication = query({
-  args: { id: v.id("applications") },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
-  },
-});
+import { syncCandidateOverallStatus } from "./candidates";
 
 export const getByJobId = query({
   args: { jobId: v.string() },
@@ -135,6 +129,7 @@ export const createApplication = mutation({
           currentStage: "matched_candidates" as any,
           lastStageChangedAt: Date.now(),
         });
+        await syncCandidateOverallStatus(ctx, args.candidateId);
       }
       return existing._id;
     }
@@ -142,7 +137,7 @@ export const createApplication = mutation({
     const now = Date.now();
     const initialStage = args.sourceChannel === "database" ? "matched_candidates" : "new_cvs";
     
-    return await ctx.db.insert("applications", {
+    const appId = await ctx.db.insert("applications", {
       candidateId: args.candidateId,
       jobId: args.jobId,
       cvFileId: args.cvFileId,
@@ -153,6 +148,8 @@ export const createApplication = mutation({
       lastStageChangedAt: now,
       createdAt: now,
     });
+    await syncCandidateOverallStatus(ctx, args.candidateId);
+    return appId;
   },
 });
 
@@ -189,6 +186,7 @@ export const logManualCall = mutation({
         taRejectionReason: "Not Interested during initial call",
         lastStageChangedAt: now,
       });
+      await syncCandidateOverallStatus(ctx, args.candidateId);
       return;
     }
 
@@ -238,6 +236,7 @@ export const logManualCall = mutation({
         ],
       });
     }
+    await syncCandidateOverallStatus(ctx, args.candidateId);
   },
 });
 
@@ -274,6 +273,7 @@ export const rejectApplication = mutation({
       notes: args.reason,
       createdAt: Date.now(),
     });
+    await syncCandidateOverallStatus(ctx, app.candidateId);
   },
 });
 
@@ -407,6 +407,8 @@ export const createHeadhuntApplication = mutation({
       createdAt: now,
     });
 
+    await syncCandidateOverallStatus(ctx, candidateId);
+
     return { candidateId, applicationId };
   },
 });
@@ -417,7 +419,11 @@ export const removeApplication = mutation({
   },
   handler: async (ctx, args) => {
     await requireUser(ctx);
-    await ctx.db.delete(args.applicationId);
+    const app = await ctx.db.get(args.applicationId);
+    if (app) {
+      await ctx.db.delete(args.applicationId);
+      await syncCandidateOverallStatus(ctx, app.candidateId);
+    }
   }
 });
 
@@ -575,3 +581,11 @@ export const setApplicationFlags = mutation({
   },
 });
 
+export const getApplication = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const actualId = ctx.db.normalizeId("applications", args.id);
+    if (!actualId) return null;
+    return await ctx.db.get(actualId);
+  },
+});

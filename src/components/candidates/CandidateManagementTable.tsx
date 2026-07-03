@@ -14,6 +14,44 @@ const SOURCE_COLORS: Record<string, string> = {
   workable: "bg-sky-500 text-white",
 };
 
+const STAGE_LABELS: Record<string, string> = {
+  new_cvs: "New CVs",
+  matched_candidates: "TA Shortlisted",
+  ta_shortlist: "TA Shortlisted",
+  shortlisted: "TA Shortlisted",
+  ai_call: "AI Phone Screen",
+  follow_up: "Follow-up",
+  second_shortlist: "Second Shortlist",
+  director_shortlist: "Director Shortlist",
+  client_review: "Client Review",
+  interview: "Interview",
+  offer: "Offer",
+  placed: "Placed",
+  rejected: "Rejected",
+  active: "Active",
+  not_available: "Not Available",
+  merged: "Merged"
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  new_cvs: "bg-blue-50 text-blue-700 border-blue-200",
+  shortlisted: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ta_shortlist: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  matched_candidates: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ai_call: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  follow_up: "bg-amber-50 text-amber-700 border-amber-200",
+  second_shortlist: "bg-teal-50 text-teal-700 border-teal-200",
+  director_shortlist: "bg-purple-50 text-purple-700 border-purple-200",
+  client_review: "bg-pink-50 text-pink-700 border-pink-200",
+  interview: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  offer: "bg-violet-50 text-violet-700 border-violet-200",
+  placed: "bg-green-50 text-green-700 border-green-200",
+  rejected: "bg-red-50 text-red-700 border-red-200",
+  active: "bg-green-50 text-green-700 border-green-200",
+  not_available: "bg-gray-50 text-gray-700 border-gray-200",
+  merged: "bg-slate-50 text-slate-700 border-slate-200",
+};
+
 export function CandidateManagementTable() {
   const router = useRouter();
   const itemsPerPage = 10;
@@ -61,6 +99,7 @@ export function CandidateManagementTable() {
                 <th className="px-6 py-4">Location</th>
                 <th className="px-6 py-4">Experience</th>
                 <th className="px-6 py-4">Source</th>
+                <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Added On</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
@@ -68,7 +107,7 @@ export function CandidateManagementTable() {
             <tbody className="divide-y divide-border text-[13px] text-text-primary">
               {currentItems.length === 0 && status === "Exhausted" ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-10 text-center text-text-disabled">
+                  <td colSpan={8} className="px-6 py-10 text-center text-text-disabled">
                     No candidates found.
                   </td>
                 </tr>
@@ -109,6 +148,18 @@ export function CandidateManagementTable() {
                         );
                       })()}
                     </td>
+                    <td className="px-6 py-4">
+                      {(() => {
+                        const statusKey = candidate.overallStatus || candidate.status || "new_cvs";
+                        const label = STAGE_LABELS[statusKey] || statusKey;
+                        const color = STATUS_COLORS[statusKey] ?? "bg-surface-container text-text-secondary border-border";
+                        return (
+                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${color}`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="px-6 py-4 text-text-secondary">
                       {format(new Date(candidate._creationTime), 'MMM d, yyyy')}
                     </td>
@@ -125,7 +176,7 @@ export function CandidateManagementTable() {
               )}
               {status === "LoadingMore" && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-text-disabled text-sm">
+                  <td colSpan={8} className="px-6 py-4 text-center text-text-disabled text-sm">
                     Loading...
                   </td>
                 </tr>

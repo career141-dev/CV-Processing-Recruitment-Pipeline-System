@@ -46,78 +46,6 @@ const AI_CALL_STATUS: Record<string, { label: string; color: string; bg: string;
 };
 
 
-const MOCK_DATA = {
-  'New CVs': [
-    { id: '1', name: 'Kasun Fernando', source: 'LinkedIn', score: 92, status: 'Not Called' },
-    { id: '2', name: 'Priya Sharma', source: 'WhatsApp', score: 87, status: 'Not Called' },
-    { id: '3', name: 'Ashan Mendis', source: 'Email', score: 79, status: 'Not Called' },
-    ...Array.from({ length: 44 }).map((_, i) => ({
-       id: `n${i}`, name: `Candidate N${i}`, source: 'Workable', score: 70 + (i % 20), status: 'Not Called'
-    }))
-  ],
-  'TA Shortlist': [
-    { id: '1', name: 'Kasun Fernando', score: 92, status: 'Not Called' },
-    { id: '2', name: 'Priya Sharma', score: 87, status: 'Not Called' },
-    { id: '3', name: 'Ashan Mendis', score: 79, status: 'Scheduled' },
-    ...Array.from({ length: 9 }).map((_, i) => ({
-       id: `t${i}`, name: `Candidate T${i}`, score: 85, status: 'Not Called'
-    }))
-  ],
-  'Matched Candidates': [
-    { id: '1', name: 'Kasun Fernando', expectedSalary: '$3,200', noticePeriod: '1 month' },
-    ...Array.from({ length: 4 }).map((_, i) => ({
-       id: `m${i}`, name: `Candidate M${i}`, expectedSalary: '$3,000', noticePeriod: '1 month'
-    }))
-  ],
-  'AI Call': [
-    { id: '1', name: 'Kasun Fernando', status: 'Scheduled', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: 'scheduled' },
-    { id: '2', name: 'Priya Sharma', status: 'Not Called', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: undefined },
-    { id: '3', name: 'Ashan Mendis', status: 'No Answer', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: 'no_answer' },
-    ...Array.from({ length: 5 }).map((_, i) => ({
-       id: `a${i}`, name: `Candidate A${i}`, status: 'Completed', currentSalary: '—', expectedSalary: '—', noticePeriod: '—', aiCallStatus: 'completed', sourceChannel: 'whatsapp'
-    }))
-  ],
-  'Follow-up': [
-    { id: '1', name: 'Kasun Fernando', currentSalary: '$2,500', expectedSalary: '$3,200', noticePeriod: '1 month', fit: 'Good' },
-    ...Array.from({ length: 3 }).map((_, i) => ({
-       id: `f${i}`, name: `Candidate F${i}`, currentSalary: '$2,800', expectedSalary: '$3,000', noticePeriod: '1 month', fit: 'Good'
-    }))
-  ],
-  '2nd Shortlist': [
-    { id: '1', name: 'Kasun Fernando', expectedSalary: '$3,200', noticePeriod: '1 month', fit: 'Good' },
-    ...Array.from({ length: 5 }).map((_, i) => ({
-       id: `s2_${i}`, name: `Candidate S${i}`, expectedSalary: '$3,000', noticePeriod: '1 month', fit: 'Good'
-    }))
-  ],
-  'Director Shortlist': [
-    { id: '1', name: 'Kasun Fernando', score: 92, salaryFit: 'Good', decision: 'Pending' },
-    ...Array.from({ length: 5 }).map((_, i) => ({
-       id: `d${i}`, name: `Candidate D${i}`, score: 88, salaryFit: 'Good', decision: 'Pending'
-    }))
-  ],
-  'Client Review': [
-    { id: '1', name: 'Kasun Fernando', score: 92, decision: 'Pending' },
-    ...Array.from({ length: 3 }).map((_, i) => ({
-       id: `c${i}`, name: `Candidate C${i}`, score: 90, decision: 'Pending'
-    }))
-  ],
-  'Interview': [
-    { id: '1', name: 'Kasun Fernando', date: '15 Jun 2026', feedback: 'Pending' },
-    { id: '2', name: 'Sarah Connor', date: '16 Jun 2026', feedback: 'Good' }
-  ],
-  'Offer': [
-    { id: '1', name: 'Kasun Fernando', salary: '$3,200', startDate: '1 Aug', status: 'Pending' }
-  ],
-  'Placed': [
-    { id: '10', name: 'John Doe', role: 'Brand Manager', date: '01 Jun 2026' }
-  ],
-  'Rejected': [
-    { id: '2', name: 'Priya Sharma', reason: 'Expected salary over budget ($6,500)' },
-    ...Array.from({ length: 15 }).map((_, i) => ({
-       id: `r${i}`, name: `Rejected Candidate ${i}`, reason: 'Not a good fit'
-    }))
-  ]
-};
 
 // Pipeline tab list — Matched Candidates is NOT a pipeline stage;
 // it lives in the Matches main tab as a separate entry point.
@@ -815,7 +743,9 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
   return (
     <div className="flex items-center gap-1 overflow-x-auto pb-1 mb-5 scrollbar-hide">
       {stages.map((s, i) => {
-        const count = applications.filter(a => a.currentStage === s.id).length;
+        const count = s.id === 'ta_shortlist'
+          ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'matched_candidates').length
+          : applications.filter(a => a.currentStage === s.id).length;
         const isLast = i === stages.length - 1;
         return (
           <React.Fragment key={s.id}>
@@ -1051,7 +981,7 @@ export default function JobDetailPage() {
                   applications={applications} 
                   onNavigate={() => {
                     setActiveMainTab('pipeline');
-                    setActivePipelineTab('Matched Candidates');
+                    setActivePipelineTab('TA Shortlist');
                   }}
                 />
               ))
@@ -1153,6 +1083,7 @@ export default function JobDetailPage() {
     // Map TABS to PIPELINE_STAGES ids
     const stageMap: Record<string, string> = {
       'New CVs': 'new_cvs',
+      'Matched Candidates': 'matched_candidates',
       'TA Shortlist': 'ta_shortlist',
       'AI Call': 'ai_call',
       'Follow-up': 'follow_up',
@@ -1166,51 +1097,49 @@ export default function JobDetailPage() {
     };
 
     const currentStageId = stageMap[activePipelineTab];
-    let stageApps = applications.filter(app => app.currentStage === currentStageId);
+    const stageApps = applications.filter(app => {
+      if (activePipelineTab === 'TA Shortlist') {
+        return app.currentStage === 'ta_shortlist' || app.currentStage === 'matched_candidates';
+      }
+      return app.currentStage === currentStageId;
+    });
     
     // Map real data to mock data format to reuse the tables
-    let itemsToRender: any[] = [];
-    
-    if (stageApps.length > 0) {
-      itemsToRender = stageApps.map(app => ({
-        id: app._id,
-        candidateId: app.candidateId,
-        cvUploadId: app.candidate?.cvUploadId,
-        name: app.candidate?.fullName || 'Unknown Candidate',
-        score: app.aiMatchScore || 'Pending',
-        status: app.taShortlistStatus || 'Pending',
-        currentSalary: app.candidate?.currentSalary ? '$' + app.candidate.currentSalary : '—',
-        expectedSalary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
-        noticePeriod: app.candidate?.noticePeriodDays ? app.candidate.noticePeriodDays + ' days' : '—',
-        budgetFit: true,
-        fit: 'Good',
-        salaryFit: 'Good',
-        decision: 'Pending',
-        manualCallOutcome: app.manualCallOutcome,
-        aiCallStatus: app.aiCallStatus,
-        aiCallIvrResponse: (app as any).aiCallIvrResponse,
-        sourceChannel: app.sourceChannel,
-        date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
-        // Use followUpEnteredAt for accurate 7-day clock; fall back to lastStageChangedAt
-        timeInStageRaw: (app as any).followUpEnteredAt
-          ? Date.now() - (app as any).followUpEnteredAt
-          : (app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0),
-        // Per-application completion flags (the source of truth for follow-up)
-        followUpCvReceived: (app as any).followUpCvReceived,
-        followUpCurrentSalary: (app as any).followUpCurrentSalary,
-        followUpExpectedSalary: (app as any).followUpExpectedSalary,
-        followUpNoticePeriod: (app as any).followUpNoticePeriod,
-        feedback: 'Pending',
-        salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
-        startDate: 'TBD',
-        role: job.title,
-        reason: app.taRejectionReason || 'Not a fit'
-      }));
-    } else {
-      // Use MOCK DATA as dummy data
-      itemsToRender = MOCK_DATA[activePipelineTab as keyof typeof MOCK_DATA] || [];
-      itemsToRender = itemsToRender.map(item => ({...item, id: 'dummy|' + item.id, candidateId: 'dummy', cvUploadId: null}));
-    }
+    const itemsToRender = stageApps.map(app => ({
+      id: app._id,
+      candidateId: app.candidateId,
+      cvUploadId: app.candidate?.cvUploadId,
+      name: app.candidate?.fullName || 'Unknown Candidate',
+      score: app.aiMatchScore || 'Pending',
+      status: app.taShortlistStatus || 'Pending',
+      currentSalary: app.candidate?.currentSalary ? '$' + app.candidate.currentSalary : '—',
+      expectedSalary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
+      noticePeriod: app.candidate?.noticePeriodDays ? app.candidate.noticePeriodDays + ' days' : '—',
+      budgetFit: true,
+      fit: 'Good',
+      salaryFit: 'Good',
+      decision: 'Pending',
+      manualCallOutcome: app.manualCallOutcome,
+      aiCallStatus: app.aiCallStatus,
+      aiCallIvrResponse: (app as any).aiCallIvrResponse,
+      sourceChannel: app.sourceChannel,
+      currentStage: app.currentStage,
+      date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
+      // Use followUpEnteredAt for accurate 7-day clock; fall back to lastStageChangedAt
+      timeInStageRaw: (app as any).followUpEnteredAt
+        ? Date.now() - (app as any).followUpEnteredAt
+        : (app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0),
+      // Per-application completion flags (the source of truth for follow-up)
+      followUpCvReceived: (app as any).followUpCvReceived,
+      followUpCurrentSalary: (app as any).followUpCurrentSalary,
+      followUpExpectedSalary: (app as any).followUpExpectedSalary,
+      followUpNoticePeriod: (app as any).followUpNoticePeriod,
+      feedback: 'Pending',
+      salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
+      startDate: 'TBD',
+      role: job.title,
+      reason: app.taRejectionReason || 'Not a fit'
+    }));
 
     const totalItems = itemsToRender.length;
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -1246,43 +1175,34 @@ export default function JobDetailPage() {
             <thead>
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
-                <th className="p-4">Match Score</th>
-                <th className="p-4 text-right">Move To Stage</th>
-              </tr>
-            </thead>
-            <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
-                <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                  <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
-                  </td>
-                  <td className="p-4"><ScoreRing score={item.score} /></td>
-                  <td className="p-4 text-right">
-                    {renderKanbanDropdown(item.id, 'ta_shortlist')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        );
-        break;
-      case 'Matched Candidates':
-        tableContent = (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                <th className="p-4">Candidate</th>
-                <th className="p-4">Call Status</th>
+                <th className="p-4">Status / Score</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
-                <MatchedCandidateRow key={item.id} item={item} renderKanbanDropdown={renderKanbanDropdown} />
-              ))}
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={3} className="p-8 text-center text-text-secondary">No candidates in TA Shortlist.</td></tr>
+              ) : currentItems.map((item: any) => {
+                if (item.currentStage === 'matched_candidates') {
+                  return (
+                    <MatchedCandidateRow key={item.id} item={item} renderKanbanDropdown={renderKanbanDropdown} />
+                  );
+                }
+                return (
+                  <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
+                    <td className="p-4 font-medium">
+                      <div className="flex items-center gap-2">
+                        {item.name}
+                        <CvViewButton cvUploadId={item.cvUploadId} />
+                      </div>
+                    </td>
+                    <td className="p-4"><ScoreRing score={item.score} /></td>
+                    <td className="p-4 text-right">
+                      {renderKanbanDropdown(item.id, 'ta_shortlist')}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         );
@@ -1490,7 +1410,9 @@ export default function JobDetailPage() {
                 </tr>
               </thead>
               <tbody className="text-[13px] text-text-primary divide-y divide-border">
-                {currentItems.map((item: any) => (
+                {currentItems.length === 0 ? (
+                  <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No candidates in 2nd Shortlist.</td></tr>
+                ) : currentItems.map((item: any) => (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
                       <div className="flex items-center gap-2">
@@ -1531,7 +1453,9 @@ export default function JobDetailPage() {
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No candidates in Director Shortlist.</td></tr>
+              ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -1584,7 +1508,9 @@ export default function JobDetailPage() {
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={3} className="p-8 text-center text-text-secondary">No candidates in Client Review.</td></tr>
+              ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -1634,7 +1560,9 @@ export default function JobDetailPage() {
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No interviews scheduled.</td></tr>
+              ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -1666,7 +1594,9 @@ export default function JobDetailPage() {
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No offers extended.</td></tr>
+              ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -1698,7 +1628,9 @@ export default function JobDetailPage() {
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No placements made yet.</td></tr>
+              ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -1728,7 +1660,9 @@ export default function JobDetailPage() {
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.map((item: any) => (
+              {currentItems.length === 0 ? (
+                <tr><td colSpan={3} className="p-8 text-center text-text-secondary">No rejected candidates.</td></tr>
+              ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -1879,13 +1813,15 @@ export default function JobDetailPage() {
         {TABS.map(tab => {
           const Icon = tab.icon;
           const stageId = {
-            'New CVs': 'new_cvs', 'Matched Candidates': 'matched_candidates',
+            'New CVs': 'new_cvs',
             'TA Shortlist': 'ta_shortlist', 'AI Call': 'ai_call',
             'Follow-up': 'follow_up', '2nd Shortlist': 'second_shortlist',
             'Director Shortlist': 'director_shortlist', 'Client Review': 'client_review',
             'Interview': 'interview', 'Offer': 'offer', 'Placed': 'placed', 'Rejected': 'rejected'
           }[tab.id];
-          const count = stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
+          const count = tab.id === 'TA Shortlist'
+            ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'matched_candidates').length
+            : stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
           return (
             <button
               key={tab.id}

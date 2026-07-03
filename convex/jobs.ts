@@ -323,8 +323,8 @@ export const assignTeamToJob = mutation({
 
     if (args.directorId) {
       const director = await ctx.db.get(args.directorId);
-      if (!director || (director.role !== "director" && director.role !== "admin")) {
-        throw new Error("Director must have DIRECTOR or ADMIN role");
+      if (!director || !["director", "admin", "ta_manager"].includes(director.role)) {
+        throw new Error("Director must have DIRECTOR, ADMIN, or TA_MANAGER role");
       }
       await ctx.db.insert("jobAssignments", {
         jobId: args.jobId,
@@ -724,7 +724,7 @@ export const saveReverseMatchResults = internalMutation({
         sourceLevel2: v.optional(v.string()),
       })
     ),
-    status: v.union(v.literal("done"), v.literal("error")),
+    status: v.union(v.literal("done"), v.literal("error"), v.literal("running")),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.jobId, {
