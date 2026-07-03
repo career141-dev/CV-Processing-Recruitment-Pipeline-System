@@ -24,10 +24,9 @@ export const moveToTAShortlist = mutation({
     const isPathTwo = entry.sourceChannel !== "database";
 
     if (isPathTwo) {
-      // PATH 2 — New CV: shortlist AND immediately auto-trigger the AI call
-      // Stage jumps directly to ai_call; the TA does not need to manually dial
+      // PATH 2 — New CV: shortlist AND move directly to follow_up (AI Call is disabled)
       await ctx.db.patch(args.applicationId, {
-        currentStage: "ai_call",
+        currentStage: "follow_up",
         stageHistory: [
           ...(entry.stageHistory ?? []),
           {
@@ -37,53 +36,29 @@ export const moveToTAShortlist = mutation({
             note: args.note,
           },
           {
-            stage: "ai_call",
+            stage: "follow_up",
             enteredAt: new Date().toISOString(),
             changedBy: user._id,
-            note: "AI call auto-triggered on TA shortlist confirm.",
+            note: "Moved directly to follow-up on TA shortlist confirm.",
           },
         ],
         taShortlistStatus: "shortlisted",
         taShortlistById: user._id,
         taShortlistAt: now,
         lastStageChangedAt: now,
-        aiCallStatus: "scheduled",
-      });
-
-      // Insert aiCalls record and schedule ElevenLabs outbound call
-      const callId = await ctx.db.insert("aiCalls", {
-        candidateId: entry.candidateId,
-        applicationId: args.applicationId,
-        jobId: entry.jobId,
-        triggeredBy: user._id,
-        triggerType: "automatic_new_applicant",
-        callStatus: "scheduled",
-        callScriptUsed: "initial_screening",
-        companyHidden: false,
-        calledAt: now,
-        firstAttemptAt: now,
-        attemptNumber: 1,
-        followUpTriggered: false,
-      });
-
-      await ctx.db.patch(args.applicationId, { aiCallId: callId as any });
-
-      await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
-        applicationId: args.applicationId,
-        candidateId: entry.candidateId,
-        jobId: entry.jobId,
+        followUpEnteredAt: now,
       });
 
       await ctx.db.insert("pipelineEvents", {
         applicationId: args.applicationId,
         candidateId: entry.candidateId,
         jobId: entry.jobId,
-        eventType: "ai_call_triggered",
+        eventType: "follow_up_triggered",
         fromStage: "new_cvs",
-        toStage: "ai_call",
+        toStage: "follow_up",
         actorType: "user",
         actorId: user._id,
-        notes: "AI call auto-triggered on TA shortlist confirm (Path 2).",
+        notes: "Moved directly to follow-up on TA shortlist confirm (Path 2).",
         createdAt: now,
       });
     } else {

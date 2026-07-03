@@ -294,12 +294,12 @@ export default function CreateJobWizard() {
         agent3Day7Channel: formData.followUpSchedule.day7 ? formData.followUpSchedule.day7Channel.toLowerCase() : undefined,
         agent3AfterDay7: formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "trigger_agent5",
         
-        agent5Enabled: formData.enablePhoneScreening,
-        agent5Trigger: "all_new_applicants",
+        agent5Enabled: false,
+        agent5Trigger: "manual_only",
         agent5CallScript: "default",
         agent5CustomQuestions: formData.additionalQuestions,
         agent5NoAnswerAction: "trigger_agent3",
-        agent5HideCompany: formData.phoneScreeningConfidential,
+        agent5HideCompany: false,
         
         directorReviewEnabled: formData.reviewLevels.directorReview,
         clientReviewEnabled: formData.reviewLevels.clientReview,
@@ -1016,65 +1016,6 @@ export default function CreateJobWizard() {
             </div>
           )}
         </div>
-
-        {/* Agent 5 */}
-        <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
-              <span className="material-symbols-outlined text-[16px] text-primary-container">smart_toy</span> AI Call Agent
-            </h3>
-            <label className="relative inline-flex items-center cursor-pointer shrink-0">
-              <input type="checkbox" className="sr-only peer" checked={formData.enablePhoneScreening} onChange={e => updateFormData('enablePhoneScreening', e.target.checked)} />
-              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
-            </label>
-          </div>
-          {formData.enablePhoneScreening && (
-            <div className="space-y-3 pt-2 border-t border-border animate-in fade-in">
-              <div>
-                <label className="text-xs font-medium mb-1.5 block text-text-primary">Trigger</label>
-                <select
-                  value={formData.phoneScreeningTriggers.manualOnly ? 'manual_only' : 'all_new_applicants'}
-                  onChange={e => updateNestedFormData('phoneScreeningTriggers', 'manualOnly', e.target.value === 'manual_only')}
-                  className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary"
-                >
-                  <option value="all_new_applicants">All new applicants</option>
-                  <option value="database_matches_70_plus">Database matches 70+</option>
-                  <option value="manual_only">Manual only</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1.5 block text-text-primary">Call Script</label>
-                <textarea
-                  value={formData.callScript}
-                  onChange={e => updateFormData('callScript', e.target.value)}
-                  placeholder="Script for the AI to follow during calls..."
-                  className="w-full text-sm min-h-[80px] border border-border rounded-md p-3 bg-surface text-text-primary"
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                  <input type="checkbox" className="sr-only peer" checked={formData.phoneScreeningConfidential} onChange={e => updateFormData('phoneScreeningConfidential', e.target.checked)} />
-                  <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
-                </label>
-                <label className="text-xs text-text-primary">Hide company name during call</label>
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1.5 block text-text-primary">No Answer Action</label>
-                <select
-                  value={formData.phoneScreeningNoAnswer}
-                  onChange={e => updateFormData('phoneScreeningNoAnswer', e.target.value)}
-                  className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary"
-                >
-                  <option value="triggerEmail">Trigger follow-up agent</option>
-                  <option value="retry_after_2hrs">Retry after 2 hours</option>
-                  <option value="notify_ta">Notify TA</option>
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* SLA */}
         <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">

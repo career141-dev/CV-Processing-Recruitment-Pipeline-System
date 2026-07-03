@@ -258,6 +258,7 @@ ElevenLabs post-call webhook -> /api/elevenlabs/post-call-webhook
 | candidate_id | Convex ID | Passed silently to tool calls |
 | job_id | Convex ID | Passed silently to tool calls |
 | application_id | Convex ID | Passed silently to tool calls |
+| custom_questions | "Are you willing to relocate?" | Passed aloud to agent so it knows what additional questions to ask |
 | recruiter_name | "Mike Johnson" | Optional closing line |
 | is_confidential | "true"/"false" | Controls company name visibility |
 
@@ -283,7 +284,19 @@ ElevenLabs post-call webhook -> /api/elevenlabs/post-call-webhook
       "current_salary":     { "type": "number", "description": "Numeric value only, omit if declined" },
       "expected_salary":    { "type": "number", "description": "Numeric value only, omit if declined" },
       "notice_period_days": { "type": "number", "description": "Number of days, omit if declined" },
-      "fields_declined":    { "type": "array", "items": { "type": "string" } }
+      "fields_declined":    { "type": "array", "items": { "type": "string" } },
+      "candidate_questions": { "type": "string", "description": "Any additional questions the candidate asked the recruiter" },
+      "custom_question_answers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+             "question": { "type": "string" },
+             "answer": { "type": "string" }
+          }
+        },
+        "description": "Answers to the custom questions the agent asked"
+      }
     },
     "required": ["candidate_id", "job_id"]
   }

@@ -20,7 +20,6 @@ import { useUser } from '@clerk/nextjs';
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
   { id: "ta_shortlist", label: "TA Shortlisted" },
-  { id: "ai_call", label: "AI Phone Screen" },
   { id: "follow_up", label: "Follow-up" },
   { id: "second_shortlist", label: "2nd Shortlist" },
   { id: "director_shortlist", label: "Director Shortlist" },
@@ -52,7 +51,6 @@ const AI_CALL_STATUS: Record<string, { label: string; color: string; bg: string;
 const TABS = [
   { id: 'New CVs', label: 'New CVs', icon: FileText },
   { id: 'TA Shortlist', label: 'TA Shortlisted', icon: ListTodo },
-  { id: 'AI Call', label: 'AI Call', icon: PhoneCall },
   { id: 'Follow-up', label: 'Follow-up', icon: Clock },
   { id: '2nd Shortlist', label: 'Second Shortlist', icon: CheckCircle2 },
   { id: 'Director Shortlist', label: 'Director Shortlist', icon: UserCheck },
@@ -730,7 +728,6 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
   const stages = [
     { id: 'new_cvs',          label: 'New CVs',         tab: 'New CVs' },
     { id: 'ta_shortlist',     label: 'TA Shortlist',    tab: 'TA Shortlist' },
-    { id: 'ai_call',          label: 'AI Call',         tab: 'AI Call' },
     { id: 'follow_up',        label: 'Follow-up',       tab: 'Follow-up' },
     { id: 'second_shortlist', label: '2nd Shortlist',   tab: '2nd Shortlist' },
     { id: 'director_shortlist', label: 'Director',      tab: 'Director Shortlist' },
@@ -1081,7 +1078,6 @@ export default function JobDetailPage() {
       'New CVs': 'new_cvs',
       'Matched Candidates': 'matched_candidates',
       'TA Shortlist': 'ta_shortlist',
-      'AI Call': 'ai_call',
       'Follow-up': 'follow_up',
       '2nd Shortlist': 'second_shortlist',
       'Director Shortlist': 'director_shortlist',
@@ -1203,99 +1199,6 @@ export default function JobDetailPage() {
           </table>
         );
         break;
-      case 'AI Call':
-        tableContent = (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                <th className="p-4">Candidate</th>
-                <th className="p-4">AI Call Status</th>
-                <th className="p-4">Intake Data</th>
-                <th className="p-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.length === 0 ? (
-                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No candidates at AI Call stage.</td></tr>
-              ) : currentItems.map((item: any) => {
-                const hasSalary = !!item.currentSalary && item.currentSalary !== '—' && !!item.expectedSalary && item.expectedSalary !== '—';
-                const hasNotice = !!item.noticePeriod && item.noticePeriod !== '—';
-                const hasCV = !!item.cvUploadId;
-                const isAutoAdvancing = item.aiCallStatus === 'completed' && hasSalary && hasNotice && hasCV;
-                const alreadyCalled = !!item.aiCallStatus && item.aiCallStatus !== 'not_called';
-                return (
-                  <React.Fragment key={item.id}>
-                    <tr className="hover:bg-surface-bright transition-colors group">
-                      <td className="p-4 font-medium">
-                        <div className="flex items-center gap-2">
-                          {item.name}
-                          <CvViewButton cvUploadId={item.cvUploadId} />
-                        </div>
-                        {/* Auto-trigger indicator for Path 2 (non-database) candidates */}
-                        {!alreadyCalled && item.sourceChannel !== 'database' && (
-                          <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full w-fit">
-                            <Bot className="w-3 h-3" />
-                            AI call auto-triggered on shortlist confirm
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-4">
-                        <AiCallStatusBadge status={item.aiCallStatus} />
-                      </td>
-                      <td className="p-4">
-                        <div className="flex flex-col gap-1.5 text-[12px]">
-                          <span className={hasSalary ? 'text-green-600 font-medium' : 'text-text-secondary'}>
-                            {hasSalary ? `💰 ${item.currentSalary} → ${item.expectedSalary}` : '💰 Salary: Pending'}
-                          </span>
-                          <span className={hasNotice ? 'text-green-600 font-medium' : 'text-text-secondary'}>
-                            {hasNotice ? `⏳ Notice: ${item.noticePeriod}` : '⏳ Notice: Pending'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {!alreadyCalled && (
-                            <button
-                              onClick={() => handleTriggerAiCall(item.id)}
-                              className="inline-flex items-center gap-1.5 text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm"
-                            >
-                              <Phone className="w-3.5 h-3.5" /> Call Now
-                            </button>
-                          )}
-                          {alreadyCalled && !isAutoAdvancing && (
-                            <button
-                              onClick={() => handleTriggerAiCall(item.id)}
-                              className="inline-flex items-center gap-1.5 text-[12px] font-medium border border-border text-text-secondary px-3 py-1.5 rounded-[6px] hover:bg-surface-container transition-colors"
-                            >
-                              <Phone className="w-3.5 h-3.5" /> Retry Call
-                            </button>
-                          )}
-                          <button
-                            onClick={() => openRejectModal(item.id, item.name, 'ai_call')}
-                            className="text-[12px] font-medium text-text-secondary hover:text-error px-2 py-1.5 rounded-[6px] transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {isAutoAdvancing && (
-                      <tr className="bg-green-500/5 border-b border-border">
-                        <td colSpan={4} className="px-6 py-2">
-                          <div className="flex items-center gap-2 text-[12px] text-green-700 dark:text-green-400">
-                            <Clock className="w-3.5 h-3.5 animate-spin" />
-                            Auto-advancing to 2nd Shortlist — all 3 fields captured
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        );
-        break;
       case 'Follow-up':
         tableContent = (
           <table className="w-full text-left border-collapse">
@@ -1303,6 +1206,7 @@ export default function JobDetailPage() {
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
                 <th className="p-4">Source</th>
+                <th className="p-4">AI Call Status</th>
                 <th className="p-4">4-Field Completion</th>
                 <th className="p-4">Days Remaining</th>
                 <th className="p-4 text-right">Move To Stage</th>
@@ -1351,6 +1255,9 @@ export default function JobDetailPage() {
                       }`}>
                         {isDbMatch ? 'DB Match' : 'External'}
                       </span>
+                    </td>
+                    <td className="p-4">
+                      <AiCallStatusBadge status={item.aiCallStatus} />
                     </td>
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
@@ -1810,8 +1717,9 @@ export default function JobDetailPage() {
           const Icon = tab.icon;
           const stageId = {
             'New CVs': 'new_cvs',
-            'TA Shortlist': 'ta_shortlist', 'AI Call': 'ai_call',
-            'Follow-up': 'follow_up', '2nd Shortlist': 'second_shortlist',
+            'TA Shortlist': 'ta_shortlist',
+            'Follow-up': 'follow_up',
+            '2nd Shortlist': 'second_shortlist',
             'Director Shortlist': 'director_shortlist', 'Client Review': 'client_review',
             'Interview': 'interview', 'Offer': 'offer', 'Placed': 'placed', 'Rejected': 'rejected'
           }[tab.id];

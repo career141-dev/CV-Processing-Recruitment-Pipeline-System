@@ -539,6 +539,16 @@ export const updateAiCallStatus = mutation({
   },
 });
 
+export const saveCustomQuestionAnswers = mutation({
+  args: {
+    aiCallId: v.id("aiCalls"),
+    customQuestionAnswers: v.array(v.object({ question: v.string(), answer: v.string() })),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.aiCallId, { customQuestionAnswers: args.customQuestionAnswers });
+  },
+});
+
 // ─── Per-application follow-up helpers ────────────────────────────────────────
 
 /** Sets the timestamp when a candidate entered the Follow-up stage.

@@ -44,6 +44,7 @@ export const triggerIntakeCall = internalAction({
           candidate_name: candidate.fullName || "Candidate",
           job_title: job.title || "the open role",
           company_name: "Career141",
+          custom_questions: job.agent5CustomQuestions?.join(", ") || "None",
           candidate_id: args.candidateId,
           job_id: args.jobId,
           application_id: args.applicationId,

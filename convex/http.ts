@@ -247,12 +247,15 @@ http.route({
         expected_salary,
         notice_period_days,
         candidate_questions,
+        custom_question_answers,
       } = body;
       if (!candidate_id) throw new Error("Missing candidate_id");
 
+      let aiCall: any = null;
+
       // Idempotency: Check if already processed
       if (conversation_id) {
-        const aiCall = await ctx.runQuery(api.applications.findAiCallByElevenLabsId, { conversationId: conversation_id });
+        aiCall = await ctx.runQuery(api.applications.findAiCallByElevenLabsId, { conversationId: conversation_id });
         if (aiCall && aiCall.currentSalary === current_salary && aiCall.expectedSalary === expected_salary && aiCall.noticePeriodDays === notice_period_days) {
            return new Response(JSON.stringify({ success: true, note: "Already processed" }), { status: 200 });
         }
@@ -305,6 +308,14 @@ http.route({
         noticePeriod: finalNoticeText,
         candidateQuestions: candidate_questions,
       });
+
+      // 1b. Save custom question answers to aiCalls if available
+      if (aiCall && custom_question_answers && Array.isArray(custom_question_answers)) {
+        await ctx.runMutation(api.applications.saveCustomQuestionAnswers, {
+          aiCallId: aiCall._id,
+          customQuestionAnswers: custom_question_answers,
+        });
+      }
 
       // 2. If application_id is present, update per-application flags too
       if (application_id) {

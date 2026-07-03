@@ -24,7 +24,6 @@ const STAGE_LABELS: Record<string, string> = {
   matched_candidates: "TA Shortlisted",
   ta_shortlist: "TA Shortlisted",
   shortlisted: "TA Shortlisted",
-  ai_call: "AI Phone Screen",
   follow_up: "Follow-up",
   second_shortlist: "Second Shortlist",
   director_shortlist: "Director Shortlist",
