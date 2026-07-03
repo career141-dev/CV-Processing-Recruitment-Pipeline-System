@@ -239,10 +239,10 @@ http.route({
       console.log("[save-intake] Received tool payload from AI:", body);
 
       
+      const candidate_id = body.candidate_id;
+      const application_id = body.application_id;
+      const conversation_id = body.conversation_id;
       const {
-        candidate_id,
-        application_id,
-        conversation_id,
         current_salary,
         expected_salary,
         notice_period_days,
@@ -357,8 +357,11 @@ http.route({
     try {
       const rawBody = await request.text();
       const body = JSON.parse(rawBody);
+      const candidate_id = body.candidate_id;
+      const application_id = body.application_id;
+      const conversation_id = body.conversation_id || body.system__conversation_id;
+      const { reason } = body;
       
-      const { candidate_id, application_id, reason, conversation_id } = body;
       if (!candidate_id) throw new Error("Missing candidate_id");
 
       if (conversation_id) {
