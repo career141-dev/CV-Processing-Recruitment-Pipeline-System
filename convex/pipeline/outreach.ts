@@ -180,8 +180,8 @@ export const triggerWhatsAppFollowUp = mutation({
     applicationId: v.id("applications"),
   },
   handler: async (ctx, args) => {
-    await initiateFollowUpOutreach(ctx, args.applicationId);
-    return { success: true };
+    const commId = await initiateFollowUpOutreach(ctx, args.applicationId);
+    return { success: true, communicationId: commId };
   },
 });
 
@@ -195,5 +195,16 @@ export const triggerBulkFollowUp = mutation({
       await initiateFollowUpOutreach(ctx, appId);
     }
     return { success: true };
+  },
+});
+
+// Get communication status by ID for frontend polling
+export const getCommunicationStatus = query({
+  args: {
+    communicationId: v.id("communications"),
+  },
+  handler: async (ctx, args) => {
+    const comm = await ctx.db.get(args.communicationId);
+    return comm ? { deliveryStatus: comm.deliveryStatus, errorMessage: comm.errorMessage } : null;
   },
 });

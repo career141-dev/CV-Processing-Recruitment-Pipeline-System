@@ -11,7 +11,7 @@ import {
   Phone, Upload, AlertTriangle, ArrowRight, Clock
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation, useAction, useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -811,6 +811,7 @@ export default function JobDetailPage() {
   const clientApproveMutation = useMutation(api.pipeline.stages.clientApprove);
   const clientHoldMutation = useMutation(api.pipeline.stages.clientHold);
   const clientRejectMutation = useMutation(api.pipeline.stages.clientReject);
+  const convex = useConvex();
   const triggerWhatsAppFollowUp = useMutation(api.pipeline.outreach.triggerWhatsAppFollowUp);
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   
@@ -1287,8 +1288,36 @@ export default function JobDetailPage() {
                           onClick={async () => {
                             setSendingWhatsAppId(item.id);
                             try {
-                              await triggerWhatsAppFollowUp({ applicationId: item.id });
-                              alert("WhatsApp follow-up sent successfully!");
+                              const result = await triggerWhatsAppFollowUp({ applicationId: item.id });
+                              if (result?.communicationId) {
+                                let isSent = false;
+                                let errorMessage = "";
+                                // Poll status up to 5 times (5 seconds)
+                                for (let i = 0; i < 5; i++) {
+                                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, {
+                                    communicationId: result.communicationId,
+                                  });
+                                  if (statusRes) {
+                                    if (statusRes.deliveryStatus === "sent") {
+                                      isSent = true;
+                                      break;
+                                    } else if (statusRes.deliveryStatus === "failed") {
+                                      errorMessage = statusRes.errorMessage || "Unknown error";
+                                      break;
+                                    }
+                                  }
+                                }
+                                if (isSent) {
+                                  alert("WhatsApp follow-up sent successfully!");
+                                } else if (errorMessage) {
+                                  alert(`WhatsApp delivery failed: ${errorMessage}`);
+                                } else {
+                                  alert("WhatsApp follow-up is queued. It should deliver shortly.");
+                                }
+                              } else {
+                                alert("WhatsApp follow-up initiated successfully!");
+                              }
                             } catch (err: any) {
                               console.error(err);
                               alert(`Failed to send WhatsApp: ${err.message}`);

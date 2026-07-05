@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
@@ -13,18 +13,32 @@ interface SendMessageModalProps {
 
 export function SendMessageModal({ onClose, candidateId, jobId }: SendMessageModalProps) {
   const sendMessage = useMutation(api.pipeline.outreach.sendMessage);
-  // Optional: queries to get candidate details and jobs
   
   const [channel, setChannel] = useState<"email" | "whatsapp" | "sms">("email");
-  const [subject, setSubject] = useState("New Career Opportunity - Data Analyst Roles");
-  const [body, setBody] = useState(`Hi [Name],\n\nI came across your profile and wanted to reach out about an exciting [Job Title] opportunity with one of our clients.\n\nWould you be open to learning more?\n\nBest regards,\n[Recruiter]`);
+  const [subject, setSubject] = useState("New Career Opportunity");
+  const [body, setBody] = useState("");
+  const [bodyInitialized, setBodyInitialized] = useState(false);
   const [setupFollowUps, setSetupFollowUps] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
-
   const candidate = useQuery(api.candidates.getCandidate, candidateId ? { id: candidateId } : "skip");
+  const job = useQuery(api.jobs.getJob, jobId ? { jobId } : "skip");
   const candidateName = candidate?.fullName || "Candidate";
+
+  useEffect(() => {
+    if (candidate && (job || !jobId) && !bodyInitialized) {
+      const name = candidate.fullName || "Candidate";
+      const jobTitle = job?.title || "our open";
+      
+      const initialSubject = `New Career Opportunity - ${jobTitle}`;
+      const initialBody = `Hi ${name},\n\nI came across your profile and wanted to reach out about an exciting ${jobTitle} opportunity with one of our clients.\n\nWould you be open to learning more?\n\nBest regards,\nSarah K.`;
+      
+      setSubject(initialSubject);
+      setBody(initialBody);
+      setBodyInitialized(true);
+    }
+  }, [candidate, job, jobId, bodyInitialized]);
 
   const handleSend = async () => {
     if (!candidateId) {

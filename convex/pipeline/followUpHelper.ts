@@ -97,7 +97,7 @@ export async function updateFollowUpFlags(
 export async function initiateFollowUpOutreach(
   ctx: any,
   applicationId: Id<"applications">
-): Promise<void> {
+): Promise<Id<"communications"> | undefined> {
   const app = await ctx.db.get(applicationId);
   if (!app) return;
 
@@ -191,4 +191,5 @@ export async function initiateFollowUpOutreach(
   });
 
   console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId}`);
+  return commId;
 }
