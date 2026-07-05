@@ -6,7 +6,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const qrcodeTerminal = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -84,13 +84,48 @@ async function connectToWhatsApp() {
                           msg.message?.extendedTextMessage?.text || 
                           '';
 
-      console.log(`[WhatsApp Incoming] Message from +${cleanFrom}: ${messageText}`);
+      const isDocument = !!msg.message?.documentMessage;
+      const isImage = !!msg.message?.imageMessage;
+      
+      let fileData = null;
+      let fileName = null;
+      let mimeType = null;
+      
+      if (isDocument || isImage) {
+        try {
+          console.log(`[WhatsApp Incoming] Downloading media attachment...`);
+          const buffer = await downloadMediaMessage(
+            msg,
+            'buffer',
+            {},
+            { 
+              logger: pino({ level: 'silent' })
+            }
+          );
+          fileData = buffer.toString('base64');
+          
+          if (isDocument) {
+            fileName = msg.message.documentMessage.fileName || msg.message.documentMessage.title || 'document.pdf';
+            mimeType = msg.message.documentMessage.mimetype || 'application/pdf';
+          } else {
+            fileName = `image_${Date.now()}.jpg`;
+            mimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
+          }
+          console.log(`[WhatsApp Incoming] Media downloaded successfully: ${fileName} (${mimeType})`);
+        } catch (downloadErr) {
+          console.error('[WhatsApp Incoming] Error downloading media:', downloadErr.message);
+        }
+      }
 
-      if (!messageText.trim()) continue;
+      console.log(`[WhatsApp Incoming] Message from +${cleanFrom}. Text: "${messageText}". Has File: ${!!fileData}`);
+
+      if (!messageText.trim() && !fileData) continue;
 
       try {
         console.log(`[WhatsApp Incoming] Forwarding to Convex local-whatsapp-inbound webhook...`);
         const bridgeUrl = CONVEX_SITE_URL.endsWith('/') ? CONVEX_SITE_URL : `${CONVEX_SITE_URL}/`;
+        const cleanTo = sock.user.id.split('@')[0].split(':')[0];
+        
         const res = await fetch(`${bridgeUrl}api/local-whatsapp-inbound`, {
           method: 'POST',
           headers: {
@@ -99,6 +134,10 @@ async function connectToWhatsApp() {
           body: JSON.stringify({
             from: cleanFrom,
             text: messageText,
+            file: fileData,
+            fileName: fileName,
+            mimeType: mimeType,
+            to: cleanTo,
           }),
         });
 

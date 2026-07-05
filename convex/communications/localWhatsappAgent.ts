@@ -5,22 +5,54 @@ import OpenAI from "openai";
 export const handleLocalWhatsappWebhook = httpAction(async (ctx, request) => {
   try {
     const body = await request.json();
-    const { from, text } = body;
+    const { from, text = "", file, fileName, mimeType, to } = body;
 
-    if (!from || !text) {
-      return new Response(JSON.stringify({ error: "Missing from or text parameters" }), {
+    if (!from || (!text && !file)) {
+      return new Response(JSON.stringify({ error: "Missing from, text or file parameters" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[Local WhatsApp Action] Inbound message from +${from}: "${text}"`);
+    console.log(`[Local WhatsApp Action] Inbound message from +${from}. Text: "${text}". Has File: ${!!file}`);
+
+    // Process inbound file attachment if present
+    if (file) {
+      console.log(`[Local WhatsApp Action] Processing inbound file: ${fileName} (${mimeType})`);
+      const fileBuffer = Buffer.from(file, "base64");
+      const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
+      const fileHash = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      const fileBlob = new Blob([fileBuffer], { type: mimeType || "application/pdf" });
+      const storageId = await ctx.storage.store(fileBlob);
+
+      await ctx.runMutation(internal.cvs.ingestion.insertCvRecord, {
+        toNumber: to || "Common Number",
+        fromNumber: from,
+        originalSenderPhone: from,
+        fileName: fileName || "cv.pdf",
+        storageId,
+        fileHash,
+        fileSize: fileBuffer.byteLength,
+      });
+      console.log(`[Local WhatsApp Action] Inbound file ingested successfully under storageId: ${storageId}`);
+    }
 
     // 1. Process the inbound message and fetch candidate/job context from DB
     const context = await ctx.runMutation(internal.communications.whatsappOutbound.processLocalWhatsappInbound, {
       senderPhone: from,
-      textBody: text,
+      textBody: text || `[Attached File: ${fileName || "document"}]`,
     });
+
+    // Run text extraction in background to parse details if text is present
+    if (text && context.candidate) {
+      await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
+        candidateId: context.candidate._id,
+        textBody: text,
+      });
+    }
 
     // 2. Setup NVIDIA LLM Client
     const apiKey = process.env.NVIDIA_API_KEY;

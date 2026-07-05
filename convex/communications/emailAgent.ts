@@ -153,6 +153,12 @@ export const checkAndRecordEmailReply = internalMutation({
       stoppedSequence: false,
     });
 
+    // Run text extraction in background to parse details
+    await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
+      candidateId: candidate._id,
+      textBody: args.body,
+    });
+
     return { isFollowUpReply: true };
   },
 });
