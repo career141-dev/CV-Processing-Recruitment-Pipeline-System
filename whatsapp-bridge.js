@@ -19,6 +19,24 @@ app.use(express.json());
 const PORT = 3001;
 let sock = null;
 
+// Load environment variables from .env file
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  const envLines = fs.readFileSync(envPath, 'utf-8').split('\n');
+  for (const line of envLines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const firstEquals = trimmed.indexOf('=');
+    if (firstEquals === -1) continue;
+    const key = trimmed.substring(0, firstEquals).trim();
+    let val = trimmed.substring(firstEquals + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.substring(1, val.length - 1);
+    }
+    process.env[key] = val;
+  }
+}
+
 // Read site URL from environment for inbound webhook forwarding
 const CONVEX_SITE_URL = process.env.NEXT_PUBLIC_CONVEX_SITE_URL || 'http://localhost:3000';
 
@@ -68,10 +86,37 @@ async function connectToWhatsApp() {
 
       console.log(`[WhatsApp Incoming] Message from +${cleanFrom}: ${messageText}`);
 
-      // Optional: Forward inbound text messages or attachments to Convex Webhook
-      // Note: Meta Cloud API webhook signature verification is enabled in metaWhatsappAgent,
-      // so if you want to forward, you would need to either mock it or configure signature bypass.
-      // For now, we will log it locally.
+      if (!messageText.trim()) continue;
+
+      try {
+        console.log(`[WhatsApp Incoming] Forwarding to Convex local-whatsapp-inbound webhook...`);
+        const bridgeUrl = CONVEX_SITE_URL.endsWith('/') ? CONVEX_SITE_URL : `${CONVEX_SITE_URL}/`;
+        const res = await fetch(`${bridgeUrl}api/local-whatsapp-inbound`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: cleanFrom,
+            text: messageText,
+          }),
+        });
+
+        if (!res.ok) {
+          console.error(`[WhatsApp Incoming] Convex returned error: ${res.status} ${res.statusText}`);
+          continue;
+        }
+
+        const data = await res.json();
+        if (data.reply) {
+          console.log(`[WhatsApp Incoming] Generated LLM reply: "${data.reply}"`);
+          console.log(`[WhatsApp Incoming] Sending reply back to +${cleanFrom}...`);
+          await sock.sendMessage(from, { text: data.reply });
+          console.log(`[WhatsApp Incoming] Reply sent successfully!`);
+        }
+      } catch (err) {
+        console.error(`[WhatsApp Incoming] Error handling local webhook/LLM reply:`, err.message);
+      }
     }
   });
 }

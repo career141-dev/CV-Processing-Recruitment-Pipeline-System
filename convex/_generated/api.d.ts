@@ -15,6 +15,7 @@ import type * as candidateProfile from "../candidateProfile.js";
 import type * as candidates from "../candidates.js";
 import type * as cleanup from "../cleanup.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
+import type * as communications_localWhatsappAgent from "../communications/localWhatsappAgent.js";
 import type * as communications_metaWhatsappAgent from "../communications/metaWhatsappAgent.js";
 import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
 import type * as communications_whatsappOutbound from "../communications/whatsappOutbound.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   candidates: typeof candidates;
   cleanup: typeof cleanup;
   "communications/emailAgent": typeof communications_emailAgent;
+  "communications/localWhatsappAgent": typeof communications_localWhatsappAgent;
   "communications/metaWhatsappAgent": typeof communications_metaWhatsappAgent;
   "communications/whatsappAgent": typeof communications_whatsappAgent;
   "communications/whatsappOutbound": typeof communications_whatsappOutbound;

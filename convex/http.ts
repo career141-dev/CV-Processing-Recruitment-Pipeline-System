@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
 import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
+import { handleLocalWhatsappWebhook } from "./communications/localWhatsappAgent";
 
 const http = httpRouter();
 
@@ -28,6 +29,13 @@ http.route({
   path: "/api/whatsapp",
   method: "POST",
   handler: handleMetaWhatsappWebhook,
+});
+
+// Local WhatsApp Bridge Webhook Inbound Events
+http.route({
+  path: "/api/local-whatsapp-inbound",
+  method: "POST",
+  handler: handleLocalWhatsappWebhook,
 });
 
 // A simple REST endpoint to test Job Creation via Postman
