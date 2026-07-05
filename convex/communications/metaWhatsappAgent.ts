@@ -65,6 +65,13 @@ export const handleMetaWhatsappWebhook = httpAction(async (ctx, request) => {
             mimeType: mediaItem.mime_type,
             fileName: mediaItem.filename ?? null,
           });
+        } else if (message.type === "text") {
+          const senderPhone = message.from;
+          const textBody = message.text?.body || "";
+          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+            senderPhone,
+            textBody,
+          });
         } else {
           console.log(`[Meta Webhook] Ignored message type: ${message.type}`);
         }

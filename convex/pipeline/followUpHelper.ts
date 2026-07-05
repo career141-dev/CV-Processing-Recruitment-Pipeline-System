@@ -142,7 +142,7 @@ export async function initiateFollowUpOutreach(
 
   const now = Date.now();
 
-  // Create communication record
+  // Create WhatsApp communication record
   const commId = await ctx.db.insert("communications", {
     candidateId: app.candidateId,
     jobId: app.jobId,
@@ -152,6 +152,21 @@ export async function initiateFollowUpOutreach(
     subject: `Action Required: Missing info for your ${job.title} application`,
     body,
     deliveryStatus: "pending",
+    sentAt: now,
+    stoppedSequence: false,
+    sequenceDay: 0,
+  });
+
+  // Create Email communication record
+  await ctx.db.insert("communications", {
+    candidateId: app.candidateId,
+    jobId: app.jobId,
+    applicationId: app._id,
+    direction: "outbound",
+    channel: "email",
+    subject: `Action Required: Missing info for your ${job.title} application`,
+    body,
+    deliveryStatus: "sent",
     sentAt: now,
     stoppedSequence: false,
     sequenceDay: 0,
@@ -175,5 +190,5 @@ export async function initiateFollowUpOutreach(
     body,
   });
 
-  console.log(`[Follow-up Outreach] Day 0 WhatsApp outreach scheduled for application ${applicationId}`);
+  console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId}`);
 }

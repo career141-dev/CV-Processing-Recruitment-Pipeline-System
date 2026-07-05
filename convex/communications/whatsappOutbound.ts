@@ -103,3 +103,54 @@ export const updateStatus = internalMutation({
     });
   },
 });
+
+export const checkAndRecordFollowUpReply = internalMutation({
+  args: {
+    senderPhone: v.string(),
+    textBody: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const phoneClean = args.senderPhone.replace(/[^0-9]/g, "");
+
+    // Find candidate by phone
+    let candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_phone", (q: any) => q.eq("phone", args.senderPhone))
+      .first();
+
+    if (!candidate) {
+      const candidates = await ctx.db.query("candidates").collect();
+      candidate = candidates.find(c => {
+        if (!c.phone) return false;
+        const cPhoneClean = c.phone.replace(/[^0-9]/g, "");
+        return cPhoneClean.endsWith(phoneClean) || phoneClean.endsWith(cPhoneClean);
+      }) || null;
+    }
+
+    if (!candidate) return { isFollowUpReply: false };
+
+    // Find active follow-up application
+    const activeApp = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate!._id))
+      .filter((q: any) => q.eq(q.field("currentStage"), "follow_up"))
+      .first();
+
+    if (!activeApp) return { isFollowUpReply: false };
+
+    // Insert inbound communication
+    await ctx.db.insert("communications", {
+      candidateId: candidate._id,
+      applicationId: activeApp._id,
+      jobId: activeApp.jobId,
+      direction: "inbound",
+      channel: "whatsapp",
+      body: args.textBody,
+      deliveryStatus: "read",
+      sentAt: Date.now(),
+      stoppedSequence: false,
+    });
+
+    return { isFollowUpReply: true };
+  },
+});

@@ -66,16 +66,68 @@ export const evaluateFollowUpStage = internalMutation({
         continue;
       }
 
-      // ── 7-day clock: use followUpEnteredAt for precision, fall back to lastStageChangedAt ──
-      const enteredAt = app.followUpEnteredAt ?? app.lastStageChangedAt ?? now;
+      // Skip if followUpEnteredAt is not set (outreach has not been manually triggered by TA yet)
+      if (!app.followUpEnteredAt) continue;
+
+      const enteredAt = app.followUpEnteredAt;
       const timeInStage = now - enteredAt;
       const daysInStage = Math.floor(timeInStage / (24 * 60 * 60 * 1000));
 
+      // Check if candidate replied (inbound messages or completed AI calls since followUpEnteredAt)
+      const inboundComms = await ctx.db.query("communications")
+        .withIndex("by_applicationId", (q: any) => q.eq("applicationId", app._id))
+        .filter((q: any) => q.eq(q.field("direction"), "inbound"))
+        .collect();
+
+      const hasRepliedMessage = inboundComms.some((c: any) => {
+        const sentAtMs = typeof c.sentAt === "number" ? c.sentAt : Number(c.sentAt);
+        return sentAtMs >= enteredAt;
+      });
+
+      const completedCalls = await ctx.db.query("aiCalls")
+        .withIndex("by_application", (q: any) => q.eq("applicationId", app._id))
+        .filter((q: any) => q.eq(q.field("callStatus"), "completed"))
+        .collect();
+
+      const hasCompletedCall = completedCalls.some((c: any) => c.calledAt >= enteredAt);
+
+      const hasReplied = hasRepliedMessage || hasCompletedCall;
+
+      if (hasReplied) {
+        // Record the platform they replied on if not already done
+        if (!app.followUpState?.replyChannel) {
+          let replyChannel = "unknown";
+          if (hasRepliedMessage) {
+            const sortedReplies = inboundComms
+              .filter((c: any) => {
+                const sentAtMs = typeof c.sentAt === "number" ? c.sentAt : Number(c.sentAt);
+                return sentAtMs >= enteredAt;
+              })
+              .sort((a: any, b: any) => {
+                const aTime = typeof a.sentAt === "number" ? a.sentAt : Number(a.sentAt);
+                const bTime = typeof b.sentAt === "number" ? b.sentAt : Number(b.sentAt);
+                return aTime - bTime;
+              });
+            replyChannel = sortedReplies[0]?.channel ?? "unknown";
+          } else if (hasCompletedCall) {
+            replyChannel = "phone";
+          }
+          await ctx.db.patch(app._id, {
+            followUpState: {
+              lastContactDay: app.followUpState?.lastContactDay ?? 0,
+              firstChannelUsed: app.followUpState?.firstChannelUsed,
+              replyChannel,
+            }
+          });
+        }
+        continue; // Candidate has replied, stop automated follow-up sequence
+      }
+
+      // If 7 days elapsed without reply, auto-reject
       if (timeInStage >= SEVEN_DAYS_MS) {
-        // 7 days elapsed without completion — auto-reject
         await ctx.db.patch(app._id, {
           currentStage: "rejected",
-          taRejectionReason: "Did not complete requirements within 7-day window",
+          taRejectionReason: "Did not respond within 7-day follow-up window",
           lastStageChangedAt: now,
           stageHistory: [
             ...(app.stageHistory ?? []),
@@ -83,7 +135,7 @@ export const evaluateFollowUpStage = internalMutation({
               stage: "rejected",
               enteredAt: new Date().toISOString(),
               changedBy: "system" as any,
-              note: "Auto-rejected: Did not complete requirements within 7-day Follow-up window.",
+              note: "Auto-rejected: Did not reply within 7-day Follow-up window.",
             },
           ],
         });
@@ -91,13 +143,12 @@ export const evaluateFollowUpStage = internalMutation({
         continue;
       }
 
-      // ── Day-tier outreach scheduling ─────────────────────────────────────────
-      // Valid target days: 0, 2, 4, 6
+      // Day-tier outreach scheduling
       let targetDay: number | null = null;
       if (daysInStage === 0) targetDay = 0;
-      else if (daysInStage >= 2 && daysInStage < 4) targetDay = 2;
-      else if (daysInStage >= 4 && daysInStage < 6) targetDay = 4;
-      else if (daysInStage === 6) targetDay = 6;
+      else if (daysInStage === 2) targetDay = 2; // Day 3
+      else if (daysInStage === 4) targetDay = 4; // Day 5
+      else if (daysInStage === 6) targetDay = 6; // Day 7
 
       if (targetDay === null) continue; // Off-days (1, 3, 5) intentionally silent
 
@@ -114,18 +165,20 @@ export const evaluateFollowUpStage = internalMutation({
         triggerEmail = true;
       } else if (targetDay === 2) {
         triggerAiCall = true;
-        triggerWhatsApp = true; // Send WhatsApp 2 (can happen post-call or concurrently)
       } else if (targetDay === 4) {
-        triggerWhatsApp = true; // WhatsApp 3
+        triggerWhatsApp = true;
+        triggerEmail = true;
       } else if (targetDay === 6) {
-        triggerWhatsApp = true; // WhatsApp 4
+        triggerWhatsApp = true;
+        triggerEmail = true;
       }
 
       // Persist updated state
       await ctx.db.patch(app._id, {
         followUpState: {
+          ...(followUpState ?? {}),
           lastContactDay: targetDay,
-          firstChannelUsed: followUpState?.firstChannelUsed ?? (triggerWhatsApp ? "whatsapp" : "email"),
+          firstChannelUsed: followUpState?.firstChannelUsed ?? "whatsapp",
         },
       });
 
@@ -147,6 +200,7 @@ export const evaluateFollowUpStage = internalMutation({
         await ctx.db.insert("communications", {
           candidateId: app.candidateId,
           jobId: app.jobId,
+          applicationId: app._id,
           direction: "outbound",
           channel: "email",
           subject: `Action Required: Missing info for your ${job.title} application`,
@@ -154,6 +208,7 @@ export const evaluateFollowUpStage = internalMutation({
           deliveryStatus: "sent",
           sentAt: now,
           stoppedSequence: false,
+          sequenceDay: targetDay,
         });
         console.log(`[Follow-up Day ${targetDay}] Sent email to ${candidate.fullName ?? "unknown"}`);
       }
@@ -183,7 +238,7 @@ export const evaluateFollowUpStage = internalMutation({
         console.log(`[Follow-up Day ${targetDay}] Scheduled WhatsApp to ${candidate.fullName ?? "unknown"}`);
       }
 
-      // ── Follow-up AI call (Day 2) ─────────────────────────
+      // ── Follow-up AI call (Day 2 elapsed / Day 3) ─────────────────────────
       if (triggerAiCall) {
         await ctx.db.insert("aiCalls", {
           candidateId: app.candidateId,

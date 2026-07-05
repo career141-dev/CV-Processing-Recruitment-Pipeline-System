@@ -184,3 +184,16 @@ export const triggerWhatsAppFollowUp = mutation({
     return { success: true };
   },
 });
+
+// Trigger bulk manual follow-up outreach for multiple applications
+export const triggerBulkFollowUp = mutation({
+  args: {
+    applicationIds: v.array(v.id("applications")),
+  },
+  handler: async (ctx, args) => {
+    for (const appId of args.applicationIds) {
+      await initiateFollowUpOutreach(ctx, appId);
+    }
+    return { success: true };
+  },
+});
