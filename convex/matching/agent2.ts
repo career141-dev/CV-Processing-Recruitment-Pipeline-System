@@ -1,7 +1,7 @@
 import { v } from "convex/values";
-import { action, internalAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel.d.ts";
+import { action, internalAction } from "../_generated/server";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel.d.ts";
 
 /**
  * Helper to get vector embeddings from NVIDIA API
@@ -47,14 +47,14 @@ export async function embedText(text: string, inputType: "query" | "passage" = "
 export const generateAndStoreEmbedding = internalAction({
   args: { candidateId: v.id("candidates") },
   handler: async (ctx, args) => {
-    const candidate = await ctx.runQuery(internal.agent2_matching_queries.getCandidate, { candidateId: args.candidateId });
+    const candidate = await ctx.runQuery(internal.matching.queries.getCandidate, { candidateId: args.candidateId });
     if (!candidate || !candidate.rawText) return;
 
     // We can truncate to avoid massive payload. NVIDIA embedqa usually takes up to 4096 or 8192 tokens.
     const textToEmbed = candidate.rawText.slice(0, 15000); 
     const embedding = await embedText(textToEmbed, "passage");
 
-    await ctx.runMutation(internal.agent2_matching_queries.updateCandidateEmbedding, {
+    await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
       candidateId: args.candidateId,
       embedding,
     });
@@ -64,7 +64,7 @@ export const generateAndStoreEmbedding = internalAction({
 export const generateJobEmbedding = action({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, args): Promise<void> => {
-    const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
+    const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
     if (!job) return;
 
     const jobRequirementsText = `
@@ -78,7 +78,7 @@ export const generateJobEmbedding = action({
 
     const jobEmbedding = await embedText(jobRequirementsText);
     
-    await ctx.runMutation(internal.agent2_matching_queries.updateJobEmbedding, {
+    await ctx.runMutation(internal.matching.queries.updateJobEmbedding, {
       jobId: args.jobId,
       embedding: jobEmbedding,
     });
@@ -106,11 +106,11 @@ export const runReverseMatch = action({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, args): Promise<void> => {
     try {
-      const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
+      const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
       if (!job) return;
 
       // Set status to running immediately
-      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results: job.reverseMatchResults || [],
         status: "running",
@@ -132,7 +132,7 @@ export const runReverseMatch = action({
         jobEmbedding = await embedText(jobRequirementsText);
         
         // Save the embedding to the job record
-        await ctx.runMutation(internal.agent2_matching_queries.updateJobEmbedding, {
+        await ctx.runMutation(internal.matching.queries.updateJobEmbedding, {
           jobId: args.jobId,
           embedding: jobEmbedding,
         });
@@ -147,7 +147,7 @@ export const runReverseMatch = action({
       
       const batches = await Promise.all(
         terms.slice(0, 6).map((term) =>
-          ctx.runQuery(api.search.searchCandidates, {
+          ctx.runQuery(api.matching.search.searchCandidates, {
             query: term,
             industry: job.clientIndustry ?? undefined,
             seniority: job.seniorityLevel ?? undefined,
@@ -189,7 +189,7 @@ export const runReverseMatch = action({
               if (cv.rawText) {
                 const textToEmbed = cv.rawText.slice(0, 15000);
                 const embedding = await embedText(textToEmbed, "passage");
-                await ctx.runMutation(internal.agent2_matching_queries.updateCandidateEmbedding, {
+                await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
                   candidateId: cv._id,
                   embedding,
                 });
@@ -212,7 +212,7 @@ export const runReverseMatch = action({
       for (const cid of allCandidateIds) {
         let candidate = dedupedKeywordsMap.get(cid);
         if (!candidate) {
-          candidate = await ctx.runQuery(internal.agent2_matching_queries.getCandidate, {
+          candidate = await ctx.runQuery(internal.matching.queries.getCandidate, {
             candidateId: cid as any,
           });
         }
@@ -261,7 +261,7 @@ export const runReverseMatch = action({
         .sort((a, b) => b.overallScore - a.overallScore)
         .slice(0, 30); // Store top 30
 
-      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results: matchResults,
         status: "done",
@@ -269,8 +269,8 @@ export const runReverseMatch = action({
 
     } catch (e) {
       console.error("Reverse match vector search error:", e);
-      const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
-      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
+      const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
+      await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results: job?.reverseMatchResults || [],
         status: "error",

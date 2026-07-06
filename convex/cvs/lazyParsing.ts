@@ -11,7 +11,7 @@ export const triggerLazyParse = action({
   },
   handler: async (ctx, args) => {
     // 1. Fetch candidate
-    const candidate = await ctx.runQuery(api.candidates.getCandidateForParsing, {
+    const candidate = await ctx.runQuery(api.candidates.candidates.getCandidateForParsing, {
       candidateId: args.candidateId,
     });
     
@@ -61,7 +61,7 @@ Phone: ${candidate.phone || 'Unknown'}
       description: jh.description,
     }));
 
-    await ctx.runMutation(api.candidates.updateCandidateAfterLazyParse, {
+    await ctx.runMutation(api.candidates.candidates.updateCandidateAfterLazyParse, {
       candidateId: args.candidateId,
       skills: formattedSkills,
       jobHistory: formattedJobHistory,

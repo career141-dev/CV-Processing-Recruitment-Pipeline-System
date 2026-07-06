@@ -1,9 +1,9 @@
-import { query, mutation } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { query, mutation } from "../_generated/server";
+import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import { requireUser, requireJobAssignment } from "./lib/permissions";
-import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "./pipeline/followUpHelper";
-import { syncCandidateOverallStatus } from "./candidates";
+import { requireUser, requireJobAssignment } from "../lib/permissions";
+import { checkAndAdvanceFollowUp, updateFollowUpFlags, initiateFollowUpOutreach } from "../pipeline/followUpHelper";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
 
 export const getApplicationsByCandidateId = query({
   args: { candidateId: v.id("candidates") },
@@ -247,6 +247,9 @@ export const logManualCall = mutation({
       });
     }
     await syncCandidateOverallStatus(ctx, args.candidateId);
+    if (args.outcome !== "Not Interested" && !allComplete) {
+      await initiateFollowUpOutreach(ctx, args.applicationId);
+    }
   },
 });
 

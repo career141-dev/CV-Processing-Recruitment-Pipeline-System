@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
 export default function ChannelRealTimeLog({ channelType }: { channelType: string }) {
-  const logs = useQuery(api.stats.getRecentChannelLogs, { channelType });
+  const logs = useQuery(api.stats.stats.getRecentChannelLogs, { channelType });
 
   if (logs === undefined) {
     return (

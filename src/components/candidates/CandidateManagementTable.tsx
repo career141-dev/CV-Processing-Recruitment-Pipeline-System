@@ -56,7 +56,7 @@ export function CandidateManagementTable() {
   const [currentPage, setCurrentPage] = React.useState(1);
 
   const { results, status, loadMore } = usePaginatedQuery(
-    api.candidates.listCandidatesPaginated,
+    api.candidates.candidates.listCandidatesPaginated,
     {},
     { initialNumItems: itemsPerPage }
   );

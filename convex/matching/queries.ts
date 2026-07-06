@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalQuery, internalMutation } from "./_generated/server";
+import { internalQuery, internalMutation } from "../_generated/server";
 
 export const getCandidate = internalQuery({
   args: { candidateId: v.id("candidates") },

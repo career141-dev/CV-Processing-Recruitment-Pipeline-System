@@ -11,7 +11,7 @@ import {
   Phone, Upload, AlertTriangle, ArrowRight, Clock
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation, useAction, useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -103,9 +103,9 @@ const StatusDot = ({ status }: { status: string }) => {
 };
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
-  const candidate = useQuery(api.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
-  const createApplication = useMutation(api.applications.createApplication);
-  const removeApplication = useMutation(api.applications.removeApplication);
+  const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
+  const createApplication = useMutation(api.applications.applications.createApplication);
+  const removeApplication = useMutation(api.applications.applications.removeApplication);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isShortlisting, setIsShortlisting] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -240,7 +240,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
 };
 
 const CvViewButton = ({ cvUploadId }: { cvUploadId?: Id<"cvUploads"> | null }) => {
-  const cvUpload = useQuery(api.candidates.getCvUploadUrl, cvUploadId ? { cvUploadId } : "skip");
+  const cvUpload = useQuery(api.candidates.candidates.getCvUploadUrl, cvUploadId ? { cvUploadId } : "skip");
   
   if (!cvUploadId) return (
     <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface/50 text-text-disabled text-[11px] font-medium" title="No CV attached">
@@ -289,7 +289,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   const [isSaving, setIsSaving] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   
-  const logManualCall = useMutation(api.applications.logManualCall);
+  const logManualCall = useMutation(api.applications.applications.logManualCall);
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
   const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
@@ -551,7 +551,7 @@ const HeadhuntModal = ({
 }: {
   isOpen: boolean; onClose: () => void; jobId: Id<"jobs">;
 }) => {
-  const createHeadhunt = useMutation(api.applications.createHeadhuntApplication);
+  const createHeadhunt = useMutation(api.applications.applications.createHeadhuntApplication);
   const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
   const { user } = useUser();
@@ -796,23 +796,26 @@ export default function JobDetailPage() {
   const [showHeadhuntModal, setShowHeadhuntModal] = useState(false);
 
   // Fetch job details
-  const job = useQuery(api.jobs.getJob, { jobId });
+  const job = useQuery(api.jobs.jobs.getJob, { jobId });
   
   // Fetch candidates via applications
-  const applications = useQuery(api.applications.getByJobId, { jobId });
-  const allUsers = useQuery(api.users.getAllUsers);
+  const applications = useQuery(api.applications.applications.getByJobId, { jobId });
+  const allUsers = useQuery(api.users.users.getAllUsers);
   const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
-  const rejectApplication = useMutation(api.applications.rejectApplication);
-  const triggerAiCallMutation = useMutation(api.applications.triggerAiCall);
+  const rejectApplication = useMutation(api.applications.applications.rejectApplication);
+  const triggerAiCallMutation = useMutation(api.applications.applications.triggerAiCall);
   const directorApproveMutation = useMutation(api.pipeline.stages.directorApprove);
   const directorRejectMutation = useMutation(api.pipeline.stages.directorReject);
   const directorRequestChangesMutation = useMutation(api.pipeline.stages.directorRequestChanges);
   const clientApproveMutation = useMutation(api.pipeline.stages.clientApprove);
   const clientHoldMutation = useMutation(api.pipeline.stages.clientHold);
   const clientRejectMutation = useMutation(api.pipeline.stages.clientReject);
+  const convex = useConvex();
+  const triggerWhatsAppFollowUp = useMutation(api.pipeline.outreach.triggerWhatsAppFollowUp);
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   
-  const runReverseMatch = useAction(api.agent2_matching.runReverseMatch);
+  const runReverseMatch = useAction(api.matching.agent2.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
 
   const handleScanDatabase = async () => {
@@ -1278,7 +1281,55 @@ export default function JobDetailPage() {
                       </div>
                     </td>
                     <td className="p-4 text-right">
-                      {renderKanbanDropdown(item.id, 'follow_up')}
+                      <div className="flex flex-col items-end gap-1.5">
+                        {renderKanbanDropdown(item.id, 'follow_up')}
+                        <button
+                          disabled={sendingWhatsAppId === item.id}
+                          onClick={async () => {
+                            setSendingWhatsAppId(item.id);
+                            try {
+                              const result = await triggerWhatsAppFollowUp({ applicationId: item.id });
+                              if (result?.communicationId) {
+                                let isSent = false;
+                                let errorMessage = "";
+                                // Poll status up to 5 times (5 seconds)
+                                for (let i = 0; i < 5; i++) {
+                                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, {
+                                    communicationId: result.communicationId,
+                                  });
+                                  if (statusRes) {
+                                    if (statusRes.deliveryStatus === "sent") {
+                                      isSent = true;
+                                      break;
+                                    } else if (statusRes.deliveryStatus === "failed") {
+                                      errorMessage = statusRes.errorMessage || "Unknown error";
+                                      break;
+                                    }
+                                  }
+                                }
+                                if (isSent) {
+                                  alert("WhatsApp follow-up sent successfully!");
+                                } else if (errorMessage) {
+                                  alert(`WhatsApp delivery failed: ${errorMessage}`);
+                                } else {
+                                  alert("WhatsApp follow-up is queued. It should deliver shortly.");
+                                }
+                              } else {
+                                alert("WhatsApp follow-up initiated successfully!");
+                              }
+                            } catch (err: any) {
+                              console.error(err);
+                              alert(`Failed to send WhatsApp: ${err.message}`);
+                            } finally {
+                              setSendingWhatsAppId(null);
+                            }
+                          }}
+                          className="inline-flex items-center text-[11px] font-bold text-green-600 hover:text-green-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer"
+                        >
+                          {sendingWhatsAppId === item.id ? "Sending..." : "Send WhatsApp"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

@@ -19,7 +19,7 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: Add
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedJob, setSelectedJob] = useState<string | null>(null);
 
-  const dbJobs = useQuery(api.jobs.list);
+  const dbJobs = useQuery(api.jobs.jobs.list);
 
   const jobs = dbJobs ? dbJobs.map((j: any) => ({
     id: j._id,

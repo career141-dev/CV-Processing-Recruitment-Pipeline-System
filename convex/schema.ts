@@ -575,7 +575,8 @@ generatedAt: v.string(),
     lastStageChangedAt: v.number(),
     followUpState: v.optional(v.object({
       lastContactDay: v.number(),
-      firstChannelUsed: v.optional(v.string())
+      firstChannelUsed: v.optional(v.string()),
+      replyChannel: v.optional(v.string())
     })),
     // Per-application follow-up completion flags (scoped per-job to avoid cross-job contamination)
     followUpCvReceived: v.optional(v.boolean()),

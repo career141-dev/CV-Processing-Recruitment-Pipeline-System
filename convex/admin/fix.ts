@@ -1,5 +1,5 @@
-import { mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { mutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 
 const TABLES = [
   "users", "jobs", "jobChannels", "job_assets", "custom_filters",

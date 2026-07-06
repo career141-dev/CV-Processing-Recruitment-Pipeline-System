@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { initiateFollowUpOutreach } from "./followUpHelper";
 
 // Get AI Calls for Outreach dashboard
 export const getAiCalls = query({
@@ -259,4 +260,39 @@ export const forceTriggerFollowUpCall = mutation({
 
     return true;
   }
+});
+
+// Trigger manual follow-up WhatsApp message
+export const triggerWhatsAppFollowUp = mutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    const commId = await initiateFollowUpOutreach(ctx, args.applicationId);
+    return { success: true, communicationId: commId };
+  },
+});
+
+// Trigger bulk manual follow-up outreach for multiple applications
+export const triggerBulkFollowUp = mutation({
+  args: {
+    applicationIds: v.array(v.id("applications")),
+  },
+  handler: async (ctx, args) => {
+    for (const appId of args.applicationIds) {
+      await initiateFollowUpOutreach(ctx, appId);
+    }
+    return { success: true };
+  },
+});
+
+// Get communication status by ID for frontend polling
+export const getCommunicationStatus = query({
+  args: {
+    communicationId: v.id("communications"),
+  },
+  handler: async (ctx, args) => {
+    const comm = await ctx.db.get(args.communicationId);
+    return comm ? { deliveryStatus: comm.deliveryStatus, errorMessage: comm.errorMessage } : null;
+  },
 });

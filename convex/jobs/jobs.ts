@@ -1,8 +1,8 @@
-import { mutation, query, internalMutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { mutation, query, internalMutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 import { v } from "convex/values";
-import { requireRole, requireUser } from "./lib/permissions";
-import { internal, api } from "./_generated/api";
+import { requireRole, requireUser } from "../lib/permissions";
+import { internal, api } from "../_generated/api";
 
 // convex/jobs.ts — generateKeyword helper function
 function generateKeyword(title: string): string {
@@ -566,11 +566,11 @@ export const publishJob = mutation({
     });
 
     // Always generate the embedding for AI semantic search
-    await ctx.scheduler.runAfter(0, api.agent2_matching.generateJobEmbedding, { jobId });
+    await ctx.scheduler.runAfter(0, api.matching.agent2.generateJobEmbedding, { jobId });
 
     if (job.reverseMatchOnPublish) {
-      await ctx.db.patch(jobId, { reverseMatchStatus: "running" });
-      await ctx.scheduler.runAfter(0, api.agent2_matching.runReverseMatch, { jobId });
+       await ctx.db.patch(jobId, { reverseMatchStatus: "running" });
+       await ctx.scheduler.runAfter(0, api.matching.agent2.runReverseMatch, { jobId });
     }
 
     return { success: true, keyword: job.keyword };

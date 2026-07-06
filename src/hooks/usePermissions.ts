@@ -10,7 +10,7 @@ export function usePermissions() {
   const { user: clerkUser, isLoaded } = useUser();
   
   // Get the synced user record from Convex to determine the actual system role
-  const users = useQuery(api.users.getAllUsers);
+  const users = useQuery(api.users.users.getAllUsers);
   
   // Find current user safely
   const currentUser = users?.find((u) => u.clerkUserId === clerkUser?.id || u.tokenIdentifier === clerkUser?.id);

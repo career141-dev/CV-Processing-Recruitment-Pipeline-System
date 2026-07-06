@@ -1,5 +1,5 @@
 import { httpAction } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 
 // Helper to extract Meta Campaign ID from referral payload (if present)
 function extractMetaCampaignId(referralData?: string | null): string | undefined {
@@ -19,13 +19,24 @@ export const handleWhatsappWebhook = httpAction(async (ctx, request) => {
   const mediaUrl = body.get("MediaUrl0") as string; // CV file URL (if attached)
   const mediaType = body.get("MediaContentType0") as string; // e.g. application/pdf
   
+  const fromClean = from.replace("whatsapp:", "");
+  const checkResult = await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+    senderPhone: fromClean,
+    textBody: messageBody,
+  });
+
+  if (checkResult && checkResult.isFollowUpReply) {
+    console.log(`[Twilio Webhook] Recorded follow-up reply from ${from}`);
+    return new Response("OK", { status: 200 });
+  }
+
   // Extract keyword from first word of message
   const firstWord = messageBody.trim().split(/\s+/)[0]?.toUpperCase();
-  
+
   // Find job by keyword
   let job = null;
   if (firstWord) {
-    job = await ctx.runQuery(api.jobs.getByKeyword, { keyword: firstWord });
+    job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
   }
 
   // AI fallback if no keyword found (Stubbed for now)

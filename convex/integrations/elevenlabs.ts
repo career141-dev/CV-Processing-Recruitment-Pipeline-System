@@ -12,8 +12,8 @@ export const triggerIntakeCall = internalAction({
   },
   handler: async (ctx, args): Promise<{ success: boolean; conversationId: string }> => {
     // 1. Fetch data for dynamic variables
-    const candidate: any = await ctx.runQuery(api.candidates.getCandidate, { id: args.candidateId });
-    const job: any = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
+    const candidate: any = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
+    const job: any = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
     
     if (!candidate || !candidate.phone) {
       throw new Error("Candidate has no phone number");
@@ -82,9 +82,9 @@ export const triggerFollowUpCall = internalAction({
     lastContactChannel: v.string(),
   },
   handler: async (ctx, args): Promise<{ success: boolean; conversationId?: string; skipped?: boolean }> => {
-    const candidate: any = await ctx.runQuery(api.candidates.getCandidate, { id: args.candidateId });
-    const job: any = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
-    const application: any = await ctx.runQuery(api.applications.getApplication, { id: args.applicationId });
+    const candidate: any = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
+    const job: any = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
+    const application: any = await ctx.runQuery(api.applications.applications.getApplication, { id: args.applicationId });
     
     if (!candidate || !candidate.phone) {
       throw new Error("Candidate has no phone number");

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
-import { checkAndAdvanceFollowUp } from "./pipeline/followUpHelper";
+import { query, mutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
 
 export const listCandidates = query({
   handler: async (ctx) => {
@@ -46,6 +46,17 @@ export const updateCandidateDetails = mutation({
     if (Object.keys(definedUpdates).length > 0) {
       await ctx.db.patch(candidateId, definedUpdates);
     }
+
+    // Sync follow-up flags on all candidate applications
+    const candidate = await ctx.db.get(candidateId);
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+      .collect();
+    for (const app of apps) {
+      await updateFollowUpFlags(ctx, app._id, candidate);
+    }
+    
     await checkAndAdvanceFollowUp(ctx, candidateId);
   },
 });
@@ -210,6 +221,17 @@ export const createCandidate = mutation({
         ...args,
         status: "new",
       });
+
+      // Sync follow-up flags on all candidate applications
+      const candidate = await ctx.db.get(existingCandidateId);
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId))
+        .collect();
+      for (const app of apps) {
+        await updateFollowUpFlags(ctx, app._id, candidate);
+      }
+
       await checkAndAdvanceFollowUp(ctx, existingCandidateId);
       return existingCandidateId;
     }
@@ -218,6 +240,17 @@ export const createCandidate = mutation({
       ...args,
       status: "new",
     });
+
+    // Sync follow-up flags on all candidate applications
+    const candidate = await ctx.db.get(newId);
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", newId))
+      .collect();
+    for (const app of apps) {
+      await updateFollowUpFlags(ctx, app._id, candidate);
+    }
+
     await checkAndAdvanceFollowUp(ctx, newId);
     return newId;
   },

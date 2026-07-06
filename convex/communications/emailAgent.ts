@@ -1,6 +1,6 @@
-import { action, internalAction } from "../_generated/server";
+import { action, internalAction, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 
 // ----------------------------------------------------------------------------------
 // STUBBED HELPER FUNCTIONS 
@@ -39,7 +39,21 @@ export const pollEmailInbox = action({
           a.name?.endsWith(".pdf")
       );
       
-      if (!attachment) continue; // No CV attachment — skip
+      if (!attachment) {
+        const senderEmail = message.from?.emailAddress?.address;
+        if (senderEmail) {
+          const checkResult = await ctx.runMutation(internal.communications.emailAgent.checkAndRecordEmailReply, {
+            senderEmail,
+            subject: message.subject ?? "",
+            body: message.body ?? message.subject ?? "",
+          });
+          if (checkResult && checkResult.isFollowUpReply) {
+            await markEmailAsRead(inboxEmail, message.id);
+            continue;
+          }
+        }
+        continue; // No CV attachment and not a follow-up reply — skip
+      }
 
       const fileBuffer = Buffer.from(attachment.contentBytes, "base64");
       
@@ -60,7 +74,7 @@ export const pollEmailInbox = action({
         const keywordMatch = subject.match(/\b([A-Z]{2,8}\d{2,6})\b/);
         
         if (keywordMatch) {
-          const job = await ctx.runQuery(api.jobs.getByKeyword, { keyword: keywordMatch[1] });
+          const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: keywordMatch[1] });
           if (job) resolvedJobId = job._id;
         }
       }
@@ -101,5 +115,50 @@ export const scheduleEmailPolling = internalAction({
       });
     }
     */
+  },
+});
+
+export const checkAndRecordEmailReply = internalMutation({
+  args: {
+    senderEmail: v.string(),
+    subject: v.string(),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_email", (q: any) => q.eq("email", args.senderEmail))
+      .first();
+
+    if (!candidate) return { isFollowUpReply: false };
+
+    const activeApp = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+      .filter((q: any) => q.eq(q.field("currentStage"), "follow_up"))
+      .first();
+
+    if (!activeApp) return { isFollowUpReply: false };
+
+    await ctx.db.insert("communications", {
+      candidateId: candidate._id,
+      applicationId: activeApp._id,
+      jobId: activeApp.jobId,
+      direction: "inbound",
+      channel: "email",
+      subject: args.subject,
+      body: args.body,
+      deliveryStatus: "read",
+      sentAt: Date.now(),
+      stoppedSequence: false,
+    });
+
+    // Run text extraction in background to parse details
+    await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
+      candidateId: candidate._id,
+      textBody: args.body,
+    });
+
+    return { isFollowUpReply: true };
   },
 });

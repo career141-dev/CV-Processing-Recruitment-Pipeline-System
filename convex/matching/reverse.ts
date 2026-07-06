@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { action } from "./_generated/server";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel.d.ts";
-import { getOpenAI, getModelForTask } from "./lib/llm";
+import { action } from "../_generated/server";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel.d.ts";
+import { getOpenAI, getModelForTask } from "../lib/llm";
 
 
 type Breakdown = {
@@ -31,7 +31,7 @@ export const runReverseMatch = action({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, args): Promise<void> => {
     try {
-      const job = await ctx.runQuery(api.jobs.getJob, { jobId: args.jobId });
+      const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
       if (!job) return;
 
       const minScore = job.minMatchScoreToShow ?? 60;
@@ -54,7 +54,7 @@ export const runReverseMatch = action({
       // Fetch candidates for each term in parallel, then dedupe.
       const batches = await Promise.all(
         terms.slice(0, 6).map((term) =>
-          ctx.runQuery(api.search.searchCandidates, {
+          ctx.runQuery(api.matching.search.searchCandidates, {
             query: term,
             industry: job.clientIndustry ?? undefined,
             seniority: job.seniorityLevel ?? undefined,
@@ -75,7 +75,7 @@ export const runReverseMatch = action({
       }
 
       if (candidates.length === 0) {
-        await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
+        await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
           jobId: args.jobId,
           results: [],
           status: "done",
@@ -178,14 +178,14 @@ Only include candidates with overallScore >= ${minScore}. Sort by overallScore d
         .sort((a, b) => b.overallScore - a.overallScore)
         .slice(0, 30);
 
-      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results,
         status: "done",
       });
     } catch (e) {
       console.error(e);
-      await ctx.runMutation(internal.jobs.saveReverseMatchResults, {
+      await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
         results: [],
         status: "error",

@@ -6,8 +6,8 @@ import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 
 export default function RealTimeBatchLog({ batchId }: { batchId: Id<"ingestionBatches"> }) {
-  const batch = useQuery(api.ingestionBatches.getBatch, { batchId });
-  const logs = useQuery(api.ingestionBatches.getBatchLogs, { batchId });
+  const batch = useQuery(api.cvs.batches.getBatch, { batchId });
+  const logs = useQuery(api.cvs.batches.getBatchLogs, { batchId });
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {

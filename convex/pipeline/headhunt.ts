@@ -1,7 +1,7 @@
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
-import { syncCandidateOverallStatus } from "../candidates";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
 
 export const uploadHeadhuntedCandidate = mutation({
   args: {

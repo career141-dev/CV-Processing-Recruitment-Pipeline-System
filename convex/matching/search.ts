@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { action, query } from "./_generated/server";
-import { api } from "./_generated/api";
-import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "./lib/jdParser";
-import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "./cvs/cvScoring";
+import { action, query } from "../_generated/server";
+import { api } from "../_generated/api";
+import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
+import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
 export const searchCandidates = query({
   args: {
@@ -95,12 +95,12 @@ export const aiSearch = action({
 
     const searchTerms = buildSearchTerms(effectiveReq, args.query);
     const searchBatches = await Promise.all([
-      ctx.runQuery(api.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
+      ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
       ...searchTerms.slice(0, 7).filter((term) => term !== args.query).map((term) =>
-        ctx.runQuery(api.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit })
+        ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit })
       ),
       ...interp.keywords.slice(0, 3).map((kw) =>
-        ctx.runQuery(api.search.searchCandidates, { query: kw, limit: 12 })
+        ctx.runQuery(api.matching.search.searchCandidates, { query: kw, limit: 12 })
       ),
     ]);
 
@@ -211,7 +211,7 @@ export const semanticSearch = action({
   },
   handler: async (ctx, args) => {
     // 1. Embed query
-    const { embedText } = await import("./agent2_matching.js");
+    const { embedText } = await import("./agent2.js");
     const queryEmbedding = await embedText(args.query);
 
     // 2. Vector search
@@ -229,7 +229,7 @@ export const semanticSearch = action({
   }
 });
 
-import { mutation } from "./_generated/server";
+import { mutation } from "../_generated/server";
 export const bulkAddToPipeline = mutation({
   args: {
     candidateIds: v.array(v.id("candidates")),

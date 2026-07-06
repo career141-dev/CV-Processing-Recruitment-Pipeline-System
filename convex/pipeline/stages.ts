@@ -3,7 +3,8 @@ import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { internal } from "../_generated/api";
-import { syncCandidateOverallStatus } from "../candidates";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
+import { initiateFollowUpOutreach } from "./followUpHelper";
 
 export const moveToTAShortlist = mutation({
   args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
@@ -21,65 +22,42 @@ export const moveToTAShortlist = mutation({
     const user = await requireUser(ctx);
     const now = Date.now();
 
-    const isPathTwo = entry.sourceChannel !== "database";
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "follow_up",
+      stageHistory: [
+        ...(entry.stageHistory ?? []),
+        {
+          stage: "ta_shortlist",
+          enteredAt: new Date().toISOString(),
+          changedBy: user._id,
+          note: args.note,
+        },
+        {
+          stage: "follow_up",
+          enteredAt: new Date().toISOString(),
+          changedBy: user._id,
+          note: "Moved directly to follow-up on TA shortlist confirm (unified single pipeline path).",
+        },
+      ],
+      taShortlistStatus: "shortlisted",
+      taShortlistById: user._id,
+      taShortlistAt: now,
+      lastStageChangedAt: now,
+    });
 
-    if (isPathTwo) {
-      // PATH 2 — New CV: shortlist AND move directly to follow_up (AI Call is disabled)
-      await ctx.db.patch(args.applicationId, {
-        currentStage: "follow_up",
-        stageHistory: [
-          ...(entry.stageHistory ?? []),
-          {
-            stage: "ta_shortlist",
-            enteredAt: new Date().toISOString(),
-            changedBy: user._id,
-            note: args.note,
-          },
-          {
-            stage: "follow_up",
-            enteredAt: new Date().toISOString(),
-            changedBy: user._id,
-            note: "Moved directly to follow-up on TA shortlist confirm.",
-          },
-        ],
-        taShortlistStatus: "shortlisted",
-        taShortlistById: user._id,
-        taShortlistAt: now,
-        lastStageChangedAt: now,
-        followUpEnteredAt: now,
-      });
+    await ctx.db.insert("pipelineEvents", {
+      applicationId: args.applicationId,
+      candidateId: entry.candidateId,
+      jobId: entry.jobId,
+      eventType: "follow_up_triggered",
+      fromStage: "new_cvs",
+      toStage: "follow_up",
+      actorType: "user",
+      actorId: user._id,
+      notes: "Moved directly to follow-up on TA shortlist confirm (unified single pipeline path).",
+      createdAt: now,
+    });
 
-      await ctx.db.insert("pipelineEvents", {
-        applicationId: args.applicationId,
-        candidateId: entry.candidateId,
-        jobId: entry.jobId,
-        eventType: "follow_up_triggered",
-        fromStage: "new_cvs",
-        toStage: "follow_up",
-        actorType: "user",
-        actorId: user._id,
-        notes: "Moved directly to follow-up on TA shortlist confirm (Path 2).",
-        createdAt: now,
-      });
-    } else {
-      // PATH 1 — Matched Candidate: just mark TA shortlisted, TA will call manually
-      await ctx.db.patch(args.applicationId, {
-        currentStage: "ta_shortlist",
-        stageHistory: [
-          ...(entry.stageHistory ?? []),
-          {
-            stage: "ta_shortlist",
-            enteredAt: new Date().toISOString(),
-            changedBy: user._id,
-            note: args.note,
-          },
-        ],
-        taShortlistStatus: "shortlisted",
-        taShortlistById: user._id,
-        taShortlistAt: now,
-        lastStageChangedAt: now,
-      });
-    }
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });

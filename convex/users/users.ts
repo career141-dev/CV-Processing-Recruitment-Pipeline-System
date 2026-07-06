@@ -1,7 +1,7 @@
 // convex/users.ts
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "../_generated/server";
 import { v } from "convex/values";
-import { requireRole } from "./lib/permissions";
+import { requireRole } from "../lib/permissions";
 
 // Called from Next.js on every login via useConvexAuth / onAuthStateChange
 export const syncCurrentUser = mutation({

@@ -3,7 +3,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
 export function useCurrentUser() {
-  return useQuery(api.users.getCurrentUser);
+  return useQuery(api.users.users.getCurrentUser);
 }
 
 export function useRole() {
@@ -32,7 +32,7 @@ export function useRole() {
 }
 
 export function useJobAccess(jobId: Id<"jobs"> | undefined) {
-  const assignment = useQuery(api.jobs.getMyAssignment, jobId ? { jobId } : "skip");
+  const assignment = useQuery(api.jobs.jobs.getMyAssignment, jobId ? { jobId } : "skip");
   const { role, isAdmin, isTAManager } = useRole();
   return {
     canViewPipeline: isAdmin || isTAManager || !!assignment,

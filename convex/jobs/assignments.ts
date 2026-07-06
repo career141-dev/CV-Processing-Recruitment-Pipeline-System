@@ -1,6 +1,6 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "../_generated/server";
 import { v } from "convex/values";
-import { requireRole, requireUser, requireJobAssignment } from "./lib/permissions";
+import { requireRole, requireUser, requireJobAssignment } from "../lib/permissions";
 
 // Helper: Check if user is the Primary Recruiter for a job
 async function isPrimaryRecruiter(ctx: any, jobId: string, userId: string) {
