@@ -129,5 +129,14 @@ export const insertCvRecord = internalMutation({
       candidateName: candidate!.fullName || "Unknown",
       stage: "queued",
     });
+
+    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      cvUploadId,
+      storageId: args.storageId,
+      fileType: "application/pdf",
+      uploadedBy: taUser ? taUser._id : "system",
+      sourceChannel: "whatsapp",
+      skipLLM: false,
+    });
   }
 });

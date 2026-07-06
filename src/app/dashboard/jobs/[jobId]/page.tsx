@@ -102,6 +102,21 @@ const StatusDot = ({ status }: { status: string }) => {
   );
 };
 
+
+const CandidateNameDisplay = ({ name, cvUploadId, doNotContact }: { name: string, cvUploadId?: Id<"cvUploads"> | null, doNotContact?: boolean }) => (
+  <div className="flex flex-col gap-1">
+    <div className="flex items-center gap-2">
+      {name}
+      <CvViewButton cvUploadId={cvUploadId} />
+    </div>
+    {doNotContact && (
+      <span className="w-fit inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20" title="This candidate is blacklisted">
+        🚫 Do Not Contact
+      </span>
+    )}
+  </div>
+);
+
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
   const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
   const createApplication = useMutation(api.applications.applications.createApplication);
@@ -359,10 +374,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
     <tr className="hover:bg-surface-bright transition-colors group border-b border-border">
       <td className="p-4 font-medium align-top">
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            {item.name}
-            <CvViewButton cvUploadId={item.cvUploadId} />
-          </div>
+          <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
           <span className="text-[11px] text-text-secondary font-normal">
             Match: {item.score} • Database Candidate
           </span>
@@ -1309,6 +1321,7 @@ export default function JobDetailPage() {
       candidateId: app.candidateId,
       cvUploadId: app.candidate?.cvUploadId,
       name: app.candidate?.fullName || 'Unknown Candidate',
+      doNotContact: app.candidate?.doNotContact,
       score: app.aiMatchScore || 'Pending',
       status: app.taShortlistStatus || 'Pending',
       currentSalary: app.candidate?.currentSalary ? '$' + app.candidate.currentSalary : '—',
@@ -1391,10 +1404,7 @@ export default function JobDetailPage() {
                 return (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
-                      <div className="flex items-center gap-2">
-                        {item.name}
-                        <CvViewButton cvUploadId={item.cvUploadId} />
-                      </div>
+                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                     </td>
                     <td className="p-4"><ScoreRing score={item.score} /></td>
                     <td className="p-4 text-right">
@@ -1480,10 +1490,7 @@ export default function JobDetailPage() {
                 return (
                   <tr key={item.id} className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
                     <td className="p-4 font-medium">
-                      <div className="flex items-center gap-2">
-                        {item.name}
-                        <CvViewButton cvUploadId={item.cvUploadId} />
-                      </div>
+                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                       {allComplete && (
                         <div className="mt-1 text-[10px] text-green-600 font-medium flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3" /> All complete — advancing to 2nd Shortlist
@@ -1683,10 +1690,7 @@ export default function JobDetailPage() {
                 ) : currentItems.map((item: any) => (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
-                      <div className="flex items-center gap-2">
-                        {item.name}
-                        <CvViewButton cvUploadId={item.cvUploadId} />
-                      </div>
+                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                     </td>
                     <td className="p-4">{item.currentSalary}</td>
                     <td className="p-4">{item.expectedSalary}</td>
@@ -1727,10 +1731,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                   </td>
                   <td className="p-4"><ScoreRing score={item.score} /></td>
                   <td className="p-4">✅ {item.salaryFit}</td>
@@ -1782,10 +1783,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                   </td>
                   <td className="p-4"><ScoreRing score={item.score} /></td>
                   <td className="p-4 text-right">
@@ -1834,10 +1832,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                   </td>
                   <td className="p-4">{item.date}</td>
                   <td className="p-4"><StatusDot status={item.feedback} /></td>
@@ -1868,14 +1863,18 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                   </td>
                   <td className="p-4 font-bold">{item.salary}</td>
                   <td className="p-4">{item.startDate}</td>
-                  <td className="p-4"><StatusDot status={item.status} /></td>
+                                    <td className="p-4">
+                    {item.timeInStageRaw > 432000000 && (
+                      <div className="text-[11px] font-bold text-orange-600 bg-orange-500/10 px-2 py-1 rounded w-fit flex items-center gap-1 mb-1 border border-orange-500/20">
+                        ⚠️ Stale Offer ({Math.floor(item.timeInStageRaw / 86400000)}d)
+                      </div>
+                    )}
+                    <StatusDot status={item.status} />
+                  </td>
                   <td className="p-4 text-right">
                     {renderKanbanDropdown(item.id, 'offer')}
                   </td>
@@ -1902,10 +1901,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                   </td>
                   <td className="p-4">{item.role}</td>
                   <td className="p-4">{item.date}</td>
@@ -1934,10 +1930,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      {item.name}
-                      <CvViewButton cvUploadId={item.cvUploadId} />
-                    </div>
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
                   </td>
                   <td className="p-4 text-error">{item.reason}</td>
                   <td className="p-4 text-right">

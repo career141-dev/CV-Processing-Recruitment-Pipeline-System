@@ -197,12 +197,29 @@ export const createApplication = mutation({
       .first();
 
     if (existing) {
+      let updates: any = {};
+      
       if (existing.currentStage === "new_cvs" && args.sourceChannel === "database") {
-        await ctx.db.patch(existing._id, {
-          currentStage: "matched_candidates" as any,
-          lastStageChangedAt: Date.now(),
-        });
-        await syncCandidateOverallStatus(ctx, args.candidateId);
+        updates.currentStage = "matched_candidates" as any;
+        updates.lastStageChangedAt = Date.now();
+      }
+      
+      if (args.cvFileId && !existing.cvFileId) {
+        updates.cvFileId = args.cvFileId;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await ctx.db.patch(existing._id, updates);
+        
+        if (updates.currentStage) {
+          await syncCandidateOverallStatus(ctx, args.candidateId);
+        }
+        
+        if (updates.cvFileId) {
+          const candidate = await ctx.db.get(args.candidateId);
+          await updateFollowUpFlags(ctx, existing._id, candidate);
+          await checkAndAdvanceFollowUp(ctx, args.candidateId);
+        }
       }
       return existing._id;
     }
