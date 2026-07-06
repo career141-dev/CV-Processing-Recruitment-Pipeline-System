@@ -8,16 +8,45 @@ const crons = cronJobs();
 export const evaluateFollowUpStage = internalMutation({
   args: {},
   handler: async (ctx) => {
+    // 1. Check Kill Switch
+    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    if (configRow && configRow.autopilotEnabled === false) {
+      console.log("Autopilot disabled via appSettings - skipping sweep");
+      return;
+    }
+
     const followUpApps = await ctx.db.query("applications")
       .filter(q => q.eq(q.field("currentStage"), "follow_up"))
       .collect();
 
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const MAX_CALLS_PER_RUN = 20;
+    let aiCallsTriggeredThisRun = 0;
+
+    function isWithinCallingHours(phone?: string) {
+      if (!phone) return true; // Default allow if no phone available to check
+      let offsetHours = 0; 
+      if (phone.startsWith("+44") || phone.startsWith("07")) offsetHours = 0; // UK
+      else if (phone.startsWith("+971")) offsetHours = 4; // UAE
+      else if (phone.startsWith("+94")) offsetHours = 5.5; // Sri Lanka
+      else if (phone.startsWith("+65")) offsetHours = 8; // Singapore
+      else if (phone.startsWith("+1")) offsetHours = -5; // US EST roughly
+      else if (phone.startsWith("+61")) offsetHours = 10; // Australia (AEST)
+      
+      const currentUtcHour = new Date().getUTCHours();
+      const localHour = (currentUtcHour + offsetHours + 24) % 24;
+      return localHour >= 9 && localHour < 20; // 9 AM to 8 PM
+    }
 
     for (const app of followUpApps) {
       const candidate = await ctx.db.get(app.candidateId);
       if (!candidate) continue;
+
+      // 2. Enforce doNotContact
+      if (candidate.doNotContact) {
+        continue;
+      }
 
       const job = await ctx.db.get(app.jobId);
       if (!job) continue;
@@ -73,7 +102,36 @@ export const evaluateFollowUpStage = internalMutation({
       const timeInStage = now - enteredAt;
       const daysInStage = Math.floor(timeInStage / (24 * 60 * 60 * 1000));
 
-      // Check if candidate replied (inbound messages or completed AI calls since followUpEnteredAt)
+      // 1. First, check if 7 days have elapsed without collecting all required fields.
+      // If 7 days elapsed, move to Unresponsive (not rejected)
+      // DA will manually call these candidates using the Unresponsive sub-section
+      // in the Follow-up tab. AI voice call is suspended.
+      if (timeInStage >= SEVEN_DAYS_MS) {
+        await ctx.db.patch(app._id, {
+          currentStage: "unresponsive",
+          lastStageChangedAt: now,
+          stageHistory: [
+            ...(app.stageHistory ?? []),
+            {
+              stage: "unresponsive",
+              enteredAt: new Date().toISOString(),
+              changedBy: "system" as any,
+              note: "Auto-moved to Unresponsive: Profile still incomplete after 7 days in Follow-up.",
+            },
+          ],
+        });
+        await ctx.db.patch(app._id, {
+          followUpState: {
+            lastContactDay: app.followUpState?.lastContactDay ?? 0,
+            firstChannelUsed: app.followUpState?.firstChannelUsed,
+            replyChannel: "unresponsive",
+          }
+        });
+        await syncCandidateOverallStatus(ctx, app.candidateId);
+        continue;
+      }
+
+      // 2. If under 7 days, check if candidate replied (inbound messages or completed AI calls)
       const inboundComms = await ctx.db.query("communications")
         .withIndex("by_applicationId", (q: any) => q.eq("applicationId", app._id))
         .filter((q: any) => q.eq(q.field("direction"), "inbound"))
@@ -123,26 +181,6 @@ export const evaluateFollowUpStage = internalMutation({
         continue; // Candidate has replied, stop automated follow-up sequence
       }
 
-      // If 7 days elapsed without reply, auto-reject
-      if (timeInStage >= SEVEN_DAYS_MS) {
-        await ctx.db.patch(app._id, {
-          currentStage: "rejected",
-          taRejectionReason: "Did not respond within 7-day follow-up window",
-          lastStageChangedAt: now,
-          stageHistory: [
-            ...(app.stageHistory ?? []),
-            {
-              stage: "rejected",
-              enteredAt: new Date().toISOString(),
-              changedBy: "system" as any,
-              note: "Auto-rejected: Did not reply within 7-day Follow-up window.",
-            },
-          ],
-        });
-        await syncCandidateOverallStatus(ctx, app.candidateId);
-        continue;
-      }
-
       // Day-tier outreach scheduling
       let targetDay: number | null = null;
       if (daysInStage === 0) targetDay = 0;
@@ -164,7 +202,10 @@ export const evaluateFollowUpStage = internalMutation({
         triggerWhatsApp = true;
         triggerEmail = true;
       } else if (targetDay === 2) {
-        triggerAiCall = true;
+        // AI voice call suspended (Sri Lankan phone number not yet available).
+        // Backend code in elevenlabs.ts remains intact for future reactivation.
+        // Day 2 is intentionally silent — next contact is Day 4 WhatsApp/Email.
+        continue;
       } else if (targetDay === 4) {
         triggerWhatsApp = true;
         triggerEmail = true;
@@ -173,7 +214,19 @@ export const evaluateFollowUpStage = internalMutation({
         triggerEmail = true;
       }
 
-      // Persist updated state
+      // 3 & 4. Rate Limiting and Calling Hours for AI Calls
+      if (triggerAiCall) {
+        if (aiCallsTriggeredThisRun >= MAX_CALLS_PER_RUN) {
+          console.log(`[Follow-up Day 2] Deferring AI Call for ${candidate.fullName ?? "unknown"} - Max calls per run reached.`);
+          continue;
+        }
+        if (!isWithinCallingHours(candidate.phone)) {
+          console.log(`[Follow-up Day 2] Deferring AI Call for ${candidate.fullName ?? "unknown"} - Outside calling hours for phone ${candidate.phone}.`);
+          continue;
+        }
+      }
+
+      // Persist updated state AFTER passing deferral checks
       await ctx.db.patch(app._id, {
         followUpState: {
           ...(followUpState ?? {}),
@@ -240,7 +293,9 @@ export const evaluateFollowUpStage = internalMutation({
 
       // ── Follow-up AI call (Day 2 elapsed / Day 3) ─────────────────────────
       if (triggerAiCall) {
-        await ctx.db.insert("aiCalls", {
+        aiCallsTriggeredThisRun++;
+        
+        const newAiCallId = await ctx.db.insert("aiCalls", {
           candidateId: app.candidateId,
           jobId: app.jobId,
           applicationId: app._id,
@@ -259,6 +314,7 @@ export const evaluateFollowUpStage = internalMutation({
           jobId: app.jobId,
           attemptNumber: 1,
           lastContactChannel: "WhatsApp",
+          aiCallId: newAiCallId,
         });
 
         console.log(`[Follow-up Day ${targetDay}] AI Follow-up call queued for ${candidate.fullName ?? "unknown"}`);

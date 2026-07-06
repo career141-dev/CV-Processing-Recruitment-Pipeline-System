@@ -331,7 +331,7 @@ http.route({
       let foundValidApp = false;
       
       if (application_id) {
-        const existingApp = await ctx.runQuery(api.applications.getApplication, { id: application_id as any }).catch(() => null);
+        const existingApp = await ctx.runQuery(api.applications.applications.getApplication, { id: application_id as any }).catch(() => null);
         if (existingApp) {
           appIdsToUpdate.push(application_id);
           foundValidApp = true;
@@ -340,7 +340,7 @@ http.route({
       
       if (!foundValidApp && candidate_id) {
         // Fallback: find any application for this candidate in follow_up or ai_call stage
-        const apps = await ctx.runQuery(api.applications.getApplicationsByCandidateId, { candidateId: candidate_id as any });
+        const apps = await ctx.runQuery(api.applications.applications.getApplicationsByCandidateId, { candidateId: candidate_id as any });
         if (apps) {
           for (const app of apps) {
             if (app.currentStage === "follow_up" || app.currentStage === "ai_call" || app.currentStage === "ta_shortlist") {

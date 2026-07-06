@@ -475,6 +475,208 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   );
 };
 
+const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
+  const { user } = useUser();
+  const [isLoggingCall, setIsLoggingCall] = useState(false);
+  const [outcome, setOutcome] = useState<string>('');
+  const [currentSalary, setCurrentSalary] = useState(u.currentSalary != null ? u.currentSalary : '');
+  const [expectedSalary, setExpectedSalary] = useState(u.expectedSalary != null ? u.expectedSalary : '');
+  const [noticePeriod, setNoticePeriod] = useState(u.noticePeriodDays != null ? u.noticePeriodDays : '');
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const logManualCall = useMutation(api.applications.applications.logManualCall);
+  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
+
+  const handleSaveLog = async () => {
+    setIsSaving(true);
+    try {
+      const parsedCurrentSalary = currentSalary ? parseFloat(String(currentSalary).replace(/[^0-9.]/g, '')) : undefined;
+      const parsedExpectedSalary = expectedSalary ? parseFloat(String(expectedSalary).replace(/[^0-9.]/g, '')) : undefined;
+      const parsedNoticePeriod = noticePeriod ? parseInt(String(noticePeriod).replace(/[^0-9]/g, '')) : undefined;
+
+      let cvUploadId: Id<"cvUploads"> | undefined = undefined;
+      if (cvFile && user?.id) {
+        const uploadUrl = await generateUploadUrl();
+        const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": cvFile.type }, body: cvFile });
+        const { storageId } = await resp.json();
+        
+        cvUploadId = await saveUpload({
+          storageId,
+          fileName: cvFile.name,
+          fileSize: cvFile.size,
+          fileType: cvFile.type,
+          source: "Manual",
+          uploadedBy: user.id,
+        });
+      }
+
+      await logManualCall({
+        applicationId: u.applicationId,
+        candidateId: u.candidateId,
+        outcome,
+        currentSalary: isNaN(parsedCurrentSalary as number) ? undefined : parsedCurrentSalary,
+        expectedSalary: isNaN(parsedExpectedSalary as number) ? undefined : parsedExpectedSalary,
+        noticePeriodDays: isNaN(parsedNoticePeriod as number) ? undefined : parsedNoticePeriod,
+        cvUploadId,
+      });
+      setIsLoggingCall(false);
+      setCvFile(null);
+    } catch (e: any) {
+      alert('Failed to save log: ' + e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!isLoggingCall) {
+    return (
+      <tr className="hover:bg-surface-container/50 transition-colors border-b border-border">
+        <td className="p-4">
+          <Link
+            href={`/dashboard/candidates/${u.candidateId}`}
+            className="font-semibold text-text-primary hover:text-primary transition-colors hover:underline"
+          >
+            {u.candidateName}
+          </Link>
+        </td>
+        <td className="p-4">
+          {u.candidatePhone ? (
+            <a
+              href={`tel:${u.candidatePhone}`}
+              className="inline-flex items-center gap-1.5 text-primary font-medium hover:underline"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              {u.candidatePhone}
+            </a>
+          ) : (
+            <span className="text-text-secondary">—</span>
+          )}
+        </td>
+        <td className="p-4">
+          {u.hasCurrentSalary ? (
+            <span className="text-[13px] font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {u.currentSalary != null ? u.currentSalary : "Received"}
+            </span>
+          ) : (
+            <span className="text-[11px] font-semibold bg-error/10 text-error px-2 py-0.5 rounded-full">Not received</span>
+          )}
+        </td>
+        <td className="p-4">
+          {u.hasExpectedSalary ? (
+            <span className="text-[13px] font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {u.expectedSalary != null ? u.expectedSalary : "Received"}
+            </span>
+          ) : (
+            <span className="text-[11px] font-semibold bg-error/10 text-error px-2 py-0.5 rounded-full">Not received</span>
+          )}
+        </td>
+        <td className="p-4">
+          {u.hasNoticePeriod ? (
+            <span className="text-[13px] font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {u.noticePeriodDays != null ? `${u.noticePeriodDays} days` : "Received"}
+            </span>
+          ) : (
+            <span className="text-[11px] font-semibold bg-error/10 text-error px-2 py-0.5 rounded-full">Not received</span>
+          )}
+        </td>
+        <td className="p-4">
+          <span className={`inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-full ${
+            u.daysUnresponsive >= 14
+              ? 'bg-error/10 text-error'
+              : u.daysUnresponsive >= 10
+              ? 'bg-orange-500/10 text-orange-600'
+              : 'bg-yellow-500/10 text-yellow-600'
+          }`}>
+            <Clock className="w-3 h-3" />
+            {u.daysUnresponsive}d
+          </span>
+        </td>
+        <td className="p-4 text-right">
+          <button 
+            onClick={() => setIsLoggingCall(true)}
+            className="text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap"
+          >
+            Log Call
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  // Edit Mode
+  return (
+    <tr className="bg-surface-container/30 border-b border-border">
+      <td colSpan={7} className="p-4">
+        <div className="flex flex-col gap-3 bg-surface-container p-4 rounded-lg border border-border">
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-semibold text-text-primary">Logging manual call for {u.candidateName}</span>
+          </div>
+          
+          <select 
+            value={outcome}
+            onChange={e => setOutcome(e.target.value)}
+            className="bg-surface border border-border rounded px-2 py-2 text-[13px] focus:outline-none focus:border-primary-container max-w-xs"
+          >
+            <option value="" disabled>Select Outcome...</option>
+            <option value="Interested">Interested (Advance candidate)</option>
+            <option value="Not Interested">Not Interested (Reject candidate)</option>
+            <option value="No Answer">No Answer</option>
+          </select>
+          
+          {outcome === "Interested" && (
+            <div className="grid grid-cols-2 gap-3 max-w-lg mt-2">
+              <div>
+                <label className="block text-[11px] text-text-secondary mb-1">Current Salary</label>
+                <input type="text" placeholder="e.g. 50000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-[11px] text-text-secondary mb-1">Expected Salary</label>
+                <input type="text" placeholder="e.g. 60000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-[11px] text-text-secondary mb-1">Notice Period (Days)</label>
+                <input type="text" placeholder="e.g. 30" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
+              </div>
+              
+              <div className="col-span-2 mt-2">
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5">
+                  <Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)
+                </label>
+                <input 
+                  type="file" 
+                  onChange={e => setCvFile(e.target.files?.[0] || null)}
+                  className="w-full text-[11px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-surface-container-high file:text-text-primary hover:file:bg-border transition-colors cursor-pointer" 
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
+            <button 
+              onClick={() => setIsLoggingCall(false)}
+              className="text-[12px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleSaveLog} 
+              disabled={isSaving || !outcome}
+              className="text-[12px] font-medium bg-primary text-on-primary px-4 py-1.5 rounded-[4px] hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              {isSaving ? "Saving..." : "Save Call Log"}
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+};
+
 // ─── Reject Modal ─────────────────────────────────────────────────────────────
 const RejectModal = ({ 
   isOpen, onClose, onConfirm, candidateName, stage 
@@ -788,6 +990,7 @@ export default function JobDetailPage() {
 
   const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
+  const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
@@ -800,6 +1003,7 @@ export default function JobDetailPage() {
   
   // Fetch candidates via applications
   const applications = useQuery(api.applications.applications.getByJobId, { jobId });
+  const unresponsiveCandidates = useQuery(api.applications.applications.getUnresponsiveForJob, { jobId });
   const allUsers = useQuery(api.users.users.getAllUsers);
   const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
@@ -1129,6 +1333,7 @@ export default function JobDetailPage() {
       followUpCurrentSalary: (app as any).followUpCurrentSalary,
       followUpExpectedSalary: (app as any).followUpExpectedSalary,
       followUpNoticePeriod: (app as any).followUpNoticePeriod,
+      followUpState: (app as any).followUpState,
       feedback: 'Pending',
       salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
       startDate: 'TBD',
@@ -1203,13 +1408,46 @@ export default function JobDetailPage() {
         );
         break;
       case 'Follow-up':
+        const unresponsiveList = unresponsiveCandidates ?? [];
         tableContent = (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                <th className="p-4">Candidate</th>
-                <th className="p-4">Source</th>
-                <th className="p-4">AI Call Status</th>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2 border-b border-border">
+              <button
+                onClick={() => setActiveFollowUpTab('active')}
+                className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors ${
+                  activeFollowUpTab === 'active' 
+                    ? 'border-primary text-primary' 
+                    : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'
+                }`}
+              >
+                Current Follow-up ({currentItems.length})
+              </button>
+              <button
+                onClick={() => setActiveFollowUpTab('unresponsive')}
+                className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                  activeFollowUpTab === 'unresponsive' 
+                    ? 'border-orange-500 text-orange-600 dark:text-orange-400' 
+                    : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'
+                }`}
+              >
+                Unresponsive After 7 Days
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  activeFollowUpTab === 'unresponsive'
+                    ? 'bg-orange-500/20 text-orange-700 dark:text-orange-400'
+                    : 'bg-surface-container text-text-secondary'
+                }`}>
+                  {unresponsiveList.length}
+                </span>
+              </button>
+            </div>
+
+            {activeFollowUpTab === 'active' ? (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                    <th className="p-4">Candidate</th>
+                    <th className="p-4">Source</th>
+                    <th className="p-4">Contact Status</th>
                 <th className="p-4">4-Field Completion</th>
                 <th className="p-4">Days Remaining</th>
                 <th className="p-4 text-right">Move To Stage</th>
@@ -1260,7 +1498,41 @@ export default function JobDetailPage() {
                       </span>
                     </td>
                     <td className="p-4">
-                      <AiCallStatusBadge status={item.aiCallStatus} />
+                      {(() => {
+                        const lastDay = item.followUpState?.lastContactDay ?? -1;
+                        const contactStatus =
+                          lastDay === -1
+                            ? { label: 'Not Contacted Yet', sub: 'Awaiting sequence start', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/30' }
+                            : lastDay === 0
+                            ? { label: '1st Outreach Sent', sub: 'WhatsApp + Email — Day 1', color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400', dot: 'bg-blue-500' }
+                            : lastDay === 4
+                            ? { label: '2nd Reminder Sent', sub: 'WhatsApp + Email — Day 5', color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400', dot: 'bg-yellow-500' }
+                            : lastDay === 6
+                            ? { label: 'Final Reminder Sent', sub: 'WhatsApp + Email — Day 7', color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500 animate-pulse' }
+                            : { label: `Day ${lastDay} Contacted`, sub: 'WhatsApp + Email', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/50' };
+
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit ${contactStatus.color}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${contactStatus.dot}`} />
+                              {contactStatus.label}
+                            </span>
+                            <span className="text-[10px] text-text-secondary pl-1 flex items-center gap-1">
+                              {lastDay >= 0 && (
+                                <>
+                                  <svg className="w-2.5 h-2.5 text-green-500" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                                  </svg>
+                                  <svg className="w-2.5 h-2.5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 7L2 7"/>
+                                  </svg>
+                                </>
+                              )}
+                              {contactStatus.sub}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
@@ -1336,6 +1608,47 @@ export default function JobDetailPage() {
               })}
             </tbody>
           </table>
+            ) : (
+              <div className="border border-orange-200 dark:border-orange-800/50 rounded-xl overflow-hidden mt-2">
+                <div className="flex items-center justify-between px-5 py-3.5 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800/50">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-orange-500" />
+                    <span className="text-[13px] font-semibold text-orange-700 dark:text-orange-400">Unresponsive — Manual Call Required</span>
+                  </div>
+                  <span className="text-[11px] text-orange-600/70 dark:text-orange-400/60">
+                    No reply to WhatsApp &amp; Email after 7 days
+                  </span>
+                </div>
+
+                <table className="w-full text-left border-collapse bg-surface">
+                  <thead>
+                    <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                      <th className="p-4">Candidate</th>
+                      <th className="p-4">Phone</th>
+                      <th className="p-4">Current Salary</th>
+                      <th className="p-4">Expected Salary</th>
+                      <th className="p-4">Notice Period</th>
+                      <th className="p-4">Days Unresponsive</th>
+                      <th className="p-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[13px] text-text-primary divide-y divide-border">
+                    {unresponsiveList.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-8 text-center text-[13px] text-text-secondary">
+                          No unresponsive candidates — great work! 🎉
+                        </td>
+                      </tr>
+                    ) : (
+                      unresponsiveList.map((u: any) => (
+                        <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} />
+                      ))
+                    )}
+                    </tbody>
+                  </table>
+              </div>
+            )}
+          </div>
         );
         break;
       case '2nd Shortlist':

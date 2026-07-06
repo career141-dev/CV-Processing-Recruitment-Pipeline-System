@@ -390,6 +390,7 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
     director_shortlist: 7,
     second_shortlist: 6,
     follow_up: 5,
+    unresponsive: 4.5,
     ai_call: 4,
     ta_shortlist: 3,
     matched_candidates: 3,

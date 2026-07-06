@@ -237,7 +237,7 @@ export const forceTriggerFollowUpCall = mutation({
     if (!candidate) throw new Error("Candidate not found");
 
     const now = Date.now();
-    await ctx.db.insert("aiCalls", {
+    const newAiCallId = await ctx.db.insert("aiCalls", {
       candidateId: app.candidateId,
       jobId: app.jobId,
       applicationId: app._id,
@@ -256,6 +256,7 @@ export const forceTriggerFollowUpCall = mutation({
       jobId: app.jobId,
       attemptNumber: 1,
       lastContactChannel: "Manual Trigger",
+      aiCallId: newAiCallId,
     });
 
     return true;
