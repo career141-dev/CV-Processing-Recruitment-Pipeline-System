@@ -46,7 +46,59 @@ export const sendWhatsApp = internalAction({
       logNote = ` [REDIRECTED TO TEST NUMBER: ${testRecipient}]`;
     }
 
-    // 3. Send message to local WhatsApp bridge
+    // 3. Send message to WhatChimp or local WhatsApp bridge
+    const whatChimpToken = process.env.WHATCHIMP_API_TOKEN;
+    const whatChimpPhoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+
+    if (whatChimpToken) {
+      try {
+        console.log(`[WhatsApp Outbound] Sending message to +${targetPhone.replace(/[^0-9]/g, '')} via WhatChimp API${logNote}`);
+        
+        const params = new URLSearchParams();
+        params.append("apiToken", whatChimpToken);
+        params.append("phone_number_id", whatChimpPhoneId || "");
+        params.append("phone_number", targetPhone.replace(/[^0-9]/g, ''));
+        params.append("message", args.body);
+
+        const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`WhatChimp returned status ${res.status}: ${errorText}`);
+        }
+
+        const dataText = await res.text();
+        console.log(`[WhatsApp Outbound] WhatChimp response:`, dataText);
+        let data: any = {};
+        try {
+          data = JSON.parse(dataText);
+        } catch (_) {}
+
+        // Success
+        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+          communicationId: args.communicationId,
+          status: "sent",
+          error: isTestMode ? `Test mode active.${logNote} [WhatChimp Response: ${dataText.slice(0, 100)}]` : undefined,
+        });
+        console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
+      } catch (err: any) {
+        console.error("[WhatsApp Outbound] Failed to dispatch via WhatChimp:", err.message);
+        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+          communicationId: args.communicationId,
+          status: "failed",
+          error: err.message,
+        });
+      }
+      return;
+    }
+
+    // Fallback: Send message to local WhatsApp bridge
     try {
       console.log(`[WhatsApp Outbound] Sending message to +${targetPhone.replace(/[^0-9]/g, '')}${logNote}`);
       
