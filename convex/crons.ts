@@ -273,4 +273,10 @@ crons.hourly(
   internal.crons.evaluateFollowUpStage
 );
 
+crons.daily(
+  "renew-graph-subscriptions",
+  { hourUTC: 3, minuteUTC: 0 }, // Runs daily at 03:00 UTC
+  internal.communications.graphSubscriptions.renewExpiringSubscriptions
+);
+
 export default crons;

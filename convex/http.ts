@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
 import { handleLocalWhatsappWebhook } from "./communications/localWhatsappAgent";
 import { handleWhatChimpWebhook } from "./communications/whatchimp";
@@ -573,6 +573,75 @@ http.route({
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     } catch (e: any) {
       return new Response(JSON.stringify({ error: e.message }), { status: e.message === "Unauthorized" ? 401 : 500 });
+    }
+  }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Microsoft Graph Webhook — Validation Handshake (GET)
+// ─────────────────────────────────────────────────────────────────────────────
+http.route({
+  path: "/api/graph-webhook",
+  method: "GET",
+  handler: httpAction(async (_ctx, request) => {
+    const url = new URL(request.url);
+    const validationToken = url.searchParams.get("validationToken");
+
+    if (validationToken) {
+      // Microsoft requires a synchronous 200 response with the token in plain text
+      return new Response(validationToken, {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
+    return new Response("Missing validationToken", { status: 400 });
+  }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Microsoft Graph Webhook — Change Notifications (POST)
+// ─────────────────────────────────────────────────────────────────────────────
+http.route({
+  path: "/api/graph-webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const body = await request.json();
+      const notifications = body.value ?? [];
+
+      console.log(
+        `[Graph Webhook] Received ${notifications.length} notification(s)`
+      );
+
+      for (const notification of notifications) {
+        // Extract the mailbox from the resource path:
+        //   "users/{email}/mailFolders/inbox/messages" → email
+        const resourceMatch = notification.resource?.match(
+          /^users\/([^/]+)\/mailFolders/
+        );
+        const taEmail = resourceMatch?.[1];
+
+        if (!taEmail) {
+          console.warn("[Graph Webhook] Could not extract taEmail from resource:", notification.resource);
+          continue;
+        }
+
+        // Schedule the inbox read action to retrieve the new messages
+        await ctx.scheduler.runAfter(
+          0,
+          internal.communications.graphEmail.readInboxMessages,
+          { taEmail, top: 10 }
+        );
+
+        console.log(`[Graph Webhook] Scheduled inbox read for ${taEmail}`);
+      }
+
+      // Microsoft expects a 202 Accepted
+      return new Response(null, { status: 202 });
+    } catch (e: any) {
+      console.error("[Graph Webhook] Error processing notification:", e.message);
+      return new Response("Error", { status: 500 });
     }
   }),
 });
