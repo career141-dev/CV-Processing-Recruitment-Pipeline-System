@@ -2,8 +2,9 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
-import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 import { handleLocalWhatsappWebhook } from "./communications/localWhatsappAgent";
+import { handleWhatChimpWebhook } from "./communications/whatchimp";
+import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 
 const http = httpRouter();
 
@@ -36,6 +37,13 @@ http.route({
   path: "/api/local-whatsapp-inbound",
   method: "POST",
   handler: handleLocalWhatsappWebhook,
+});
+
+// WhatChimp Webhook Inbound Events
+http.route({
+  path: "/api/whatsapp-whatchimp",
+  method: "POST",
+  handler: handleWhatChimpWebhook,
 });
 
 // A simple REST endpoint to test Job Creation via Postman

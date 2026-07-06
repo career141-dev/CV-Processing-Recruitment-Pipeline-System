@@ -147,12 +147,13 @@ async function connectToWhatsApp() {
         }
 
         const data = await res.json();
-        if (data.reply) {
-          console.log(`[WhatsApp Incoming] Generated LLM reply: "${data.reply}"`);
-          console.log(`[WhatsApp Incoming] Sending reply back to +${cleanFrom}...`);
-          await sock.sendMessage(from, { text: data.reply });
-          console.log(`[WhatsApp Incoming] Reply sent successfully!`);
-        }
+        // Commented out to disable automatic chat replies:
+        // if (data.reply) {
+        //   console.log(`[WhatsApp Incoming] Generated LLM reply: "${data.reply}"`);
+        //   console.log(`[WhatsApp Incoming] Sending reply back to +${cleanFrom}...`);
+        //   await sock.sendMessage(from, { text: data.reply });
+        //   console.log(`[WhatsApp Incoming] Reply sent successfully!`);
+        // }
       } catch (err) {
         console.error(`[WhatsApp Incoming] Error handling local webhook/LLM reply:`, err.message);
       }

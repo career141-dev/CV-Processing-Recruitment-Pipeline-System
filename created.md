@@ -1,93 +1,83 @@
-# Career141 vs. Hercules: System Integration Analysis & Next Steps
+# Career141: System Implementation Roadmap & Progress Tracker
 
-This document provides a comprehensive analysis comparing your personal project (Career141) with the Hercules project (70% completed), alongside a detailed project state review and action plan for your development session tomorrow.
-
----
-
-## 1. System Integration Analysis (Career141 vs Hercules)
-
-After analyzing both codebases, Hercules contains several advanced structures and UI improvements that should be adapted into Career141 to achieve the "next level" upgrade:
-
-### A. Code Structures & Data Models to Adapt
-*   **Candidate Master Profile & CV Separation:** Hercules correctly separates the `candidates` table (the master profile) from the `cvs` table (individual historical uploads). Career141 currently has a simpler approach where `cvUploads` are loosely tied to candidates. Adopting Hercules' `resolveCandidate` flow is critical for deduplication.
-*   **5-Factor Deduplication Engine:** Hercules uses a robust 5-factor check (File Hash, Email, Phone, LinkedIn, and **Fuzzy Name Matching**) to detect duplicates and near-matches. Career141 only uses a 4-factor exact match.
-*   **Routing & Reverse Matching:** Hercules has dedicated `routing.ts` and `reverseMatch.ts` logic to automatically match incoming CVs to jobs based on keywords and scores.
-
-### B. UI Improvements to Adapt
-*   **Component Library:** Hercules uses Radix UI and Tailwind for highly accessible, modular components (e.g., Dialogs, Tabs, Selects). Career141 should adopt these modular components to replace static HTML/Tailwind blocks, especially for the complex Job Pipeline view.
-*   **Data Fetching:** Hercules seamlessly integrates Convex queries with UI states. Career141's Job Pipeline is currently blocked by hardcoded `MOCK_DATA`.
+This document provides a comprehensive progress checklist, mapping completed features against the system documentation, identifying remaining gaps (specifically mock UI feeds), defining production upgrade requirements, and outlining the verification test script to prepare Career141 for a 100% functional demo.
 
 ---
 
-## 2. Current Progress: What is Completed Now?
-
-Based on the Career141 codebase and the active milestones:
-*   **Database & Convex Schema:** Core schema (`jobs`, `candidates`, `cvUploads`, `applications`, `users`) is active.
-*   **Manual CV Uploads:** Generating upload URLs and saving uploads via the UI works.
-*   **CV Parsing & Extraction:** Backend logic to extract text via LLMs and create Candidate profiles is functional.
-*   **Candidate Database UI:** The UI for listing candidates and Advanced Search is connected.
-*   **Job Creation Workflow:** The 4-step wizard successfully creates jobs in the database.
-*   **WhatsApp Processing (Hercules):** The logic for WhatsApp parsing is completed and ready to be integrated.
+## 1. System Integration: Completed vs. Hercules
+We analyzed and verified all structures comparing Career141 to Hercules, incorporating advanced elements where needed:
+* **Deduplication Engine:** Integrated the 4-factor exact deduplication matching checks for `email`, `phone`, `fileHash`, and `linkedinUrl` using Convex DB queries during candidate profile resolution.
+* **Database Folder Restructuring:** Reorganized the entire `convex/` database folder into clean domain-specific modules (`candidates`, `jobs`, `applications`, `users`, `matching`, `cvs`, `stats`, `admin`) to simplify scaling, and successfully verified zero compilation/Type errors.
 
 ---
 
-## 3. UI Parts to Implement Tomorrow
+## 2. Platform Feature Progress Checklist
 
-Your immediate priority is hooking up the backend to the frontend for the core recruitment flow.
+### A. Done & 100% Functional (Backend + Connected UI)
+- [x] **Convex Database Schema:** Schema tables (`jobs`, `candidates`, `cvUploads`, `applications`, `users`, `pipelineEvents`, `aiCalls`, `communications`, `directorReviews`, `clientReviews`, `interviews`, `offers`) are configured, indexed, and active.
+- [x] **Clerk-User Role Sync:** Automatic Clerk-to-Convex user account creation, syncing, and role assignment.
+- [x] **RBAC Matrix Access Control:** Active user permissions block (`src/hooks/usePermissions.ts`) restricting views/actions based on roles (`admin`, `ta_manager`, `senior_ta`, `recruiter`, `director`, `client`, `viewer`).
+- [x] **Job Creation Wizard:** 4-step wizard creating real jobs in the database, setting channels, configuring AI call parameters, and saving them.
+- [x] **Jobs Dashboard List:** Connected `src/app/dashboard/jobs/page.tsx` to `api.jobs.jobs.list`. Cards and lists render from database state.
+- [x] **11-Stage Pipeline Kanban Board:** Job details page (`src/app/dashboard/jobs/[jobId]/page.tsx`) queries real applications by `jobId` and maps them dynamically to the correct Kanban stage columns.
+- [x] **Pipeline Transitions & State Updates:** Clickable stage buttons ("Shortlist", "Reject", "Log Call", etc.) execute mutations that update `currentStage` in `applications` and write to the `pipelineEvents` audit log.
+- [x] **Manual Bulk Ingestion & Progress Logging:** Ingestion monitor triggers mutations to create upload batches, tracks parsing queues, and reports progress logs in real-time.
+- [x] **AI CV Parsing & Profile Resolution:** Lazy parsing triggers on the first candidate profile load, calling NVIDIA NIM (Llama 3.1 70B) to extract 16 distinct fields, compute experiences, format salaries/notice periods, and save details.
+- [x] **Deduplication & Profiles:** Candidate creation processes check duplicate records and merge them without deleting previous data.
+- [x] **Semantic Search & Reverse Match:** Vector embeddings generated via Voyage AI, with reverse-matching triggered on job publication to score and rank candidates with breakdown analytics (skills, experience, title, etc.).
+- [x] **CRM Candidate Audit Trail:** Interactive timelines (`getCandidateTimeline`) and AI Call Outcome metrics are rendered dynamically on the candidate's detailed profile view.
+- [x] **WhatChimp WhatsApp Integration:** Integrated both incoming webhook receiver (`/api/whatsapp-whatchimp`) and outbound API sender (`sendWhatsApp` via WhatChimp REST API).
 
-*   **🔴 Jobs List Dashboard (`src/app/dashboard/jobs/page.tsx`):** 
-    *   Currently uses a hardcoded `MOCK_JOBS` array.
-    *   **Implement:** Replace with `useQuery(api.jobs.list)` to map real database jobs to the grid.
-*   **🔴 Job Details & 11-Stage Pipeline (`src/app/dashboard/jobs/[jobId]/page.tsx`):**
-    *   Currently uses `MOCK_DATA` for all pipeline tabs (New CVs, TA Shortlist, etc.).
-    *   **Implement:** Create queries to fetch `applications` for the specific `jobId`, joined with `candidates` data, and render them in the correct tabs based on their `currentStage`.
-*   **Pipeline Action Buttons:** Implement the `onClick` handlers for "Shortlist", "Reject", and "Trigger Call" to fire Convex mutations that update the candidate's stage.
+### B. In Progress / Needs Connection (The Demo Gaps)
+- [/] **Outbound Voice Integration (ElevenLabs & Twilio):** outbound webhook endpoint `/api/elevenlabs/save-intake` configured to bypass HMAC checks for the mock bridge, but needs end-to-end webhook validation with active test numbers.
+- [ ] **Needs Attention Dashboard Feed (`src/components/dashboard/NeedsAttentionTable.tsx`):**
+  * *Current State:* Uses a static `const data: any[] = [];` array, leaving the table empty or locked on "All caught up".
+  * *Action Required:* Write a Convex query (e.g., `api.applications.applications.getNeedsAttention`) that queries active applications (`isActive === true`, not in `placed` or `rejected` stages) and calculates those exceeding stage SLAs.
+- [ ] **Team Activity Dashboard Feed (`src/components/dashboard/TeamActivityFeed.tsx`):**
+  * *Current State:* Contains a hardcoded list of static mock activities.
+  * *Action Required:* Write a Convex query (e.g., `api.stats.stats.getRecentActivities`) to fetch the top 10-15 newest records from the `pipelineEvents` table, and map those into the feed.
 
 ---
 
-## 4. Configured But Not Connected to the UI
+## 3. Production Upgrade Requirements (Moving to Staging/Production)
 
-*   **External CV Ingestion (WhatsApp/Email):** The logic to process a received CV is built, but the HTTP API routes (`convex/http.ts`) to receive the webhooks from Twilio/Meta and SendGrid are not fully exposed/connected to the UI for monitoring.
-*   **Pipeline Stage Transitions:** The database has an `applications` table that tracks `currentStage`, but the UI buttons are dead and do not trigger the transition mutations.
+To migrate from the free developer setup to a production-ready environment, the following three components must be upgraded to paid/dedicated plans:
 
----
-
-## 5. Connected to the UI But Not Properly Working
-
-*   **The Job Pipeline View:** The UI renders beautifully, but because it relies on mock data, moving a candidate between stages, seeing real match scores, and viewing actual CV sources does not reflect reality. 
-*   **Reverse Match on Job Publish:** The logic exists in the backend, but the UI doesn't visually alert the TA with the generated shortlist when a job is published.
+| System Component | Current Free/Developer Tier | Production Paid Upgrade | Rationale for Upgrade |
+|---|---|---|---|
+| **Convex Backend** | Free Sandbox Tier | **Professional / Scale Plan** | Upgrades file storage limits for parsed PDF/DOCX CVs (past 5GB) and allows automated daily database backup cycles. |
+| **AI Inference APIs** | Trial Credits (NVIDIA NIM & Voyage AI) | **Paid API accounts / custom VPC host** | Trial credentials expire and have strict rate limits (RPM/TPM) that will choke bulk CV parsing and embeddings. |
+| **Voice AI & Messaging** | Twilio Trial & ElevenLabs developer tiers | **Upgraded, funded developer accounts** | Twilio trial numbers prepend messages and restrict outgoing numbers. ElevenLabs requires subscription plans to scale outbound caller capacity. |
 
 ---
 
-## 6. End-to-End Verification Plan (How to Check the Core Flow)
+## 4. End-to-End Demo Script & Verification Flow
 
-To ensure the entire ingestion-to-pipeline flow works perfectly before adding AI Automation (Calls/Emails), run this exact checklist:
+Once the mock feeds in **Section 2B** are connected, use this script to demonstrate all system functionality during the demo:
 
-### Step 1: Job Creation
-1. Go to the "Create Job" wizard.
-2. Create a test job with a specific Keyword (e.g., `TEST24`).
-3. **Verify:** Check the Convex dashboard to ensure the job exists in the `jobs` table.
+### Step 1: Create a Job
+1. Go to the "Create Job" form in the UI.
+2. Fill out a job post with a unique code/keyword (e.g. `DEVOPS26`) and set required skills.
+3. Verify that the job immediately appears on the Jobs list dashboard.
 
-### Step 2: Multi-Source Ingestion & Parsing
-1. Upload a sample CV via the Manual Upload UI for the test job.
-2. Send a sample CV via WhatsApp (using the test job keyword).
-3. **Verify in Convex Dashboard:**
-    *   `cvUploads` / `cvs`: Check that the raw file is saved and `storageId` exists.
-    *   `candidates`: Check that a profile was created with parsed skills, experience, and contact info.
-    *   `applications`: Check that a record links the new Candidate ID to the Test Job ID, with `currentStage` set to "New CVs".
+### Step 2: Multi-Channel Ingestion & Parsing
+1. **Manual Ingestion:** Upload a sample resume PDF using the upload portal under the newly created job.
+2. **WhatsApp Ingestion:** Send a WhatsApp message to the registered WhatChimp number containing the keyword `DEVOPS26` and an attached CV document.
+3. **Verify:** Check the Ingestion Monitor page to ensure the batch progress logger reports "parsing" -> "indexing" -> "completed".
 
-### Step 3: Search & Matching
+### Step 3: CRM Profile Creation & Deduplication
+1. Open the Candidate database view. Ensure the uploaded candidate is listed.
+2. Click on the candidate's name to trigger **Lazy CV Parsing**.
+3. **Verify:** The profile must update with fully extracted skills, years of experience, job history timeline, notice period, and education details.
+4. **Deduplication Check:** Upload the same resume file again or under a duplicate candidate email. Ensure the system runs deduplication checks and merges the data.
+
+### Step 4: Semantic Matching
 1. Go to Candidate Search.
-2. Search for a skill you know is in the uploaded CV.
-3. **Verify:** Ensure the candidate appears with a high AI match score.
+2. Type a natural language query describing the requirements of the job (e.g., "Docker, Kubernetes, AWS specialist").
+3. **Verify:** Ensure the candidate ranks high with a match score reflecting their matched/missing skills.
 
-### Step 4: Pipeline Flow
-1. Open the Test Job in the Jobs Dashboard.
-2. **Verify:** The candidate should appear in the "New CVs" tab (pulled from real DB data, not mock data).
-3. Click "Shortlist".
-4. **Verify:** The candidate disappears from "New CVs" and appears in "TA Shortlist". Check the `applications` table in Convex to ensure `currentStage` updated.
-
----
-
-**Next Steps for Tomorrow:**
-Focus entirely on **Section 3** (replacing MOCK_DATA in the pipeline) and **Section 6** (running the End-to-End verification). Do not start Phase 5 (AI Agents/Automation) until a CV can organically flow from upload to the "TA Shortlist" tab in the UI.
+### Step 5: Recruitment Pipeline Transitions
+1. Open the Job Details Pipeline view for `DEVOPS26`.
+2. Locate the candidate in the "New CVs" column.
+3. Click **Shortlist**. Verify that they transition to the "TA Shortlist" column, and that a corresponding record is added to the Team Activity Feed on the dashboard.
+4. Click **Trigger Call** on the candidate. Ensure an outbound ElevenLabs interview call schedules or places a simulated call.
