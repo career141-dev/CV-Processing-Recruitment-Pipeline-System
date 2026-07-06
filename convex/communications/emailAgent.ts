@@ -1,30 +1,109 @@
 import { action, internalAction, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
+import { getOpenAI, getModelForTask } from "../lib/llm";
+
 
 // ----------------------------------------------------------------------------------
-// STUBBED HELPER FUNCTIONS 
-// (To be implemented when Microsoft Graph / AWS SES are configured)
+// MICROSOFT GRAPH API IMPLEMENTATION
 // ----------------------------------------------------------------------------------
+
+async function getGraphToken(): Promise<string | null> {
+  const tenantId = process.env.MS_GRAPH_TENANT_ID;
+  const clientId = process.env.MS_GRAPH_CLIENT_ID;
+  const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET;
+
+  if (!tenantId || !clientId || !clientSecret) {
+    console.log("[EmailAgent] Missing Microsoft Graph API credentials in environment variables.");
+    return null;
+  }
+
+  try {
+    const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        scope: "https://graph.microsoft.com/.default",
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("[EmailAgent] Failed to fetch Graph token:", await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return data.access_token;
+  } catch (error) {
+    console.error("[EmailAgent] Error fetching Graph token:", error);
+    return null;
+  }
+}
+
 async function fetchUnreadEmails(inboxEmail: string) {
-  console.log(`[Email Mock] Fetching unread emails for ${inboxEmail}`);
-  return []; // Return empty array for now
+  const token = await getGraphToken();
+  if (!token) return [];
+
+  console.log(`[EmailAgent] Fetching unread emails for ${inboxEmail}`);
+  try {
+    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false&$expand=attachments&$select=id,subject,body,from,attachments`;
+    
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      console.error("[EmailAgent] Failed to fetch emails:", await response.text());
+      return [];
+    }
+
+    const data = await response.json();
+    return data.value || [];
+  } catch (error) {
+    console.error("[EmailAgent] Error fetching emails:", error);
+    return [];
+  }
 }
 
 async function markEmailAsRead(inboxEmail: string, messageId: string) {
-  console.log(`[Email Mock] Marked message ${messageId} as read in ${inboxEmail}`);
+  const token = await getGraphToken();
+  if (!token) return;
+
+  try {
+    const response = await fetch(`https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ isRead: true }),
+    });
+
+    if (!response.ok) {
+      console.error(`[EmailAgent] Failed to mark message ${messageId} as read:`, await response.text());
+    } else {
+      console.log(`[EmailAgent] Marked message ${messageId} as read in ${inboxEmail}`);
+    }
+  } catch (error) {
+    console.error(`[EmailAgent] Error marking message ${messageId} as read:`, error);
+  }
 }
 
 async function sendConfirmationEmail(toEmail: string, jobId: string) {
+  // Can be implemented using Graph API sendMail endpoint if needed
   console.log(`[Email Mock] Sent confirmation email to ${toEmail} for job ${jobId}`);
 }
 // ----------------------------------------------------------------------------------
+
 
 // Runs as a scheduled Convex action — polls email every 2 minutes
 export const pollEmailInbox = action({
   args: { 
     inboxEmail: v.string(), 
-    jobId: v.id("jobs") 
+    jobId: v.optional(v.id("jobs")) 
   },
   handler: async (ctx, { inboxEmail, jobId }) => {
     // 1. Fetch unread emails
@@ -45,7 +124,7 @@ export const pollEmailInbox = action({
           const checkResult = await ctx.runMutation(internal.communications.emailAgent.checkAndRecordEmailReply, {
             senderEmail,
             subject: message.subject ?? "",
-            body: message.body ?? message.subject ?? "",
+            body: ((typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "")) || message.subject || "",
           });
           if (checkResult && checkResult.isFollowUpReply) {
             await markEmailAsRead(inboxEmail, message.id);
@@ -55,7 +134,11 @@ export const pollEmailInbox = action({
         continue; // No CV attachment and not a follow-up reply — skip
       }
 
-      const fileBuffer = Buffer.from(attachment.contentBytes, "base64");
+      const binaryString = atob(attachment.contentBytes);
+      const fileBuffer = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        fileBuffer[i] = binaryString.charCodeAt(i);
+      }
       
       // Hash the file
       const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
@@ -67,22 +150,77 @@ export const pollEmailInbox = action({
       const fileBlob = new Blob([fileBuffer], { type: attachment.contentType || "application/pdf" });
       const storageId = await ctx.storage.store(fileBlob);
 
-      // For LinkedIn shared inbox: extract keyword from subject
+
+      // Intelligent Email Routing via LLM
       let resolvedJobId = jobId;
-      if (inboxEmail === process.env.LINKEDIN_SHARED_INBOX) {
-        const subject = message.subject ?? "";
-        const keywordMatch = subject.match(/\b([A-Z]{2,8}\d{2,6})\b/);
-        
-        if (keywordMatch) {
-          const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: keywordMatch[1] });
-          if (job) resolvedJobId = job._id;
+      
+      const subject = message.subject ?? "";
+      const body = (typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "");
+      
+      // Fetch active jobs for LLM to evaluate
+      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      
+      if (activeJobs.length > 0) {
+        try {
+          const openai = getOpenAI("email_routing");
+          const model = getModelForTask("email_routing");
+          
+          const jobsListContext = activeJobs.map(j => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\\n");
+          
+          const prompt = `You are an intelligent recruitment email router.
+Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
+
+ACTIVE JOBS:
+${jobsListContext}
+
+EMAIL SUBJECT: ${subject}
+EMAIL BODY: ${body.substring(0, 2000) /* limit length for context */}
+
+Respond ONLY with a valid JSON object in this exact format:
+{
+  "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined"
+}`;
+
+          const completion = await openai.chat.completions.create({
+            model: model,
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+            temperature: 0.1,
+          });
+          
+          const resultStr = completion.choices[0]?.message?.content;
+          if (resultStr) {
+            const resultObj = JSON.parse(resultStr);
+            if (resultObj.matchedJobId) {
+              // Verify the ID actually exists in our active jobs
+              const isValid = activeJobs.some(j => j._id === resultObj.matchedJobId);
+              if (isValid) {
+                resolvedJobId = resultObj.matchedJobId;
+                console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("[EmailAgent] LLM routing failed", error);
         }
       }
+      
+      // If we couldn't resolve a job ID via LLM and no jobId was provided to the cron, use the first active job as fallback
+      if (!resolvedJobId && activeJobs.length > 0) {
+        resolvedJobId = activeJobs[0]._id;
+        console.log(`[EmailAgent] No jobId found, falling back to first active job: ${resolvedJobId}`);
+      }
+
+      if (!resolvedJobId) {
+        console.error("[EmailAgent] Could not determine a jobId for the email and no active jobs exist to use as fallback.");
+        continue;
+      }
+
 
       // 3. Process ingestion
       await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
         jobId: resolvedJobId,
-        sourceChannel: inboxEmail === process.env.LINKEDIN_SHARED_INBOX ? "linkedin" : "email_campaign",
+        sourceChannel: (inboxEmail === process.env.LINKEDIN_SHARED_INBOX || inboxEmail.toLowerCase() === "sanjeev@career141.com") ? "linkedin" : "email_campaign",
         rawSender: message.from?.emailAddress?.address,
         storageId: storageId,
         fileHash: fileHash,

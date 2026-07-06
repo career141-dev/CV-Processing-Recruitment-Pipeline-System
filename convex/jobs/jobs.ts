@@ -743,3 +743,20 @@ export const saveReverseMatchResults = internalMutation({
     });
   },
 });
+
+export const getActiveJobsBasicInfo = query({
+  args: {},
+  handler: async (ctx) => {
+    const jobs = await ctx.db.query("jobs")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .collect();
+      
+    return jobs.map(job => ({
+      _id: job._id,
+      title: job.title,
+      keyword: job.keyword,
+      clientName: job.clientName,
+      location: job.location
+    }));
+  }
+});

@@ -1,6 +1,6 @@
 import { cronJobs } from "convex/server";
 import { internalMutation } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 import { syncCandidateOverallStatus } from "./candidates/candidates";
 
 const crons = cronJobs();
@@ -329,4 +329,15 @@ crons.hourly(
   internal.crons.evaluateFollowUpStage
 );
 
+
+// Poll Sanjeev's inbox every 5 minutes
+// Replace "fallback_job_id_here" with a real default Job ID if you want a catch-all.
+crons.interval(
+  "poll-sanjeev-inbox",
+  { minutes: 5 },
+  api.communications.emailAgent.pollEmailInbox,
+  { inboxEmail: "Sanjeev@career141.com" }
+);
+
 export default crons;
+

@@ -350,6 +350,8 @@ trigger: v.union(
 v.literal("job_published"), v.literal("job_opened"),
 v.literal("search"), v.literal("manual_rescore")),
 scoredAt: v.string(),
+scoreSource: v.optional(v.string()),
+scoredBy: v.optional(v.string()),
 })
 .index("by_job_score", ["jobId", "score"])
 .index("by_candidate_job", ["candidateId", "jobId"]),
