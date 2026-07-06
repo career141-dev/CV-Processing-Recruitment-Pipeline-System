@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation } from "../_generated/server";
 import { ConvexError } from "convex/values";
-import type { QueryCtx } from "./_generated/server";
-import type { Id, Doc } from "./_generated/dataModel.d.ts";
+import type { QueryCtx } from "../_generated/server";
+import type { Id, Doc } from "../_generated/dataModel.d.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

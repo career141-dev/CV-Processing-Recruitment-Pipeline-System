@@ -11,7 +11,7 @@ export const sendWhatsApp = internalAction({
   },
   handler: async (ctx, args) => {
     // 1. Fetch candidate contact details
-    const candidate = await ctx.runQuery(api.candidates.getCandidate, {
+    const candidate = await ctx.runQuery(api.candidates.candidates.getCandidate, {
       id: args.candidateId,
     });
 

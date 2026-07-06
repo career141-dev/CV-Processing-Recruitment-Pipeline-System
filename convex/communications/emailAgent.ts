@@ -74,7 +74,7 @@ export const pollEmailInbox = action({
         const keywordMatch = subject.match(/\b([A-Z]{2,8}\d{2,6})\b/);
         
         if (keywordMatch) {
-          const job = await ctx.runQuery(api.jobs.getByKeyword, { keyword: keywordMatch[1] });
+          const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: keywordMatch[1] });
           if (job) resolvedJobId = job._id;
         }
       }

@@ -2,7 +2,7 @@ import { action, internalQuery, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api";
-import { syncCandidateOverallStatus } from "../candidates";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
 
 // 1. Internal Query to get the necessary data for scoring
 export const getScoringData = internalQuery({

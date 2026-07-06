@@ -61,7 +61,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
       if (Object.keys(updates).length > 0) {
         console.log(`[Inbound Extraction] Extracted updates for candidate ${args.candidateId}:`, updates);
-        await ctx.runMutation(api.candidates.updateCandidateDetails, {
+        await ctx.runMutation(api.candidates.candidates.updateCandidateDetails, {
           candidateId: args.candidateId,
           ...updates,
         });

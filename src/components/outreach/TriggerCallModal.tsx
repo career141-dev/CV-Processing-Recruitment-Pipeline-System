@@ -13,8 +13,8 @@ interface TriggerCallModalProps {
 
 export function TriggerCallModal({ onClose, candidateId, jobId }: TriggerCallModalProps) {
   const triggerAiCall = useMutation(api.pipeline.outreach.triggerAiCall);
-  const candidates = useQuery(api.search.searchCandidates, { query: "" }); // Simple query to get all or search
-  const jobs = useQuery(api.jobs.list);
+  const candidates = useQuery(api.matching.search.searchCandidates, { query: "" }); // Simple query to get all or search
+  const jobs = useQuery(api.jobs.jobs.list);
 
   const [selectedCandidate, setSelectedCandidate] = useState<Id<"candidates"> | "">(candidateId || "");
   const [selectedJob, setSelectedJob] = useState<Id<"jobs"> | "">(jobId || "");

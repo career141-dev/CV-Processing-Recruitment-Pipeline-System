@@ -22,8 +22,8 @@ export function SendMessageModal({ onClose, candidateId, jobId }: SendMessageMod
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
-  const candidate = useQuery(api.candidates.getCandidate, candidateId ? { id: candidateId } : "skip");
-  const job = useQuery(api.jobs.getJob, jobId ? { jobId } : "skip");
+  const candidate = useQuery(api.candidates.candidates.getCandidate, candidateId ? { id: candidateId } : "skip");
+  const job = useQuery(api.jobs.jobs.getJob, jobId ? { jobId } : "skip");
   const candidateName = candidate?.fullName || "Candidate";
 
   useEffect(() => {

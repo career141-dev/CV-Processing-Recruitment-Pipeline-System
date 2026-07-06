@@ -9,8 +9,8 @@ import { api } from "../../../convex/_generated/api";
 export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: string }) {
   const [activeTab, setActiveTab] = useState('All Jobs');
   
-  const dbJobs = useQuery(api.jobs.list);
-  const users = useQuery(api.users.getAllUsers);
+  const dbJobs = useQuery(api.jobs.jobs.list);
+  const users = useQuery(api.users.users.getAllUsers);
 
   const allPipelineJobs = dbJobs && users ? dbJobs.map((j: any) => {
     const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);

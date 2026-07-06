@@ -67,7 +67,7 @@ function StatBox({ label, value, icon: Icon, color }: {
 }
 
 export default function IngestionMonitorPage() {
-  const stats = useQuery(api.stats.getIngestionStats);
+  const stats = useQuery(api.stats.stats.getIngestionStats);
   const resumeFailedUploads = useAction(api.cvs.cvExtraction.resumeFailedUploads);
   
   const { user } = useUser();
@@ -82,9 +82,9 @@ export default function IngestionMonitorPage() {
   const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
   const processCvExtraction = useAction(api.cvs.cvExtraction.processCvExtraction);
-  const createBatch = useMutation(api.ingestionBatches.createBatch);
+  const createBatch = useMutation(api.cvs.batches.createBatch);
   const queueManualExtraction = useMutation(api.cvs.cvUploads.queueManualExtraction);
-  const updateBatchProgress = useMutation(api.ingestionBatches.updateBatchProgress);
+  const updateBatchProgress = useMutation(api.cvs.batches.updateBatchProgress);
 
   const [retrying, setRetrying] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);

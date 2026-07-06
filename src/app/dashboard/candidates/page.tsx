@@ -50,8 +50,8 @@ function formatSkills(skills?: string[] | null, max = 2): string[] {
 }
 
 export default function CandidatesSearch() {
-  const candidates = useQuery(api.candidates.listCandidates);
-  const aiSearchAction = useAction(api.search.aiSearch);
+  const candidates = useQuery(api.candidates.candidates.listCandidates);
+  const aiSearchAction = useAction(api.matching.search.aiSearch);
 
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [isAiSearching, setIsAiSearching] = useState(false);

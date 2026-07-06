@@ -22,13 +22,13 @@ export default function CreateJobWizard() {
   }, [isLoaded, canCreateJob, router]);
 
 
-  const availableRecruiters = useQuery(api.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta"] });
-  const availableDirectors = useQuery(api.users.listByRoles, { roles: ["director", "admin", "ta_manager"] });
-  const createJob = useMutation(api.jobs.createJob);
-  const updateJobChannels = useMutation(api.jobs.updateJobChannels);
-  const updateJobAiConfig = useMutation(api.jobs.updateJobAiConfig);
-  const publishJob = useMutation(api.jobs.publishJob);
-  const assignTeamToJob = useMutation(api.jobs.assignTeamToJob);
+  const availableRecruiters = useQuery(api.users.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta"] });
+  const availableDirectors = useQuery(api.users.users.listByRoles, { roles: ["director", "admin", "ta_manager"] });
+  const createJob = useMutation(api.jobs.jobs.createJob);
+  const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
+  const updateJobAiConfig = useMutation(api.jobs.jobs.updateJobAiConfig);
+  const publishJob = useMutation(api.jobs.jobs.publishJob);
+  const assignTeamToJob = useMutation(api.jobs.jobs.assignTeamToJob);
 
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");

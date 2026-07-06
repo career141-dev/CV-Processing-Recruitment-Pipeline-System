@@ -36,8 +36,8 @@ export default function JobsPage() {
   const [activeDropdownJobId, setActiveDropdownJobId] = useState<string | null>(null);
   const router = useRouter();
   
-  const dbJobs = useQuery(api.jobs.list);
-  const deleteJob = useMutation(api.jobs.deleteJob);
+  const dbJobs = useQuery(api.jobs.jobs.list);
+  const deleteJob = useMutation(api.jobs.jobs.deleteJob);
 
   React.useEffect(() => {
     const handleWindowClick = () => {
@@ -48,7 +48,7 @@ export default function JobsPage() {
       window.removeEventListener('click', handleWindowClick);
     };
   }, []);
-  const users = useQuery(api.users.getAllUsers);
+  const users = useQuery(api.users.users.getAllUsers);
 
   const formattedJobs: Job[] = dbJobs && users ? dbJobs.map((j: any) => {
     const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);

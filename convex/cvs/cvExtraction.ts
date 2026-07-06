@@ -17,7 +17,7 @@ import {
   deriveEducationFields,
   deriveTotalExperienceYears,
   deriveCurrentRole,
-} from "../tier2Derivations";
+} from "../candidates/derivations";
 import { generateNvidiaEmbedding } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
@@ -485,13 +485,13 @@ export async function runCvExtraction(
 ): Promise<string | null> {
   const { storageId, fileType, sourceChannel, cvUploadId, workableCandidateId, skipLLM, preExtractedData } = args;
 
-  await ctx.runMutation(api.candidates.updateCvUpload, {
+  await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
     cvUploadId,
     status: "processing",
   });
 
   if (args.logId) {
-    await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+    await ctx.runMutation(api.cvs.batches.updateLogStage, {
       logId: args.logId,
       stage: "parsing"
     });
@@ -514,7 +514,7 @@ export async function runCvExtraction(
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
       : trimmed;
 
-    const candidateId = await ctx.runMutation(api.candidates.createCandidate, {
+    const candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
       rawText: cappedRawText,
       sourceChannel: sourceChannel ?? undefined,
       fileHash,
@@ -523,7 +523,7 @@ export async function runCvExtraction(
       isParsed: !skipLLM,
     });
 
-    await ctx.runMutation(api.candidates.updateCvUpload, {
+    await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
       status: "processing",
       fileHash,
@@ -555,7 +555,7 @@ export async function runCvExtraction(
       } as unknown as CvExtractionResult;
     } else {
       if (args.logId) {
-        await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+        await ctx.runMutation(api.cvs.batches.updateLogStage, {
           logId: args.logId,
           stage: "ai_extraction"
         });
@@ -589,14 +589,14 @@ export async function runCvExtraction(
 
       // Generate embedding using the new NVIDIA embedding function
       if (args.logId) {
-        await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+        await ctx.runMutation(api.cvs.batches.updateLogStage, {
           logId: args.logId,
           stage: "indexing"
         });
       }
       const embedding = await generateNvidiaEmbedding(cappedRawText);
 
-      await ctx.runMutation(api.candidates.createCandidate, {
+      await ctx.runMutation(api.candidates.candidates.createCandidate, {
         ...safeExtracted,
         currentEmployer: derivedEmployer,
         currentTitle: derivedTitle,
@@ -615,7 +615,7 @@ export async function runCvExtraction(
       });
     }
 
-    const jobId = await ctx.runMutation(api.candidates.updateCvUpload, {
+    const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
       status: "processed",
       fileHash,
@@ -623,7 +623,7 @@ export async function runCvExtraction(
     }) as string | undefined | null;
 
     if (jobId) {
-      await ctx.runMutation(api.applications.createApplication, {
+      await ctx.runMutation(api.applications.applications.createApplication, {
         candidateId,
         jobId: jobId as any,
         cvFileId: cvUploadId,
@@ -637,14 +637,14 @@ export async function runCvExtraction(
     }
 
     if (args.logId) {
-      await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+      await ctx.runMutation(api.cvs.batches.updateLogStage, {
         logId: args.logId,
         stage: "completed",
         candidateName: extracted?.fullName ?? undefined,
       });
     }
     if (args.batchId) {
-      await ctx.runMutation(api.ingestionBatches.updateBatchProgress, {
+      await ctx.runMutation(api.cvs.batches.updateBatchProgress, {
         batchId: args.batchId,
         status: "completed"
       });
@@ -660,7 +660,7 @@ export async function runCvExtraction(
       message.toLowerCase().includes("balance") ||
       message.toLowerCase().includes("credits");
 
-    await ctx.runMutation(api.candidates.updateCvUpload, {
+    await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
       status: isInsufficientBalance ? "processed" : "failed",
       errorMessage: isInsufficientBalance
@@ -669,14 +669,14 @@ export async function runCvExtraction(
     });
 
     if (args.logId) {
-      await ctx.runMutation(api.ingestionBatches.updateLogStage, {
+      await ctx.runMutation(api.cvs.batches.updateLogStage, {
         logId: args.logId,
         stage: isInsufficientBalance ? "completed" : "failed",
         errorMessage: message
       });
     }
     if (args.batchId) {
-      await ctx.runMutation(api.ingestionBatches.updateBatchProgress, {
+      await ctx.runMutation(api.cvs.batches.updateBatchProgress, {
         batchId: args.batchId,
         status: isInsufficientBalance ? "completed" : "failed"
       });
@@ -717,7 +717,7 @@ export const resumeFailedUploads = action({
 export const resumeBatch = internalAction({
   args: { cursor: v.optional(v.string()), totalQueued: v.number(), batchId: v.optional(v.id("ingestionBatches")) },
   handler: async (ctx, args): Promise<void> => {
-    const result = await ctx.runQuery(api.candidates.listFailedUploads, {
+    const result = await ctx.runQuery(api.candidates.candidates.listFailedUploads, {
       limit: 5,
       cursor: args.cursor,
     });

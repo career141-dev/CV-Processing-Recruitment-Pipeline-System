@@ -8,9 +8,9 @@ import { api } from "../../../../convex/_generated/api";
 import { inviteUser } from "../../../app/actions/inviteUser";
 
 export function TeamTab() {
-  const teamMembers = useQuery(api.users.getTeamMembers);
-  const assignRole = useMutation(api.users.assignRole);
-  const deactivate = useMutation(api.users.deactivate);
+  const teamMembers = useQuery(api.users.users.getTeamMembers);
+  const assignRole = useMutation(api.users.users.assignRole);
+  const deactivate = useMutation(api.users.users.deactivate);
   
   // Modal state
   const [isInviteOpen, setIsInviteOpen] = useState(false);

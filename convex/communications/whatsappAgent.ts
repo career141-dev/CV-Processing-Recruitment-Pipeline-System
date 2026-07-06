@@ -36,7 +36,7 @@ export const handleWhatsappWebhook = httpAction(async (ctx, request) => {
   // Find job by keyword
   let job = null;
   if (firstWord) {
-    job = await ctx.runQuery(api.jobs.getByKeyword, { keyword: firstWord });
+    job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
   }
 
   // AI fallback if no keyword found (Stubbed for now)

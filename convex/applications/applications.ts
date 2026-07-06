@@ -1,9 +1,9 @@
-import { query, mutation } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { query, mutation } from "../_generated/server";
+import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import { requireUser, requireJobAssignment } from "./lib/permissions";
-import { checkAndAdvanceFollowUp, updateFollowUpFlags, initiateFollowUpOutreach } from "./pipeline/followUpHelper";
-import { syncCandidateOverallStatus } from "./candidates";
+import { requireUser, requireJobAssignment } from "../lib/permissions";
+import { checkAndAdvanceFollowUp, updateFollowUpFlags, initiateFollowUpOutreach } from "../pipeline/followUpHelper";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
 
 export const getByJobId = query({
   args: { jobId: v.string() },

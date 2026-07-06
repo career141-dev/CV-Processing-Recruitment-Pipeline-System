@@ -3,7 +3,7 @@ import { mutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { internal } from "../_generated/api";
-import { syncCandidateOverallStatus } from "../candidates";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { initiateFollowUpOutreach } from "./followUpHelper";
 
 export const moveToTAShortlist = mutation({

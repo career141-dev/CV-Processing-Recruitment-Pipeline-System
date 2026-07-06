@@ -103,9 +103,9 @@ const StatusDot = ({ status }: { status: string }) => {
 };
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
-  const candidate = useQuery(api.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
-  const createApplication = useMutation(api.applications.createApplication);
-  const removeApplication = useMutation(api.applications.removeApplication);
+  const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
+  const createApplication = useMutation(api.applications.applications.createApplication);
+  const removeApplication = useMutation(api.applications.applications.removeApplication);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isShortlisting, setIsShortlisting] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -240,7 +240,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
 };
 
 const CvViewButton = ({ cvUploadId }: { cvUploadId?: Id<"cvUploads"> | null }) => {
-  const cvUpload = useQuery(api.candidates.getCvUploadUrl, cvUploadId ? { cvUploadId } : "skip");
+  const cvUpload = useQuery(api.candidates.candidates.getCvUploadUrl, cvUploadId ? { cvUploadId } : "skip");
   
   if (!cvUploadId) return (
     <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface/50 text-text-disabled text-[11px] font-medium" title="No CV attached">
@@ -289,7 +289,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   const [isSaving, setIsSaving] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   
-  const logManualCall = useMutation(api.applications.logManualCall);
+  const logManualCall = useMutation(api.applications.applications.logManualCall);
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
   const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
@@ -551,7 +551,7 @@ const HeadhuntModal = ({
 }: {
   isOpen: boolean; onClose: () => void; jobId: Id<"jobs">;
 }) => {
-  const createHeadhunt = useMutation(api.applications.createHeadhuntApplication);
+  const createHeadhunt = useMutation(api.applications.applications.createHeadhuntApplication);
   const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
   const { user } = useUser();
@@ -796,15 +796,15 @@ export default function JobDetailPage() {
   const [showHeadhuntModal, setShowHeadhuntModal] = useState(false);
 
   // Fetch job details
-  const job = useQuery(api.jobs.getJob, { jobId });
+  const job = useQuery(api.jobs.jobs.getJob, { jobId });
   
   // Fetch candidates via applications
-  const applications = useQuery(api.applications.getByJobId, { jobId });
-  const allUsers = useQuery(api.users.getAllUsers);
+  const applications = useQuery(api.applications.applications.getByJobId, { jobId });
+  const allUsers = useQuery(api.users.users.getAllUsers);
   const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
-  const rejectApplication = useMutation(api.applications.rejectApplication);
-  const triggerAiCallMutation = useMutation(api.applications.triggerAiCall);
+  const rejectApplication = useMutation(api.applications.applications.rejectApplication);
+  const triggerAiCallMutation = useMutation(api.applications.applications.triggerAiCall);
   const directorApproveMutation = useMutation(api.pipeline.stages.directorApprove);
   const directorRejectMutation = useMutation(api.pipeline.stages.directorReject);
   const directorRequestChangesMutation = useMutation(api.pipeline.stages.directorRequestChanges);
@@ -815,7 +815,7 @@ export default function JobDetailPage() {
   const triggerWhatsAppFollowUp = useMutation(api.pipeline.outreach.triggerWhatsAppFollowUp);
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   
-  const runReverseMatch = useAction(api.agent2_matching.runReverseMatch);
+  const runReverseMatch = useAction(api.matching.agent2.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
 
   const handleScanDatabase = async () => {

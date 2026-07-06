@@ -1,5 +1,5 @@
 import { Id } from "../_generated/dataModel";
-import { syncCandidateOverallStatus } from "../candidates";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { internal } from "../_generated/api";
 
 /**

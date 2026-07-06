@@ -1,7 +1,7 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
-import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "./pipeline/followUpHelper";
+import { query, mutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
 
 export const listCandidates = query({
   handler: async (ctx) => {

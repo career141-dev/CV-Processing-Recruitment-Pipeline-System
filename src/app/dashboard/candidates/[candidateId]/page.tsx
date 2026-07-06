@@ -41,7 +41,7 @@ const STAGE_LABELS: Record<string, string> = {
 export default function CandidateProfile() {
   const params = useParams<{ candidateId: string }>();
   
-  const fetchedCandidate = useQuery(api.candidates.getCandidate, { id: params.candidateId as Id<"candidates"> });
+  const fetchedCandidate = useQuery(api.candidates.candidates.getCandidate, { id: params.candidateId as Id<"candidates"> });
   const triggerLazyParse = useAction(api.cvs.lazyParsing.triggerLazyParse);
 
   React.useEffect(() => {
@@ -55,15 +55,15 @@ export default function CandidateProfile() {
   const [activeTab, setActiveTab] = useState("overview");
 
   const cvUpload = useQuery(
-    api.candidates.getCvUploadUrl,
+    api.candidates.candidates.getCvUploadUrl,
     candidate?.cvUploadId ? { cvUploadId: candidate.cvUploadId } : "skip"
   );
 
   // Live data for profile tabs/sidebar
   const candidateId = params.candidateId as Id<"candidates">;
-  const applications = useQuery(api.applications.getByCandidate, candidate ? { candidateId } : "skip");
-  const timeline = useQuery(api.applications.getCandidateTimeline, candidate ? { candidateId } : "skip");
-  const aiCalls = useQuery(api.applications.getCandidateAiCalls, candidate ? { candidateId } : "skip");
+  const applications = useQuery(api.applications.applications.getByCandidate, candidate ? { candidateId } : "skip");
+  const timeline = useQuery(api.applications.applications.getCandidateTimeline, candidate ? { candidateId } : "skip");
+  const aiCalls = useQuery(api.applications.applications.getCandidateAiCalls, candidate ? { candidateId } : "skip");
 
   if (candidate === undefined) {
     return (
