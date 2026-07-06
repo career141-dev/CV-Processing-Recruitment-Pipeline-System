@@ -23,6 +23,26 @@ export async function checkAndAdvanceFollowUp(
 
     if (!isFollowUp && !isAutoRejected) continue;
 
+    const candidate = await ctx.db.get(candidateId);
+    if (!candidate) continue;
+
+    const hasCV = !!candidate.cvUploadId || !!app.cvFileId;
+    const hasCurrent = candidate.currentSalary !== undefined && candidate.currentSalary !== null;
+    const hasExpected = candidate.expectedSalary !== undefined && candidate.expectedSalary !== null;
+    const hasNotice = candidate.noticePeriodDays !== undefined && candidate.noticePeriodDays !== null;
+
+    // Auto-fix any flags that should be true based on actual candidate data
+    const updates: any = {};
+    if (hasCV && !app.followUpCvReceived) updates.followUpCvReceived = true;
+    if (hasCurrent && !app.followUpCurrentSalary) updates.followUpCurrentSalary = true;
+    if (hasExpected && !app.followUpExpectedSalary) updates.followUpExpectedSalary = true;
+    if (hasNotice && !app.followUpNoticePeriod) updates.followUpNoticePeriod = true;
+
+    if (Object.keys(updates).length > 0) {
+      await ctx.db.patch(app._id, updates);
+      Object.assign(app, updates); // apply updates locally for the next check
+    }
+
     const allComplete =
       app.followUpCvReceived === true &&
       app.followUpCurrentSalary === true &&

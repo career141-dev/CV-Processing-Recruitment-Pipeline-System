@@ -1,17 +1,16 @@
-import { query } from "./_generated/server";
-import { v } from "convex/values";
+import { mutation } from "./_generated/server";
 
-export const getFirst = query({
+export const testTeleport = mutation({
   handler: async (ctx) => {
-    // Find application by candidate ID
-    const apps = await ctx.db
-      .query("applications")
-      .filter(q => q.eq(q.field("candidateId"), "j978e4z4rnfn4hjyz7hwa2nyhd89mngw" as any))
+    const apps = await ctx.db.query("applications")
+      .withIndex("by_candidateId", q => q.eq("candidateId", "j97b2dp6ak1gr2jed3gh8wbnz9898acr" as any))
       .collect();
       
-    if (apps.length > 0) {
-      return { applicationId: apps[0]._id, jobId: apps[0].jobId };
-    }
-    return { error: "No application found for this candidate." };
-  },
+    if (apps.length === 0) return "No applications found";
+    
+    const job = await ctx.db.get(apps[0].jobId);
+    if (!job) return "Job not found";
+    
+    return `Job Title: ${job.title}\nJob ID: ${job._id}\nCompany: ${job.companyName || 'Not specified'}`;
+  }
 });

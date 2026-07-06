@@ -318,7 +318,31 @@ http.route({
       }
 
       // 2. If application_id is present, update per-application flags too
+      // If it is missing (because ElevenLabs didn't pass it back) OR if it no longer exists, find the application via candidate_id
+      let appIdsToUpdate: string[] = [];
+      let foundValidApp = false;
+      
       if (application_id) {
+        const existingApp = await ctx.runQuery(api.applications.getApplication, { id: application_id as any }).catch(() => null);
+        if (existingApp) {
+          appIdsToUpdate.push(application_id);
+          foundValidApp = true;
+        }
+      } 
+      
+      if (!foundValidApp && candidate_id) {
+        // Fallback: find any application for this candidate in follow_up or ai_call stage
+        const apps = await ctx.runQuery(api.applications.getApplicationsByCandidateId, { candidateId: candidate_id as any });
+        if (apps) {
+          for (const app of apps) {
+            if (app.currentStage === "follow_up" || app.currentStage === "ai_call" || app.currentStage === "ta_shortlist") {
+              appIdsToUpdate.push(app._id);
+            }
+          }
+        }
+      }
+
+      for (const appId of appIdsToUpdate) {
         const flagUpdates: any = {};
         if (finalCurrentSalary !== undefined && finalCurrentSalary !== null) flagUpdates.followUpCurrentSalary = true;
         if (finalExpectedSalary !== undefined && finalExpectedSalary !== null) flagUpdates.followUpExpectedSalary = true;
@@ -326,7 +350,7 @@ http.route({
 
         if (Object.keys(flagUpdates).length > 0) {
           await ctx.runMutation(api.applications.setApplicationFlags, {
-            applicationId: application_id as any,
+            applicationId: appId as any,
             ...flagUpdates,
           });
         }

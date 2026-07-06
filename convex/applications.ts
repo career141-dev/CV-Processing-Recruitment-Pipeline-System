@@ -5,6 +5,16 @@ import { requireUser, requireJobAssignment } from "./lib/permissions";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "./pipeline/followUpHelper";
 import { syncCandidateOverallStatus } from "./candidates";
 
+export const getApplicationsByCandidateId = query({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+      .collect();
+  }
+});
+
 export const getByJobId = query({
   args: { jobId: v.string() },
   handler: async (ctx, args) => {
@@ -586,7 +596,16 @@ export const setApplicationFlags = mutation({
     if (flags.followUpExpectedSalary !== undefined) updates.followUpExpectedSalary = flags.followUpExpectedSalary;
     if (flags.followUpNoticePeriod !== undefined) updates.followUpNoticePeriod = flags.followUpNoticePeriod;
     if (Object.keys(updates).length > 0) {
+      const app = await ctx.db.get(applicationId);
+      if (!app) {
+        console.warn(`[setApplicationFlags] App ${applicationId} not found, skipping.`);
+        return;
+      }
+      
       await ctx.db.patch(applicationId, updates);
+      
+      // Now check if they should be auto-advanced
+      await checkAndAdvanceFollowUp(ctx, app.candidateId);
     }
   },
 });

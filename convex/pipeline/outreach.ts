@@ -172,3 +172,91 @@ export const sendMessage = mutation({
     return commId;
   }
 });
+
+// Get follow-up candidates
+export const getFollowUpCandidates = query({
+  args: {},
+  handler: async (ctx) => {
+    const apps = await ctx.db
+      .query("applications")
+      .filter((q) => q.eq(q.field("currentStage"), "follow_up"))
+      .collect();
+
+    return Promise.all(
+      apps.map(async (app) => {
+        const candidate = await ctx.db.get(app.candidateId);
+        const job = await ctx.db.get(app.jobId);
+        
+        const hasCV = app.followUpCvReceived === true || (app.followUpCvReceived === undefined && (!!candidate?.cvUploadId || !!app.cvFileId));
+        const hasCurrentSalary = app.followUpCurrentSalary === true || (app.followUpCurrentSalary === undefined && candidate?.currentSalary !== undefined);
+        const hasExpectedSalary = app.followUpExpectedSalary === true || (app.followUpExpectedSalary === undefined && candidate?.expectedSalary !== undefined);
+        const hasNoticePeriod = app.followUpNoticePeriod === true || (app.followUpNoticePeriod === undefined && candidate?.noticePeriodDays !== undefined);
+
+        const enteredAt = app.followUpEnteredAt ?? app.lastStageChangedAt ?? Date.now();
+        const daysInStage = Math.floor((Date.now() - enteredAt) / (24 * 60 * 60 * 1000));
+
+        let nextAction = "Waiting";
+        if (daysInStage === 0) nextAction = "Day 0 WhatsApp";
+        else if (daysInStage === 1) nextAction = "Wait (Day 2)";
+        else if (daysInStage === 2) nextAction = "Day 2 AI Call";
+        else if (daysInStage === 3) nextAction = "Wait (Day 4)";
+        else if (daysInStage === 4) nextAction = "Day 4 WhatsApp";
+        else if (daysInStage === 5) nextAction = "Wait (Day 6)";
+        else if (daysInStage === 6) nextAction = "Day 6 Final Ping";
+        else if (daysInStage >= 7) nextAction = "Auto Reject Pending";
+
+        return {
+          applicationId: app._id,
+          candidateId: app.candidateId,
+          jobId: app.jobId,
+          candidateName: candidate?.fullName || "Unknown",
+          jobTitle: job?.title || "Unknown Job",
+          daysInStage,
+          nextAction,
+          hasCV,
+          hasCurrentSalary,
+          hasExpectedSalary,
+          hasNoticePeriod
+        };
+      })
+    );
+  }
+});
+
+// Force trigger an AI call for a follow up candidate
+export const forceTriggerFollowUpCall = mutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) throw new Error("App not found");
+    
+    const candidate = await ctx.db.get(app.candidateId);
+    if (!candidate) throw new Error("Candidate not found");
+
+    const now = Date.now();
+    await ctx.db.insert("aiCalls", {
+      candidateId: app.candidateId,
+      jobId: app.jobId,
+      applicationId: app._id,
+      triggerType: "followup_retry",
+      callStatus: "scheduled",
+      callScriptUsed: "initial_screening",
+      companyHidden: false,
+      calledAt: now,
+      followUpTriggered: true,
+      attempts: 1,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerFollowUpCall, {
+      applicationId: app._id,
+      candidateId: app.candidateId,
+      jobId: app.jobId,
+      attemptNumber: 1,
+      lastContactChannel: "Manual Trigger",
+    });
+
+    return true;
+  }
+});
