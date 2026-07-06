@@ -26,6 +26,7 @@ We analyzed and verified all structures comparing Career141 to Hercules, incorpo
 - [x] **Deduplication & Profiles:** Candidate creation processes check duplicate records and merge them without deleting previous data.
 - [x] **Semantic Search & Reverse Match:** Vector embeddings generated via Voyage AI, with reverse-matching triggered on job publication to score and rank candidates with breakdown analytics (skills, experience, title, etc.).
 - [x] **CRM Candidate Audit Trail:** Interactive timelines (`getCandidateTimeline`) and AI Call Outcome metrics are rendered dynamically on the candidate's detailed profile view.
+- [x] **WhatChimp WhatsApp Integration:** Integrated both incoming webhook receiver (`/api/whatsapp-whatchimp`) and outbound API sender (`sendWhatsApp` via WhatChimp REST API).
 
 ### B. In Progress / Needs Connection (The Demo Gaps)
 - [/] **Outbound Voice Integration (ElevenLabs & Twilio):** outbound webhook endpoint `/api/elevenlabs/save-intake` configured to bypass HMAC checks for the mock bridge, but needs end-to-end webhook validation with active test numbers.
@@ -61,7 +62,7 @@ Once the mock feeds in **Section 2B** are connected, use this script to demonstr
 
 ### Step 2: Multi-Channel Ingestion & Parsing
 1. **Manual Ingestion:** Upload a sample resume PDF using the upload portal under the newly created job.
-2. **WhatsApp Ingestion:** Send a WhatsApp message to the registered Twilio/WhatsApp number (scanned via `whatsapp-bridge.js`) containing the keyword `DEVOPS26` and an attached CV document.
+2. **WhatsApp Ingestion:** Send a WhatsApp message to the registered WhatChimp number containing the keyword `DEVOPS26` and an attached CV document.
 3. **Verify:** Check the Ingestion Monitor page to ensure the batch progress logger reports "parsing" -> "indexing" -> "completed".
 
 ### Step 3: CRM Profile Creation & Deduplication

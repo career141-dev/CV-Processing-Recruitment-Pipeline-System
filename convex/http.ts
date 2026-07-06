@@ -2,8 +2,9 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
-import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 import { handleLocalWhatsappWebhook } from "./communications/localWhatsappAgent";
+import { handleWhatChimpWebhook } from "./communications/whatchimp";
+import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 
 const http = httpRouter();
 
@@ -36,6 +37,13 @@ http.route({
   path: "/api/local-whatsapp-inbound",
   method: "POST",
   handler: handleLocalWhatsappWebhook,
+});
+
+// WhatChimp Webhook Inbound Events
+http.route({
+  path: "/api/whatsapp-whatchimp",
+  method: "POST",
+  handler: handleWhatChimpWebhook,
 });
 
 // A simple REST endpoint to test Job Creation via Postman
@@ -331,7 +339,7 @@ http.route({
       let foundValidApp = false;
       
       if (application_id) {
-        const existingApp = await ctx.runQuery(api.applications.getApplication, { id: application_id as any }).catch(() => null);
+        const existingApp = await ctx.runQuery(api.applications.applications.getApplication, { id: application_id as any }).catch(() => null);
         if (existingApp) {
           appIdsToUpdate.push(application_id);
           foundValidApp = true;
@@ -340,7 +348,7 @@ http.route({
       
       if (!foundValidApp && candidate_id) {
         // Fallback: find any application for this candidate in follow_up or ai_call stage
-        const apps = await ctx.runQuery(api.applications.getApplicationsByCandidateId, { candidateId: candidate_id as any });
+        const apps = await ctx.runQuery(api.applications.applications.getApplicationsByCandidateId, { candidateId: candidate_id as any });
         if (apps) {
           for (const app of apps) {
             if (app.currentStage === "follow_up" || app.currentStage === "ai_call" || app.currentStage === "ta_shortlist") {
