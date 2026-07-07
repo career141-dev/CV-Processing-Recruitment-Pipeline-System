@@ -111,8 +111,20 @@ export const pollEmailInbox = action({
     
     // 1. Fetch unread emails
     const messages = await fetchUnreadEmails(targetInboxEmail);
+    if ((messages as any[]).length > 0) {
+      console.log(`[EmailAgent] Found ${(messages as any[]).length} unread messages.`);
+    } else {
+      console.log(`[EmailAgent] No unread messages found.`);
+    }
     
     for (const message of messages as any[]) {
+      console.log(`[EmailAgent] Processing message: ${message.subject} from ${message.from?.emailAddress?.address}`);
+      if (message.attachments && message.attachments.length > 0) {
+        console.log(`[EmailAgent] Attachments found:`, message.attachments.map((a: any) => `${a.name} (${a.contentType})`));
+      } else {
+        console.log(`[EmailAgent] No attachments found on message.`);
+      }
+
       const senderEmail = message.from?.emailAddress?.address;
       const subject = message.subject ?? "";
       const emailBody = ((typeof message.body === "object" && message.body !== null) 
@@ -159,8 +171,11 @@ export const pollEmailInbox = action({
           await markEmailAsRead(targetInboxEmail, message.id);
           continue;
         }
+        console.log(`[EmailAgent] Skipping message: ${message.subject} - No CV attachment and not a follow-up reply.`);
         continue; // No CV attachment and not a follow-up reply — skip
       }
+      
+      console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType})`);
 
       const binaryString = atob(attachment.contentBytes);
       const fileBuffer = new Uint8Array(binaryString.length);

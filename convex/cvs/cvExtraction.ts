@@ -1,4 +1,5 @@
 "use node";
+import { Jimp } from "jimp";
 
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
@@ -135,7 +136,7 @@ const ExtractionActionArgs = {
 // ──────────────────────────────────────────────────
 
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
-  const data = new Uint8Array(buffer);
+  const data = new Uint8Array(buffer.slice(0));
   const loadingTask = pdfjsLib.getDocument({
     data,
     useSystemFonts: true,
@@ -198,6 +199,51 @@ async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
     logger: () => {}
   });
   return result.data.text;
+}
+
+async function extractProfileImage(buffer: ArrayBuffer): Promise<Buffer | null> {
+  try {
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer.slice(0)) });
+    const pdf = await loadingTask.promise;
+    
+    if (pdf.numPages === 0) return null;
+    const page = await pdf.getPage(1);
+    const ops = await page.getOperatorList();
+    
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const fn = ops.fnArray[i];
+      if (fn === pdfjsLib.OPS.paintImageXObject || fn === pdfjsLib.OPS.paintInlineImageXObject) {
+        const objId = ops.argsArray[i][0];
+        try {
+          const img = await page.objs.get(objId);
+          if (img && img.width >= 60 && img.height >= 60) {
+            const aspect = img.width / img.height;
+            if (aspect >= 0.6 && aspect <= 1.5) {
+              let imgData = Buffer.from(img.data);
+              
+              if (imgData.length === img.width * img.height * 3) {
+                const rgba = Buffer.alloc(img.width * img.height * 4);
+                for (let j = 0; j < img.width * img.height; j++) {
+                  rgba[j * 4] = imgData[j * 3];
+                  rgba[j * 4 + 1] = imgData[j * 3 + 1];
+                  rgba[j * 4 + 2] = imgData[j * 3 + 2];
+                  rgba[j * 4 + 3] = 255;
+                }
+                imgData = rgba;
+              }
+
+              const image = new Jimp({ data: imgData, width: img.width, height: img.height });
+              return await image.getBuffer('image/png');
+            }
+          }
+        } catch (e) {
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Image extraction failed:", e);
+  }
+  return null;
 }
 
 export async function extractText(
@@ -425,6 +471,7 @@ ${textToSend}`,
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    console.error("[callNvidiaLLM] LLM call failed:", message);
     if (
       message.includes("403") ||
       message.toLowerCase().includes("insufficient") ||
@@ -504,6 +551,15 @@ export async function runCvExtraction(
     const buffer = await blob.arrayBuffer();
     const fileHash = computeSha256(buffer);
 
+    let profileImageId: Id<"_storage"> | undefined = undefined;
+    if (fileType.toLowerCase().includes("pdf")) {
+      const pngBuffer = await extractProfileImage(buffer);
+      if (pngBuffer) {
+        const imageBlob = new Blob([new Uint8Array(pngBuffer)], { type: "image/png" });
+        profileImageId = await ctx.storage.store(imageBlob);
+      }
+    }
+
     const rawText = await extractText(buffer, fileType);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
@@ -521,6 +577,7 @@ export async function runCvExtraction(
       cvUploadId,
       workableCandidateId: workableCandidateId ?? undefined,
       isParsed: !skipLLM,
+      profileImageId,
     });
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
@@ -561,6 +618,9 @@ export async function runCvExtraction(
         });
       }
       extracted = await callNvidiaLLM(cappedRawText);
+      if (!extracted) {
+        throw new Error("LLM failed to extract candidate data (API timeout or invalid response)");
+      }
     }
 
     if (extracted) {

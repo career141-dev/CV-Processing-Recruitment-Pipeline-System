@@ -12,10 +12,11 @@ interface AddToJobModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedCount: number;
-  onSuccess: () => void;
+  onSuccess?: () => void;
+  onConfirm?: (jobId: string) => Promise<void> | void;
 }
 
-export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: AddToJobModalProps) {
+export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess, onConfirm }: AddToJobModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedJob, setSelectedJob] = useState<string | null>(null);
 
@@ -33,13 +34,25 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: Add
     job.client.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAdd = () => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAdd = async () => {
     if (!selectedJob) return;
-    toast.success(`Successfully added ${selectedCount} candidate(s) to job at "New" stage.`);
-    onSuccess();
-    onClose();
-    setSelectedJob(null);
-    setSearchQuery('');
+    setIsSubmitting(true);
+    try {
+      if (onConfirm) {
+        await onConfirm(selectedJob);
+      }
+      toast.success(`Successfully added ${selectedCount} candidate(s) to job at "New" stage.`);
+      if (onSuccess) onSuccess();
+      onClose();
+      setSelectedJob(null);
+      setSearchQuery('');
+    } catch (error: any) {
+      toast.error(error.message || "Failed to add to job");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -50,9 +63,9 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess }: Add
       maxWidth="max-w-xl"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!selectedJob} onClick={handleAdd}>
-            Add {selectedCount} Candidate{selectedCount !== 1 ? 's' : ''}
+          <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+          <Button variant="primary" disabled={!selectedJob || isSubmitting} onClick={handleAdd}>
+            {isSubmitting ? 'Adding...' : `Add ${selectedCount} Candidate${selectedCount !== 1 ? 's' : ''}`}
           </Button>
         </>
       }

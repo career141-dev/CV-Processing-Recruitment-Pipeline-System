@@ -15,6 +15,51 @@ export const getApplicationsByCandidateId = query({
   }
 });
 
+export const triggerManualAiCall = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    candidateId: v.id("candidates"),
+    jobId: v.id("jobs"),
+  },
+  handler: async (ctx, args) => {
+    // 1. Create AI call record
+    const callId = await ctx.db.insert("aiCalls", {
+      candidateId: args.candidateId,
+      applicationId: args.applicationId,
+      jobId: args.jobId,
+      triggerType: "manual_ta_trigger",
+      callStatus: "in_progress",
+      callScriptUsed: "initial_screening",
+      companyHidden: false,
+      calledAt: Date.now(),
+      followUpTriggered: false,
+      attempts: 1,
+      firstAttemptAt: Date.now(),
+      attemptNumber: 1
+    });
+
+    // 2. Schedule ElevenLabs call
+    await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
+      applicationId: args.applicationId,
+      candidateId: args.candidateId,
+      jobId: args.jobId,
+    });
+
+    // 3. Log event
+    await ctx.db.insert("pipelineEvents", {
+      applicationId: args.applicationId,
+      candidateId: args.candidateId,
+      jobId: args.jobId,
+      eventType: "ai_call_triggered",
+      actorType: "user",
+      createdAt: Date.now(),
+      notes: "Manual AI call triggered"
+    });
+
+    return callId;
+  }
+});
+
 export const getByJobId = query({
   args: { jobId: v.string() },
   handler: async (ctx, args) => {
@@ -721,3 +766,7 @@ export const rollbackFollowUpState = mutation({
     }
   }
 });
+
+
+
+

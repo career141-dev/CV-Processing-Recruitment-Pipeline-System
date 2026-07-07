@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { X, Loader2, ChevronDown, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MessageComposer } from '@/components/communications/MessageComposer';
+import { DeleteCandidateModal } from '@/components/candidates/modals/DeleteCandidateModal';
 import { toast } from 'sonner';
 
 function getInitials(name?: string | null): string {
@@ -53,6 +54,7 @@ export default function CandidatesSearch() {
   const candidates = useQuery(api.candidates.candidates.listCandidates);
   const aiSearchAction = useAction(api.matching.search.aiSearch);
 
+
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [isAiSearching, setIsAiSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -81,6 +83,7 @@ export default function CandidatesSearch() {
 
   // Message Composer State
   const [messageCandidate, setMessageCandidate] = useState<{ id: string; name: string; initials: string; role: string } | null>(null);
+  const [deletingCandidateId, setDeletingCandidateId] = useState<string | null>(null);
 
   const toggleCandidate = (id: string) => {
     setSelectedCandidates(prev => 
@@ -173,7 +176,7 @@ export default function CandidatesSearch() {
       </div>
 
       {activeTab === 'management' && (
-        <CandidateManagementTable />
+        <CandidateManagementTable onDeleteClick={(id: string) => setDeletingCandidateId(id)} />
       )}
 
       {activeTab === 'search' && (
@@ -327,6 +330,8 @@ export default function CandidatesSearch() {
                   isSelected={selectedCandidates.includes(c._id)}
                   onToggle={() => toggleCandidate(c._id)}
                   profileHref={`/dashboard/candidates/${c._id}`}
+                  imageUrl={(c as any).profileImageUrl}
+                  onDelete={() => setDeletingCandidateId(c._id)}
                   onMessage={() => setMessageCandidate({
                     id: c._id,
                     name: c.fullName || "Unknown",
@@ -373,7 +378,7 @@ export default function CandidatesSearch() {
       </div>
       )}
 
-      {messageCandidate && (
+            {messageCandidate && (
         <MessageComposer
           isOpen={!!messageCandidate}
           onClose={() => setMessageCandidate(null)}
@@ -382,6 +387,13 @@ export default function CandidatesSearch() {
           candidateTitle={messageCandidate.role}
         />
       )}
+
+      <DeleteCandidateModal 
+        isOpen={!!deletingCandidateId}
+        onClose={() => setDeletingCandidateId(null)}
+        candidateId={deletingCandidateId}
+      />
+
     </div>
   );
 }

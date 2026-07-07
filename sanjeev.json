@@ -1,0 +1,22 @@
+[
+  {
+    "company": "Career141",
+    "description": "Redesigned career141.com from a malware-attacked WordPress site into a fully custom Next.js application (50+ pages) using Supabase, Framer Motion animations, JWT auth, and Cloudflare Pages deployment — saving the client ~$500 rebuild cost.",
+    "endDate": "Present",
+    "startDate": "Jan 2025",
+    "title": "Web Developer Intern"
+  },
+  {
+    "company": "Softwareplus Pvt Ltd",
+    "description": "Developed Android (Java/Kotlin) features for ERP, LMS, and inventory management systems used in production.",
+    "startDate": "2024",
+    "title": "Mobile Application Development Trainee"
+  },
+  {
+    "company": "Unknown Company",
+    "description": "Delivered 5+ custom websites and mobile applications for clients across business, interior design (Naflan Farvis portfolio), eco-tourism, and personal branding domains.",
+    "endDate": "Present",
+    "startDate": "2022",
+    "title": "Freelance Full-Stack Developer"
+  }
+]

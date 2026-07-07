@@ -1,5 +1,7 @@
 import React from 'react';
 import { Card, CardHeader } from '@/components/ui/Card';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 export function TeamActivityFeed() {
   const activities = [

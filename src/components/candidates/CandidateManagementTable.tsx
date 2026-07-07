@@ -2,7 +2,7 @@ import React from 'react';
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { format } from "date-fns";
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -50,8 +50,9 @@ const STATUS_COLORS: Record<string, string> = {
   merged: "bg-slate-50 text-slate-700 border-slate-200",
 };
 
-export function CandidateManagementTable() {
+export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (id: string) => void }) {
   const router = useRouter();
+
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = React.useState(1);
 
@@ -114,8 +115,12 @@ export function CandidateManagementTable() {
                   <tr key={candidate._id} className="hover:bg-surface-bright transition-colors group">
                     <td className="px-6 py-4 font-medium">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed font-bold text-xs shrink-0">
-                          {candidate.fullName?.charAt(0) || "?"}
+                        <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed font-bold text-xs shrink-0 overflow-hidden">
+                          {(candidate as any).profileImageUrl ? (
+                            <img src={(candidate as any).profileImageUrl} alt="avatar" className="w-full h-full object-cover" />
+                          ) : (
+                            candidate.fullName?.charAt(0) || "?"
+                          )}
                         </div>
                         <div>
                           <div className="text-text-primary font-semibold">{candidate.fullName || "Unknown"}</div>
@@ -162,12 +167,21 @@ export function CandidateManagementTable() {
                       {format(new Date(candidate._creationTime), 'MMM d, yyyy')}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[12px] font-medium hover:bg-surface-container transition-colors"
-                        onClick={() => router.push(`/dashboard/candidates/${candidate._id}`)}
-                      >
-                        View Profile
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[12px] font-medium hover:bg-surface-container transition-colors"
+                          onClick={() => router.push(`/dashboard/candidates/${candidate._id}`)}
+                        >
+                          View Profile
+                        </button>
+                        <button
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-[8px] transition-colors border border-transparent hover:border-red-100"
+                          onClick={() => onDeleteClick?.(candidate._id)}
+                          title="Delete Candidate"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

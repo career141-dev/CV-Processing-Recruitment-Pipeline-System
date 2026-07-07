@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Badge, AvatarBadge } from '@/components/ui/Badge';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Trash2 } from 'lucide-react';
 
 interface CandidateCardProps {
   id: string;
@@ -20,8 +20,10 @@ interface CandidateCardProps {
   isSelected: boolean;
   onToggle: () => void;
   onMessage?: () => void;
+  onDelete?: () => void;
   profileHref?: string;
   matchReason?: string;
+  imageUrl?: string | null;
 }
 
 export function CandidateCard({
@@ -40,8 +42,10 @@ export function CandidateCard({
   isSelected,
   onToggle,
   onMessage,
+  onDelete,
   profileHref = '/dashboard/candidates/kasun',
-  matchReason
+  matchReason,
+  imageUrl
 }: CandidateCardProps) {
   return (
     <Card 
@@ -56,7 +60,7 @@ export function CandidateCard({
       />
       
       <div className="mr-[15px] mt-[10px]">
-        <AvatarBadge initials={initials} colorClass={avatarColorClass} />
+        <AvatarBadge initials={initials} colorClass={avatarColorClass} imageUrl={imageUrl} />
       </div>
       
       <div className="flex-1 px-[1px] mr-4 min-w-0 flex flex-col justify-start">
@@ -102,7 +106,7 @@ export function CandidateCard({
             <span className={`${scoreColorClass} text-sm font-bold`}>{score}</span>
           </div>
         )}
-        <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
           {onMessage && (
             <button 
               onClick={onMessage}
@@ -115,6 +119,15 @@ export function CandidateCard({
           <Link href={profileHref} className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors no-underline">
             <span className="text-text-secondary text-xs font-bold">View Profile</span>
           </Link>
+          {onDelete && (
+            <button 
+              onClick={onDelete}
+              className="flex items-center justify-center bg-transparent py-1 px-2 rounded-md border border-solid border-transparent hover:border-red-200 hover:bg-red-50 text-red-500 transition-colors"
+              title="Delete Candidate"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </Card>

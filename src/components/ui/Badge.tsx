@@ -39,7 +39,14 @@ export function Badge({ children, variant = 'default', size = 'md', className = 
 }
 
 // Avatar Initials Badge
-export function AvatarBadge({ initials, colorClass = 'bg-primary-fixed text-on-primary-fixed', size = 'w-10 h-10 text-lg' }: { initials: string, colorClass?: string, size?: string }) {
+export function AvatarBadge({ initials, colorClass = 'bg-primary-fixed text-on-primary-fixed', size = 'w-10 h-10 text-lg', imageUrl }: { initials: string, colorClass?: string, size?: string, imageUrl?: string | null }) {
+  if (imageUrl) {
+    return (
+      <div className={`flex items-center justify-center shrink-0 rounded-full overflow-hidden bg-surface-container ${size}`}>
+        <img src={imageUrl} alt={initials} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
   return (
     <div className={`flex items-center justify-center shrink-0 rounded-full font-bold ${colorClass} ${size}`}>
       {initials}

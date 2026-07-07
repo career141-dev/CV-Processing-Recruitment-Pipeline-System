@@ -142,3 +142,52 @@ export const getDashboardStats = query({
     };
   }
 });
+
+export const getTeamActivity = query({
+  args: {},
+  handler: async (ctx) => {
+    const logs = await ctx.db.query("activityLog")
+      .order("desc")
+      .take(10);
+      
+    return logs.map(l => {
+      // Determine icon based on action
+      let iconUrl = "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/4d093c8c-cdbb-4660-939f-6f3503eaac6e";
+      let iconBg = "bg-primary-container/15";
+      
+      const act = l.action.toLowerCase();
+      if (act.includes("message") || act.includes("follow-up") || act.includes("email")) {
+        iconUrl = "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/8c36ba61-0587-4268-b880-dce9a3287bdb";
+        iconBg = "bg-[#00676326]";
+      } else if (act.includes("cv") || act.includes("parse") || act.includes("system")) {
+        iconUrl = "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/de0b9f00-82f3-40d7-9da7-6d8ddad2c10e";
+        iconBg = "bg-[#6B1D3D26]";
+      }
+      
+      // Calculate time string (e.g. "2 mins ago")
+      const diffMs = Date.now() - new Date(l.occurredAt || l._creationTime).getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMins / 60);
+      const diffDays = Math.floor(diffHours / 24);
+      
+      let timeStr = "Just now";
+      if (diffDays > 0) timeStr = `${diffDays} days ago`;
+      else if (diffHours > 0) timeStr = `${diffHours} hours ago`;
+      else if (diffMins > 0) timeStr = `${diffMins} mins ago`;
+      
+      let text = `${l.actorName} ${l.action}`;
+      if (l.metadata && l.metadata.details) {
+        text += ` ${l.metadata.details}`;
+      }
+      
+      return {
+        id: l._id,
+        iconBg,
+        iconUrl,
+        text,
+        time: timeStr,
+        isBold: true
+      };
+    });
+  }
+});

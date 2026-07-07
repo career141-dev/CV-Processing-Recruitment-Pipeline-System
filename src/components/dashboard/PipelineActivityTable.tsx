@@ -5,9 +5,12 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: string }) {
   const [activeTab, setActiveTab] = useState('All Jobs');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
   
   const dbJobs = useQuery(api.jobs.jobs.list);
   const users = useQuery(api.users.users.getAllUsers);
@@ -45,6 +48,10 @@ export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: 
     : allPipelineJobs;
 
   const filteredJobs = pipelineJobs.filter(job => activeTab === 'All Jobs' || job.status === activeTab);
+  const totalPages = Math.ceil(filteredJobs.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentJobs = filteredJobs.slice(startIndex, endIndex);
 
   return (
     <Card noPadding className="pt-[1px] w-full">
@@ -56,7 +63,7 @@ export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: 
           {['All Jobs', 'Active', 'On Hold', 'Urgent'].map(tab => (
             <div 
               key={tab} 
-              onClick={() => setActiveTab(tab)}
+              onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
               className={`flex flex-col shrink-0 items-center pb-1 cursor-pointer ${activeTab === tab ? 'border-b-2 border-solid border-b-[#1B5E20]' : 'hover:text-gray-900'}`}
             >
               <span className={activeTab === tab ? 'text-primary-container text-[13px] font-medium' : 'text-text-secondary text-[13px]'}>{tab}</span>
@@ -78,7 +85,7 @@ export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: 
             </tr>
           </thead>
           <tbody>
-            {filteredJobs.map(job => (
+            {currentJobs.map(job => (
               <tr key={job.id} className="border-b border-border hover:bg-surface-container-high transition-colors">
                 <td className="py-4 px-5 text-text-primary text-[13px] whitespace-pre-line">{job.title}</td>
                 <td className="py-4 px-5 text-text-secondary text-[13px]">{job.client}</td>
@@ -105,6 +112,31 @@ export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: 
           </tbody>
         </table>
       </div>
+      
+      {/* Pagination Controls */}
+      {filteredJobs.length > 0 && (
+        <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-surface">
+          <div className="text-[13px] text-text-secondary">
+            Showing <span className="font-medium text-text-primary">{Math.min(startIndex + 1, filteredJobs.length)}</span> to <span className="font-medium text-text-primary">{Math.min(endIndex, filteredJobs.length)}</span> of <span className="font-medium text-text-primary">{filteredJobs.length}</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="flex items-center gap-1 border border-border px-2.5 py-1 rounded-[6px] text-[13px] text-text-secondary hover:bg-surface-container transition-colors disabled:opacity-40"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="w-4 h-4" /> Prev
+            </button>
+            <button
+              className="flex items-center gap-1 border border-border px-2.5 py-1 rounded-[6px] text-[13px] text-text-secondary hover:bg-surface-container transition-colors disabled:opacity-40"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || totalPages === 0}
+            >
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
