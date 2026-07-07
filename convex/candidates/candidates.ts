@@ -416,3 +416,13 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
   await ctx.db.patch(candidateId, { overallStatus: finalStatus as any });
 }
 
+export const getCandidateByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidates")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
+

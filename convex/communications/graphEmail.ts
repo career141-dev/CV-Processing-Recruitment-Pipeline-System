@@ -56,7 +56,13 @@ export const sendGraphEmail = internalAction({
       let replyToRecipients: any[] = [];
 
       const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL;
-      if (m365Sender && (senderEmail.toLowerCase().includes("@gmail.com") || senderEmail.toLowerCase() !== m365Sender.toLowerCase())) {
+      if (isTestMode) {
+        if (m365Sender) {
+          senderEmail = m365Sender;
+        }
+        replyToRecipients = [];
+        console.log(`[Graph Email] Test mode active. Forcing sender to ${senderEmail} with no Reply-To override.`);
+      } else if (m365Sender && (senderEmail.toLowerCase().includes("@gmail.com") || senderEmail.toLowerCase() !== m365Sender.toLowerCase())) {
         senderEmail = m365Sender;
         replyToRecipients = [
           {

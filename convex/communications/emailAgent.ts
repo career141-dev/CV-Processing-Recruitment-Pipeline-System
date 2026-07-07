@@ -1,4 +1,4 @@
-import { action, internalAction, internalMutation } from "../_generated/server";
+import { action, internalAction, internalMutation, query, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { getOpenAI, getModelForTask } from "../lib/llm";
@@ -106,30 +106,58 @@ export const pollEmailInbox = action({
     jobId: v.optional(v.id("jobs")) 
   },
   handler: async (ctx, { inboxEmail, jobId }) => {
+    const targetInboxEmail = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL || inboxEmail;
+    console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail} (requested inbox parameter: ${inboxEmail})`);
+    
     // 1. Fetch unread emails
-    const messages = await fetchUnreadEmails(inboxEmail);
+    const messages = await fetchUnreadEmails(targetInboxEmail);
     
     for (const message of messages as any[]) {
-      // 2. Find CV attachment
+      const senderEmail = message.from?.emailAddress?.address;
+      const subject = message.subject ?? "";
+      const emailBody = ((typeof message.body === "object" && message.body !== null) 
+        ? (message.body.content || "") 
+        : (message.body || "")) || message.subject || "";
+
+      // 2. Find CV attachment (including .doc, .docx, .pdf)
       const attachment = message.attachments?.find(
         (a: any) =>
           a.contentType?.includes("pdf") ||
+          a.contentType?.includes("msword") ||
+          a.contentType?.includes("officedocument.wordprocessingml") ||
           a.name?.endsWith(".docx") ||
+          a.name?.endsWith(".doc") ||
           a.name?.endsWith(".pdf")
       );
       
-      if (!attachment) {
-        const senderEmail = message.from?.emailAddress?.address;
-        if (senderEmail) {
-          const checkResult = await ctx.runMutation(internal.communications.emailAgent.checkAndRecordEmailReply, {
-            senderEmail,
-            subject: message.subject ?? "",
-            body: ((typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "")) || message.subject || "",
+      let isReplyProcessed = false;
+
+      // Check if it's a follow-up reply
+      if (senderEmail) {
+        const checkResult = await ctx.runMutation(internal.communications.emailAgent.checkAndRecordEmailReply, {
+          senderEmail,
+          subject,
+          body: emailBody,
+        });
+
+        if (checkResult && checkResult.isFollowUpReply) {
+          // Trigger automatic AI reply email
+          await ctx.scheduler.runAfter(0, internal.communications.emailAgent.generateAndSendAiEmailReply, {
+            inboxEmail: targetInboxEmail,
+            messageId: message.id,
+            candidateId: checkResult.candidateId as any,
+            jobId: checkResult.jobId as any,
+            applicationId: checkResult.applicationId as any,
+            incomingBody: emailBody,
           });
-          if (checkResult && checkResult.isFollowUpReply) {
-            await markEmailAsRead(inboxEmail, message.id);
-            continue;
-          }
+          isReplyProcessed = true;
+        }
+      }
+
+      if (!attachment) {
+        if (isReplyProcessed) {
+          await markEmailAsRead(targetInboxEmail, message.id);
+          continue;
         }
         continue; // No CV attachment and not a follow-up reply — skip
       }
@@ -150,12 +178,8 @@ export const pollEmailInbox = action({
       const fileBlob = new Blob([fileBuffer], { type: attachment.contentType || "application/pdf" });
       const storageId = await ctx.storage.store(fileBlob);
 
-
       // Intelligent Email Routing via LLM
       let resolvedJobId = jobId;
-      
-      const subject = message.subject ?? "";
-      const body = (typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "");
       
       // Fetch active jobs for LLM to evaluate
       const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
@@ -174,7 +198,7 @@ ACTIVE JOBS:
 ${jobsListContext}
 
 EMAIL SUBJECT: ${subject}
-EMAIL BODY: ${body.substring(0, 2000) /* limit length for context */}
+EMAIL BODY: ${emailBody.substring(0, 2000) /* limit length for context */}
 
 Respond ONLY with a valid JSON object in this exact format:
 {
@@ -192,7 +216,6 @@ Respond ONLY with a valid JSON object in this exact format:
           if (resultStr) {
             const resultObj = JSON.parse(resultStr);
             if (resultObj.matchedJobId) {
-              // Verify the ID actually exists in our active jobs
               const isValid = activeJobs.some(j => j._id === resultObj.matchedJobId);
               if (isValid) {
                 resolvedJobId = resultObj.matchedJobId;
@@ -205,7 +228,6 @@ Respond ONLY with a valid JSON object in this exact format:
         }
       }
       
-      // If we couldn't resolve a job ID via LLM and no jobId was provided to the cron, use the first active job as fallback
       if (!resolvedJobId && activeJobs.length > 0) {
         resolvedJobId = activeJobs[0]._id;
         console.log(`[EmailAgent] No jobId found, falling back to first active job: ${resolvedJobId}`);
@@ -216,11 +238,10 @@ Respond ONLY with a valid JSON object in this exact format:
         continue;
       }
 
-
-      // 3. Process ingestion
+      // Process CV ingestion
       await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
         jobId: resolvedJobId,
-        sourceChannel: (inboxEmail === process.env.LINKEDIN_SHARED_INBOX || inboxEmail.toLowerCase() === "sanjeev@career141.com") ? "linkedin" : "email_campaign",
+        sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "sanjeev@career141.com") ? "linkedin" : "email_campaign",
         rawSender: message.from?.emailAddress?.address,
         storageId: storageId,
         fileHash: fileHash,
@@ -229,9 +250,19 @@ Respond ONLY with a valid JSON object in this exact format:
         fileSizeBytes: fileBuffer.length,
       });
 
-      // 4. Mark as read & reply
-      await markEmailAsRead(inboxEmail, message.id);
-      await sendConfirmationEmail(message.from?.emailAddress?.address, resolvedJobId);
+      // Extract details from the email text body (salary, expected salary, notice period)
+      if (senderEmail) {
+        await ctx.scheduler.runAfter(0, internal.communications.emailAgent.extractAndApplyEmailBodyDetails, {
+          senderEmail,
+          emailBody,
+        });
+      }
+
+      // Mark as read & reply
+      await markEmailAsRead(targetInboxEmail, message.id);
+      if (!isReplyProcessed) {
+        await sendConfirmationEmail(message.from?.emailAddress?.address, resolvedJobId);
+      }
     }
   },
 });
@@ -263,9 +294,34 @@ export const checkAndRecordEmailReply = internalMutation({
     body: v.string(),
   },
   handler: async (ctx, args) => {
+    let targetEmail = args.senderEmail;
+    const isTestMode = process.env.EMAIL_TEST_MODE === "true";
+    const testRecipient = process.env.EMAIL_TEST_RECIPIENT;
+
+    if (isTestMode && testRecipient && args.senderEmail.toLowerCase() === testRecipient.toLowerCase()) {
+      const lastOutbound = await ctx.db
+        .query("communications")
+        .filter((q: any) => 
+          q.and(
+            q.eq(q.field("direction"), "outbound"),
+            q.eq(q.field("channel"), "email")
+          )
+        )
+        .order("desc")
+        .first();
+
+      if (lastOutbound) {
+        const testCandidate = await ctx.db.get(lastOutbound.candidateId);
+        if (testCandidate && testCandidate.email) {
+          targetEmail = testCandidate.email;
+          console.log(`[EmailAgent Test Mode] Mapped test sender ${args.senderEmail} to actual candidate email: ${targetEmail}`);
+        }
+      }
+    }
+
     const candidate = await ctx.db
       .query("candidates")
-      .withIndex("by_email", (q: any) => q.eq("email", args.senderEmail))
+      .withIndex("by_email", (q: any) => q.eq("email", targetEmail))
       .first();
 
     if (!candidate) return { isFollowUpReply: false };
@@ -297,6 +353,192 @@ export const checkAndRecordEmailReply = internalMutation({
       textBody: args.body,
     });
 
-    return { isFollowUpReply: true };
+    return {
+      isFollowUpReply: true,
+      candidateId: candidate._id,
+      applicationId: activeApp._id,
+      jobId: activeApp.jobId,
+    };
+  },
+});
+
+export const generateAndSendAiEmailReply = internalAction({
+  args: {
+    inboxEmail: v.string(),
+    messageId: v.string(),
+    candidateId: v.id("candidates"),
+    jobId: v.id("jobs"),
+    applicationId: v.id("applications"),
+    incomingBody: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const candidate = await ctx.runQuery(api.candidates.candidates.getCandidate, {
+      id: args.candidateId,
+    });
+    const job = await ctx.runQuery(api.jobs.jobs.getJob, {
+      jobId: args.jobId,
+    });
+    const app = await ctx.runQuery(api.applications.applications.getApplication, {
+      id: args.applicationId,
+    });
+
+    if (!candidate || !job || !app) {
+      console.error("[EmailAgent AI Reply] Missing candidate, job, or application context.");
+      return;
+    }
+
+    const hasCV = !!candidate.cvUploadId || !!app.cvFileId || app.followUpCvReceived;
+    const hasCurrentSalary = candidate.currentSalary !== undefined || app.followUpCurrentSalary;
+    const hasExpectedSalary = candidate.expectedSalary !== undefined || app.followUpExpectedSalary;
+    const hasNoticePeriod = candidate.noticePeriodDays !== undefined || app.followUpNoticePeriod;
+
+    const missingFields = [];
+    if (!hasCV) missingFields.push("updated CV/resume file");
+    if (!hasCurrentSalary) missingFields.push("current salary");
+    if (!hasExpectedSalary) missingFields.push("expected salary");
+    if (!hasNoticePeriod) missingFields.push("notice period");
+
+    let systemPrompt = `You are an AI recruitment assistant for Career141, a premium recruitment agency.
+You are communicating with a candidate via email regarding their application for the job: "${job.title}".
+Keep your email response:
+1. Warm, professional, and polite.
+2. Concise (2-3 short paragraphs max).
+3. Say "Thank you" for their response/message.
+4. Address their email queries naturally.
+5. If they still have missing details that we need to proceed, politely remind them to provide those details.
+   Here are the fields we are still waiting for: ${missingFields.join(", ") || "None (all details captured!)"}.
+Do not mention database fields, variables, or system internals. Write the email body only.`;
+
+    const openai = getOpenAI("jd_matching");
+    const model = getModelForTask("jd_matching");
+
+    console.log(`[EmailAgent AI Reply] Generating LLM response for candidate ${candidate.fullName}...`);
+    const completion = await openai.chat.completions.create({
+      model: model || "meta/llama-3.1-70b-instruct",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Incoming email body from candidate: "${args.incomingBody}"` },
+      ],
+      temperature: 0.5,
+    });
+
+    const replyText = completion.choices[0]?.message?.content?.trim() || "Thank you for your message. We have received it and will get back to you shortly.";
+    console.log(`[EmailAgent AI Reply] Generated reply: "${replyText.slice(0, 100)}..."`);
+
+    const commId = await ctx.runMutation(internal.communications.emailAgent.createOutboundEmailRecord, {
+      candidateId: args.candidateId,
+      applicationId: args.applicationId,
+      jobId: args.jobId,
+      subject: `Re: Application for ${job.title}`,
+      body: replyText,
+    });
+
+    console.log(`[EmailAgent AI Reply] Dispatching reply through Microsoft Graph to ${candidate.email}...`);
+    await ctx.runAction(internal.communications.graphEmail.replyToMessage, {
+      taEmail: args.inboxEmail,
+      messageId: args.messageId,
+      replyText: replyText,
+    });
+
+    await ctx.runMutation(internal.communications.emailAgent.markOutboundEmailAsSent, {
+      communicationId: commId,
+    });
+  },
+});
+
+export const createOutboundEmailRecord = internalMutation({
+  args: {
+    candidateId: v.id("candidates"),
+    applicationId: v.id("applications"),
+    jobId: v.id("jobs"),
+    subject: v.string(),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("communications", {
+      candidateId: args.candidateId,
+      applicationId: args.applicationId,
+      jobId: args.jobId,
+      direction: "outbound",
+      channel: "email",
+      subject: args.subject,
+      body: args.body,
+      deliveryStatus: "pending",
+      sentAt: Date.now(),
+      stoppedSequence: false,
+    });
+  },
+});
+
+export const markOutboundEmailAsSent = internalMutation({
+  args: {
+    communicationId: v.id("communications"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.communicationId, {
+      deliveryStatus: "sent",
+    });
+  },
+});
+
+export const getLastOutboundEmailCommunication = internalQuery({
+  args: {},
+  handler: async (ctx: any) => {
+    const lastOutbound = await ctx.db
+      .query("communications")
+      .filter((q: any) => 
+        q.and(
+          q.eq(q.field("direction"), "outbound"),
+          q.eq(q.field("channel"), "email")
+        )
+      )
+      .order("desc")
+      .first();
+
+    if (!lastOutbound) return null;
+    
+    const candidate = await ctx.db.get(lastOutbound.candidateId);
+    return {
+      candidateId: lastOutbound.candidateId,
+      candidateEmail: candidate?.email,
+    };
+  }
+});
+
+export const extractAndApplyEmailBodyDetails = internalAction({
+  args: {
+    senderEmail: v.string(),
+    emailBody: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let lookupEmail = args.senderEmail;
+    const isTestMode = process.env.EMAIL_TEST_MODE === "true";
+    const testRecipient = process.env.EMAIL_TEST_RECIPIENT;
+
+    if (isTestMode && testRecipient && args.senderEmail.toLowerCase() === testRecipient.toLowerCase()) {
+      const lastOutbound = await ctx.runQuery(internal.communications.emailAgent.getLastOutboundEmailCommunication);
+      if (lastOutbound && lastOutbound.candidateEmail) {
+        lookupEmail = lastOutbound.candidateEmail;
+      }
+    }
+
+    let candidate = null;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      candidate = await ctx.runQuery(api.candidates.candidates.getCandidateByEmail, {
+        email: lookupEmail,
+      });
+      if (candidate) break;
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+    }
+
+    if (!candidate) {
+      console.warn(`[Email Agent Inbound Details] Candidate not found for email: ${lookupEmail}`);
+      return;
+    }
+
+    await ctx.runAction(internal.communications.inboundExtraction.extractDetailsFromText, {
+      candidateId: candidate._id,
+      textBody: args.emailBody,
+    });
   },
 });
