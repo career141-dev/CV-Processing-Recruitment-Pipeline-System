@@ -522,3 +522,15 @@ export const deleteCandidate = mutation({
     await ctx.db.delete(candidateId);
   }
 });
+
+export const isCandidateInFollowUp = query({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    const activeApp = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", args.candidateId))
+      .filter((q: any) => q.eq(q.field("currentStage"), "follow_up"))
+      .first();
+    return !!activeApp;
+  },
+});

@@ -143,6 +143,7 @@ export const pollEmailInbox = action({
       );
       
       let isReplyProcessed = false;
+      let isCandidateMatched = false;
 
       // Check if it's a follow-up reply
       if (senderEmail) {
@@ -152,22 +153,26 @@ export const pollEmailInbox = action({
           body: emailBody,
         });
 
-        if (checkResult && checkResult.isFollowUpReply) {
-          // Trigger automatic AI reply email
-          await ctx.scheduler.runAfter(0, internal.communications.emailAgent.generateAndSendAiEmailReply, {
-            inboxEmail: targetInboxEmail,
-            messageId: message.id,
-            candidateId: checkResult.candidateId as any,
-            jobId: checkResult.jobId as any,
-            applicationId: checkResult.applicationId as any,
-            incomingBody: emailBody,
-          });
-          isReplyProcessed = true;
+        if (checkResult) {
+          isCandidateMatched = !!checkResult.isCandidateMatched;
+
+          if (checkResult.isFollowUpReply) {
+            // Trigger automatic AI reply email
+            await ctx.scheduler.runAfter(0, internal.communications.emailAgent.generateAndSendAiEmailReply, {
+              inboxEmail: targetInboxEmail,
+              messageId: message.id,
+              candidateId: checkResult.candidateId as any,
+              jobId: checkResult.jobId as any,
+              applicationId: checkResult.applicationId as any,
+              incomingBody: emailBody,
+            });
+            isReplyProcessed = true;
+          }
         }
       }
 
       if (!attachment) {
-        if (isReplyProcessed) {
+        if (isReplyProcessed || isCandidateMatched) {
           await markEmailAsRead(targetInboxEmail, message.id);
           continue;
         }
@@ -339,20 +344,18 @@ export const checkAndRecordEmailReply = internalMutation({
       .withIndex("by_email", (q: any) => q.eq("email", targetEmail))
       .first();
 
-    if (!candidate) return { isFollowUpReply: false };
+    if (!candidate) return { isFollowUpReply: false, isCandidateMatched: false };
 
     const activeApp = await ctx.db
       .query("applications")
       .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
-      .filter((q: any) => q.eq(q.field("currentStage"), "follow_up"))
+      .order("desc")
       .first();
-
-    if (!activeApp) return { isFollowUpReply: false };
 
     await ctx.db.insert("communications", {
       candidateId: candidate._id,
-      applicationId: activeApp._id,
-      jobId: activeApp.jobId,
+      applicationId: activeApp?._id,
+      jobId: activeApp?.jobId,
       direction: "inbound",
       channel: "email",
       subject: args.subject,
@@ -368,11 +371,14 @@ export const checkAndRecordEmailReply = internalMutation({
       textBody: args.body,
     });
 
+    const isFollowUp = activeApp?.currentStage === "follow_up";
+
     return {
-      isFollowUpReply: true,
+      isCandidateMatched: true,
+      isFollowUpReply: isFollowUp,
       candidateId: candidate._id,
-      applicationId: activeApp._id,
-      jobId: activeApp.jobId,
+      applicationId: activeApp?._id,
+      jobId: activeApp?.jobId,
     };
   },
 });
