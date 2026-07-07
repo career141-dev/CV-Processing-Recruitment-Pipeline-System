@@ -133,6 +133,20 @@ export const setPipelineStage = mutation({
     await requireJobAssignment(ctx, entry.jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
     const user = await requireUser(ctx);
 
+    if (newStage === "second_shortlist") {
+      const candidate = await ctx.db.get(entry.candidateId);
+      if (!candidate) throw new Error("Candidate not found");
+      const hasCV = entry.followUpCvReceived === true || (entry.followUpCvReceived === undefined && (!!candidate.cvUploadId || !!entry.cvFileId));
+      const hasCurrentSalary = entry.followUpCurrentSalary === true || (entry.followUpCurrentSalary === undefined && candidate.currentSalary !== undefined);
+      const hasExpectedSalary = entry.followUpExpectedSalary === true || (entry.followUpExpectedSalary === undefined && candidate.expectedSalary !== undefined);
+      const hasNoticePeriod = entry.followUpNoticePeriod === true || (entry.followUpNoticePeriod === undefined && candidate.noticePeriodDays !== undefined);
+      const allFourComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
+      
+      if (!allFourComplete) {
+        throw new Error("Cannot move to 2nd Shortlist: Missing mandatory Follow-up data (CV, Current Salary, Expected Salary, Notice Period). Please log a manual call to complete the profile.");
+      }
+    }
+
     await ctx.db.patch(applicationId, {
       currentStage: newStage as any,
       lastStageChangedAt: Date.now(),

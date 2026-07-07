@@ -350,6 +350,8 @@ trigger: v.union(
 v.literal("job_published"), v.literal("job_opened"),
 v.literal("search"), v.literal("manual_rescore")),
 scoredAt: v.string(),
+scoreSource: v.optional(v.string()),
+scoredBy: v.optional(v.string()),
 })
 .index("by_job_score", ["jobId", "score"])
 .index("by_candidate_job", ["candidateId", "jobId"]),
@@ -537,7 +539,8 @@ generatedAt: v.string(),
       v.literal("interview"),
       v.literal("offer"),
       v.literal("placed"),
-      v.literal("rejected")
+      v.literal("rejected"),
+      v.literal("unresponsive")
     ),
     aiMatchScore: v.optional(v.number()),
     aiMatchExplanation: v.optional(v.string()),
@@ -1119,6 +1122,7 @@ errorMessage: v.optional(v.string()),
     key: v.string(),
     commonWhatsappNumber: v.optional(v.string()),
     commonWhatsappNumberId: v.optional(v.string()),
+    autopilotEnabled: v.optional(v.boolean()),
     updatedBy: v.optional(v.id("users")),
     updatedAt: v.optional(v.string()),
   }).index("by_key", ["key"]),

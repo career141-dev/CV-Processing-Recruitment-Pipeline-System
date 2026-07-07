@@ -4,13 +4,14 @@ import OpenAI from "openai";
 import type { ActionCtx } from "../_generated/server";
 
 
-export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching";
+export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing";
 
 // Model configuration for development
 const MODEL_CONFIG = {
   cv_structuring: "meta/llama-3.1-8b-instruct",      // Fast, good for parsing
   jd_extraction: "meta/llama-3.1-70b-instruct",     // Better understanding  
-  jd_matching: "meta/llama-3.1-70b-instruct"         // Strong reasoning
+  jd_matching: "meta/llama-3.1-70b-instruct",         // Strong reasoning
+  email_routing: "meta/llama-3.1-8b-instruct"         // Fast text classification
 };
 
 export function getOpenAI(taskType: TaskType): OpenAI {

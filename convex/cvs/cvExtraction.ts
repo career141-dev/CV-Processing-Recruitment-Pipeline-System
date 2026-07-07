@@ -140,7 +140,7 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
     data,
     useSystemFonts: true,
     disableFontFace: true,
-    standardFontDataUrl: undefined,
+    standardFontDataUrl: "https://unpkg.com/pdfjs-dist@5.7.284/standard_fonts/",
   });
   
   try {

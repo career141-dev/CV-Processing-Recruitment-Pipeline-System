@@ -1,7 +1,7 @@
 "use node";
 
 import { internalAction } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 
 export const triggerIntakeCall = internalAction({
@@ -80,6 +80,7 @@ export const triggerFollowUpCall = internalAction({
     jobId: v.id("jobs"),
     attemptNumber: v.number(),
     lastContactChannel: v.string(),
+    aiCallId: v.id("aiCalls"),
   },
   handler: async (ctx, args): Promise<{ success: boolean; conversationId?: string; skipped?: boolean }> => {
     const candidate: any = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
@@ -116,7 +117,14 @@ export const triggerFollowUpCall = internalAction({
       return { success: false };
     }
 
-    const response = await fetch("https://api.elevenlabs.io/v1/convai/outbound-call", {
+    const sipPhoneNumberId = process.env.ELEVENLABS_SIP_PHONE_NUMBER_ID;
+    
+    if (!sipPhoneNumberId) {
+      console.error("ELEVENLABS_SIP_PHONE_NUMBER_ID not configured for SIP trunk calling.");
+      return { success: false };
+    }
+
+    const response = await fetch("https://api.elevenlabs.io/v1/convai/conversation/outbound-call", {
       method: "POST",
       headers: {
         "xi-api-key": apiKey,
@@ -124,19 +132,22 @@ export const triggerFollowUpCall = internalAction({
       },
       body: JSON.stringify({
         agent_id: agentId,
-        recipient_phone_number: candidate.phone,
-        dynamic_variables: {
-          candidate_name: candidate.fullName ? candidate.fullName.split(' ')[0] : "Candidate",
-          job_title: job.title || "the open role",
-          company_name: "Career141",
-          missing_fields_list: missing.join(", "),
-          custom_questions: job.agent5CustomQuestions?.join(", ") || "",
-          company_hidden: job.agent5HideCompany ? "true" : "false",
-          attempt_number: String(args.attemptNumber),
-          last_contact_channel: args.lastContactChannel,
-          candidate_id: args.candidateId,
-          job_id: args.jobId,
-          application_id: args.applicationId,
+        agent_phone_number_id: sipPhoneNumberId,
+        to_number: candidate.phone,
+        conversation_initiation_client_data: {
+          dynamic_variables: {
+            candidate_name: candidate.fullName ? candidate.fullName.split(' ')[0] : "Candidate",
+            job_title: job.title || "the open role",
+            company_name: "Career141",
+            missing_fields_list: missing.join(", "),
+            custom_questions: job.agent5CustomQuestions?.join(", ") || "",
+            company_hidden: job.agent5HideCompany ? "true" : "false",
+            attempt_number: String(args.attemptNumber),
+            last_contact_channel: args.lastContactChannel,
+            candidate_id: args.candidateId,
+            job_id: args.jobId,
+            application_id: args.applicationId,
+          }
         }
       })
     });
@@ -144,10 +155,28 @@ export const triggerFollowUpCall = internalAction({
     if (!response.ok) {
       const errorText = await response.text();
       console.error("[ElevenLabs] Failed to trigger follow-up call:", errorText);
+      
+      // ROLLBACK: Call failed to place (e.g. ElevenLabs down)
+      await ctx.runMutation(api.applications.applications.updateAiCallStatus, { 
+        aiCallId: args.aiCallId, 
+        callStatus: "failed" 
+      });
+      await ctx.runMutation(api.applications.applications.rollbackFollowUpState, { 
+        applicationId: args.applicationId 
+      });
+
       return { success: false };
     }
 
     const data: any = await response.json();
+    
+    // SUCCESS: Save the conversation ID so webhooks can find it!
+    await ctx.runMutation(api.applications.applications.updateAiCallStatus, {
+      aiCallId: args.aiCallId,
+      callStatus: "scheduled",
+      elevenLabsConversationId: data.conversation_id
+    });
+
     return {
       success: true,
       conversationId: data.conversation_id

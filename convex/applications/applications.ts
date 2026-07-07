@@ -72,6 +72,69 @@ export const getByCandidate = query({
   },
 });
 
+// Unresponsive candidates for a specific job (to show inside the Follow-up tab)
+export const getUnresponsiveForJob = query({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+
+    const applications = await ctx.db
+      .query("applications")
+      .withIndex("by_job_active", (q) => q.eq("jobId", args.jobId).eq("isActive", true))
+      .filter((q) => q.eq(q.field("currentStage"), "unresponsive"))
+      .collect();
+
+    const now = Date.now();
+
+    return await Promise.all(
+      applications.map(async (app) => {
+        const candidate = await ctx.db.get(app.candidateId);
+        const job = await ctx.db.get(app.jobId);
+
+        // Compute which fields are still missing
+        const missingFields: string[] = [];
+        const hasCV = app.followUpCvReceived === true ||
+          (app.followUpCvReceived === undefined && (!!candidate?.cvUploadId || !!app.cvFileId));
+        const hasCurrentSalary = app.followUpCurrentSalary === true ||
+          (app.followUpCurrentSalary === undefined && candidate?.currentSalary !== undefined);
+        const hasExpectedSalary = app.followUpExpectedSalary === true ||
+          (app.followUpExpectedSalary === undefined && candidate?.expectedSalary !== undefined);
+        const hasNoticePeriod = app.followUpNoticePeriod === true ||
+          (app.followUpNoticePeriod === undefined && candidate?.noticePeriodDays !== undefined);
+
+        if (!hasCV) missingFields.push("CV");
+        if (!hasCurrentSalary) missingFields.push("Current Salary");
+        if (!hasExpectedSalary) missingFields.push("Expected Salary");
+        if (!hasNoticePeriod) missingFields.push("Notice Period");
+
+        const daysUnresponsive = app.lastStageChangedAt
+          ? Math.floor((now - app.lastStageChangedAt) / (1000 * 60 * 60 * 24))
+          : 0;
+
+        return {
+          applicationId: app._id,
+          candidateId: app.candidateId,
+          candidateName: candidate?.fullName ?? "Unknown",
+          candidatePhone: candidate?.phone ?? null,
+          candidateEmail: candidate?.email ?? null,
+          jobTitle: job?.title ?? "Unknown Job",
+          missingFields,
+          daysUnresponsive,
+          lastStageChangedAt: app.lastStageChangedAt,
+          currentSalary: candidate?.currentSalary,
+          expectedSalary: candidate?.expectedSalary,
+          noticePeriodDays: candidate?.noticePeriodDays,
+          hasCurrentSalary,
+          hasExpectedSalary,
+          hasNoticePeriod,
+        };
+      })
+    );
+  },
+});
+
+
+
 // Chronological event log for a candidate (newest first)
 export const getCandidateTimeline = query({
   args: { candidateId: v.id("candidates") },
@@ -134,12 +197,29 @@ export const createApplication = mutation({
       .first();
 
     if (existing) {
+      let updates: any = {};
+      
       if (existing.currentStage === "new_cvs" && args.sourceChannel === "database") {
-        await ctx.db.patch(existing._id, {
-          currentStage: "matched_candidates" as any,
-          lastStageChangedAt: Date.now(),
-        });
-        await syncCandidateOverallStatus(ctx, args.candidateId);
+        updates.currentStage = "matched_candidates" as any;
+        updates.lastStageChangedAt = Date.now();
+      }
+      
+      if (args.cvFileId && !existing.cvFileId) {
+        updates.cvFileId = args.cvFileId;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await ctx.db.patch(existing._id, updates);
+        
+        if (updates.currentStage) {
+          await syncCandidateOverallStatus(ctx, args.candidateId);
+        }
+        
+        if (updates.cvFileId) {
+          const candidate = await ctx.db.get(args.candidateId);
+          await updateFollowUpFlags(ctx, existing._id, candidate);
+          await checkAndAdvanceFollowUp(ctx, args.candidateId);
+        }
       }
       return existing._id;
     }
@@ -526,6 +606,7 @@ export const updateAiCallStatus = mutation({
       v.literal("pressed_3_connect_recruiter"), v.literal("no_response")
     )),
     twilioCallSid: v.optional(v.string()),
+    elevenLabsConversationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const call = await ctx.db.get(args.aiCallId);
@@ -536,6 +617,7 @@ export const updateAiCallStatus = mutation({
       ivrResponse: args.ivrResponse,
     };
     if (args.twilioCallSid) updates.twilioCallSid = args.twilioCallSid;
+    if (args.elevenLabsConversationId) updates.elevenLabsConversationId = args.elevenLabsConversationId;
     if (args.callStatus === "completed" || args.callStatus === "failed" || args.callStatus === "no_answer") {
       updates.completedAt = Date.now();
     }
@@ -620,4 +702,22 @@ export const getApplication = query({
     if (!actualId) return null;
     return await ctx.db.get(actualId);
   },
+});
+
+export const rollbackFollowUpState = mutation({
+  args: { applicationId: v.id("applications") },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.applicationId);
+    if (!app || !app.followUpState) return;
+
+    const currentState = app.followUpState;
+    if (currentState.lastContactDay >= 2) {
+      await ctx.db.patch(args.applicationId, {
+        followUpState: {
+          ...currentState,
+          lastContactDay: 1, // Reset to 1 so Day 2 re-triggers next hour
+        }
+      });
+    }
+  }
 });
