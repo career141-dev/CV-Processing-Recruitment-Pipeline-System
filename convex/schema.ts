@@ -493,6 +493,7 @@ generatedAt: v.string(),
     doNotContactReason: v.optional(v.string()),
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
+    profileImageId: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
