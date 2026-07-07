@@ -3,7 +3,6 @@ import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
 import { handleLocalWhatsappWebhook } from "./communications/localWhatsappAgent";
-import { handleWhatChimpWebhook } from "./communications/whatchimp";
 import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 
 const http = httpRouter();
@@ -39,12 +38,6 @@ http.route({
   handler: handleLocalWhatsappWebhook,
 });
 
-// WhatChimp Webhook Inbound Events
-http.route({
-  path: "/api/whatsapp-whatchimp",
-  method: "POST",
-  handler: handleWhatChimpWebhook,
-});
 
 // A simple REST endpoint to test Job Creation via Postman
 http.route({
