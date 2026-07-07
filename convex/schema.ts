@@ -435,6 +435,7 @@ generatedAt: v.string(),
     vectorEmbeddingId: v.optional(v.string()),
     embedding: v.optional(v.array(v.float64())),
     rawText: v.optional(v.string()),
+    profileImageId: v.optional(v.id("_storage")),
     jobHistory: v.optional(v.array(v.object({
       company: v.string(),
       title: v.string(),

@@ -1015,6 +1015,7 @@ export default function JobDetailPage() {
   
   // Fetch candidates via applications
   const applications = useQuery(api.applications.applications.getByJobId, { jobId });
+  const filteredMatches = (job?.reverseMatchResults || []).filter((match: any) => !applications?.some(app => app.candidateId === match.cvId));
   const unresponsiveCandidates = useQuery(api.applications.applications.getUnresponsiveForJob, { jobId });
   const allUsers = useQuery(api.users.users.getAllUsers);
   const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
@@ -1163,7 +1164,7 @@ export default function JobDetailPage() {
             </tr>
           </thead>
           <tbody className="text-[13px] text-text-primary divide-y divide-border">
-            {(!job?.reverseMatchResults || job.reverseMatchResults.length === 0) ? (
+            {(filteredMatches.length === 0) ? (
               <tr>
                 <td colSpan={7} className="p-0">
                   <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface-bright/30">
@@ -1185,7 +1186,7 @@ export default function JobDetailPage() {
                 </td>
               </tr>
             ) : (
-              job.reverseMatchResults.map((match: any) => (
+              filteredMatches.map((match: any) => (
                 <MatchRow 
                   key={match.cvId} 
                   match={match} 
@@ -1263,9 +1264,9 @@ export default function JobDetailPage() {
                         </td>
                         <td className="p-4"><span className="text-[#0A66C2] font-medium">{(app.candidate as any)?.source || 'LinkedIn'}</span></td>
                         <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} /></td>
-                        <td className="p-4 text-text-secondary">
-                          {app.candidate?.currentJobTitle || 'Unknown'} 
-                          {(app.candidate as any)?.experienceTotalYears ? ` (${(app.candidate as any).experienceTotalYears}y)` : ''}
+                        <td className="p-4 text-[13px]">
+                          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || app.candidate?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || app.candidate?.currentJobTitle || 'Unknown Role'}</div>
+                          <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
                         </td>
                         <td className="p-4"><StatusDot status={app.aiCallStatus || 'Not Called'} /></td>
                         <td className="p-4 text-right">
@@ -2042,7 +2043,7 @@ export default function JobDetailPage() {
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeMainTab === 'matches' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'}`}
         >
           <Users className="w-4 h-4" />
-          Matches ({job?.reverseMatchResults?.length || 0})
+          Matches ({filteredMatches.length})
         </button>
         <button
           onClick={() => setActiveMainTab('pipeline')}

@@ -5,24 +5,45 @@ import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/follow
 
 export const listCandidates = query({
   handler: async (ctx) => {
-    return await ctx.db.query("candidates").order("desc").collect();
+    const candidates = await ctx.db.query("candidates").order("desc").collect();
+    return await Promise.all(
+      candidates.map(async (c) => ({
+        ...c,
+        profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+      }))
+    );
   },
 });
 
 export const listCandidatesPaginated = query({
   args: { paginationOpts: v.any() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const page = await ctx.db
       .query("candidates")
       .order("desc")
       .paginate(args.paginationOpts);
+      
+    return {
+      ...page,
+      page: await Promise.all(
+        page.page.map(async (c) => ({
+          ...c,
+          profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+        }))
+      ),
+    };
   },
 });
 
 export const getCandidate = query({
   args: { id: v.id("candidates") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const candidate = await ctx.db.get(args.id);
+    if (!candidate) return null;
+    return {
+      ...candidate,
+      profileImageUrl: candidate.profileImageId ? await ctx.storage.getUrl(candidate.profileImageId) : null,
+    };
   },
 });
 
@@ -175,6 +196,7 @@ export const createCandidate = mutation({
     isParsed: v.optional(v.boolean()),
     parsingConfidence: v.optional(v.any()),
     embedding: v.optional(v.array(v.float64())),
+    profileImageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     // 4-Factor Deduplication (Agent 6)
@@ -274,6 +296,31 @@ export const clearDocuments = mutation({
     }
     return all.length;
   },
+});
+
+export const clearOrphanedUploads = mutation({
+  handler: async (ctx) => {
+    let deletedCount = 0;
+    const allUploads = await ctx.db.query("cvUploads").collect();
+    
+    for (const upload of allUploads) {
+      if (upload.candidateId) {
+        const candidate = await ctx.db.get(upload.candidateId);
+        if (!candidate) {
+          await ctx.db.delete(upload._id);
+          deletedCount++;
+        }
+      } else {
+        // If it doesn't even have a candidateId and it's stuck pending for a long time, we could delete it too, 
+        // but let's just focus on ones that had a candidate deleted.
+        if (upload.status === "processing" || upload.status === "failed") {
+          await ctx.db.delete(upload._id);
+          deletedCount++;
+        }
+      }
+    }
+    return deletedCount;
+  }
 });
 
 export const updateCvUpload = mutation({
@@ -415,4 +462,57 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
 
   await ctx.db.patch(candidateId, { overallStatus: finalStatus as any });
 }
+
+
+
+export const deleteCandidate = mutation({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    // Cascade delete related records
+    const candidateId = args.candidateId;
+
+    const apps = await ctx.db.query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+      .collect();
+    for (const app of apps) await ctx.db.delete(app._id);
+
+    const scores = await ctx.db.query("match_scores")
+      .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+      .collect();
+    for (const score of scores) await ctx.db.delete(score._id);
+
+    const events = await ctx.db.query("pipelineEvents")
+      .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+      .collect();
+    for (const e of events) await ctx.db.delete(e._id);
+
+    const calls = await ctx.db.query("aiCalls")
+      .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+      .collect();
+    for (const call of calls) await ctx.db.delete(call._id);
+
+    const comms = await ctx.db.query("communications")
+      .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+      .collect();
+    for (const comm of comms) await ctx.db.delete(comm._id);
+
+    const cvs = await ctx.db.query("cvs")
+      .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+      .collect();
+    for (const cv of cvs) {
+      // Also delete the original cvUploads record to allow re-ingestion
+      const uploads = await ctx.db.query("cvUploads")
+        .filter((q: any) => q.eq(q.field("storageId"), cv.storageId))
+        .collect();
+      for (const upload of uploads) {
+        await ctx.db.delete(upload._id);
+      }
+      await ctx.db.delete(cv._id);
+    }
+
+    // Finally, delete the candidate
+    await ctx.db.delete(candidateId);
+  }
+});
+
 

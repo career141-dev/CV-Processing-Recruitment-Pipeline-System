@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useParams } from "next/navigation";
+import { AddToJobModal } from '@/components/candidates/modals/AddToJobModal';
+import { toast } from 'sonner';
 
 function getInitials(name?: string | null): string {
   if (!name) return "?";
@@ -43,6 +45,12 @@ export default function CandidateProfile() {
   
   const fetchedCandidate = useQuery(api.candidates.candidates.getCandidate, { id: params.candidateId as Id<"candidates"> });
   const triggerLazyParse = useAction(api.cvs.lazyParsing.triggerLazyParse);
+  const createApplication = useMutation(api.applications.applications.createApplication);
+  const setDoNotContact = useMutation(api.candidates.candidates.setDoNotContact);
+  const triggerManualAiCall = useMutation(api.applications.applications.triggerManualAiCall);
+  
+  const [isAddToJobOpen, setIsAddToJobOpen] = useState(false);
+  const [isTriggeringCall, setIsTriggeringCall] = useState(false);
 
   React.useEffect(() => {
     if (fetchedCandidate && fetchedCandidate.isParsed === false) {
@@ -116,8 +124,12 @@ export default function CandidateProfile() {
             <div className="flex flex-col md:flex-row items-center self-stretch bg-surface py-[25px] px-[21px] mb-4 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
               <div className="flex flex-1 flex-col gap-4">
                 <div className="flex items-center self-stretch gap-[35px]">
-                  <div className="w-[108px] h-[111px] rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed text-3xl font-bold shrink-0">
-                    {getInitials(candidate.fullName)}
+                  <div className="w-[108px] h-[111px] rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed text-3xl font-bold shrink-0 overflow-hidden">
+                    {candidate.profileImageUrl ? (
+                      <img src={candidate.profileImageUrl} alt="avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      getInitials(candidate.fullName)
+                    )}
                   </div>
                   <div className="flex flex-col shrink-0 items-start gap-[3px]">
                     <span className="text-text-primary text-[22px] font-bold">
@@ -201,26 +213,64 @@ export default function CandidateProfile() {
                 </div>
                 <div className="flex flex-col items-stretch gap-2 w-full">
                   <button className="flex items-center justify-center bg-primary-container text-on-primary py-2 px-4 gap-2 rounded-md border-0 hover:bg-[#144718]"
-                    onClick={() => alert('Pressed!')}>
+                    onClick={() => setIsAddToJobOpen(true)}>
                     <span className="text-[13px] font-bold">Shortlist for Job</span>
                   </button>
                   <div className="flex items-center gap-2 w-full">
                     <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors"
-                      onClick={() => alert('Pressed!')}>
-                      <span className="text-text-primary text-[13px] whitespace-nowrap">Trigger AI Call</span>
+                      disabled={isTriggeringCall}
+                      onClick={async () => {
+                        if (!applications || applications.length === 0) {
+                          toast.error("Candidate must be shortlisted for a job first");
+                          return;
+                        }
+                        const app = applications.find(a => a.isActive) || applications[0];
+                        setIsTriggeringCall(true);
+                        try {
+                          await triggerManualAiCall({
+                            applicationId: app._id,
+                            candidateId: candidateId,
+                            jobId: app.jobId
+                          });
+                          toast.success("AI Call triggered successfully!");
+                        } catch (err: any) {
+                          toast.error(err.message || "Failed to trigger AI call");
+                        } finally {
+                          setIsTriggeringCall(false);
+                        }
+                      }}>
+                      <span className="text-text-primary text-[13px] whitespace-nowrap">{isTriggeringCall ? 'Triggering...' : 'Trigger AI Call'}</span>
                     </button>
                     <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors"
-                      onClick={() => alert('Pressed!')}>
+                      onClick={() => setActiveTab("communications")}>
                       <span className="text-text-primary text-[13px] whitespace-nowrap">Send Email</span>
                     </button>
                   </div>
                   <button className="flex items-center justify-center bg-transparent py-2 px-4 gap-2 rounded-md border border-solid border-[#BA1A1A80] hover:bg-red-50 mt-1"
-                    onClick={() => alert('Pressed!')}>
+                    onClick={async () => {
+                      if (window.confirm("Are you sure you want to reject this candidate?")) {
+                        await setDoNotContact({ candidateId, reason: "Manual rejection from profile" });
+                        toast.success("Candidate marked as Do Not Contact");
+                      }
+                    }}>
                     <span className="text-[#BA1A1A] text-[13px] font-bold">Reject</span>
                   </button>
                 </div>
               </div>
             </div>
+            
+            <AddToJobModal
+              isOpen={isAddToJobOpen}
+              onClose={() => setIsAddToJobOpen(false)}
+              selectedCount={1}
+              onConfirm={async (jobId) => {
+                await createApplication({
+                  candidateId,
+                  jobId: jobId as Id<"jobs">,
+                  sourceChannel: candidate.firstSourceChannel || "manual_upload"
+                });
+              }}
+            />
 
             {/* Tab Menu */}
             <div className="flex items-center self-stretch mb-6 border-b border-gray-200">
@@ -285,72 +335,6 @@ export default function CandidateProfile() {
                     )}
                   </div>
 
-                  <div className="flex flex-col p-8 pb-16 bg-[#F8FAF2] relative">
-                    <div className="flex flex-col items-center text-center pb-6 border-b border-gray-200 mb-6">
-                      <span className="text-primary-container text-2xl font-bold mb-1">{candidate.fullName || "Unknown"}</span>
-                      <span className="text-[#1B1B1D] text-[13px] font-bold mb-3">{candidate.currentTitle || ""}</span>
-                      <div className="flex items-center justify-center gap-3 flex-wrap">
-                        {candidate.location && <span className="text-[#5F6368] text-[10px] font-bold tracking-wider">{candidate.location.toUpperCase()}</span>}
-                        {candidate.email && <><span className="text-[#5F6368] text-[10px] font-bold">•</span><span className="text-[#5F6368] text-[10px] font-bold tracking-wider">{candidate.email.toUpperCase()}</span></>}
-                        {candidate.phone && <><span className="text-[#5F6368] text-[10px] font-bold">•</span><span className="text-[#5F6368] text-[10px] font-bold tracking-wider">{candidate.phone}</span></>}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="flex flex-col gap-6">
-                        {candidate.summary && (
-                          <div className="flex flex-col gap-2">
-                            <span className="text-primary-container text-xs font-bold tracking-wider">PROFESSIONAL SUMMARY</span>
-                            <span className="text-[#1B1B1D] text-sm leading-relaxed">{candidate.summary}</span>
-                          </div>
-                        )}
-                        {candidate.certifications && candidate.certifications.length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            <span className="text-primary-container text-xs font-bold tracking-wider">CERTIFICATIONS</span>
-                            {candidate.certifications.map((cert: string, i: number) => (
-                              <span key={i} className="text-[#1B1B1D] text-[13px]">{cert}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-6">
-                        {candidate.skills && candidate.skills.length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            <span className="text-primary-container text-xs font-bold tracking-wider">SKILLS</span>
-                            <div className="flex flex-wrap gap-2">
-                              {candidate.skills.map((skill: string, i: number) => (
-                                <div key={i} className="bg-[#E8F5E9] py-1 px-2.5 rounded text-[#00450D] text-[11px] font-bold border border-[#C8E6C9]">
-                                  {skill}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {candidate.education && candidate.education.length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            <span className="text-primary-container text-xs font-bold tracking-wider">EDUCATION</span>
-                  {candidate.education.map((edu: { degree?: string; institution?: string; year?: string | number; field?: string }, i: number) => (
-                              <div key={i} className="flex flex-col mb-2">
-                                <span className="text-[#1B1B1D] text-[13px] font-bold">{edu.degree || ""}{edu.field ? ` in ${edu.field}` : ""}</span>
-                                {edu.institution && <span className="text-[#5F6368] text-xs mt-0.5">{edu.institution}{edu.year ? ` • ${edu.year}` : ""}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {candidate.languages && candidate.languages.length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            <span className="text-primary-container text-xs font-bold tracking-wider">LANGUAGES</span>
-                            <div className="flex flex-wrap gap-2">
-                              {candidate.languages.map((lang: string, i: number) => (
-                                <span key={i} className="text-[#1B1B1D] text-[13px]">{lang}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="bg-surface border-t border-border p-6 pt-5">
                     <div className="flex items-center justify-between mb-5">
                       <div className="flex items-center gap-2">
@@ -372,7 +356,7 @@ export default function CandidateProfile() {
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-1">
                           <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Total Experience</span>
-                          <span className="text-text-primary text-sm font-semibold">{candidate.yearsOfExperience != null ? formatYoe(candidate.yearsOfExperience) : "—"}</span>
+                          <span className="text-text-primary text-sm font-semibold">{(candidate.totalExperienceYears ?? candidate.yearsOfExperience) != null ? formatYoe((candidate.totalExperienceYears ?? candidate.yearsOfExperience) as number) : "—"}</span>
                         </div>
                         <div className="flex flex-col gap-1">
                           <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Industry Focus</span>
@@ -380,10 +364,96 @@ export default function CandidateProfile() {
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Compact rendering of other AI Extracted details */}
+                    <div className="flex flex-col gap-5 mt-6 pt-5 border-t border-gray-100">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Professional Summary</span>
+                        {candidate.summary ? (
+                          <span className="text-text-primary text-[13px] leading-relaxed">{candidate.summary}</span>
+                        ) : (
+                          <span className="text-text-disabled text-[13px] italic">No summary extracted.</span>
+                        )}
+                      </div>
+                      
+                      {candidate.skills && candidate.skills.length > 0 && (
+                        <div className="flex flex-col gap-2">
+                          <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Key Skills</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {candidate.skills.map((skill: string, i: number) => (
+                              <div key={i} className="bg-[#E8F5E9] py-0.5 px-2 rounded text-[#00450D] text-[11px] font-medium border border-[#C8E6C9]">
+                                {skill}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        {candidate.certifications && candidate.certifications.length > 0 && (
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Certifications</span>
+                            <ul className="list-disc pl-4 m-0 text-text-primary text-[13px]">
+                              {candidate.certifications.map((cert: string, i: number) => (
+                                <li key={i} className="mb-0.5">{cert}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {candidate.languages && candidate.languages.length > 0 && (
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-text-secondary text-xs font-medium uppercase tracking-wide">Languages</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {candidate.languages.map((lang: string, i: number) => (
+                                <span key={i} className="bg-gray-100 py-0.5 px-2 rounded text-text-secondary text-[11px] font-medium">
+                                  {lang}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
 
+
+                {/* Experience */}
+                <div className="flex flex-col bg-surface p-6 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D] mb-6">
+                  <div className="flex items-center mb-6">
+                    <span className="text-text-primary text-base font-bold">Experience</span>
+                  </div>
+                  {candidate.jobHistory && candidate.jobHistory.length > 0 ? (
+                    <div className="flex flex-col gap-5">
+                      {candidate.jobHistory.map((job: any, i: number) => {
+                        const dateStr = job.startDate ? `${job.startDate} — ${job.endDate || 'Present'}` : (job.endDate ? `Until ${job.endDate}` : "");
+                        return (
+                          <div key={i}>
+                            {i > 0 && <div className="h-[1px] bg-gray-100 w-full mb-5"></div>}
+                            <div className="flex items-start gap-4">
+                              <div className="bg-[#F8FAF2] p-2 rounded-lg border border-border w-12 h-12 flex items-center justify-center text-primary-container text-sm font-bold shrink-0 uppercase">
+                                {job.company?.charAt(0) || "C"}
+                              </div>
+                              <div className="flex flex-col w-full">
+                                <span className="text-text-primary text-[14px] font-bold">{job.title || "Unknown Title"}</span>
+                                <span className="text-text-secondary text-xs mt-0.5 font-medium">{job.company || "Unknown Company"}{dateStr ? ` • ${dateStr}` : ""}</span>
+                                {job.description && (
+                                  <p className="text-text-secondary text-xs mt-2.5 leading-relaxed whitespace-pre-wrap">
+                                    {job.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <span className="text-text-disabled text-sm">No experience data extracted.</span>
+                  )}
+                </div>
 
                 {/* Education */}
                 <div className="flex flex-col bg-surface p-6 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
@@ -447,7 +517,6 @@ export default function CandidateProfile() {
                   </div>
                 </div>
 
-                {/* AI Call Summary */}
                 <div className="flex flex-col bg-surface p-5 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
                   <div className="flex items-center mb-4">
                     <img
@@ -458,31 +527,30 @@ export default function CandidateProfile() {
                     <span className="text-text-primary text-sm font-bold">AI Call Summary</span>
                   </div>
                   <div className="flex flex-col gap-3">
-                    <div className="flex items-center bg-[#91F78E1A] p-3 gap-3 rounded-lg border border-[#91F78E4D]">
-                      <img
-                        src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/lg2p63kn_expires_30_days.png" 
-                        className="w-8 h-8 rounded-lg object-fill"
-                        alt="Avatar"
-                      />
-                      <div className="flex flex-col flex-1">
-                        <span className="text-text-primary text-[13px] font-medium">Pre-screen: Brand Manager</span>
-                        <span className="text-text-secondary text-xs mt-0.5">Oct 24 • <span className="text-[#00450D] font-medium">Interested</span></span>
-                      </div>
-                    </div>
-                    <div className="flex items-center bg-[#F8FAF2] p-3 gap-3 rounded-lg border border-border">
-                      <img
-                        src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/ifmm9cq2_expires_30_days.png" 
-                        className="w-8 h-8 rounded-lg object-fill"
-                        alt="Avatar"
-                      />
-                      <div className="flex flex-col flex-1">
-                        <span className="text-text-primary text-[13px] font-medium">Initial Outreach</span>
-                        <span className="text-text-secondary text-xs mt-0.5">Oct 22 • No Answer</span>
-                      </div>
-                    </div>
-                    <button className="text-[#00450D] text-[13px] font-bold bg-transparent border-0 mt-1 hover:underline cursor-pointer">
-                      View Full Logs
-                    </button>
+                    {aiCalls === undefined ? (
+                      <span className="text-text-disabled text-xs">Loading...</span>
+                    ) : aiCalls.length === 0 ? (
+                      <span className="text-text-disabled text-xs">No AI calls recorded yet.</span>
+                    ) : (
+                      aiCalls.slice(0, 3).map((call) => (
+                        <div key={call._id} className={`flex items-center p-3 gap-3 rounded-lg border ${call.callStatus === 'completed' ? 'bg-[#91F78E1A] border-[#91F78E4D]' : 'bg-[#F8FAF2] border-border'}`}>
+                          <div className="flex flex-col flex-1">
+                            <span className="text-text-primary text-[13px] font-medium capitalize">
+                              {call.callScriptUsed.replace(/_/g, ' ')}
+                            </span>
+                            <span className="text-text-secondary text-xs mt-0.5">
+                              {new Date(call.calledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • <span className={call.callStatus === 'completed' ? "text-[#00450D] font-medium" : "text-text-secondary capitalize"}>{call.ivrResponse?.replace(/pressed_[0-9]_/g, '').replace(/_/g, ' ') || call.callStatus.replace(/_/g, ' ')}</span>
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    {aiCalls && aiCalls.length > 3 && (
+                      <button className="text-[#00450D] text-[13px] font-bold bg-transparent border-0 mt-1 hover:underline cursor-pointer"
+                        onClick={() => setActiveTab('callLog')}>
+                        View Full Logs
+                      </button>
+                    )}
                   </div>
                 </div>
 

@@ -9,13 +9,21 @@
  */
 
 import type * as admin_cleanup from "../admin/cleanup.js";
+import type * as admin_deleteTestCv from "../admin/deleteTestCv.js";
 import type * as admin_fix from "../admin/fix.js";
+import type * as admin_queryEvents from "../admin/queryEvents.js";
+import type * as admin_queryLogs from "../admin/queryLogs.js";
+import type * as admin_querySanjeev from "../admin/querySanjeev.js";
+import type * as admin_querySanjeevHistory from "../admin/querySanjeevHistory.js";
 import type * as admin_scratch from "../admin/scratch.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
 import type * as candidates_candidates from "../candidates/candidates.js";
 import type * as candidates_derivations from "../candidates/derivations.js";
 import type * as candidates_profile from "../candidates/profile.js";
+import type * as candidates_testExp from "../candidates/testExp.js";
+import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
+import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
 import type * as communications_inboundExtraction from "../communications/inboundExtraction.js";
 import type * as communications_localWhatsappAgent from "../communications/localWhatsappAgent.js";
@@ -54,6 +62,7 @@ import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as stats_stats from "../stats/stats.js";
+import type * as testDerivation from "../testDerivation.js";
 import type * as users_users from "../users/users.js";
 
 import type {
@@ -64,13 +73,21 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "admin/cleanup": typeof admin_cleanup;
+  "admin/deleteTestCv": typeof admin_deleteTestCv;
   "admin/fix": typeof admin_fix;
+  "admin/queryEvents": typeof admin_queryEvents;
+  "admin/queryLogs": typeof admin_queryLogs;
+  "admin/querySanjeev": typeof admin_querySanjeev;
+  "admin/querySanjeevHistory": typeof admin_querySanjeevHistory;
   "admin/scratch": typeof admin_scratch;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
   "candidates/candidates": typeof candidates_candidates;
   "candidates/derivations": typeof candidates_derivations;
   "candidates/profile": typeof candidates_profile;
+  "candidates/testExp": typeof candidates_testExp;
+  "candidates/updateAllExp": typeof candidates_updateAllExp;
+  "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
   "communications/emailAgent": typeof communications_emailAgent;
   "communications/inboundExtraction": typeof communications_inboundExtraction;
   "communications/localWhatsappAgent": typeof communications_localWhatsappAgent;
@@ -109,6 +126,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
   "stats/stats": typeof stats_stats;
+  testDerivation: typeof testDerivation;
   "users/users": typeof users_users;
 }>;
 

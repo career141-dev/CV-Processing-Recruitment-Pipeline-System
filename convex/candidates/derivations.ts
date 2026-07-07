@@ -102,31 +102,53 @@ export function deriveTotalExperienceYears(
     return yearsOfExperience ?? undefined;
   }
 
-  let totalDays = 0;
-  const now = new Date();
+  const now = new Date().getTime();
+  const intervals: Array<{ start: number; end: number }> = [];
 
   for (const job of jobHistory) {
     if (!job.startDate) continue;
-
-    const start = new Date(job.startDate);
-    if (isNaN(start.getTime())) continue;
+    const start = new Date(job.startDate).getTime();
+    if (isNaN(start)) continue;
 
     let end = now;
     if (job.endDate && job.endDate.toLowerCase() !== "present" && job.endDate.toLowerCase() !== "current") {
-      const parsedEnd = new Date(job.endDate);
-      if (!isNaN(parsedEnd.getTime())) {
+      const parsedEnd = new Date(job.endDate).getTime();
+      if (!isNaN(parsedEnd)) {
         end = parsedEnd;
       }
     }
 
-    const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays > 0) {
-      totalDays += diffDays;
+    if (end > start) {
+      intervals.push({ start, end });
     }
   }
 
+  if (intervals.length === 0) {
+    return yearsOfExperience ?? undefined;
+  }
+
+  // Sort intervals by start time
+  intervals.sort((a, b) => a.start - b.start);
+
+  // Merge overlapping intervals
+  const merged: Array<{ start: number; end: number }> = [intervals[0]];
+  for (let i = 1; i < intervals.length; i++) {
+    const last = merged[merged.length - 1];
+    const curr = intervals[i];
+    if (curr.start <= last.end) {
+      last.end = Math.max(last.end, curr.end); // Overlapping, extend the end
+    } else {
+      merged.push(curr); // Non-overlapping, add as new interval
+    }
+  }
+
+  // Calculate total days from merged intervals
+  let totalDays = 0;
+  for (const interval of merged) {
+    totalDays += (interval.end - interval.start) / (1000 * 60 * 60 * 24);
+  }
+
   const computedYears = totalDays / 365.25;
-  
   if (computedYears > 0) {
     return Math.round(computedYears * 10) / 10;
   }
