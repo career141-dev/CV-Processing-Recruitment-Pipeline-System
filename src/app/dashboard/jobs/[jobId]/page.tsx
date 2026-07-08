@@ -63,10 +63,11 @@ const TABS = [
   { id: 'Rejected', label: 'Rejected', icon: XCircle },
 ];
 
-const ScoreRing = ({ score }: { score: number | string }) => {
-  if (score === 'Pending') {
+const ScoreRing = ({ score, reason }: { score: number | string, reason?: string }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+  if (score === 'Pending' || score === null || score === undefined) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-text-secondary">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-text-disabled bg-surface-container px-2 py-1 rounded-full">
         Pending
       </span>
     );
@@ -77,13 +78,27 @@ const ScoreRing = ({ score }: { score: number | string }) => {
   const strokeDasharray = `${numScore}, 100`;
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative inline-flex items-center justify-center w-8 h-8">
+    <div className="relative inline-flex items-center gap-2">
+      <div
+        className="relative inline-flex items-center justify-center w-8 h-8 cursor-help"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
           <path className="text-border" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
           <path className={`${colorClass} transition-all duration-1000 ease-out`} strokeDasharray={strokeDasharray} strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
         </svg>
         <span className={`absolute text-[10px] font-bold ${colorClass}`}>{numScore}</span>
+
+        {/* Reason tooltip */}
+        {reason && showTooltip && (
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-64 bg-surface-container-high border border-border rounded-xl p-3 shadow-xl pointer-events-none">
+            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">AI Score Reason</div>
+            <p className="text-[12px] text-text-primary leading-relaxed">{reason}</p>
+            {/* Arrow */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-border" />
+          </div>
+        )}
       </div>
       <span className="text-xs font-medium text-text-secondary">Match</span>
     </div>
@@ -105,11 +120,15 @@ const StatusDot = ({ status }: { status: string }) => {
 };
 
 
-const CandidateNameDisplay = ({ name, cvUploadId, doNotContact }: { name: string, cvUploadId?: Id<"cvUploads"> | null, doNotContact?: boolean }) => (
+const CandidateNameDisplay = ({ name, cvUploadId, doNotContact, candidateId }: { name: string, cvUploadId?: Id<"cvUploads"> | null, doNotContact?: boolean, candidateId?: string }) => (
   <div className="flex flex-col gap-1">
     <div className="flex items-center gap-2">
-      {name}
-      <CvViewButton cvUploadId={cvUploadId} />
+      {candidateId ? (
+        <Link href={`/dashboard/candidates/${candidateId}`} className="hover:underline hover:text-primary transition-colors">
+          {name}
+        </Link>
+      ) : name}
+      <CvViewButton cvUploadId={cvUploadId} candidateName={name} />
     </div>
     {doNotContact && (
       <span className="w-fit inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20" title="This candidate is blacklisted">
@@ -118,6 +137,7 @@ const CandidateNameDisplay = ({ name, cvUploadId, doNotContact }: { name: string
     )}
   </div>
 );
+
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
   const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
@@ -188,7 +208,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
           </div>
         </td>
         <td className="p-4"><span className="text-[#0A66C2] font-medium">{match.sourceLevel1 || 'Database'}</span></td>
-        <td className="p-4"><ScoreRing score={match.overallScore} /></td>
+        <td className="p-4"><ScoreRing score={match.overallScore} reason={match.reason} /></td>
         <td className="p-4 text-[13px]">
           <div className="font-medium text-text-primary truncate max-w-[200px]" title={(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}>{(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}</div>
           <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
@@ -256,8 +276,9 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
   );
 };
 
-const CvViewButton = ({ cvUploadId }: { cvUploadId?: Id<"cvUploads"> | null }) => {
+const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUploads"> | null, candidateName?: string }) => {
   const cvUpload = useQuery(api.candidates.candidates.getCvUploadUrl, cvUploadId ? { cvUploadId } : "skip");
+  const [isOpen, setIsOpen] = useState(false);
   
   if (!cvUploadId) return (
     <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface/50 text-text-disabled text-[11px] font-medium" title="No CV attached">
@@ -281,19 +302,66 @@ const CvViewButton = ({ cvUploadId }: { cvUploadId?: Id<"cvUploads"> | null }) =
   );
   
   return (
-    <a 
-      href={cvUpload.url} 
-      target="_blank" 
-      rel="noreferrer" 
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface hover:bg-surface-container transition-colors text-[11px] font-medium text-text-secondary hover:text-text-primary whitespace-nowrap"
-      title="View CV (Opens in new tab)"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <FileText className="w-3 h-3" />
-      View CV
-    </a>
+    <>
+      <button
+        onClick={(e) => { e.stopPropagation(); setIsOpen(true); }}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface hover:bg-surface-container transition-colors text-[11px] font-medium text-text-secondary hover:text-text-primary whitespace-nowrap"
+        title="View CV"
+      >
+        <FileText className="w-3 h-3" />
+        View CV
+      </button>
+
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            className="relative flex flex-col bg-surface rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] overflow-hidden border border-border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-surface-bright shrink-0">
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-4 h-4 text-primary" />
+                <span className="text-[14px] font-semibold text-text-primary">
+                  {candidateName ? `${candidateName}'s CV` : 'Candidate CV'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={cvUpload.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-primary transition-colors px-3 py-1.5 rounded-[6px] border border-border hover:bg-surface-container"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ↗ Open in new tab
+                </a>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-surface-container transition-colors text-text-secondary hover:text-text-primary"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            {/* CV iframe */}
+            <div className="flex-1 overflow-hidden">
+              <iframe
+                src={`${cvUpload.url}#toolbar=1&view=FitH`}
+                className="w-full h-full border-0"
+                title="CV Preview"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
+
 
 const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, renderKanbanDropdown: any }) => {
   const { user } = useUser();
@@ -376,7 +444,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
     <tr className="hover:bg-surface-bright transition-colors group border-b border-border">
       <td className="p-4 font-medium align-top">
         <div className="flex flex-col gap-1">
-          <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+          <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
           <span className="text-[11px] text-text-secondary font-normal">
             Match: {item.score} • Database Candidate
           </span>
@@ -1109,6 +1177,7 @@ export default function JobDetailPage() {
     }
   };
 
+  const [sortOrder, setSortOrder] = useState<'score' | 'time'>('score');
   const [copiedLink, setCopiedLink] = useState(false);
   const copyPublicLink = () => {
     alert("Public apply URL feature not enabled yet.");
@@ -1133,6 +1202,17 @@ export default function JobDetailPage() {
     if (activeSourceFilter === 'LinkedIn') return app.sourceChannel === 'linkedin';
     if (activeSourceFilter === 'WhatsApp') return app.sourceChannel === 'whatsapp';
     return true;
+  });
+  
+  newCvs.sort((a, b) => {
+    if (sortOrder === 'score') {
+      const scoreA = typeof a.aiMatchScore === 'number' ? a.aiMatchScore : -1;
+      const scoreB = typeof b.aiMatchScore === 'number' ? b.aiMatchScore : -1;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return b._creationTime - a._creationTime;
+    } else {
+      return b._creationTime - a._creationTime;
+    }
   });
   
   // Issue #10: Average across ALL applications with an AI match score, not just reverseMatchResults
@@ -1274,47 +1354,9 @@ export default function JobDetailPage() {
   );
 
   const renderNewCVsTable = () => (
-    <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col mb-0">
-            {/* Toolbar */}
-            <div className="p-4 border-b border-border flex justify-between items-center bg-surface">
-              <div className="flex gap-2 text-[13px]">
-                <button 
-                  onClick={() => setActiveSourceFilter('All Sources')}
-                  className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'All Sources' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
-                >
-                  <div className="w-2 h-2 rounded-full bg-primary-container"></div> All Sources
-                </button>
-                <button 
-                  onClick={() => setActiveSourceFilter('LinkedIn')}
-                  className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'LinkedIn' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
-                >
-                  <div className="w-2 h-2 rounded-full bg-[#0A66C2]"></div> LinkedIn
-                </button>
-                <button 
-                  onClick={() => setActiveSourceFilter('WhatsApp')}
-                  className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'WhatsApp' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
-                >
-                  <div className="w-2 h-2 rounded-full bg-[#25D366]"></div> WhatsApp
-                </button>
-              </div>
-              <div className="flex gap-3">
-                <button className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1">
-                  <ArrowUpDown className="w-4 h-4" /> Sort: Score
-                </button>
-                <button className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1">
-                  <Filter className="w-4 h-4" /> Filter
-                </button>
-                <button className="border border-primary-container text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary-container/10 transition-colors flex items-center gap-1">
-                  <Bot className="w-4 h-4" /> Bulk AI Call
-                </button>
-              </div>
-            </div>
-            
-            {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+    <table className="w-full text-left border-collapse">
+      <thead>
+        <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                     <th className="p-4 w-10"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></th>
                     <th className="p-4">Candidate</th>
                     <th className="p-4">Source</th>
@@ -1340,7 +1382,7 @@ export default function JobDetailPage() {
                           </div>
                         </td>
                         <td className="p-4"><span className="text-[#0A66C2] font-medium">{(app.candidate as any)?.source || 'LinkedIn'}</span></td>
-                        <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} /></td>
+                        <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} reason={(app as any).aiMatchExplanation} /></td>
                         <td className="p-4 text-[13px]">
                           <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || app.candidate?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || app.candidate?.currentJobTitle || 'Unknown Role'}</div>
                           <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
@@ -1364,9 +1406,7 @@ export default function JobDetailPage() {
                     ))
                   )}
                 </tbody>
-              </table>
-            </div>
-          </div>
+    </table>
   );
 
   const renderPipelineTable = () => {
@@ -1387,10 +1427,17 @@ export default function JobDetailPage() {
 
     const currentStageId = stageMap[activePipelineTab];
     const stageApps = applications.filter(app => {
+      let stageMatch = false;
       if (activePipelineTab === 'TA Shortlist') {
-        return app.currentStage === 'ta_shortlist' || app.currentStage === 'matched_candidates';
+        stageMatch = app.currentStage === 'ta_shortlist' || app.currentStage === 'matched_candidates';
+      } else {
+        stageMatch = app.currentStage === currentStageId;
       }
-      return app.currentStage === currentStageId;
+      if (!stageMatch) return false;
+      
+      if (activeSourceFilter === 'LinkedIn') return app.sourceChannel === 'linkedin';
+      if (activeSourceFilter === 'WhatsApp') return app.sourceChannel === 'whatsapp';
+      return true;
     });
     
 
@@ -1401,6 +1448,7 @@ export default function JobDetailPage() {
       name: app.candidate?.fullName || 'Unknown Candidate',
       doNotContact: app.candidate?.doNotContact,
       score: app.aiMatchScore || 'Pending',
+      scoreReason: (app as any).aiMatchExplanation || undefined,
       status: app.taShortlistStatus || 'Pending',
       currentSalary: app.candidate?.currentSalary ? '$' + app.candidate.currentSalary : '—',
       expectedSalary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
@@ -1431,6 +1479,17 @@ export default function JobDetailPage() {
       role: job.title,
       reason: app.taRejectionReason || 'Not a fit'
     }));
+    
+    itemsToRender.sort((a, b) => {
+      if (sortOrder === 'score') {
+        const scoreA = typeof a.score === 'number' ? a.score : -1;
+        const scoreB = typeof b.score === 'number' ? b.score : -1;
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        return a.timeInStageRaw - b.timeInStageRaw; // Fallback to newest time
+      } else {
+        return a.timeInStageRaw - b.timeInStageRaw; // Newest first (smallest timeInStageRaw)
+      }
+    });
 
     const totalItems = itemsToRender.length;
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -1482,9 +1541,9 @@ export default function JobDetailPage() {
                 return (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
-                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                     </td>
-                    <td className="p-4"><ScoreRing score={item.score} /></td>
+                    <td className="p-4"><ScoreRing score={item.score} reason={item.scoreReason} /></td>
                     <td className="p-4 text-right">
                       {renderKanbanDropdown(item.id, 'ta_shortlist')}
                     </td>
@@ -1568,7 +1627,7 @@ export default function JobDetailPage() {
                 return (
                   <tr key={item.id} className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
                     <td className="p-4 font-medium">
-                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                       {allComplete && (
                         <div className="mt-1 text-[10px] text-green-600 font-medium flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3" /> All complete — advancing to 2nd Shortlist
@@ -1815,7 +1874,7 @@ export default function JobDetailPage() {
                 ) : currentItems.map((item: any) => (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
-                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                     </td>
                     <td className="p-4">{item.currentSalary}</td>
                     <td className="p-4">{item.expectedSalary}</td>
@@ -1856,7 +1915,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                   </td>
                   <td className="p-4"><ScoreRing score={item.score} /></td>
                   <td className="p-4">✅ {item.salaryFit}</td>
@@ -1908,7 +1967,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                   </td>
                   <td className="p-4"><ScoreRing score={item.score} /></td>
                   <td className="p-4 text-right">
@@ -1957,7 +2016,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                   </td>
                   <td className="p-4">{item.date}</td>
                   <td className="p-4"><StatusDot status={item.feedback} /></td>
@@ -1988,7 +2047,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                   </td>
                   <td className="p-4 font-bold">{item.salary}</td>
                   <td className="p-4">{item.startDate}</td>
@@ -2026,7 +2085,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                   </td>
                   <td className="p-4">{item.role}</td>
                   <td className="p-4">{item.date}</td>
@@ -2055,7 +2114,7 @@ export default function JobDetailPage() {
               ) : currentItems.map((item: any) => (
                 <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                   <td className="p-4 font-medium">
-                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} />
+                    <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                   </td>
                   <td className="p-4 text-error">{item.reason}</td>
                   <td className="p-4 text-right">
@@ -2072,7 +2131,43 @@ export default function JobDetailPage() {
     }
 
     return (
-      <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col mb-0">
+        <div className="p-4 border-b border-border flex justify-between items-center bg-surface">
+          <div className="flex gap-2 text-[13px]">
+            <button 
+              onClick={() => setActiveSourceFilter('All Sources')}
+              className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'All Sources' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
+            >
+              <div className="w-2 h-2 rounded-full bg-primary-container"></div> All Sources
+            </button>
+            <button 
+              onClick={() => setActiveSourceFilter('LinkedIn')}
+              className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'LinkedIn' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
+            >
+              <div className="w-2 h-2 rounded-full bg-[#0A66C2]"></div> LinkedIn
+            </button>
+            <button 
+              onClick={() => setActiveSourceFilter('WhatsApp')}
+              className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'WhatsApp' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
+            >
+              <div className="w-2 h-2 rounded-full bg-[#25D366]"></div> WhatsApp
+            </button>
+          </div>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => setSortOrder(prev => prev === 'score' ? 'time' : 'score')}
+              className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1"
+            >
+              <ArrowUpDown className="w-4 h-4" /> Sort: {sortOrder === 'score' ? 'Score' : 'Time'}
+            </button>
+            <button className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1">
+              <Filter className="w-4 h-4" /> Filter
+            </button>
+            <button className="border border-primary-container text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary-container/10 transition-colors flex items-center gap-1">
+              <Bot className="w-4 h-4" /> Bulk AI Call
+            </button>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           {tableContent}
         </div>

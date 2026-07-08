@@ -37,6 +37,7 @@ export default function JobsPage() {
   const [activeDropdownJobId, setActiveDropdownJobId] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<any>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Job | '', direction: 'asc' | 'desc' }>({ key: '', direction: 'asc' });
   const router = useRouter();
   
   const dbJobs = useQuery(api.jobs.jobs.list);
@@ -140,6 +141,49 @@ export default function JobsPage() {
 
   const tabs = ['All Jobs', 'Active', 'On Hold', 'Fins', 'Lost'];
 
+  const handleSort = (key: keyof Job) => {
+    setSortConfig(current => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const sortedJobs = [...filteredJobs].sort((a, b) => {
+    if (!sortConfig.key) return 0;
+    
+    let aVal: any = a[sortConfig.key];
+    let bVal: any = b[sortConfig.key];
+    
+    if (sortConfig.key === 'stage') {
+        aVal = a.stage.label;
+        bVal = b.stage.label;
+    } else if (sortConfig.key === 'sources') {
+        aVal = a.sources.length;
+        bVal = b.sources.length;
+    } else if (sortConfig.key === 'statusBadge') {
+        aVal = a.statusBadge.label;
+        bVal = b.statusBadge.label;
+    }
+    
+    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const SortableHeader = ({ label, sortKey }: { label: string, sortKey: keyof Job }) => (
+    <th 
+      className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider cursor-pointer hover:bg-surface-container-high transition-colors select-none"
+      onClick={() => handleSort(sortKey)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        {sortConfig.key === sortKey && (
+          <span className="text-[12px] leading-none font-bold text-primary-container">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+        )}
+      </div>
+    </th>
+  );
+
   return (
     <div className="p-8 w-full space-y-[24px]">
       {/* Page Header */}
@@ -235,14 +279,14 @@ export default function JobsPage() {
               <thead>
                 <tr className="text-text-secondary border-b border-border bg-surface-container-lowest">
                   <th className="px-5 py-3 w-12"><input checked={selectedJobs.length === filteredJobs.length && filteredJobs.length > 0} onChange={handleSelectAll} className="rounded border-border text-primary-container focus:ring-[#1B5E20] w-4 h-4 cursor-pointer mt-0.5" type="checkbox" /></th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Job Title</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Client</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Location</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Sources Active</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">New CVs</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Stage</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">TA Assigned</th>
-                  <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider">Status</th>
+                  <SortableHeader label="Job Title" sortKey="title" />
+                  <SortableHeader label="Client" sortKey="client" />
+                  <SortableHeader label="Location" sortKey="location" />
+                  <SortableHeader label="Sources Active" sortKey="sources" />
+                  <SortableHeader label="New CVs" sortKey="newCvs" />
+                  <SortableHeader label="Stage" sortKey="stage" />
+                  <SortableHeader label="TA Assigned" sortKey="taAssigned" />
+                  <SortableHeader label="Status" sortKey="statusBadge" />
                   <th className="font-medium px-5 py-3 uppercase text-[11px] tracking-wider text-center">Actions</th>
                 </tr>
               </thead>
@@ -254,7 +298,7 @@ export default function JobsPage() {
                     </td>
                   </tr>
                 ) : null}
-                {filteredJobs.map((job) => (
+                {sortedJobs.map((job) => (
                   <tr key={job.id} className="hover:bg-[#F1F8E9] transition-colors group">
                     <td className="px-5 py-3"><input checked={selectedJobs.includes(job.id)} onChange={() => handleSelectJob(job.id)} className="rounded border-border text-primary-container focus:ring-[#1B5E20] w-4 h-4 cursor-pointer mt-0.5" type="checkbox" /></td>
                     <td className="px-5 py-3 font-medium text-text-primary whitespace-nowrap">
@@ -372,12 +416,12 @@ export default function JobsPage() {
         ) : (
           /* Grid View Container */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 min-h-[400px] items-start">
-            {filteredJobs.length === 0 ? (
+            {sortedJobs.length === 0 ? (
               <div className="col-span-full py-12 text-center text-text-secondary bg-surface rounded-xl border border-border">
                 No jobs found in this category.
               </div>
             ) : null}
-            {filteredJobs.map((job) => (
+            {sortedJobs.map((job) => (
               <div 
                 key={job.id} 
                 onClick={() => router.push(`/dashboard/jobs/${job.id}`)}

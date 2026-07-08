@@ -43,22 +43,38 @@ export async function logLLMUsage(
 }
 
 export async function generateNvidiaEmbedding(text: string): Promise<number[] | undefined> {
-  try {
-    const openai = getOpenAI("cv_structuring");
-    const trimmed = text.trim();
-    if (!trimmed) return undefined;
-    
-    // Safety truncate to avoid token limits (bge-m3 has an 8192 token limit)
-    const safeText = trimmed.slice(0, 25000);
-    
-    const response = await openai.embeddings.create({
-      input: [safeText],
-      model: "baai/bge-m3",
-    });
-    
-    return response.data[0]?.embedding;
-  } catch (error) {
-    console.error("Embedding generation error:", error);
-    return undefined;
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+
+  // Safety truncate to avoid token limits (bge-m3 has an 8192 token limit)
+  const safeText = trimmed.slice(0, 25000);
+
+  const maxRetries = 3;
+  let lastError: any;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const openai = getOpenAI("cv_structuring");
+      const response = await openai.embeddings.create({
+        input: [safeText],
+        model: "baai/bge-m3",
+      });
+      return response.data[0]?.embedding;
+    } catch (error: any) {
+      lastError = error;
+      const status = error?.status ?? 0;
+      // Only retry on transient server errors (5xx)
+      if (status >= 500 && attempt < maxRetries) {
+        const waitMs = Math.pow(2, attempt) * 1000; // 2s, 4s
+        console.warn(`[Embedding] NVIDIA API error (attempt ${attempt}/${maxRetries}), retrying in ${waitMs}ms...`, error?.message);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      } else {
+        break;
+      }
+    }
   }
+
+  console.error("Embedding generation error:", lastError);
+  return undefined;
 }
+

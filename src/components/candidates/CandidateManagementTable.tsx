@@ -2,7 +2,7 @@ import React from 'react';
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { format } from "date-fns";
-import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -55,27 +55,42 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
 
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = React.useState(1);
+  const [nameSearch, setNameSearch] = React.useState('');
 
   const { results, status, loadMore } = usePaginatedQuery(
     api.candidates.candidates.listCandidatesPaginated,
     {},
-    { initialNumItems: itemsPerPage }
+    { initialNumItems: 100 }
   );
+
+  // Filter candidates by name/email search
+  const filteredResults = React.useMemo(() => {
+    if (!nameSearch.trim()) return results;
+    const q = nameSearch.toLowerCase();
+    return results.filter(c =>
+      c.fullName?.toLowerCase().includes(q) ||
+      c.email?.toLowerCase().includes(q) ||
+      (c as any).phone?.toLowerCase().includes(q)
+    );
+  }, [results, nameSearch]);
+
+  // Reset to page 1 when search changes
+  React.useEffect(() => { setCurrentPage(1); }, [nameSearch]);
 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentItems = results.slice(startIndex, endIndex);
+  const currentItems = filteredResults.slice(startIndex, endIndex);
   
-  const totalPages = Math.ceil(results.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
   const hasMoreLocalPages = currentPage < totalPages;
-  const canGoNext = hasMoreLocalPages || status === "CanLoadMore";
+  const canGoNext = hasMoreLocalPages || (!nameSearch && status === "CanLoadMore");
   const canGoPrev = currentPage > 1;
 
   const handleNext = () => {
     if (hasMoreLocalPages) {
       setCurrentPage((p) => p + 1);
-    } else if (status === "CanLoadMore") {
-      loadMore(itemsPerPage);
+    } else if (!nameSearch && status === "CanLoadMore") {
+      loadMore(100);
       setCurrentPage((p) => p + 1);
     }
   };
@@ -88,6 +103,32 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
 
   return (
     <div className="flex flex-col flex-1 w-full px-6 pb-6">
+      {/* Search Bar */}
+      <div className="mb-4">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search by name, email or phone..."
+            value={nameSearch}
+            onChange={e => setNameSearch(e.target.value)}
+            className="w-full pl-9 pr-9 py-2 text-[13px] border border-border rounded-[8px] bg-surface focus:outline-none focus:border-primary-container transition-colors"
+          />
+          {nameSearch && (
+            <button
+              onClick={() => setNameSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {nameSearch && (
+          <p className="text-[12px] text-text-secondary mt-1.5">
+            {filteredResults.length} result{filteredResults.length !== 1 ? 's' : ''} for &ldquo;{nameSearch}&rdquo;
+          </p>
+        )}
+      </div>
       <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">

@@ -208,12 +208,28 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       }
 
       if (!resolvedJobId) {
-        console.warn(`[WhatChimp Webhook] Incoming resume from +${cleanFrom} could not be matched to an active job keyword or session. Ingesting to general pool.`);
+        // No active session — candidate did not send a keyword first. Reject and instruct them.
+        console.warn(`[WhatChimp Webhook] No active session for +${cleanFrom}. CV rejected — keyword required first.`);
+        const apiToken = process.env.WHATCHIMP_API_TOKEN;
+        const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+        if (apiToken && phoneNumberId) {
+          const params = new URLSearchParams();
+          params.append("apiToken", apiToken);
+          params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
+          params.append("phone_number", cleanFrom);
+          params.append("message", "To apply for a position, please first send the job keyword (e.g. BRAND24) and then upload your CV.");
+          await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: params,
+          }).then(r => r.text()).catch(console.error);
+        }
+        return new Response("OK", { status: 200 });
       }
 
-      // 5. Ingest into central pipeline
+      // 5. Ingest into central pipeline (only reached when a valid session/job exists)
       const ingestionResult = await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-        jobId: resolvedJobId || undefined,
+        jobId: resolvedJobId,
         sourceChannel: "whatsapp",
         rawSender: cleanFrom,
         storageId,
@@ -222,7 +238,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         fileType: mimeType || "application/pdf",
         fileSizeBytes,
       });
-      console.log(`[WhatChimp Webhook] Ingested CV for candidate +${cleanFrom} (jobId: ${resolvedJobId || "unassigned"}). Result:`, ingestionResult);
+      console.log(`[WhatChimp Webhook] Ingested CV for candidate +${cleanFrom} (jobId: ${resolvedJobId}). Result:`, ingestionResult);
 
       // 6. Send acknowledgment back to candidate
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
