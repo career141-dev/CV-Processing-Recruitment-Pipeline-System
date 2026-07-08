@@ -384,7 +384,9 @@ export const checkAndRecordEmailReply = internalMutation({
       textBody: args.body,
     });
 
-    const isFollowUp = activeApp?.currentStage === "follow_up";
+    const isFollowUp =
+      activeApp?.currentStage === "follow_up" ||
+      (activeApp?.currentStage === "rejected" && activeApp?.taRejectionReason === "Did not complete requirements within 7-day window");
 
     return {
       isCandidateMatched: true,
