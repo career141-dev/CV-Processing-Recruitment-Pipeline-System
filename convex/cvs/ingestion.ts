@@ -69,15 +69,27 @@ export const insertCvRecord = internalMutation({
     let jobId = null;
     let sourceLevel2 = "Common Number";
     
-    const channel = await ctx.db
-      .query("jobChannels")
-      .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", args.toNumber))
-      .filter((q) => q.eq(q.field("isEnabled"), true))
+    // Check if there is an active session for the candidate phone
+    const session = await ctx.db
+      .query("whatsappSessions")
+      .withIndex("by_phone", (q) => q.eq("phone", args.originalSenderPhone))
       .first();
 
-    if (channel) {
-      jobId = channel.jobId;
-      sourceLevel2 = `Campaign — WhatsApp`;
+    if (session) {
+      jobId = session.jobId;
+      sourceLevel2 = `Campaign — WhatsApp (${session.keyword})`;
+      await ctx.db.delete(session._id);
+    } else {
+      const channel = await ctx.db
+        .query("jobChannels")
+        .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", args.toNumber))
+        .filter((q) => q.eq(q.field("isEnabled"), true))
+        .first();
+
+      if (channel) {
+        jobId = channel.jobId;
+        sourceLevel2 = `Campaign — WhatsApp`;
+      }
     }
 
     const taUser = await ctx.db

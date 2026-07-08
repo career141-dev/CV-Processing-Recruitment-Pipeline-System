@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
+import { EditJobModal } from '@/components/jobs/EditJobModal';
 
 type Source = { id: string, label: string, bgClass: string, textClass: string };
 
@@ -34,6 +35,8 @@ export default function JobsPage() {
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [activeDropdownJobId, setActiveDropdownJobId] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<any>(null);
   const router = useRouter();
   
   const dbJobs = useQuery(api.jobs.jobs.list);
@@ -290,7 +293,11 @@ export default function JobsPage() {
                         >
                           <button
                             onClick={() => {
-                              alert("Edit Job feature coming soon!");
+                              const found = dbJobs?.find((j: any) => j._id === job.id);
+                              if (found) {
+                                setEditingJob(found);
+                                setIsEditModalOpen(true);
+                              }
                               setActiveDropdownJobId(null);
                             }}
                             className="w-full text-left px-4 py-2 text-xs hover:bg-surface-container-high transition-colors text-text-primary flex items-center gap-2"
@@ -366,7 +373,11 @@ export default function JobsPage() {
                     >
                       <button
                         onClick={() => {
-                          alert("Edit Job feature coming soon!");
+                          const found = dbJobs?.find((j: any) => j._id === job.id);
+                          if (found) {
+                            setEditingJob(found);
+                            setIsEditModalOpen(true);
+                          }
                           setActiveDropdownJobId(null);
                         }}
                         className="w-full text-left px-4 py-2 text-xs hover:bg-surface-container-high transition-colors text-text-primary flex items-center gap-2"
@@ -443,6 +454,15 @@ export default function JobsPage() {
             <button className={`px-3 py-1 rounded transition-colors text-[13px] font-medium ${filteredJobs.length > 8 ? 'text-text-primary hover:bg-surface-container' : 'text-text-disabled cursor-not-allowed'}`}>Next</button>
           </div>
         </div>
+        
+        <EditJobModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingJob(null);
+          }}
+          job={editingJob}
+        />
       </div>
     </div>
   );

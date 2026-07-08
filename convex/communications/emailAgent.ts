@@ -201,17 +201,23 @@ export const pollEmailInbox = action({
       // Intelligent Email Routing via LLM
       let resolvedJobId = jobId;
       
-      // Fetch active jobs for LLM to evaluate
-      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
-      
-      if (activeJobs.length > 0) {
-        try {
-          const openai = getOpenAI("email_routing");
-          const model = getModelForTask("email_routing");
-          
-          const jobsListContext = activeJobs.map(j => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\\n");
-          
-          const prompt = `You are an intelligent recruitment email router.
+      const isCommonInbox = targetInboxEmail.toLowerCase() === "cv@career141.com";
+
+      if (isCommonInbox) {
+        console.log("[EmailAgent] Processing common inbox cv@career141.com. Bypassing job matching.");
+        resolvedJobId = undefined;
+      } else {
+        // Fetch active jobs for LLM to evaluate
+        const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+        
+        if (!resolvedJobId && activeJobs.length > 0) {
+          try {
+            const openai = getOpenAI("email_routing");
+            const model = getModelForTask("email_routing");
+            
+            const jobsListContext = activeJobs.map(j => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\n");
+            
+            const prompt = `You are an intelligent recruitment email router.
 Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
 
 ACTIVE JOBS:
@@ -225,42 +231,45 @@ Respond ONLY with a valid JSON object in this exact format:
   "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined"
 }`;
 
-          const completion = await openai.chat.completions.create({
-            model: model,
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
-            temperature: 0.1,
-          });
-          
-          const resultStr = completion.choices[0]?.message?.content;
-          if (resultStr) {
-            const resultObj = JSON.parse(resultStr);
-            if (resultObj.matchedJobId) {
-              const isValid = activeJobs.some(j => j._id === resultObj.matchedJobId);
-              if (isValid) {
-                resolvedJobId = resultObj.matchedJobId;
-                console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
+            const completion = await openai.chat.completions.create({
+              model: model,
+              messages: [{ role: "user", content: prompt }],
+              response_format: { type: "json_object" },
+              temperature: 0.1,
+            });
+            
+            const resultStr = completion.choices[0]?.message?.content;
+            if (resultStr) {
+              const resultObj = JSON.parse(resultStr);
+              if (resultObj.matchedJobId) {
+                // Verify the ID actually exists in our active jobs
+                const isValid = activeJobs.some(j => j._id === resultObj.matchedJobId);
+                if (isValid) {
+                  resolvedJobId = resultObj.matchedJobId;
+                  console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
+                }
               }
             }
+          } catch (error) {
+            console.error("[EmailAgent] LLM routing failed", error);
           }
-        } catch (error) {
-          console.error("[EmailAgent] LLM routing failed", error);
+        }
+        
+        // If we couldn't resolve a job ID via LLM and no jobId was provided to the cron, use the first active job as fallback
+        if (!resolvedJobId && activeJobs.length > 0) {
+          resolvedJobId = activeJobs[0]._id;
+          console.log(`[EmailAgent] No jobId found, falling back to first active job: ${resolvedJobId}`);
+        }
+
+        if (!resolvedJobId) {
+          console.error("[EmailAgent] Could not determine a jobId for the email and no active jobs exist to use as fallback.");
+          continue;
         }
       }
-      
-      if (!resolvedJobId && activeJobs.length > 0) {
-        resolvedJobId = activeJobs[0]._id;
-        console.log(`[EmailAgent] No jobId found, falling back to first active job: ${resolvedJobId}`);
-      }
 
-      if (!resolvedJobId) {
-        console.error("[EmailAgent] Could not determine a jobId for the email and no active jobs exist to use as fallback.");
-        continue;
-      }
-
-      // Process CV ingestion
+      // Process CV Ingestion
       await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-        jobId: resolvedJobId,
+        jobId: resolvedJobId || undefined,
         sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "sanjeev@career141.com") ? "linkedin" : "email_campaign",
         rawSender: message.from?.emailAddress?.address,
         storageId: storageId,
@@ -281,7 +290,11 @@ Respond ONLY with a valid JSON object in this exact format:
       // Mark as read & reply
       await markEmailAsRead(targetInboxEmail, message.id);
       if (!isReplyProcessed) {
-        await sendConfirmationEmail(message.from?.emailAddress?.address, resolvedJobId);
+        if (resolvedJobId) {
+          await sendConfirmationEmail(message.from?.emailAddress?.address, resolvedJobId);
+        } else {
+          console.log(`[Email Mock] Sent generic confirmation email to ${message.from?.emailAddress?.address} for general application pool.`);
+        }
       }
     }
   },

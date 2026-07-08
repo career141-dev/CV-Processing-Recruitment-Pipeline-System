@@ -230,34 +230,70 @@ export const runReverseMatch = action({
         enrichedCandidates.push({ candidate, vectorScore: score });
       }
 
+      const { scoreCandidateAgainstRequirements } = await import("../cvs/cvScoring.js");
+
+      const req = {
+        title: job.title,
+        summary: job.jobDescription,
+        requiredSkills: job.requiredSkills,
+        preferredSkills: job.niceToHaveSkills ?? [],
+        industry: job.clientIndustry,
+        location: job.location,
+        minYearsExperience: job.experienceMinYears,
+        seniority: job.seniorityLevel,
+        alternativeTitles: [],
+      };
+
       const matchResults = enrichedCandidates
         .map(c => {
           const cv = c.candidate;
-          // Stretch similarity (usually 0.20 - 0.55) to 0 - 100 range
-          const sim = c.vectorScore;
-          let matchScore = 0;
-          if (sim > 0.20) {
-            matchScore = Math.min(Math.round(((sim - 0.20) / 0.35) * 100), 100);
-          }
+          
+          const cvPayload = {
+            _id: cv._id,
+            fullName: cv.fullName,
+            currentTitle: cv.currentTitle,
+            currentEmployer: cv.currentEmployer,
+            industries: cv.industries,
+            seniorityLevel: cv.seniorityLevel,
+            yearsOfExperience: cv.yearsOfExperience || cv.totalExperienceYears,
+            location: cv.location,
+            skills: cv.skills,
+            rawText: cv.rawText,
+            summary: cv.summary,
+          };
+
+          const scored = scoreCandidateAgainstRequirements(cvPayload as any, req as any, 0);
+
+          const matchScore = Math.round(
+            (scored.titleScore * ((job.scoreWeightJobTitle ?? 20) / 100)) +
+            (scored.skillScore * ((job.scoreWeightSkills ?? 35) / 100)) +
+            (scored.experienceScore * ((job.scoreWeightExperience ?? 25) / 100)) +
+            (scored.industryScore * ((job.scoreWeightIndustry ?? 15) / 100)) +
+            (scored.locationScore * ((job.scoreWeightLocation ?? 5) / 100))
+          );
 
           return {
             cvId: cv._id,
             overallScore: matchScore,
             breakdown: {
-              skills: matchScore, 
-              experience: matchScore,
-              seniority: matchScore,
-              industry: matchScore,
-              location: matchScore,
+              skills: scored.skillScore, 
+              experience: scored.experienceScore,
+              seniority: scored.seniorityScore,
+              industry: scored.industryScore,
+              location: scored.locationScore,
             },
-            matchedSkills: [] as string[],
-            missingSkills: [] as string[],
+            matchedSkills: scored.matchedRequired,
+            missingSkills: scored.missingRequired,
             reason: `AI Match score: ${matchScore}% (vector similarity: ${(c.vectorScore * 100).toFixed(1)}%)`,
             sourceLevel1: cv.firstSourceChannel ?? undefined,
             sourceLevel2: cv.firstSourceJobId ?? undefined,
           };
         })
-        .filter(r => r.overallScore >= minScore)
+        .filter(r => {
+          // STRICT FILTER: Enforce required skills match (0 missing required skills)
+          const hasMissingRequired = r.missingSkills && r.missingSkills.length > 0;
+          return !hasMissingRequired && r.overallScore >= minScore;
+        })
         .sort((a, b) => b.overallScore - a.overallScore)
         .slice(0, 30); // Store top 30
 

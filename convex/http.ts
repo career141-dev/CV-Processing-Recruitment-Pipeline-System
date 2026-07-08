@@ -8,7 +8,8 @@ import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 
 const http = httpRouter();
 
-// Meta Webhook Verification
+// Meta Webhook Verification (Modified to trigger deploy)
+// Verification handler
 http.route({
   path: "/api/whatsapp",
   method: "GET",
