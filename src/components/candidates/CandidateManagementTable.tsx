@@ -1,5 +1,5 @@
 import React from 'react';
-import { usePaginatedQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Trash2, Search, X } from 'lucide-react';
@@ -57,22 +57,18 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
   const [currentPage, setCurrentPage] = React.useState(1);
   const [nameSearch, setNameSearch] = React.useState('');
 
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.candidates.candidates.listCandidatesPaginated,
-    {},
-    { initialNumItems: 100 }
-  );
+  const rawResults = useQuery(api.candidates.candidates.listCandidates) || [];
 
   // Filter candidates by name/email search
   const filteredResults = React.useMemo(() => {
-    if (!nameSearch.trim()) return results;
+    if (!nameSearch.trim()) return rawResults;
     const q = nameSearch.toLowerCase();
-    return results.filter(c =>
+    return rawResults.filter(c =>
       c.fullName?.toLowerCase().includes(q) ||
       c.email?.toLowerCase().includes(q) ||
       (c as any).phone?.toLowerCase().includes(q)
     );
-  }, [results, nameSearch]);
+  }, [rawResults, nameSearch]);
 
   // Reset to page 1 when search changes
   React.useEffect(() => { setCurrentPage(1); }, [nameSearch]);
@@ -82,15 +78,11 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
   const currentItems = filteredResults.slice(startIndex, endIndex);
   
   const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
-  const hasMoreLocalPages = currentPage < totalPages;
-  const canGoNext = hasMoreLocalPages || (!nameSearch && status === "CanLoadMore");
+  const canGoNext = currentPage < totalPages;
   const canGoPrev = currentPage > 1;
 
   const handleNext = () => {
-    if (hasMoreLocalPages) {
-      setCurrentPage((p) => p + 1);
-    } else if (!nameSearch && status === "CanLoadMore") {
-      loadMore(100);
+    if (canGoNext) {
       setCurrentPage((p) => p + 1);
     }
   };
@@ -145,14 +137,7 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-[13px] text-text-primary">
-              {currentItems.length === 0 && status === "Exhausted" ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-10 text-center text-text-disabled">
-                    No candidates found.
-                  </td>
-                </tr>
-              ) : (
-                currentItems.map((candidate) => (
+              {currentItems.map((candidate) => (
                   <tr key={candidate._id} className="hover:bg-surface-bright transition-colors group">
                     <td className="px-6 py-4 font-medium">
                       <div className="flex items-center gap-3">
@@ -225,23 +210,27 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-              {status === "LoadingMore" && (
+                ))}
+              {currentItems.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-text-disabled text-sm">
-                    Loading...
+                  <td colSpan={8} className="px-6 py-10 text-center">
+                    <div className="flex flex-col items-center justify-center">
+                      <Search className="w-10 h-10 text-gray-300 mb-3" />
+                      <p className="text-gray-500 font-medium">No candidates found.</p>
+                      {nameSearch && (
+                        <p className="text-sm text-gray-400 mt-1">Try adjusting your search terms.</p>
+                      )}
+                    </div>
                   </td>
                 </tr>
-              )}
-            </tbody>
+              )}</tbody>
           </table>
         </div>
         
         {/* Pagination Controls */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-surface-bright">
           <div className="text-[13px] text-text-secondary">
-            Showing <span className="font-medium text-text-primary">{Math.min(startIndex + 1, results.length)}</span> to <span className="font-medium text-text-primary">{Math.min(endIndex, results.length)}</span> candidates
+            Showing <span className="font-medium text-text-primary">{Math.min(startIndex + 1, filteredResults.length)}</span> to <span className="font-medium text-text-primary">{Math.min(endIndex, filteredResults.length)}</span> candidates
           </div>
           <div className="flex gap-2">
             <button

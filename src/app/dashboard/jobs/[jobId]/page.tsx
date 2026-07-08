@@ -64,6 +64,8 @@ const TABS = [
 ];
 
 const ScoreRing = ({ score, reason }: { score: number | string, reason?: string }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (score === 'Pending' || score === null || score === undefined) {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-text-disabled bg-surface-container px-2 py-1 rounded-full">
@@ -86,8 +88,18 @@ const ScoreRing = ({ score, reason }: { score: number | string, reason?: string 
         <span className={`absolute text-[10px] font-bold ${colorClass}`}>{numScore}</span>
       </div>
       {reason && (
-        <div className="text-[11.5px] text-green-700 bg-green-50/70 border border-green-100/50 px-2.5 py-1.5 rounded-lg leading-relaxed max-w-[200px]" title={reason}>
-          {reason}
+        <div className="text-[11.5px] text-green-700 bg-green-50/70 border border-green-100/50 px-2.5 py-1.5 rounded-lg leading-relaxed max-w-[200px] flex flex-col items-start gap-1">
+          <div className={isExpanded ? "" : "line-clamp-2"}>
+            {reason}
+          </div>
+          {reason.length > 50 && (
+            <button 
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-[10px] text-green-800 font-bold hover:underline self-start mt-0.5 shrink-0"
+            >
+              {isExpanded ? "See Less" : "See More"}
+            </button>
+          )}
         </div>
       )}
     </div>
