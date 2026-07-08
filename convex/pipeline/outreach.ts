@@ -158,6 +158,8 @@ export const sendMessage = mutation({
     setupFollowUps: v.boolean(),
   },
   handler: async (ctx, args) => {
+    const isEmail = args.channel === "email";
+
     const commId = await ctx.db.insert("communications", {
       candidateId: args.candidateId,
       jobId: args.jobId,
@@ -165,11 +167,34 @@ export const sendMessage = mutation({
       channel: args.channel,
       subject: args.subject,
       body: args.body,
-      deliveryStatus: "sent",
+      deliveryStatus: isEmail ? "pending" : "sent",
       sentAt: Date.now(),
       stoppedSequence: !args.setupFollowUps,
       senderAgent: "system", // Or Agent3
     });
+
+    // Schedule actual Graph email delivery
+    if (isEmail && args.jobId) {
+      const candidate = await ctx.db.get(args.candidateId);
+      const job = await ctx.db.get(args.jobId);
+      const recruiter = job ? await ctx.db.get(job.primaryRecruiterId) : null;
+
+      const taEmail = recruiter?.email;
+      const toAddress = candidate?.email;
+
+      if (taEmail && toAddress) {
+        const htmlBody = args.body.replace(/\n/g, "<br>");
+        await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
+          communicationId: commId,
+          candidateJobId: commId as string, // Use commId as tracking reference
+          taEmail,
+          toAddress,
+          subject: args.subject ?? "Career141 Communication",
+          bodyHtml: htmlBody,
+        });
+      }
+    }
+
     return commId;
   }
 });
@@ -273,6 +298,100 @@ export const triggerWhatsAppFollowUp = mutation({
     return { success: true, communicationId: commId };
   },
 });
+
+// Trigger manual follow-up Email message
+export const triggerEmailFollowUp = mutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) throw new Error("Application not found");
+
+    const candidate = await ctx.db.get(app.candidateId);
+    if (!candidate) throw new Error("Candidate not found");
+
+    const job = await ctx.db.get(app.jobId);
+    if (!job) throw new Error("Job not found");
+
+    // Derive complete/missing status
+    const hasCV =
+      app.followUpCvReceived === true ||
+      (app.followUpCvReceived === undefined && (!!candidate.cvUploadId || !!app.cvFileId));
+
+    const hasCurrentSalary =
+      app.followUpCurrentSalary === true ||
+      (app.followUpCurrentSalary === undefined && candidate.currentSalary !== undefined);
+
+    const hasExpectedSalary =
+      app.followUpExpectedSalary === true ||
+      (app.followUpExpectedSalary === undefined && candidate.expectedSalary !== undefined);
+
+    const hasNoticePeriod =
+      app.followUpNoticePeriod === true ||
+      (app.followUpNoticePeriod === undefined && candidate.noticePeriodDays !== undefined);
+
+    const missingFields: string[] = [];
+    if (!hasCV) missingFields.push("CV / Resume");
+    if (!hasCurrentSalary) missingFields.push("Current Salary");
+    if (!hasExpectedSalary) missingFields.push("Expected Salary");
+    if (!hasNoticePeriod) missingFields.push("Notice Period");
+
+    const body = [
+      `Hi ${candidate.fullName || "there"},`,
+      `We're still waiting on the following to progress your application for **${job.title}**:`,
+      missingFields.map(f => `• ${f}`).join("\n"),
+      `Please share these at your earliest convenience. Thank you!`,
+    ].join("\n\n");
+
+    const now = Date.now();
+
+    // Create Email communication record (pending — will be sent via Graph)
+    const emailCommId = await ctx.db.insert("communications", {
+      candidateId: app.candidateId,
+      jobId: app.jobId,
+      applicationId: app._id,
+      direction: "outbound",
+      channel: "email",
+      subject: `Action Required: Missing info for your ${job.title} application`,
+      body,
+      deliveryStatus: "pending",
+      sentAt: now,
+      stoppedSequence: false,
+      sequenceDay: 0,
+    });
+
+    // Schedule the actual Email delivery via Microsoft Graph
+    const recruiter = await ctx.db.get(job.primaryRecruiterId);
+    const taEmail = recruiter?.email;
+    const candidateEmail = candidate.email;
+
+    if (taEmail && candidateEmail) {
+      const htmlBody = body.replace(/\n/g, "<br>");
+      await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
+        communicationId: emailCommId,
+        candidateJobId: app._id as string,
+        taEmail,
+        toAddress: candidateEmail,
+        subject: `Action Required: Missing info for your ${job.title} application`,
+        bodyHtml: htmlBody,
+      });
+    } else {
+      console.warn(
+        `[Manual Follow-up Outreach] Skipped email: taEmail=${taEmail ?? "missing"}, candidateEmail=${candidateEmail ?? "missing"}`
+      );
+      await ctx.db.patch(emailCommId, {
+        deliveryStatus: "failed",
+        errorMessage: !taEmail
+          ? "Recruiter has no email configured"
+          : "Candidate has no email address",
+      });
+    }
+
+    return { success: true, communicationId: emailCommId };
+  },
+});
+
 
 // Trigger bulk manual follow-up outreach for multiple applications
 export const triggerBulkFollowUp = mutation({

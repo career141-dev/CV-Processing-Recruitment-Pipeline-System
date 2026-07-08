@@ -329,6 +329,11 @@ crons.hourly(
   internal.crons.evaluateFollowUpStage
 );
 
+crons.daily(
+  "renew-graph-subscriptions",
+  { hourUTC: 3, minuteUTC: 0 }, // Runs daily at 03:00 UTC
+  internal.communications.graphSubscriptions.renewExpiringSubscriptions
+);
 
 // Poll Sanjeev's inbox every 5 minutes
 // Replace "fallback_job_id_here" with a real default Job ID if you want a catch-all.

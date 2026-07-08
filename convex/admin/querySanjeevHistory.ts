@@ -9,7 +9,6 @@ export default query({
     return { 
       jobHistory: candidate?.jobHistory,
       totalExperienceYears: candidate?.totalExperienceYears,
-      experience: candidate?.totalExperienceYears,
       id: candidate?._id
     };
   }

@@ -177,8 +177,8 @@ export async function initiateFollowUpOutreach(
     sequenceDay: 0,
   });
 
-  // Create Email communication record
-  await ctx.db.insert("communications", {
+  // Create Email communication record (pending — will be sent via Graph)
+  const emailCommId = await ctx.db.insert("communications", {
     candidateId: app.candidateId,
     jobId: app.jobId,
     applicationId: app._id,
@@ -186,7 +186,7 @@ export async function initiateFollowUpOutreach(
     channel: "email",
     subject: `Action Required: Missing info for your ${job.title} application`,
     body,
-    deliveryStatus: "sent",
+    deliveryStatus: "pending",
     sentAt: now,
     stoppedSequence: false,
     sequenceDay: 0,
@@ -202,13 +202,41 @@ export async function initiateFollowUpOutreach(
     },
   });
 
-  // Schedule the actual delivery
+  // Schedule the actual WhatsApp delivery
   await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
     communicationId: commId,
     candidateId: app.candidateId,
     jobId: app.jobId,
     body,
   });
+
+  // Schedule the actual Email delivery via Microsoft Graph
+  const recruiter = await ctx.db.get(job.primaryRecruiterId);
+  const taEmail = recruiter?.email;
+  const candidateEmail = candidate.email;
+
+  if (taEmail && candidateEmail) {
+    const htmlBody = body.replace(/\n/g, "<br>");
+    await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
+      communicationId: emailCommId,
+      candidateJobId: app._id as string,
+      taEmail,
+      toAddress: candidateEmail,
+      subject: `Action Required: Missing info for your ${job.title} application`,
+      bodyHtml: htmlBody,
+    });
+  } else {
+    console.warn(
+      `[Follow-up Outreach] Skipped email: taEmail=${taEmail ?? "missing"}, candidateEmail=${candidateEmail ?? "missing"}`
+    );
+    // Mark the email comm as failed if we can't send it
+    await ctx.db.patch(emailCommId, {
+      deliveryStatus: "failed",
+      errorMessage: !taEmail
+        ? "Recruiter has no email configured"
+        : "Candidate has no email address",
+    });
+  }
 
   console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId}`);
   return commId;

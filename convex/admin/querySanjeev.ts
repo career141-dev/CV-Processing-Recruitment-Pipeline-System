@@ -9,7 +9,6 @@ export default query({
     return { 
       jobHistory: candidate?.jobHistory,
       totalExperienceYears: candidate?.totalExperienceYears,
-      yearsOfExperience: candidate?.totalExperienceYears
     };
   }
 });

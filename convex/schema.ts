@@ -1175,6 +1175,17 @@ errorMessage: v.optional(v.string()),
     expiresAt: v.string(),
   }).index("by_state", ["state"]),
 
+  graphSubscriptions: defineTable({
+    subscriptionId: v.string(),
+    taEmail: v.string(),
+    resource: v.string(),          // e.g. "users/{email}/mailFolders/inbox/messages"
+    expiresAt: v.number(),         // Unix timestamp (ms)
+    createdAt: v.number(),
+  })
+    .index("by_subscriptionId", ["subscriptionId"])
+    .index("by_taEmail", ["taEmail"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   m365Accounts: defineTable({
     userId: v.id("users"),
     email: v.string(),

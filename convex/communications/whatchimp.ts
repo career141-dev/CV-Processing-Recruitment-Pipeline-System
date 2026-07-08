@@ -14,6 +14,10 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return new Response("Invalid JSON", { status: 400 });
   }
 
+  const configuredPhone = process.env.WHATCHIMP_PHONE_NUMBER_ID || "";
+  const cleanConfigured = configuredPhone.replace(/[^0-9]/g, "");
+  const businessPhone = cleanConfigured || "94753778899"; // Fallback to original registered number
+
   // 1. Check if it's a standard Meta WhatsApp Webhook payload
   if (body.entry && body.entry[0]?.changes && body.entry[0].changes[0]?.value?.messages) {
     console.log("[WhatChimp Webhook] Auto-detected standard Meta payload format.");
@@ -21,8 +25,15 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     const toNumber = value.metadata?.display_phone_number || "WhatChimp Number";
 
     for (const message of value.messages) {
+      const fromNumber = message.from;
+      const cleanFromNumber = fromNumber.replace(/[^0-9]/g, "");
+
+      if (cleanFromNumber === businessPhone || (cleanConfigured && cleanFromNumber === cleanConfigured)) {
+        console.log("[WhatChimp Webhook] Ignoring Meta message from business number itself.");
+        continue;
+      }
+
       if (message.type === "document" || message.type === "image") {
-        const fromNumber = message.from;
         const originalSenderPhone = message.context?.from ?? message.from;
         const mediaItem = message.document ?? message.image;
 
@@ -37,9 +48,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           fileName: mediaItem.filename ?? null,
         });
       } else if (message.type === "text") {
-        const senderPhone = message.from;
         const textBody = message.text?.body || "";
-        const cleanSender = String(senderPhone).replace(/[^0-9]/g, "");
+        const cleanSender = cleanFromNumber;
 
         const firstWord = textBody.trim().split(/\s+/)[0]?.toUpperCase() || "";
         let isKeyword = false;
@@ -106,6 +116,11 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const cleanTo = String(to).replace(/[^0-9]/g, "");
 
   console.log(`[WhatChimp Webhook] Flat payload parsed: From=+${cleanFrom}, Text="${text}", Has Media=${!!mediaUrl}`);
+
+  if (cleanFrom === businessPhone || (cleanConfigured && cleanFrom === cleanConfigured)) {
+    console.log("[WhatChimp Webhook] Ignoring outbound/status notification from the business number itself.");
+    return new Response("OK", { status: 200 });
+  }
 
   // Resolve candidate details
   const checkResult = await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
@@ -216,7 +231,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
           const params = new URLSearchParams();
           params.append("apiToken", apiToken);
-          params.append("phone_number_id", phoneNumberId);
+          params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
           params.append("phone_number", cleanFrom);
           params.append("message", replyMessage);
 

@@ -1033,7 +1033,9 @@ export default function JobDetailPage() {
   const clientRejectMutation = useMutation(api.pipeline.stages.clientReject);
   const convex = useConvex();
   const triggerWhatsAppFollowUp = useMutation(api.pipeline.outreach.triggerWhatsAppFollowUp);
+  const triggerEmailFollowUp = useMutation(api.pipeline.outreach.triggerEmailFollowUp);
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   
   const runReverseMatch = useAction(api.matching.agent2.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
@@ -1667,6 +1669,53 @@ export default function JobDetailPage() {
                           className="inline-flex items-center text-[11px] font-bold text-green-600 hover:text-green-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer"
                         >
                           {sendingWhatsAppId === item.id ? "Sending..." : "Send WhatsApp"}
+                        </button>
+
+                        <button
+                          disabled={sendingEmailId === item.id}
+                          onClick={async () => {
+                            setSendingEmailId(item.id);
+                            try {
+                              const result = await triggerEmailFollowUp({ applicationId: item.id });
+                              if (result?.communicationId) {
+                                let isSent = false;
+                                let errorMessage = "";
+                                // Poll status up to 5 times (5 seconds)
+                                for (let i = 0; i < 5; i++) {
+                                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, {
+                                    communicationId: result.communicationId,
+                                  });
+                                  if (statusRes) {
+                                    if (statusRes.deliveryStatus === "sent") {
+                                      isSent = true;
+                                      break;
+                                    } else if (statusRes.deliveryStatus === "failed") {
+                                      errorMessage = statusRes.errorMessage || "Unknown error";
+                                      break;
+                                    }
+                                  }
+                                }
+                                if (isSent) {
+                                  alert("Email follow-up sent successfully!");
+                                } else if (errorMessage) {
+                                  alert(`Email delivery failed: ${errorMessage}`);
+                                } else {
+                                  alert("Email follow-up is queued. It should deliver shortly.");
+                                }
+                              } else {
+                                alert("Email follow-up initiated successfully!");
+                              }
+                            } catch (err: any) {
+                              console.error(err);
+                              alert(`Failed to send Email: ${err.message}`);
+                            } finally {
+                              setSendingEmailId(null);
+                            }
+                          }}
+                          className="inline-flex items-center text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer"
+                        >
+                          {sendingEmailId === item.id ? "Sending..." : "Send Email"}
                         </button>
                       </div>
                     </td>

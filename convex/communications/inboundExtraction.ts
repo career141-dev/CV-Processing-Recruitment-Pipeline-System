@@ -9,6 +9,15 @@ export const extractDetailsFromText = internalAction({
     textBody: v.string(),
   },
   handler: async (ctx, args) => {
+    const inFollowUp = await ctx.runQuery(api.candidates.candidates.isCandidateInFollowUp, {
+      candidateId: args.candidateId,
+    });
+
+    if (!inFollowUp) {
+      console.log(`[Inbound Extraction] Candidate ${args.candidateId} is not in follow_up stage. Skipping details update.`);
+      return;
+    }
+
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
       console.error("[Inbound Extraction] NVIDIA_API_KEY is not configured.");

@@ -239,6 +239,24 @@ export const createCandidate = mutation({
     }
 
     if (existingCandidateId) {
+      // Retrieve candidate applications
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId))
+        .collect();
+
+      // Check if candidate is actively in follow-up stage or auto-rejected for missing details
+      const inFollowUpOrAutoRejected = apps.some((app: any) => 
+        app.currentStage === "follow_up" || 
+        (app.currentStage === "rejected" && app.taRejectionReason === "Did not complete requirements within 7-day window")
+      );
+
+      // Skip updating candidate details and CV if they are in a different stage than follow-up
+      if (!inFollowUpOrAutoRejected && apps.length > 0) {
+        console.log(`[createCandidate] Candidate ${existingCandidateId} exists but is not in follow_up or auto-rejected state. Skipping details and CV update.`);
+        return existingCandidateId;
+      }
+
       await ctx.db.patch(existingCandidateId, {
         ...args,
         status: "new",
@@ -246,10 +264,6 @@ export const createCandidate = mutation({
 
       // Sync follow-up flags on all candidate applications
       const candidate = await ctx.db.get(existingCandidateId);
-      const apps = await ctx.db
-        .query("applications")
-        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId))
-        .collect();
       for (const app of apps) {
         await updateFollowUpFlags(ctx, app._id, candidate);
       }
@@ -463,7 +477,15 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
   await ctx.db.patch(candidateId, { overallStatus: finalStatus as any });
 }
 
-
+export const getCandidateByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidates")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
 
 export const deleteCandidate = mutation({
   args: { candidateId: v.id("candidates") },
@@ -515,4 +537,22 @@ export const deleteCandidate = mutation({
   }
 });
 
-
+export const isCandidateInFollowUp = query({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    const activeApp = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", args.candidateId))
+      .filter((q: any) =>
+        q.or(
+          q.eq(q.field("currentStage"), "follow_up"),
+          q.and(
+            q.eq(q.field("currentStage"), "rejected"),
+            q.eq(q.field("taRejectionReason"), "Did not complete requirements within 7-day window")
+          )
+        )
+      )
+      .first();
+    return !!activeApp;
+  },
+});

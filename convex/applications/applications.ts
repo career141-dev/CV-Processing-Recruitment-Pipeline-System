@@ -249,7 +249,7 @@ export const createApplication = mutation({
         updates.lastStageChangedAt = Date.now();
       }
       
-      if (args.cvFileId && !existing.cvFileId) {
+      if (args.cvFileId && existing.cvFileId !== args.cvFileId) {
         updates.cvFileId = args.cvFileId;
       }
       

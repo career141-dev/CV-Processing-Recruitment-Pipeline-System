@@ -46,92 +46,60 @@ export const sendWhatsApp = internalAction({
       logNote = ` [REDIRECTED TO TEST NUMBER: ${testRecipient}]`;
     }
 
-    // 3. Send message to WhatChimp or local WhatsApp bridge
-    const whatChimpToken = process.env.WHATCHIMP_API_TOKEN;
-    const whatChimpPhoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+    // 3. Send message to WhatChimp API
+    try {
+      const apiKey = process.env.WHATCHIMP_API_TOKEN;
+      const phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
 
-    if (whatChimpToken) {
-      try {
-        console.log(`[WhatsApp Outbound] Sending message to +${targetPhone.replace(/[^0-9]/g, '')} via WhatChimp API${logNote}`);
-        
-        const params = new URLSearchParams();
-        params.append("apiToken", whatChimpToken);
-        params.append("phone_number_id", whatChimpPhoneId || "");
-        params.append("phone_number", targetPhone.replace(/[^0-9]/g, ''));
-        params.append("message", args.body);
-
-        const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-          },
-          body: params
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(`WhatChimp returned status ${res.status}: ${errorText}`);
-        }
-
-        const dataText = await res.text();
-        console.log(`[WhatsApp Outbound] WhatChimp response:`, dataText);
-        let data: any = {};
-        try {
-          data = JSON.parse(dataText);
-        } catch (_) {}
-
-        // Success
-        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
-          communicationId: args.communicationId,
-          status: "sent",
-          error: isTestMode ? `Test mode active.${logNote} [WhatChimp Response: ${dataText.slice(0, 100)}]` : undefined,
-        });
-        console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
-      } catch (err: any) {
-        console.error("[WhatsApp Outbound] Failed to dispatch via WhatChimp:", err.message);
+      if (!apiKey || !phoneId) {
+        console.error("[WhatsApp Outbound] WhatChimp configuration is missing.");
         await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
           communicationId: args.communicationId,
           status: "failed",
-          error: err.message,
+          error: "WhatChimp WHATCHIMP_API_TOKEN or WHATCHIMP_PHONE_NUMBER_ID is not configured in environment variables.",
         });
+        return;
       }
-      return;
-    }
 
-    // Fallback: Send message to local WhatsApp bridge
-    try {
-      console.log(`[WhatsApp Outbound] Sending message to +${targetPhone.replace(/[^0-9]/g, '')}${logNote}`);
+      console.log(`[WhatsApp Outbound] Sending message to +${targetPhone.replace(/[^0-9]/g, '')}${logNote} via WhatChimp`);
       
-      const bridgeUrl = process.env.WHATSAPP_BRIDGE_URL || "http://localhost:3001";
-      const res = await fetch(`${bridgeUrl}/send`, {
+      const cleanPhone = targetPhone.replace(/[^0-9]/g, "");
+      const cleanPhoneId = phoneId.replace(/[^0-9]/g, "");
+
+      const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "bypass-tunnel-reminder": "true",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: JSON.stringify({
-          to: targetPhone,
+        body: new URLSearchParams({
+          apiToken: apiKey,
+          phone_number_id: cleanPhoneId,
+          phone_number: cleanPhone,
           message: args.body,
-        }),
+        }).toString(),
       });
 
       if (!res.ok) {
         const errorText = await res.text();
-        throw new Error(`Local bridge returned status ${res.status}: ${errorText}`);
+        throw new Error(`WhatChimp API returned status ${res.status}: ${errorText}`);
       }
 
       const data = await res.json();
-      console.log(`[WhatsApp Outbound] Local bridge response:`, JSON.stringify(data));
+      console.log(`[WhatsApp Outbound] WhatChimp response:`, JSON.stringify(data));
+
+      if (data && (data.status === 0 || data.status === "0" || data.success === false)) {
+        throw new Error(data.message || "WhatChimp API returned failure status.");
+      }
 
       // Success
       await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
         communicationId: args.communicationId,
         status: "sent",
-        error: isTestMode ? `Test mode active.${logNote} [Msg ID: ${data?.messageId || 'unknown'}]` : undefined,
+        error: isTestMode ? `Test mode active.${logNote} [Msg ID: ${data?.message_id || data?.messageId || 'unknown'}]` : undefined,
       });
-      console.log(`[WhatsApp Outbound] Message successfully sent to local bridge.`);
+      console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
     } catch (err: any) {
-      console.error("[WhatsApp Outbound] Failed to dispatch via local bridge:", err.message);
+      console.error("[WhatsApp Outbound] Failed to dispatch via WhatChimp:", err.message);
       await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
         communicationId: args.communicationId,
         status: "failed",
@@ -162,12 +130,39 @@ export const checkAndRecordFollowUpReply = internalMutation({
     textBody: v.string(),
   },
   handler: async (ctx, args) => {
-    const phoneClean = args.senderPhone.replace(/[^0-9]/g, "");
+    let targetPhone = args.senderPhone;
+    const isTestMode = process.env.WHATSAPP_TEST_MODE === "true";
+    const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
+
+    const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
+
+    if (isTestMode && testRecipient && cleanNum(args.senderPhone) === cleanNum(testRecipient)) {
+      const lastOutbound = await ctx.db
+        .query("communications")
+        .filter((q: any) => 
+          q.and(
+            q.eq(q.field("direction"), "outbound"),
+            q.eq(q.field("channel"), "whatsapp")
+          )
+        )
+        .order("desc")
+        .first();
+
+      if (lastOutbound) {
+        const testCandidate = await ctx.db.get(lastOutbound.candidateId);
+        if (testCandidate && testCandidate.phone) {
+          targetPhone = testCandidate.phone;
+          console.log(`[WhatsApp Test Mode] Mapped test sender ${args.senderPhone} to actual candidate phone: ${targetPhone}`);
+        }
+      }
+    }
+
+    const phoneClean = targetPhone.replace(/[^0-9]/g, "");
 
     // Find candidate by phone
     let candidate = await ctx.db
       .query("candidates")
-      .withIndex("by_phone", (q: any) => q.eq("phone", args.senderPhone))
+      .withIndex("by_phone", (q: any) => q.eq("phone", targetPhone))
       .first();
 
     if (!candidate) {
@@ -181,11 +176,19 @@ export const checkAndRecordFollowUpReply = internalMutation({
 
     if (!candidate) return { isFollowUpReply: false };
 
-    // Find active follow-up application
+    // Find active follow-up or auto-rejected application
     const activeApp = await ctx.db
       .query("applications")
       .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate!._id))
-      .filter((q: any) => q.eq(q.field("currentStage"), "follow_up"))
+      .filter((q: any) =>
+        q.or(
+          q.eq(q.field("currentStage"), "follow_up"),
+          q.and(
+            q.eq(q.field("currentStage"), "rejected"),
+            q.eq(q.field("taRejectionReason"), "Did not complete requirements within 7-day window")
+          )
+        )
+      )
       .first();
 
     if (!activeApp) return { isFollowUpReply: false };
@@ -219,12 +222,39 @@ export const processLocalWhatsappInbound = internalMutation({
     textBody: v.string(),
   },
   handler: async (ctx, args) => {
-    const phoneClean = args.senderPhone.replace(/[^0-9]/g, "");
+    let targetPhone = args.senderPhone;
+    const isTestMode = process.env.WHATSAPP_TEST_MODE === "true";
+    const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
+
+    const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
+
+    if (isTestMode && testRecipient && cleanNum(args.senderPhone) === cleanNum(testRecipient)) {
+      const lastOutbound = await ctx.db
+        .query("communications")
+        .filter((q: any) => 
+          q.and(
+            q.eq(q.field("direction"), "outbound"),
+            q.eq(q.field("channel"), "whatsapp")
+          )
+        )
+        .order("desc")
+        .first();
+
+      if (lastOutbound) {
+        const testCandidate = await ctx.db.get(lastOutbound.candidateId);
+        if (testCandidate && testCandidate.phone) {
+          targetPhone = testCandidate.phone;
+          console.log(`[WhatsApp Test Mode] Mapped test sender ${args.senderPhone} to actual candidate phone: ${targetPhone}`);
+        }
+      }
+    }
+
+    const phoneClean = targetPhone.replace(/[^0-9]/g, "");
 
     // Find candidate by phone number
     let candidate = await ctx.db
       .query("candidates")
-      .withIndex("by_phone", (q: any) => q.eq("phone", args.senderPhone))
+      .withIndex("by_phone", (q: any) => q.eq("phone", targetPhone))
       .first();
 
     if (!candidate) {
