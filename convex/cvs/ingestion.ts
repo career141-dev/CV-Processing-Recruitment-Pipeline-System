@@ -66,6 +66,54 @@ export const insertCvRecord = internalMutation({
     fileSize: v.number(),
   },
   handler: async (ctx, args) => {
+    // SHA-256 duplicate check (exact file)
+    const existingFile = await ctx.db.query("cvUploads")
+      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
+      .first();
+
+    if (existingFile) {
+      console.log(`[cvs/ingestion:insertCvRecord] Duplicate file detected: ${args.fileHash}. Skipping ingestion.`);
+      
+      const taUser = await ctx.db
+        .query("users")
+        .filter((q) => q.eq(q.field("phone"), args.fromNumber))
+        .first();
+
+      const rawSenderDisplay = taUser ? taUser._id : args.fromNumber;
+
+      const session = await ctx.db
+        .query("whatsappSessions")
+        .withIndex("by_phone", (q) => q.eq("phone", args.originalSenderPhone))
+        .first();
+
+      let resolvedJobId = null;
+      if (session) {
+        resolvedJobId = session.jobId;
+        await ctx.db.delete(session._id);
+      } else {
+        const channel = await ctx.db
+          .query("jobChannels")
+          .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", args.toNumber))
+          .filter((q) => q.eq(q.field("isEnabled"), true))
+          .first();
+        if (channel) {
+          resolvedJobId = channel.jobId;
+        }
+      }
+
+      await ctx.db.insert("ingestionLog", {
+        jobId: resolvedJobId || undefined,
+        channelType: "whatsapp",
+        rawSender: rawSenderDisplay,
+        routingStatus: "duplicate_file",
+        cvFileId: existingFile._id,
+        receivedAt: Date.now(),
+        stage: "failed",
+      } as any);
+
+      return { success: false, reason: "duplicate_file", existingFileId: existingFile._id };
+    }
+
     let jobId = null;
     let sourceLevel2 = "Common Number";
     

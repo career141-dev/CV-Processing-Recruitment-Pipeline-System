@@ -16,6 +16,8 @@ import type * as admin_queryLogs from "../admin/queryLogs.js";
 import type * as admin_querySanjeev from "../admin/querySanjeev.js";
 import type * as admin_querySanjeevHistory from "../admin/querySanjeevHistory.js";
 import type * as admin_scratch from "../admin/scratch.js";
+import type * as admin_testIngedup from "../admin/testIngedup.js";
+import type * as admin_testIngedupMut from "../admin/testIngedupMut.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
 import type * as candidates_candidates from "../candidates/candidates.js";
@@ -85,6 +87,8 @@ declare const fullApi: ApiFromModules<{
   "admin/querySanjeev": typeof admin_querySanjeev;
   "admin/querySanjeevHistory": typeof admin_querySanjeevHistory;
   "admin/scratch": typeof admin_scratch;
+  "admin/testIngedup": typeof admin_testIngedup;
+  "admin/testIngedupMut": typeof admin_testIngedupMut;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
   "candidates/candidates": typeof candidates_candidates;
