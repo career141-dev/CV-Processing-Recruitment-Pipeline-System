@@ -16,6 +16,8 @@ import { api } from "../../../../../convex/_generated/api";
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useUser } from '@clerk/nextjs';
+import { EditJobModal } from '@/components/jobs/EditJobModal';
+import { toast } from 'sonner';
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
@@ -998,6 +1000,7 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useUser();
   const jobId = params.jobId as Id<"jobs">;
 
   const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
@@ -1034,6 +1037,11 @@ export default function JobDetailPage() {
   
   const runReverseMatch = useAction(api.matching.agent2.runReverseMatch);
   const [isScanning, setIsScanning] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const processCvIngestion = useMutation(api.pipeline.ingestion.processCvIngestion);
 
   const handleScanDatabase = async () => {
     setIsScanning(true);
@@ -1044,6 +1052,57 @@ export default function JobDetailPage() {
       alert("Error scanning database");
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const toastId = toast.loading("Uploading and ingesting CV...");
+    try {
+      // 1. Calculate SHA-256 hash in browser
+      const buffer = await file.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const fileHash = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+      // 2. Generate Convex upload URL
+      const uploadUrl = await generateUploadUrl();
+
+      // 3. Upload binary to Convex Storage
+      const resp = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      if (!resp.ok) throw new Error("Storage upload failed");
+      const { storageId } = await resp.json();
+
+      // 4. Trigger processCvIngestion
+      const result = await processCvIngestion({
+        jobId: jobId as any,
+        sourceChannel: "manual_upload",
+        rawSender: user?.fullName || user?.primaryEmailAddress?.emailAddress || "recruiter",
+        storageId,
+        fileHash,
+        fileName: file.name,
+        fileType: file.type || "application/pdf",
+        fileSizeBytes: file.size,
+      });
+
+      if (result.success) {
+        toast.success("CV uploaded successfully and queued for AI parsing!", { id: toastId });
+      } else {
+        throw new Error(result.reason || "Ingestion failed");
+      }
+    } catch (err: any) {
+      toast.error(`Upload failed: ${err.message}`, { id: toastId });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -2015,13 +2074,36 @@ export default function JobDetailPage() {
               </div>
             </div>
             <div className="flex gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".pdf,.docx"
+                className="hidden"
+              />
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="bg-primary text-on-primary hover:bg-primary/90 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+              >
+                {isUploading ? (
+                  <>Uploading...</>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" /> Upload CV
+                  </>
+                )}
+              </button>
               <button 
                 onClick={() => alert("QR feature not implemented yet.")}
                 className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
               >
                 <QrCode className="w-4 h-4" /> Ad QR Code
               </button>
-              <button className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1">
+              <button 
+                onClick={() => setIsEditModalOpen(true)}
+                className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
+              >
                 <Edit className="w-4 h-4" /> Edit Job
               </button>
               <button className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1">
@@ -2114,6 +2196,12 @@ export default function JobDetailPage() {
       </div>
         </div>
       )}
+      
+      <EditJobModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        job={job}
+      />
     </div>
   );
 }

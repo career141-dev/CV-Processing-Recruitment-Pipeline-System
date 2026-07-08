@@ -1187,4 +1187,11 @@ errorMessage: v.optional(v.string()),
     .index("by_user", ["userId"])
     .index("by_email", ["email"]),
 
+  whatsappSessions: defineTable({
+    phone: v.string(),
+    jobId: v.id("jobs"),
+    keyword: v.string(),
+    lastInteractionAt: v.number(),
+  }).index("by_phone", ["phone"]),
+
 });

@@ -5,7 +5,7 @@ import { api } from "../_generated/api";
 
 export const processCvIngestion = mutation({
   args: {
-    jobId: v.id("jobs"),
+    jobId: v.optional(v.id("jobs")),
     sourceChannel: v.string(),
     rawSender: v.optional(v.string()),
     storageId: v.id("_storage"),
@@ -19,20 +19,22 @@ export const processCvIngestion = mutation({
   handler: async (ctx, args) => {
     const startTime = Date.now();
 
-    // 1. Get job — must be active
-    const job = await ctx.db.get(args.jobId);
-    if (!job || job.status !== "active") {
-      await ctx.db.insert("ingestionLog", {
-        jobId: args.jobId,
-        channelType: args.sourceChannel as any,
-        rawSender: args.rawSender,
-        routingStatus: "unrouted",
-        errorMessage: "Job not active",
-        receivedAt: startTime,
-        batchId: args.batchId,
-        stage: "failed",
-      } as any);
-      return { success: false, reason: "job_not_active" };
+    // 1. Get job — must be active (only if jobId is provided)
+    if (args.jobId) {
+      const job = await ctx.db.get(args.jobId);
+      if (!job || job.status !== "active") {
+        await ctx.db.insert("ingestionLog", {
+          jobId: args.jobId,
+          channelType: args.sourceChannel as any,
+          rawSender: args.rawSender,
+          routingStatus: "unrouted",
+          errorMessage: "Job not active",
+          receivedAt: startTime,
+          batchId: args.batchId,
+          stage: "failed",
+        } as any);
+        return { success: false, reason: "job_not_active" };
+      }
     }
 
     // 2. SHA-256 duplicate check (exact file)
@@ -70,18 +72,20 @@ export const processCvIngestion = mutation({
       status: "pending",
     });
 
-    // 6. Update channel CV counts
-    const channel = await ctx.db.query("jobChannels")
-      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
-      .filter((q) => q.eq(q.field("channelType"), args.sourceChannel))
-      .first();
+    // 6. Update channel CV counts (only if jobId is provided)
+    if (args.jobId) {
+      const channel = await ctx.db.query("jobChannels")
+        .withIndex("by_job", (q) => q.eq("jobId", args.jobId!))
+        .filter((q) => q.eq(q.field("channelType"), args.sourceChannel))
+        .first();
 
-    if (channel) {
-      await ctx.db.patch(channel._id, {
-        cvCountTotal: (channel.cvCountTotal ?? 0) + 1,
-        cvCountToday: (channel.cvCountToday ?? 0) + 1,
-        lastCvReceivedAt: startTime,
-      });
+      if (channel) {
+        await ctx.db.patch(channel._id, {
+          cvCountTotal: (channel.cvCountTotal ?? 0) + 1,
+          cvCountToday: (channel.cvCountToday ?? 0) + 1,
+          lastCvReceivedAt: startTime,
+        });
+      }
     }
 
     // 7. Log ingestion event
@@ -89,7 +93,7 @@ export const processCvIngestion = mutation({
       jobId: args.jobId,
       channelType: args.sourceChannel as any,
       rawSender: args.rawSender,
-      routingStatus: "routed",
+      routingStatus: args.jobId ? "routed" : "unrouted",
       cvFileId: cvUploadId,
       metaCampaignId: args.metaCampaignId,
       processingTimeMs: Date.now() - startTime,
