@@ -41,6 +41,7 @@ export default function JobsPage() {
   
   const dbJobs = useQuery(api.jobs.jobs.list);
   const deleteJob = useMutation(api.jobs.jobs.deleteJob);
+  const updateJobStatus = useMutation(api.jobs.jobs.updateJobStatus);
 
   React.useEffect(() => {
     const handleWindowClick = () => {
@@ -73,6 +74,23 @@ export default function JobsPage() {
       statusFormatted = 'Draft';
       statusBadge = { label: "Draft", bgClass: "bg-gray-100", textClass: "text-gray-700", borderClass: "border-gray-200" };
     }
+
+    // Map dominant stage to label + badge
+    const STAGE_LABELS: Record<string, { label: string; bgClass: string; textClass: string; borderClass: string }> = {
+      new_cvs:            { label: "New CVs",          bgClass: "bg-blue-50",    textClass: "text-blue-700",    borderClass: "border-blue-200" },
+      ta_shortlist:       { label: "TA Shortlist",     bgClass: "bg-violet-50",  textClass: "text-violet-700",  borderClass: "border-violet-200" },
+      ai_call:            { label: "AI Call",           bgClass: "bg-cyan-50",    textClass: "text-cyan-700",    borderClass: "border-cyan-200" },
+      interview:          { label: "Interview",         bgClass: "bg-yellow-50",  textClass: "text-yellow-700",  borderClass: "border-yellow-200" },
+      second_shortlist:   { label: "2nd Shortlist",    bgClass: "bg-orange-50",  textClass: "text-orange-700",  borderClass: "border-orange-200" },
+      director_shortlist: { label: "Director Review",  bgClass: "bg-indigo-50",  textClass: "text-indigo-700",  borderClass: "border-indigo-200" },
+      client_review:      { label: "Client Review",    bgClass: "bg-pink-50",    textClass: "text-pink-700",    borderClass: "border-pink-200" },
+      offer:              { label: "Offer",             bgClass: "bg-emerald-50", textClass: "text-emerald-700", borderClass: "border-emerald-200" },
+      placed:             { label: "Placed",            bgClass: "bg-green-50",   textClass: "text-green-700",   borderClass: "border-green-200" },
+    };
+
+    const stageInfo = j.totalApplications > 0
+      ? (STAGE_LABELS[j.dominantStage] || STAGE_LABELS.new_cvs)
+      : { label: "No Applicants", bgClass: "bg-gray-50", textClass: "text-gray-500", borderClass: "border-gray-200" };
     
     return {
       id: j._id,
@@ -83,9 +101,10 @@ export default function JobsPage() {
       seniority: j.seniorityLevel || 'N/A',
       type: j.recruitmentType || 'N/A',
       salary: j.salaryMin ? `${j.salaryMin}${j.salaryMax ? `-${j.salaryMax}` : ''} ${j.salaryCurrency || 'LKR'}` : '-',
-      sources: [], // To be populated later when channels are implemented
-      newCvs: 0, // Placeholder
-      stage: { label: "New Job", bgClass: "bg-blue-50", textClass: "text-blue-700", borderClass: "border-blue-200" },
+      sources: [],
+      newCvs: j.newCvsCount ?? 0,
+      newCvsBadge: (j.newCvsCount ?? 0) > 0 ? { text: "new", bgClass: "bg-blue-100", textClass: "text-blue-700" } : undefined,
+      stage: stageInfo,
       taAssigned: recruiter ? recruiter.fullName.split(' ')[0] : 'Unassigned',
       status: statusFormatted,
       statusBadge: statusBadge,
@@ -307,6 +326,26 @@ export default function JobsPage() {
                           </button>
                           <button
                             onClick={async () => {
+                              const rawJob = dbJobs?.find((j: any) => j._id === job.id);
+                              if (!rawJob) return;
+                              const newStatus = rawJob.status === 'active' ? 'on_hold' : 'active';
+                              try {
+                                await updateJobStatus({ jobId: job.id as any, status: newStatus as any });
+                              } catch (err: any) {
+                                alert('Failed to update status: ' + err.message);
+                              }
+                              setActiveDropdownJobId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs hover:bg-surface-container-high transition-colors flex items-center gap-2"
+                            style={{ color: (dbJobs?.find((j: any) => j._id === job.id)?.status === 'active') ? '#d97706' : '#16a34a' }}
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {(dbJobs?.find((j: any) => j._id === job.id)?.status === 'active') ? 'pause_circle' : 'play_circle'}
+                            </span>
+                            {(dbJobs?.find((j: any) => j._id === job.id)?.status === 'active') ? 'Disable Job' : 'Set Active'}
+                          </button>
+                          <button
+                            onClick={async () => {
                               if (confirm("Are you sure you want to completely delete this job? This cannot be undone.")) {
                                 try {
                                   await deleteJob({ jobId: job.id as any });
@@ -384,6 +423,26 @@ export default function JobsPage() {
                       >
                         <span className="material-symbols-outlined text-[14px]">edit</span>
                         Edit Job
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const rawJob = dbJobs?.find((j: any) => j._id === job.id);
+                          if (!rawJob) return;
+                          const newStatus = rawJob.status === 'active' ? 'on_hold' : 'active';
+                          try {
+                            await updateJobStatus({ jobId: job.id as any, status: newStatus as any });
+                          } catch (err: any) {
+                            alert('Failed to update status: ' + err.message);
+                          }
+                          setActiveDropdownJobId(null);
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs hover:bg-surface-container-high transition-colors flex items-center gap-2"
+                        style={{ color: (dbJobs?.find((j: any) => j._id === job.id)?.status === 'active') ? '#d97706' : '#16a34a' }}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {(dbJobs?.find((j: any) => j._id === job.id)?.status === 'active') ? 'pause_circle' : 'play_circle'}
+                        </span>
+                        {(dbJobs?.find((j: any) => j._id === job.id)?.status === 'active') ? 'Disable Job' : 'Set Active'}
                       </button>
                       <button
                         onClick={async () => {

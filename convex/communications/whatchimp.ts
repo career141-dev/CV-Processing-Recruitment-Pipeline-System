@@ -100,12 +100,37 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   }
 
   // 2. Check if it's a flat custom WhatChimp payload format
-  const from = body.from || body.phone || body.sender || body.phone_number || body.subscriber_id;
-  const text = body.message || body.body || body.text || body.message_text;
-  const mediaUrl = body.media_url || body.file_url || body.mediaUrl || body.fileUrl;
-  const fileName = body.filename || body.fileName || "cv.pdf";
+  const extractMessageText = (msg: any) => {
+    if (typeof msg === "string") return msg;
+    if (typeof msg === "object" && msg !== null) {
+      if (typeof msg.text === "string") return msg.text;
+      if (typeof msg.caption === "string") return msg.caption;
+      if (typeof msg.body === "string") return msg.body;
+    }
+    return undefined;
+  };
+
+  const extractMediaUrl = (msg: any) => {
+    if (typeof msg === "object" && msg !== null) {
+      if (typeof msg.url === "string") return msg.url;
+      if (typeof msg.media_url === "string") return msg.media_url;
+      if (typeof msg.file_url === "string") return msg.file_url;
+      if (typeof msg.link === "string") return msg.link;
+    }
+    return undefined;
+  };
+
+  const from = body.chat_id || body.from || body.phone || body.sender || body.phone_number || (body.subscriber_id && body.subscriber_id.split("-")[0]) || body.subscriber_id;
+  
+  let text = extractMessageText(body.user_message) || extractMessageText(body.message) || extractMessageText(body.body) || extractMessageText(body.text) || (typeof body.message_text === "string" ? body.message_text : undefined);
+  if (typeof text !== "string") {
+    text = "";
+  }
+
+  const mediaUrl = extractMediaUrl(body.user_message) || extractMediaUrl(body.message) || extractMediaUrl(body.body) || body.media_url || body.file_url || body.mediaUrl || body.fileUrl;
+  const fileName = body.filename || body.fileName || (mediaUrl ? mediaUrl.split("/").pop() : "cv.pdf") || "cv.pdf";
   const mimeType = body.mime_type || body.mimeType || "application/pdf";
-  const to = body.to || body.receiver || body.display_phone_number || "WhatChimp Number";
+  const to = body.to || body.receiver || body.whatsapp_bot_username || body.display_phone_number || "WhatChimp Number";
 
   if (!from) {
     console.warn("[WhatChimp Webhook] No sender identifier found in payload.");
@@ -122,11 +147,11 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Resolve candidate details
-  const checkResult = await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+  // Resolve candidate details (skip for media/document messages — textBody is not meaningful there)
+  const checkResult = !mediaUrl ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
     senderPhone: cleanFrom,
     textBody: text || "",
-  });
+  }) : null;
 
   if (checkResult && checkResult.isFollowUpReply) {
     console.log(`[WhatChimp Webhook] Recorded follow-up reply from +${cleanFrom}`);
@@ -153,7 +178,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         .join("");
 
       // 3. Store in Convex Native Storage
-      const storageId = await ctx.storage.store(fileBlob);
+      const storageBlob = new Blob([fileBuffer], { type: mimeType || "application/pdf" });
+      const storageId = await ctx.storage.store(storageBlob);
 
       // 4. Extract keyword if message text is present
       const firstWord = text ? text.trim().split(/\s+/)[0]?.toUpperCase() : "";
@@ -182,30 +208,45 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       }
 
       if (!resolvedJobId) {
-        console.warn(`[WhatChimp Webhook] Incoming resume from +${cleanFrom} could not be matched to an active job keyword or session.`);
-        const activeJobs = await ctx.runQuery(api.jobs.jobs.list);
-        const firstActive = activeJobs.find(j => j.status === "active");
-        if (firstActive) {
-          resolvedJobId = firstActive._id;
-          console.log(`[WhatChimp Webhook] Defaulted to active job: ${firstActive.title} (${firstActive.keyword})`);
-        }
+        console.warn(`[WhatChimp Webhook] Incoming resume from +${cleanFrom} could not be matched to an active job keyword or session. Ingesting to general pool.`);
       }
 
-      if (resolvedJobId) {
-        // 5. Ingest into central pipeline
-        await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-          jobId: resolvedJobId,
-          sourceChannel: "whatsapp",
-          rawSender: cleanFrom,
-          storageId,
-          fileHash,
-          fileName,
-          fileType: mimeType || "application/pdf",
-          fileSizeBytes,
-        });
-        console.log(`[WhatChimp Webhook] Ingested CV for candidate +${cleanFrom} under job ${resolvedJobId}`);
-      } else {
-        console.warn(`[WhatChimp Webhook] Inbound CV skipped: no active job found.`);
+      // 5. Ingest into central pipeline
+      const ingestionResult = await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
+        jobId: resolvedJobId || undefined,
+        sourceChannel: "whatsapp",
+        rawSender: cleanFrom,
+        storageId,
+        fileHash,
+        fileName,
+        fileType: mimeType || "application/pdf",
+        fileSizeBytes,
+      });
+      console.log(`[WhatChimp Webhook] Ingested CV for candidate +${cleanFrom} (jobId: ${resolvedJobId || "unassigned"}). Result:`, ingestionResult);
+
+      // 6. Send acknowledgment back to candidate
+      const apiToken = process.env.WHATCHIMP_API_TOKEN;
+      const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      if (apiToken && phoneNumberId) {
+        let replyMessage = "Thank you! Your CV has been successfully received and is being processed by our system. We will contact you if there is a match.";
+        
+        if (ingestionResult && (ingestionResult as any).reason === "duplicate_file") {
+           replyMessage = "We already have this exact CV on file for this position. We'll be in touch if your profile matches our requirements. Thank you!";
+        }
+        
+        const params = new URLSearchParams();
+        params.append("apiToken", apiToken);
+        params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
+        params.append("phone_number", cleanFrom);
+        params.append("message", replyMessage);
+
+        await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
+        }).then(r => r.text()).catch(console.error);
       }
     } catch (err: any) {
       console.error("[WhatChimp Webhook] Inbound media processing error:", err.message);

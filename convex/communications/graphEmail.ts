@@ -56,20 +56,24 @@ export const sendGraphEmail = internalAction({
       let replyToRecipients: any[] = [];
 
       const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL;
+      const isCareer141Domain = senderEmail.toLowerCase().endsWith("@career141.com");
+
       if (isTestMode) {
         if (m365Sender) {
-          senderEmail = m365Sender;
+          senderEmail = isCareer141Domain ? args.taEmail : m365Sender;
         }
         replyToRecipients = [];
-        console.log(`[Graph Email] Test mode active. Forcing sender to ${senderEmail} with no Reply-To override.`);
-      } else if (m365Sender && (senderEmail.toLowerCase().includes("@gmail.com") || senderEmail.toLowerCase() !== m365Sender.toLowerCase())) {
+        console.log(`[Graph Email] Test mode active. Using sender: ${senderEmail}`);
+      } else if (!isCareer141Domain && m365Sender) {
         senderEmail = m365Sender;
         replyToRecipients = [
           {
             emailAddress: { address: args.taEmail }
           }
         ];
-        console.log(`[Graph Email] Recruiter email is external/gmail (${args.taEmail}). Using M365 sender fallback (${m365Sender}) with Reply-To.`);
+        console.log(`[Graph Email] Recruiter email is external (${args.taEmail}). Using M365 sender fallback (${m365Sender}) with Reply-To.`);
+      } else {
+        console.log(`[Graph Email] Recruiter email is native organization domain (${args.taEmail}). Sending directly.`);
       }
 
       const payload: any = {

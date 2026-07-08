@@ -8,14 +8,9 @@
  * @module
  */
 
-import type * as admin_cleanup from "../admin/cleanup.js";
-import type * as admin_deleteTestCv from "../admin/deleteTestCv.js";
-import type * as admin_fix from "../admin/fix.js";
-import type * as admin_queryEvents from "../admin/queryEvents.js";
-import type * as admin_queryLogs from "../admin/queryLogs.js";
-import type * as admin_querySanjeev from "../admin/querySanjeev.js";
-import type * as admin_querySanjeevHistory from "../admin/querySanjeevHistory.js";
-import type * as admin_scratch from "../admin/scratch.js";
+import type * as admin_activateReactDev from "../admin/activateReactDev.js";
+import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
+import type * as admin_updateJDs from "../admin/updateJDs.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
 import type * as candidates_candidates from "../candidates/candidates.js";
@@ -77,14 +72,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  "admin/cleanup": typeof admin_cleanup;
-  "admin/deleteTestCv": typeof admin_deleteTestCv;
-  "admin/fix": typeof admin_fix;
-  "admin/queryEvents": typeof admin_queryEvents;
-  "admin/queryLogs": typeof admin_queryLogs;
-  "admin/querySanjeev": typeof admin_querySanjeev;
-  "admin/querySanjeevHistory": typeof admin_querySanjeevHistory;
-  "admin/scratch": typeof admin_scratch;
+  "admin/activateReactDev": typeof admin_activateReactDev;
+  "admin/setActiveJobs": typeof admin_setActiveJobs;
+  "admin/updateJDs": typeof admin_updateJDs;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
   "candidates/candidates": typeof candidates_candidates;

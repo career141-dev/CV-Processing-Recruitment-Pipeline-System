@@ -8,7 +8,7 @@ import { getOpenAI, getModelForTask } from "../lib/llm";
 // MICROSOFT GRAPH API IMPLEMENTATION
 // ----------------------------------------------------------------------------------
 
-async function getGraphToken(): Promise<string | null> {
+export async function getGraphToken(): Promise<string | null> {
   const tenantId = process.env.MS_GRAPH_TENANT_ID;
   const clientId = process.env.MS_GRAPH_CLIENT_ID;
   const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET;
@@ -43,13 +43,36 @@ async function getGraphToken(): Promise<string | null> {
   }
 }
 
+async function fetchMessageAttachments(inboxEmail: string, messageId: string) {
+  const token = await getGraphToken();
+  if (!token) return [];
+
+  try {
+    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      console.error(`[EmailAgent] Failed to fetch attachments for message ${messageId}:`, await response.text());
+      return [];
+    }
+
+    const data = await response.json();
+    return data.value || [];
+  } catch (error) {
+    console.error(`[EmailAgent] Error fetching attachments for message ${messageId}:`, error);
+    return [];
+  }
+}
+
 async function fetchUnreadEmails(inboxEmail: string) {
   const token = await getGraphToken();
   if (!token) return [];
 
   console.log(`[EmailAgent] Fetching unread emails for ${inboxEmail}`);
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false&$expand=attachments&$select=id,subject,body,from,attachments`;
+    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false&$expand=attachments&$select=id,subject,body,from,attachments,hasAttachments`;
     
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -106,8 +129,8 @@ export const pollEmailInbox = action({
     jobId: v.optional(v.id("jobs")) 
   },
   handler: async (ctx, { inboxEmail, jobId }) => {
-    const targetInboxEmail = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL || inboxEmail;
-    console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail} (requested inbox parameter: ${inboxEmail})`);
+    const targetInboxEmail = inboxEmail;
+    console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail}`);
     
     // 1. Fetch unread emails
     const messages = await fetchUnreadEmails(targetInboxEmail);
@@ -119,8 +142,14 @@ export const pollEmailInbox = action({
     
     for (const message of messages as any[]) {
       console.log(`[EmailAgent] Processing message: ${message.subject} from ${message.from?.emailAddress?.address}`);
-      if (message.attachments && message.attachments.length > 0) {
-        console.log(`[EmailAgent] Attachments found:`, message.attachments.map((a: any) => `${a.name} (${a.contentType})`));
+      let attachments = message.attachments || [];
+      if (message.hasAttachments && attachments.length === 0) {
+        console.log(`[EmailAgent] Message hasAttachments=true but pre-expanded attachments list is empty. Fetching individually...`);
+        attachments = await fetchMessageAttachments(targetInboxEmail, message.id);
+      }
+
+      if (attachments.length > 0) {
+        console.log(`[EmailAgent] Attachments found:`, attachments.map((a: any) => `${a.name} (${a.contentType})`));
       } else {
         console.log(`[EmailAgent] No attachments found on message.`);
       }
@@ -132,7 +161,7 @@ export const pollEmailInbox = action({
         : (message.body || "")) || message.subject || "";
 
       // 2. Find CV attachment (including .doc, .docx, .pdf)
-      const attachment = message.attachments?.find(
+      const attachment = attachments.find(
         (a: any) =>
           a.contentType?.includes("pdf") ||
           a.contentType?.includes("msword") ||
@@ -255,14 +284,10 @@ Respond ONLY with a valid JSON object in this exact format:
           }
         }
         
-        // If we couldn't resolve a job ID via LLM and no jobId was provided to the cron, use the first active job as fallback
-        if (!resolvedJobId && activeJobs.length > 0) {
-          resolvedJobId = activeJobs[0]._id;
-          console.log(`[EmailAgent] No jobId found, falling back to first active job: ${resolvedJobId}`);
-        }
-
+        // If AI couldn't match a job, skip this CV — do NOT fall back to a random job
         if (!resolvedJobId) {
-          console.error("[EmailAgent] Could not determine a jobId for the email and no active jobs exist to use as fallback.");
+          console.log(`[EmailAgent] Skipping CV — no matching active job found for: "${subject}"`);
+          await markEmailAsRead(targetInboxEmail, message.id);
           continue;
         }
       }
@@ -270,7 +295,7 @@ Respond ONLY with a valid JSON object in this exact format:
       // Process CV ingestion
       await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
         jobId: resolvedJobId || undefined,
-        sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "sanjeev@career141.com") ? "linkedin" : "email_campaign",
+        sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : "email_campaign",
         rawSender: message.from?.emailAddress?.address,
         storageId: storageId,
         fileHash: fileHash,
@@ -279,8 +304,10 @@ Respond ONLY with a valid JSON object in this exact format:
         fileSizeBytes: fileBuffer.length,
       });
 
+      const isLinkedInNoReply = senderEmail?.toLowerCase().includes("jobs-listings@linkedin.com");
+
       // Extract details from the email text body (salary, expected salary, notice period)
-      if (senderEmail) {
+      if (senderEmail && !isLinkedInNoReply) {
         await ctx.scheduler.runAfter(0, internal.communications.emailAgent.extractAndApplyEmailBodyDetails, {
           senderEmail,
           emailBody,
@@ -289,7 +316,7 @@ Respond ONLY with a valid JSON object in this exact format:
 
       // Mark as read & reply
       await markEmailAsRead(targetInboxEmail, message.id);
-      if (!isReplyProcessed) {
+      if (!isReplyProcessed && !isLinkedInNoReply) {
         if (resolvedJobId) {
           await sendConfirmationEmail(message.from?.emailAddress?.address, resolvedJobId);
         } else {

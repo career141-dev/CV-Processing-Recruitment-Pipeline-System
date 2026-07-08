@@ -1006,6 +1006,7 @@ export default function JobDetailPage() {
   const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
+  const [activeSourceFilter, setActiveSourceFilter] = useState<'All Sources' | 'LinkedIn' | 'WhatsApp'>('All Sources');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
@@ -1126,7 +1127,13 @@ export default function JobDetailPage() {
     return <div className="p-8">Job not found.</div>;
   }
 
-  const newCvs = applications.filter(app => app.currentStage === "new_cvs");
+  const newCvsRaw = applications.filter(app => app.currentStage === "new_cvs");
+  const newCvs = newCvsRaw.filter(app => {
+    if (activeSourceFilter === 'All Sources') return true;
+    if (activeSourceFilter === 'LinkedIn') return app.sourceChannel === 'linkedin';
+    if (activeSourceFilter === 'WhatsApp') return app.sourceChannel === 'whatsapp';
+    return true;
+  });
   
   // Issue #10: Average across ALL applications with an AI match score, not just reverseMatchResults
   const scoredApps = applications.filter(a => a.aiMatchScore != null);
@@ -1271,13 +1278,22 @@ export default function JobDetailPage() {
             {/* Toolbar */}
             <div className="p-4 border-b border-border flex justify-between items-center bg-surface">
               <div className="flex gap-2 text-[13px]">
-                <button className="px-3 py-1.5 bg-surface-container rounded-[6px] text-text-primary font-medium flex items-center gap-2">
+                <button 
+                  onClick={() => setActiveSourceFilter('All Sources')}
+                  className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'All Sources' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
+                >
                   <div className="w-2 h-2 rounded-full bg-primary-container"></div> All Sources
                 </button>
-                <button className="px-3 py-1.5 hover:bg-surface-container rounded-[6px] text-text-secondary flex items-center gap-2 transition-colors">
+                <button 
+                  onClick={() => setActiveSourceFilter('LinkedIn')}
+                  className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'LinkedIn' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
+                >
                   <div className="w-2 h-2 rounded-full bg-[#0A66C2]"></div> LinkedIn
                 </button>
-                <button className="px-3 py-1.5 hover:bg-surface-container rounded-[6px] text-text-secondary flex items-center gap-2 transition-colors">
+                <button 
+                  onClick={() => setActiveSourceFilter('WhatsApp')}
+                  className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'WhatsApp' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
+                >
                   <div className="w-2 h-2 rounded-full bg-[#25D366]"></div> WhatsApp
                 </button>
               </div>

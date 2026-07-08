@@ -371,6 +371,7 @@ export default function IngestionMonitorPage() {
   const emailStats = getStats('Email');
   const whatsappStats = getStats('WhatsApp');
   const metaStats = getStats('Meta');
+  const linkedinStats = getStats('linkedin');
 
   return (
     <div className="self-stretch bg-background min-h-screen w-full flex flex-col">
@@ -548,6 +549,31 @@ export default function IngestionMonitorPage() {
               { label: 'Last received', value: formatTime(metaStats.lastReceived) }
             ]}
           />
+
+          <ChannelStatusCard
+            title="LinkedIn Inbox"
+            isSelected={selectedChannel === 'linkedin'}
+            onClick={() => setSelectedChannel(selectedChannel === 'linkedin' ? null : 'linkedin')}
+            status={linkedinStats.lastReceived ? "Active" : "Monitoring"}
+            statusColor={linkedinStats.lastReceived ? "text-[#006E1C]" : "text-text-secondary"}
+            icon={
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>
+                <rect x="2" y="9" width="4" height="12"/>
+                <circle cx="4" cy="4" r="2"/>
+              </svg>
+            }
+            pulse={!!activeUploads.find((u: any) => u.source === 'linkedin')}
+            stats={[
+              { label: 'CVs Received Today', value: linkedinStats.todayCount.toString() },
+              { label: 'Last received', value: formatTime(linkedinStats.lastReceived) }
+            ]}
+          >
+            <div className="mt-2 bg-[#F1F8E9] border border-[#C8E6C9] rounded-md px-3 py-2 text-[11px] text-[#2E7D32] font-medium flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#006E1C] animate-pulse shrink-0" />
+              Polling <span className="font-bold">linkedin@career141.com</span> every minute
+            </div>
+          </ChannelStatusCard>
         </div>
         
         {importBatchId && (

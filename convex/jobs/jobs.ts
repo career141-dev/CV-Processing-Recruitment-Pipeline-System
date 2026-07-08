@@ -640,9 +640,49 @@ export const deleteJob = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("jobs").order("desc").take(100);
+    const jobs = await ctx.db.query("jobs").order("desc").take(100);
+
+    // For each job, count applications per stage
+    const jobsWithStats = await Promise.all(jobs.map(async (job) => {
+      const applications = await ctx.db.query("applications")
+        .withIndex("by_job_stage", (q) => q.eq("jobId", job._id))
+        .collect();
+
+      const stageCounts: Record<string, number> = {};
+      for (const app of applications) {
+        const s = app.currentStage || "new_cvs";
+        stageCounts[s] = (stageCounts[s] || 0) + 1;
+      }
+
+      const newCvsCount = stageCounts["new_cvs"] || 0;
+      const totalApplications = applications.length;
+
+      // Determine dominant stage (highest priority non-new stage, or new_cvs)
+      const STAGE_PRIORITY = [
+        "placed", "offer", "client_review", "director_shortlist",
+        "second_shortlist", "interview", "ai_call", "ta_shortlist", "new_cvs"
+      ];
+      let dominantStage = "new_cvs";
+      for (const stage of STAGE_PRIORITY) {
+        if (stageCounts[stage] && stageCounts[stage] > 0) {
+          dominantStage = stage;
+          break;
+        }
+      }
+
+      return {
+        ...job,
+        newCvsCount,
+        totalApplications,
+        dominantStage,
+        stageCounts,
+      };
+    }));
+
+    return jobsWithStats;
   },
 });
+
 
 export const getJob = query({
   args: { jobId: v.string() },
@@ -760,3 +800,4 @@ export const getActiveJobsBasicInfo = query({
     }));
   }
 });
+

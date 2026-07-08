@@ -545,10 +545,16 @@ export async function runCvExtraction(
   }
 
   try {
-    const blob = await ctx.storage.get(storageId);
-    if (!blob) throw new Error("File not found in Convex storage");
+    const url = await ctx.storage.getUrl(storageId);
+    if (!url) throw new Error("File URL not found in Convex storage");
 
-    const buffer = await blob.arrayBuffer();
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to download file from Convex storage. Status: ${response.status}`);
+
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength === 0) {
+      throw new Error("The file retrieved from storage is empty (zero bytes).");
+    }
     const fileHash = computeSha256(buffer);
 
     let profileImageId: Id<"_storage"> | undefined = undefined;
@@ -654,7 +660,12 @@ export async function runCvExtraction(
           stage: "indexing"
         });
       }
-      const embedding = await generateNvidiaEmbedding(cappedRawText);
+      let embedding: number[] | undefined = undefined;
+      try {
+        embedding = await generateNvidiaEmbedding(cappedRawText);
+      } catch (embedErr: any) {
+        console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", embedErr.message || embedErr);
+      }
 
       await ctx.runMutation(api.candidates.candidates.createCandidate, {
         ...safeExtracted,
@@ -742,7 +753,7 @@ export async function runCvExtraction(
       });
     }
 
-    if (!isInsufficientBalance) throw err;
+    console.error(`[CvExtraction] Extraction failed: ${message}`);
     return null;
   }
 }
