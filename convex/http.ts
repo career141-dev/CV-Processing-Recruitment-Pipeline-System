@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
 import { handleLocalWhatsappWebhook } from "./communications/localWhatsappAgent";
+import { handleWhatChimpWebhook } from "./communications/whatchimp";
 import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 
 const http = httpRouter();
@@ -36,6 +37,13 @@ http.route({
   path: "/api/local-whatsapp-inbound",
   method: "POST",
   handler: handleLocalWhatsappWebhook,
+});
+
+// WhatChimp Webhook Inbound Events
+http.route({
+  path: "/api/whatsapp-whatchimp",
+  method: "POST",
+  handler: handleWhatChimpWebhook,
 });
 
 

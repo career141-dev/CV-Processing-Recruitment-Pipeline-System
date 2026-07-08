@@ -10,6 +10,83 @@ export const getFirst = query({
   },
 });
 
+export const inspectWhatsApp = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("communications")
+      .filter((q: any) => q.eq(q.field("channel"), "whatsapp"))
+      .order("desc")
+      .take(20);
+  }
+});
+
+export const inspectEnv = query({
+  args: {},
+  handler: async (ctx) => {
+    return {
+      WHATSAPP_TEST_MODE: process.env.WHATSAPP_TEST_MODE,
+      WHATSAPP_TEST_RECIPIENT: process.env.WHATSAPP_TEST_RECIPIENT,
+      WHATCHIMP_API_TOKEN: process.env.WHATCHIMP_API_TOKEN ? "configured (starts with " + process.env.WHATCHIMP_API_TOKEN.substring(0, 5) + "...)" : "not configured",
+      WHATCHIMP_PHONE_NUMBER_ID: process.env.WHATCHIMP_PHONE_NUMBER_ID,
+    };
+  }
+});
+
+export const inspectApplications = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("applications").collect();
+  }
+});
+
+export const inspectLatestWhatsApp = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("communications")
+      .filter((q: any) => q.eq(q.field("channel"), "whatsapp"))
+      .order("desc")
+      .take(3);
+  }
+});
+
+export const resetWasifToFollowUp = mutation({
+  args: {},
+  handler: async (ctx: any) => {
+    const candidate = await ctx.db
+      .query("candidates")
+      .filter((q: any) => q.eq(q.field("email"), "wasifchy7@gmail.com"))
+      .first();
+
+    if (!candidate) throw new Error("Candidate wasifchy7@gmail.com not found");
+
+    await ctx.db.patch(candidate._id, {
+      currentSalary: undefined,
+      expectedSalary: undefined,
+      noticePeriodDays: undefined,
+      noticePeriod: undefined,
+    });
+
+    const app = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+      .first();
+
+    if (app) {
+      await ctx.db.patch(app._id, {
+        currentStage: "follow_up",
+        followUpCurrentSalary: false,
+        followUpExpectedSalary: false,
+        followUpNoticePeriod: false,
+        followUpCvReceived: true,
+      });
+    }
+
+    return { success: true, candidateId: candidate._id, applicationId: app?._id };
+  }
+});
+
 export const inspectCandidateState = query({
   args: {},
   handler: async (ctx) => {
