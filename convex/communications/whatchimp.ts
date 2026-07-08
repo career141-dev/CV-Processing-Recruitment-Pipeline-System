@@ -58,12 +58,12 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   }
 
   // 2. Check if it's a flat custom WhatChimp payload format
-  const from = body.from || body.phone || body.sender || body.phone_number || body.subscriber_id;
-  const text = body.message || body.body || body.text || body.message_text;
+  const from = body.chat_id || body.from || body.phone || body.sender || body.phone_number || body.subscriber_id;
+  const text = body.user_message || body.message || body.body || body.text || body.message_text;
   const mediaUrl = body.media_url || body.file_url || body.mediaUrl || body.fileUrl;
   const fileName = body.filename || body.fileName || "cv.pdf";
   const mimeType = body.mime_type || body.mimeType || "application/pdf";
-  const to = body.to || body.receiver || body.display_phone_number || "WhatChimp Number";
+  const to = body.to || body.receiver || body.display_phone_number || body.whatsapp_bot_username || "WhatChimp Number";
 
   if (!from) {
     console.warn("[WhatChimp Webhook] No sender identifier found in payload.");
@@ -80,18 +80,15 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Resolve candidate details
+  // Resolve candidate details and record follow-up reply (text extraction runs in background)
   const checkResult = await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
     senderPhone: cleanFrom,
     textBody: text || "",
   });
 
-  if (checkResult && checkResult.isFollowUpReply) {
-    console.log(`[WhatChimp Webhook] Recorded follow-up reply from +${cleanFrom}`);
-    return new Response("OK", { status: 200 });
-  }
+  const isFollowUpReply = checkResult?.isFollowUpReply === true;
 
-  // Handle incoming CV document
+  // Handle incoming CV document — process for ALL candidates, including follow-up
   if (mediaUrl) {
     console.log(`[WhatChimp Webhook] Inbound media URL detected: ${mediaUrl}`);
     try {
@@ -113,21 +110,23 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       // 3. Store in Convex Native Storage
       const storageId = await ctx.storage.store(fileBlob);
 
-      // 4. Extract keyword if message text is present
-      const firstWord = text ? text.trim().split(/\s+/)[0]?.toUpperCase() : "";
-      let resolvedJobId = null;
-      
-      if (firstWord) {
-        const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
-        if (job && job.status === "active") {
-          resolvedJobId = job._id;
+      // 4. Resolve jobId — use follow-up application's job if available, otherwise keyword resolution
+      let resolvedJobId = checkResult?.jobId ?? null;
+
+      if (!resolvedJobId) {
+        const firstWord = text ? text.trim().split(/\s+/)[0]?.toUpperCase() : "";
+        if (firstWord) {
+          const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
+          if (job && job.status === "active") {
+            resolvedJobId = job._id;
+          }
         }
       }
 
       if (!resolvedJobId) {
         console.warn(`[WhatChimp Webhook] Incoming resume from +${cleanFrom} could not be matched to an active job keyword.`);
         const activeJobs = await ctx.runQuery(api.jobs.jobs.list);
-        const firstActive = activeJobs.find(j => j.status === "active");
+        const firstActive = activeJobs.find((j: any) => j.status === "active");
         if (firstActive) {
           resolvedJobId = firstActive._id;
           console.log(`[WhatChimp Webhook] Defaulted to active job: ${firstActive.title} (${firstActive.keyword})`);
@@ -153,8 +152,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     } catch (err: any) {
       console.error("[WhatChimp Webhook] Inbound media processing error:", err.message);
     }
-  } else {
-    // If text message only (e.g. initial keyword check)
+  } else if (!isFollowUpReply) {
+    // Text-only message from a non-follow-up candidate — keyword check and auto-response
     const firstWord = text ? text.trim().split(/\s+/)[0]?.toUpperCase() : "";
     if (firstWord) {
       const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
