@@ -160,6 +160,14 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
   // Handle incoming CV document
   if (mediaUrl) {
+    const isNonDocumentMedia = String(fileName).toLowerCase().match(/\.(jpeg|jpg|png|webp|gif|mp4|mp3|ogg|wav)$/) != null || 
+                               (typeof body.user_message === 'object' && body.user_message !== null && ["image", "sticker", "video", "audio", "reaction"].includes(body.user_message.type));
+                               
+    if (isNonDocumentMedia) {
+      console.log(`[WhatChimp Webhook] Ignoring non-document media (image/sticker/video): ${fileName}`);
+      return new Response("OK", { status: 200 });
+    }
+
     console.log(`[WhatChimp Webhook] Inbound media URL detected: ${mediaUrl}`);
     try {
       // 1. Download file from mediaUrl
@@ -182,13 +190,15 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const storageId = await ctx.storage.store(storageBlob);
 
       // 4. Extract keyword if message text is present
-      const firstWord = text ? text.trim().split(/\s+/)[0]?.toUpperCase() : "";
       let resolvedJobId = null;
-
-      if (firstWord) {
-        const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
-        if (job && job.status === "active") {
-          resolvedJobId = job._id;
+      if (text) {
+        const upperText = text.toUpperCase();
+        const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+        for (const job of activeJobs) {
+          if (job.keyword && upperText.includes(job.keyword.toUpperCase())) {
+            resolvedJobId = job._id;
+            break;
+          }
         }
       }
 
@@ -208,22 +218,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       }
 
       if (!resolvedJobId) {
-        // No active session — candidate did not send a keyword first. Reject and instruct them.
-        console.warn(`[WhatChimp Webhook] No active session for +${cleanFrom}. CV rejected — keyword required first.`);
-        const apiToken = process.env.WHATCHIMP_API_TOKEN;
-        const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
-        if (apiToken && phoneNumberId) {
-          const params = new URLSearchParams();
-          params.append("apiToken", apiToken);
-          params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
-          params.append("phone_number", cleanFrom);
-          params.append("message", "To apply for a position, please first send the job keyword (e.g. BRAND24) and then upload your CV.");
-          await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: params,
-          }).then(r => r.text()).catch(console.error);
-        }
+        // No active session — candidate did not send a keyword first. Reject silently.
+        console.warn(`[WhatChimp Webhook] No active session for +${cleanFrom}. CV rejected silently — no keyword was sent first.`);
         return new Response("OK", { status: 200 });
       }
 
@@ -269,23 +265,35 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     }
   } else {
     // If text message only (e.g. initial keyword check)
-    const firstWord = text ? text.trim().split(/\s+/)[0]?.toUpperCase() : "";
-    if (firstWord) {
-      const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
-      if (job && job.status === "active") {
-        console.log(`[WhatChimp Webhook] Received keyword ${firstWord} from +${cleanFrom} for job ${job.title}`);
+    if (text) {
+      const upperText = text.toUpperCase();
+      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      
+      let matchedJob = null;
+      let matchedKeyword = "";
+      
+      for (const job of activeJobs) {
+        if (job.keyword && upperText.includes(job.keyword.toUpperCase())) {
+          matchedJob = job;
+          matchedKeyword = job.keyword;
+          break;
+        }
+      }
+
+      if (matchedJob) {
+        console.log(`[WhatChimp Webhook] Found keyword ${matchedKeyword} in message from +${cleanFrom} for job ${matchedJob.title}`);
         
         // 1. Create/Update WhatsApp Session mapping phone to job ID
         await ctx.runMutation(api.communications.whatchimp.upsertSession, {
           phone: cleanFrom,
-          jobId: job._id,
-          keyword: firstWord,
+          jobId: matchedJob._id,
+          keyword: matchedKeyword,
         });
 
         const apiToken = process.env.WHATCHIMP_API_TOKEN;
         const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
         if (apiToken && phoneNumberId) {
-          const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
+          const replyMessage = `Thank you for your interest in the ${matchedJob.title} position.\n\nPlease upload your latest CV to continue your application.`;
           const params = new URLSearchParams();
           params.append("apiToken", apiToken);
           params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));

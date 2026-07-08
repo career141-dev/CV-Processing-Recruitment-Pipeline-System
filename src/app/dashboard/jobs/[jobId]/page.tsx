@@ -64,7 +64,6 @@ const TABS = [
 ];
 
 const ScoreRing = ({ score, reason }: { score: number | string, reason?: string }) => {
-  const [showTooltip, setShowTooltip] = useState(false);
   if (score === 'Pending' || score === null || score === undefined) {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-text-disabled bg-surface-container px-2 py-1 rounded-full">
@@ -78,29 +77,19 @@ const ScoreRing = ({ score, reason }: { score: number | string, reason?: string 
   const strokeDasharray = `${numScore}, 100`;
 
   return (
-    <div className="relative inline-flex items-center gap-2">
-      <div
-        className="relative inline-flex items-center justify-center w-8 h-8 cursor-help"
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-      >
+    <div className="flex items-center gap-3">
+      <div className="relative inline-flex items-center justify-center w-8 h-8 shrink-0">
         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
           <path className="text-border" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
           <path className={`${colorClass} transition-all duration-1000 ease-out`} strokeDasharray={strokeDasharray} strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
         </svg>
         <span className={`absolute text-[10px] font-bold ${colorClass}`}>{numScore}</span>
-
-        {/* Reason tooltip */}
-        {reason && showTooltip && (
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-64 bg-surface-container-high border border-border rounded-xl p-3 shadow-xl pointer-events-none">
-            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">AI Score Reason</div>
-            <p className="text-[12px] text-text-primary leading-relaxed">{reason}</p>
-            {/* Arrow */}
-            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-border" />
-          </div>
-        )}
       </div>
-      <span className="text-xs font-medium text-text-secondary">Match</span>
+      {reason && (
+        <div className="text-[11.5px] text-green-700 bg-green-50/70 border border-green-100/50 px-2.5 py-1.5 rounded-lg leading-relaxed max-w-[200px]" title={reason}>
+          {reason}
+        </div>
+      )}
     </div>
   );
 };
