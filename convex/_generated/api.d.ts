@@ -10,6 +10,8 @@
 
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
+import type * as admin_testIngedup from "../admin/testIngedup.js";
+import type * as admin_testIngedupMut from "../admin/testIngedupMut.js";
 import type * as admin_updateJDs from "../admin/updateJDs.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
@@ -74,6 +76,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   "admin/activateReactDev": typeof admin_activateReactDev;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
+  "admin/testIngedup": typeof admin_testIngedup;
+  "admin/testIngedupMut": typeof admin_testIngedupMut;
   "admin/updateJDs": typeof admin_updateJDs;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
