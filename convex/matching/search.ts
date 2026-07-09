@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action, query } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
 import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
 import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
@@ -76,7 +77,7 @@ export const aiSearch = action({
     interpretation: SearchInterpretation;
     results: { candidateId: string; score: number; reason: string }[];
   }> => {
-    const fetchLimit = (args.limit ?? 20) * 2;
+    const fetchLimit = 100;
     const parsedReq = await extractSearchRequirements(args.query, "natural_language");
     const effectiveReq: SearchRequirements = {
       ...parsedReq,
@@ -93,6 +94,39 @@ export const aiSearch = action({
       keywords: effectiveReq.keywords,
     };
 
+    // 1. Embed query with a fallback
+    let queryEmbedding: number[] | null = null;
+    try {
+      const { embedText } = await import("./agent2.js");
+      queryEmbedding = await embedText(args.query, "query");
+    } catch (err) {
+      console.error("NVIDIA embedding call failed, falling back to keyword-only search:", err);
+      queryEmbedding = null;
+    }
+
+    // 2. Run vector search only if embedding succeeded
+    let vectorResults: { _id: Id<"candidates">; _score: number }[] = [];
+    if (queryEmbedding) {
+      vectorResults = await ctx.vectorSearch("candidates", "vector_index_candidates", {
+        vector: queryEmbedding,
+        limit: fetchLimit,
+      });
+    }
+
+    // 3. Batched document fetch, with score attached
+    type ScoredCandidateDoc = Doc<"candidates"> & { vectorScore?: number };
+
+    const scoreById = new Map(vectorResults.map((r) => [r._id, r._score]));
+
+    const vectorCandidates: ScoredCandidateDoc[] = vectorResults.length
+      ? (
+          await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
+            candidateIds: vectorResults.map((r) => r._id),
+          })
+        ).map((c) => ({ ...c, vectorScore: scoreById.get(c._id) }))
+      : [];
+
+    // 4. Keyword search batches
     const searchTerms = buildSearchTerms(effectiveReq, args.query);
     const searchBatches = await Promise.all([
       ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
@@ -104,10 +138,19 @@ export const aiSearch = action({
       ),
     ]);
 
-    const seen = new Set<string>();
-    const rawResults: typeof searchBatches[0] = [];
+    // 5. Merge and deduplicate
+    const seen = new Set<Id<"candidates">>();
+    const rawResults: ScoredCandidateDoc[] = [];
+
+    for (const cand of vectorCandidates) {
+      if (!seen.has(cand._id)) {
+        seen.add(cand._id);
+        rawResults.push(cand);
+      }
+    }
+
     for (const batch of searchBatches.flat()) {
-      if (!seen.has(batch._id)) {
+      if (batch && !seen.has(batch._id)) {
         seen.add(batch._id);
         rawResults.push(batch);
       }
@@ -140,14 +183,14 @@ export const aiSearch = action({
     const finalRanked = llmScored
       .sort((a, b) =>
         (b.llmScore - a.llmScore) ||
-        (b.overallScore - a.overallScore) ||
+        ((b.cv as any).vectorScore ?? 0) - ((a.cv as any).vectorScore ?? 0) || // Tie-breaker 1: Vector score
+        (b.overallScore - a.overallScore) ||                                   // Tie-breaker 2: Heuristics
         (a.locationStatus === "match" ? 1 : 0) - (b.locationStatus === "match" ? 1 : 0)
       );
 
     const results = finalRanked
       .slice(0, args.limit ?? 20)
-      .filter((item) => item.missingRequired.length === 0)
-      .filter((item) => item.overallScore >= 35 || item.titleScore >= 55)
+      .filter((item) => item.overallScore >= 20 || item.titleScore >= 40)
       .map((item) => ({
         candidateId: item.cv._id,
         score: item.overallScore,
