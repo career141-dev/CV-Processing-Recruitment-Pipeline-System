@@ -174,7 +174,7 @@ export const checkAndRecordFollowUpReply = internalMutation({
       }) || null;
     }
 
-    if (!candidate) return { isFollowUpReply: false };
+    if (!candidate) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
     // Find active follow-up or auto-rejected application
     const activeApp = await ctx.db
@@ -191,7 +191,7 @@ export const checkAndRecordFollowUpReply = internalMutation({
       )
       .first();
 
-    if (!activeApp) return { isFollowUpReply: false };
+    if (!activeApp) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
     // Insert inbound communication
     await ctx.db.insert("communications", {
@@ -212,7 +212,7 @@ export const checkAndRecordFollowUpReply = internalMutation({
       textBody: args.textBody,
     });
 
-    return { isFollowUpReply: true };
+    return { isFollowUpReply: true, candidateId: candidate._id, jobId: activeApp.jobId };
   },
 });
 

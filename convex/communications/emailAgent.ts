@@ -272,7 +272,7 @@ Respond ONLY with a valid JSON object in this exact format:
               const resultObj = JSON.parse(resultStr);
               if (resultObj.matchedJobId) {
                 // Verify the ID actually exists in our active jobs
-                const isValid = activeJobs.some(j => j._id === resultObj.matchedJobId);
+                const isValid = activeJobs.some((j: any) => j._id === resultObj.matchedJobId);
                 if (isValid) {
                   resolvedJobId = resultObj.matchedJobId;
                   console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
@@ -411,7 +411,9 @@ export const checkAndRecordEmailReply = internalMutation({
       textBody: args.body,
     });
 
-    const isFollowUp = activeApp?.currentStage === "follow_up";
+    const isFollowUp =
+      activeApp?.currentStage === "follow_up" ||
+      (activeApp?.currentStage === "rejected" && activeApp?.taRejectionReason === "Did not complete requirements within 7-day window");
 
     return {
       isCandidateMatched: true,

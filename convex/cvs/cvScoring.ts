@@ -253,6 +253,7 @@ export type ScoredCandidate = {
     skills?: string[];
     rawText?: string;
     summary?: string;
+    vectorScore?: number;
   };
   titleScore: number;
   seniorityScore: number;
@@ -314,7 +315,8 @@ export function scoreCandidateAgainstRequirements(
   const experienceScore = yearsScore(cv.yearsOfExperience ?? null, req.minYearsExperience);
   const skillScores = scoreSkills(requiredSkills, preferredSkills, candidateSkills);
   const hasMissingRequired = requiredSkills.length > 0 && skillScores.missingRequired.length > 0;
-  const skillScore = hasMissingRequired ? 0 : skillScores.score;
+  // Loosen skill score: do not penalise to 0 if a required skill is missing, just use computed coverage score
+  const skillScore = skillScores.score;
   const industryScore = scoreIndustry(req.industry, cv.industries ?? null);
   const locationScore = scoreLocation(req.location, cv.location ?? null);
   const locationStatus: ScoredCandidate["locationStatus"] =
@@ -324,14 +326,31 @@ export function scoreCandidateAgainstRequirements(
         || normalizeText(cv.location ?? "").includes(normalizeText(req.location))
         ? "match"
         : "different";
-  const overallScore = Math.round(
-    (titleScore * 0.32) +
-    (skillScore * 0.28) +
-    (experienceScore * 0.16) +
-    (seniorityScore * 0.12) +
-    (industryScore * 0.06) +
-    (locationScore * 0)
-  );
+
+  // Prioritise Experience and Title/Seniority/Skills if experience is mentioned
+  let overallScore: number;
+  if (req.minYearsExperience != null) {
+    overallScore = Math.round(
+      (experienceScore * 0.30) +
+      (titleScore * 0.30) +
+      (seniorityScore * 0.20) +
+      (skillScore * 0.20)
+    );
+  } else {
+    overallScore = Math.round(
+      (titleScore * 0.32) +
+      (skillScore * 0.28) +
+      (experienceScore * 0.16) +
+      (seniorityScore * 0.12) +
+      (industryScore * 0.06)
+    );
+  }
+
+  // Incorporate vectorScore if present
+  if ((cv as any).vectorScore !== undefined) {
+    const semanticScore = Math.round((cv as any).vectorScore * 100);
+    overallScore = Math.round(overallScore * 0.60 + semanticScore * 0.40);
+  }
 
   const titleReason =
     titleScore >= 90 ? "The title is a near-direct match."

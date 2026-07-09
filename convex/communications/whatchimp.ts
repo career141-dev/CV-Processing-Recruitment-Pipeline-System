@@ -73,7 +73,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
               const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
               const params = new URLSearchParams();
               params.append("apiToken", apiToken);
-              params.append("phone_number_id", phoneNumberId);
+              params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
               params.append("phone_number", cleanSender);
               params.append("message", replyMessage);
 
@@ -153,12 +153,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     textBody: text || "",
   }) : null;
 
-  if (checkResult && checkResult.isFollowUpReply) {
-    console.log(`[WhatChimp Webhook] Recorded follow-up reply from +${cleanFrom}`);
-    return new Response("OK", { status: 200 });
-  }
+  const isFollowUpReply = checkResult?.isFollowUpReply === true;
 
-  // Handle incoming CV document
+  // Handle incoming CV document — process for ALL candidates, including follow-up
   if (mediaUrl) {
     const isNonDocumentMedia = String(fileName).toLowerCase().match(/\.(jpeg|jpg|png|webp|gif|mp4|mp3|ogg|wav)$/) != null || 
                                (typeof body.user_message === 'object' && body.user_message !== null && ["image", "sticker", "video", "audio", "reaction"].includes(body.user_message.type));

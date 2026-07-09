@@ -109,6 +109,7 @@ export default function CandidatesSearch() {
       });
       setSearchResults(res);
       setHasSearched(true);
+      setSortOption('AI Relevancy');
       setSearchPage(1);
       toast.success(`Found ${res.results.length} candidate matches`);
     } catch (error) {
@@ -141,9 +142,21 @@ export default function CandidatesSearch() {
         .filter(Boolean)
     : (candidates ?? []).map((c: Doc<"candidates">) => ({ ...c, score: undefined as number | undefined, matchReason: undefined as string | undefined }))) ?? [];
 
+  const sortedCandidates = React.useMemo(() => {
+    const list = [...candidatesToRender];
+    if (sortOption === 'AI Score') {
+      list.sort((a: any, b: any) => (b.score ?? 0) - (a.score ?? 0));
+    } else if (sortOption === 'Experience') {
+      list.sort((a: any, b: any) => (b.yearsOfExperience ?? 0) - (a.yearsOfExperience ?? 0));
+    } else if (sortOption === 'Name') {
+      list.sort((a: any, b: any) => (a.fullName || '').localeCompare(b.fullName || ''));
+    }
+    return list;
+  }, [candidatesToRender, sortOption]);
+
   const searchStartIndex = (searchPage - 1) * searchItemsPerPage;
-  const currentSearchItems = candidatesToRender.slice(searchStartIndex, searchStartIndex + searchItemsPerPage);
-  const totalSearchPages = Math.ceil(candidatesToRender.length / searchItemsPerPage);
+  const currentSearchItems = sortedCandidates.slice(searchStartIndex, searchStartIndex + searchItemsPerPage);
+  const totalSearchPages = Math.ceil(sortedCandidates.length / searchItemsPerPage);
 
   return (
     <div className="flex-1 relative w-full bg-surface">
@@ -267,6 +280,7 @@ export default function CandidatesSearch() {
                       setHasSearched(false);
                       setSearchResults(null);
                       setSearchQuery("");
+                      setSortOption('Best Match');
                     }}
                   >
                     Clear Search
@@ -294,15 +308,60 @@ export default function CandidatesSearch() {
               <span className="text-text-secondary text-[13px] font-bold">
                 {candidates === undefined
                   ? "Loading..."
-                  : `Showing ${candidatesToRender.length === 0 ? 0 : Math.min((searchPage - 1) * searchItemsPerPage + 1, candidatesToRender.length)} to ${Math.min(searchPage * searchItemsPerPage, candidatesToRender.length)} of ${candidatesToRender.length} candidate${candidatesToRender.length !== 1 ? "s" : ""}`}
+                  : `Showing ${sortedCandidates.length === 0 ? 0 : Math.min((searchPage - 1) * searchItemsPerPage + 1, sortedCandidates.length)} to ${Math.min(searchPage * searchItemsPerPage, sortedCandidates.length)} of ${sortedCandidates.length} candidate${sortedCandidates.length !== 1 ? "s" : ""}`}
               </span>
-              <div className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer">
-                <span className="text-text-secondary text-[13px]">
-                  Sort by:
-                </span>
-                <span className="text-text-primary text-[13px] font-bold">
-                  {hasSearched ? 'AI Relevancy' : 'Best Match'}
-                </span>
+              <div className="relative">
+                <div 
+                  onClick={() => setIsSortOpen(!isSortOpen)}
+                  className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer select-none"
+                >
+                  <span className="text-text-secondary text-[13px]">
+                    Sort by:
+                  </span>
+                  <span className="text-text-primary text-[13px] font-bold flex items-center gap-1">
+                    {sortOption} <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                  </span>
+                </div>
+                
+                {isSortOpen && (
+                  <div className="absolute right-0 mt-1 w-40 bg-surface rounded-md border border-border shadow-lg py-1 z-50">
+                    {hasSearched ? (
+                      <>
+                        <button
+                          onClick={() => { setSortOption('AI Relevancy'); setIsSortOpen(false); }}
+                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'AI Relevancy' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                        >
+                          AI Relevancy
+                        </button>
+                        <button
+                          onClick={() => { setSortOption('AI Score'); setIsSortOpen(false); }}
+                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'AI Score' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                        >
+                          AI Score
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => { setSortOption('Best Match'); setIsSortOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Best Match' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                      >
+                        Best Match
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setSortOption('Experience'); setIsSortOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Experience' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                    >
+                      Experience
+                    </button>
+                    <button
+                      onClick={() => { setSortOption('Name'); setIsSortOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Name' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                    >
+                      Name
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             

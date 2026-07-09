@@ -593,6 +593,7 @@ export async function runCvExtraction(
       candidateId,
     });
 
+    let finalCandidateId: Id<"candidates"> | null = null;
     let extracted: CvExtractionResult | null = null;
     if (skipLLM && preExtractedData) {
       extracted = {
@@ -667,8 +668,9 @@ export async function runCvExtraction(
         console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", embedErr.message || embedErr);
       }
 
-      await ctx.runMutation(api.candidates.candidates.createCandidate, {
+      finalCandidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
         ...safeExtracted,
+        cvUploadId,
         currentEmployer: derivedEmployer,
         currentTitle: derivedTitle,
         jobHistory: formattedJobHistory,
@@ -683,26 +685,33 @@ export async function runCvExtraction(
         parsingConfidence,
         isParsed: true,
         embedding,
-      });
+      }) as Id<"candidates">;
+    }
+
+    const resolvedCandidateId = finalCandidateId || candidateId;
+
+    if (finalCandidateId && finalCandidateId !== candidateId) {
+      console.log(`[cvExtraction] Merged into existing candidate: ${finalCandidateId}. Deleting duplicate candidate record: ${candidateId}`);
+      await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
     }
 
     const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
       status: "processed",
       fileHash,
-      candidateId,
+      candidateId: resolvedCandidateId,
     }) as string | undefined | null;
 
     if (jobId) {
       await ctx.runMutation(api.applications.applications.createApplication, {
-        candidateId,
+        candidateId: resolvedCandidateId,
         jobId: jobId as any,
         cvFileId: cvUploadId,
         sourceChannel: sourceChannel ?? "manual_upload",
       });
 
       await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
-        candidateId,
+        candidateId: resolvedCandidateId,
         jobId: jobId as any,
       });
     }
