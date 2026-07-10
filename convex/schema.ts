@@ -37,7 +37,8 @@ users: defineTable({
   .index("by_clerkUserId", ["clerkUserId"])
   .index("by_email", ["email"])
   .index("by_role", ["role"])
-  .index("by_active", ["isActive"]),
+  .index("by_active", ["isActive"])
+  .index("by_phone", ["phone"]),
 
 // ■■ TEAMS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 teams: defineTable({
@@ -605,7 +606,8 @@ generatedAt: v.string(),
     .index("by_job_score", ["jobId", "aiMatchScore"])
     .index("by_job_active", ["jobId", "isActive"])
     .index("by_job_stage_changed", ["jobId", "lastStageChangedAt"])
-    .index("by_candidate_job", ["candidateId", "jobId"]),
+    .index("by_candidate_job", ["candidateId", "jobId"])
+    .index("by_stage", ["currentStage"]),
 
   pipelineEvents: defineTable({
     applicationId: v.optional(v.id("applications")),

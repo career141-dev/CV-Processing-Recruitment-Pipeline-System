@@ -76,7 +76,7 @@ export const insertCvRecord = internalMutation({
       
       const taUser = await ctx.db
         .query("users")
-        .filter((q) => q.eq(q.field("phone"), args.fromNumber))
+        .withIndex("by_phone", (q) => q.eq("phone", args.fromNumber))
         .first();
 
       const rawSenderDisplay = taUser ? taUser._id : args.fromNumber;
@@ -142,14 +142,14 @@ export const insertCvRecord = internalMutation({
 
     const taUser = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("phone"), args.fromNumber))
+      .withIndex("by_phone", (q) => q.eq("phone", args.fromNumber))
       .first();
 
     const rawSenderDisplay = taUser ? taUser._id : args.fromNumber;
 
     let candidate = await ctx.db
       .query("candidates")
-      .filter((q) => q.eq(q.field("phone"), args.originalSenderPhone))
+      .withIndex("by_phone", (q) => q.eq("phone", args.originalSenderPhone))
       .first();
 
     if (!candidate) {

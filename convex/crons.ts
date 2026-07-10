@@ -9,14 +9,16 @@ export const evaluateFollowUpStage = internalMutation({
   args: {},
   handler: async (ctx) => {
     // 1. Check Kill Switch
-    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    const configRow = await ctx.db.query("appSettings")
+      .withIndex("by_key", (q) => q.eq("key", "system"))
+      .first();
     if (configRow && configRow.autopilotEnabled === false) {
       console.log("Autopilot disabled via appSettings - skipping sweep");
       return;
     }
 
     const followUpApps = await ctx.db.query("applications")
-      .filter(q => q.eq(q.field("currentStage"), "follow_up"))
+      .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
       .collect();
 
     const now = Date.now();

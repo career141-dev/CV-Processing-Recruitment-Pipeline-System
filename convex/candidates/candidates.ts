@@ -215,7 +215,7 @@ export const createCandidate = mutation({
     if (args.email && !existingCandidateId) {
       const existing = await ctx.db
         .query("candidates")
-        .filter((q) => q.eq(q.field("email"), args.email!))
+        .withIndex("by_email", (q) => q.eq("email", args.email!))
         .first();
       if (existing) existingCandidateId = existing._id;
     }
@@ -224,7 +224,7 @@ export const createCandidate = mutation({
     if (args.phone && !existingCandidateId) {
       const existing = await ctx.db
         .query("candidates")
-        .filter((q) => q.eq(q.field("phone"), args.phone!))
+        .withIndex("by_phone", (q) => q.eq("phone", args.phone!))
         .first();
       if (existing) existingCandidateId = existing._id;
     }
@@ -233,7 +233,7 @@ export const createCandidate = mutation({
     if (args.linkedinUrl && !existingCandidateId) {
       const existing = await ctx.db
         .query("candidates")
-        .filter((q) => q.eq(q.field("linkedinUrl"), args.linkedinUrl!))
+        .withIndex("by_linkedinUrl", (q) => q.eq("linkedinUrl", args.linkedinUrl!))
         .first();
       if (existing) existingCandidateId = existing._id;
     }

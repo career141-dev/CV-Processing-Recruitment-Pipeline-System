@@ -205,7 +205,7 @@ export const getFollowUpCandidates = query({
   handler: async (ctx) => {
     const apps = await ctx.db
       .query("applications")
-      .filter((q) => q.eq(q.field("currentStage"), "follow_up"))
+      .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
       .collect();
 
     return Promise.all(
