@@ -182,7 +182,7 @@ export const aiSearch = action({
 
     const finalRanked = llmScored
       .sort((a, b) =>
-        (b.llmScore - a.llmScore) ||
+        (Number(b.llmScore ?? 0) - Number(a.llmScore ?? 0)) ||
         ((b.cv as any).vectorScore ?? 0) - ((a.cv as any).vectorScore ?? 0) || // Tie-breaker 1: Vector score
         (b.overallScore - a.overallScore) ||                                   // Tie-breaker 2: Heuristics
         (a.locationStatus === "match" ? 1 : 0) - (b.locationStatus === "match" ? 1 : 0)

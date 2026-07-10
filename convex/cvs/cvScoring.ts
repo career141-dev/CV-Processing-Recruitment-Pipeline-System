@@ -394,7 +394,7 @@ export function scoreCandidateAgainstRequirements(
   };
 }
 
-export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<number> {
+export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<{score: number, reason: string}> {
   const model = getModelForTask("jd_matching");
   const openai = getOpenAI("jd_matching");
 
@@ -404,7 +404,7 @@ export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<nu
       messages: [
         {
           role: "system",
-          content: `You are a recruitment scoring assistant. Score the candidate's CV against the job description on a scale of 0-100. Return ONLY a JSON object: {"score": number, "reason": "brief reason"}`
+          content: `You are an expert Talent Acquisition (TA) specialist. Evaluate the candidate's CV against the job description on a scale of 0-100. Return ONLY a JSON object: {"score": number, "reason": "A concise, professional explanation (max 2-3 sentences) from a recruiter's perspective detailing the candidate's fit based on skills, experience, and title match against the JD requirements."}`
         },
         {
           role: "user",
@@ -419,7 +419,7 @@ export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<nu
     const success = !!content && content !== '{"score":0}';
 
     try {
-      const parsed = JSON.parse(content) as { score?: number };
+      const parsed = JSON.parse(content) as { score?: number, reason?: string };
       await logLLMUsage(
         {} as any,
         "jd_matching",
@@ -429,7 +429,10 @@ export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<nu
         success,
         !success ? "JSON parsing failed" : undefined
       );
-      return Math.min(100, Math.max(0, parsed.score ?? 0));
+      return { 
+        score: Math.min(100, Math.max(0, parsed.score ?? 0)),
+        reason: parsed.reason || "The candidate's profile was evaluated against the job requirements."
+      };
     } catch {
       await logLLMUsage(
         {} as any,
@@ -440,7 +443,7 @@ export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<nu
         false,
         "JSON parsing failed"
       );
-      return 0;
+      return { score: 0, reason: "Error parsing AI evaluation." };
     }
   } catch (error) {
     await logLLMUsage(
@@ -452,7 +455,7 @@ export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<nu
       false,
       error instanceof Error ? error.message : "API call failed"
     );
-    return 0;
+    return { score: 0, reason: "Failed to connect to the scoring service." };
   }
 }
 

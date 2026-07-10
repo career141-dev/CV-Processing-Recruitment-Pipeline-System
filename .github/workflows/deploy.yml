@@ -1,0 +1,27 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main # Only run this workflow when code is pushed or merged into the main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute deployment commands via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            # 1. Navigate to the project directory on your VPS
+            # (You can change this path if you clone your repo somewhere else)
+            cd /opt/career141
+            
+            # 2. Pull the latest code from GitHub
+            git pull origin main
+            
+            # 3. Rebuild the image with the new code and restart the container automatically
+            docker-compose -f docker-compose.prod.yml up -d --build

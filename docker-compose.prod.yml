@@ -1,0 +1,25 @@
+services:
+  web:
+    build:
+      context: .
+      args:
+        # These are baked in at build time. On your VPS, 
+        # Compose will automatically read these from .env.production
+        - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL}
+        - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    image: career141-prod:latest
+    container_name: career141-web
+    restart: unless-stopped
+    # We use "expose" instead of "ports" because Caddy will route traffic to it internally.
+    # This prevents the app from being accessed directly via the server's IP address.
+    expose:
+      - "3000"
+    # Load all server-side secrets at runtime
+    env_file:
+      - .env.production
+    # Log rotation to prevent filling up the VPS disk over time
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

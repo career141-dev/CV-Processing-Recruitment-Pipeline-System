@@ -10,6 +10,8 @@
 
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
+import type * as admin_testIngedup from "../admin/testIngedup.js";
+import type * as admin_testIngedupMut from "../admin/testIngedupMut.js";
 import type * as admin_updateJDs from "../admin/updateJDs.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
@@ -38,6 +40,7 @@ import type * as cvs_cvScoringActions from "../cvs/cvScoringActions.js";
 import type * as cvs_cvUploads from "../cvs/cvUploads.js";
 import type * as cvs_ingestion from "../cvs/ingestion.js";
 import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
+import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
 import type * as integrations_workable from "../integrations/workable.js";
@@ -74,6 +77,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   "admin/activateReactDev": typeof admin_activateReactDev;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
+  "admin/testIngedup": typeof admin_testIngedup;
+  "admin/testIngedupMut": typeof admin_testIngedupMut;
   "admin/updateJDs": typeof admin_updateJDs;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
@@ -102,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   "cvs/cvUploads": typeof cvs_cvUploads;
   "cvs/ingestion": typeof cvs_ingestion;
   "cvs/lazyParsing": typeof cvs_lazyParsing;
+  health: typeof health;
   http: typeof http;
   "integrations/elevenlabs": typeof integrations_elevenlabs;
   "integrations/workable": typeof integrations_workable;
