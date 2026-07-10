@@ -59,6 +59,7 @@ export default function CandidatesSearch() {
   const [isAiSearching, setIsAiSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [locationQuery, setLocationQuery] = useState("");
   const [sortOption, setSortOption] = useState('Best Match');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -103,9 +104,41 @@ export default function CandidatesSearch() {
       if (activeFilters.includes("Senior")) seniorityFilter = "senior";
       else if (activeFilters.includes("Lead")) seniorityFilter = "lead";
 
+      let minExperience: number | undefined = undefined;
+      let maxExperience: number | undefined = undefined;
+      const expFilter = activeFilters.find(f => f.includes("years"));
+      if (expFilter) {
+        const match = expFilter.match(/(\d+)\s*(?:-|–)\s*(\d+)/);
+        if (match) {
+          minExperience = parseInt(match[1], 10);
+          maxExperience = parseInt(match[2], 10);
+        }
+      }
+
+      const educationFilter = activeFilters.filter(f => f === "Bachelor" || f === "Masters");
+      const education = educationFilter.length > 0 ? educationFilter : undefined;
+
+      const sourceFilter = activeFilters.filter(f => f === "LinkedIn" || f === "WhatsApp");
+      const sources = sourceFilter.length > 0 ? sourceFilter : undefined;
+
+      const customFilters = activeFilters.filter(f => {
+        if (f === "Senior" || f === "Lead") return false;
+        if (f.includes("years")) return false;
+        if (f === "Bachelor" || f === "Masters") return false;
+        if (f === "LinkedIn" || f === "WhatsApp") return false;
+        return true;
+      });
+      const customFiltersParam = customFilters.length > 0 ? customFilters : undefined;
+
       const res = await aiSearchAction({
         query: searchQuery,
         seniority: seniorityFilter,
+        minExperience,
+        maxExperience,
+        location: locationQuery.trim() || undefined,
+        education,
+        sources,
+        customFilters: customFiltersParam,
       });
       setSearchResults(res);
       setHasSearched(true);
@@ -199,7 +232,12 @@ export default function CandidatesSearch() {
           {/* Animated Sidebar Container */}
           <div className={`transition-all duration-300 ease-in-out shrink-0 overflow-hidden ${isSidebarOpen ? 'w-[260px] opacity-100 mr-[21px]' : 'w-0 opacity-0 mr-0'}`}>
             <div className="w-[260px]">
-              <CandidateSidebarFilters activeFilters={activeFilters} onToggleFilter={toggleFilter} />
+              <CandidateSidebarFilters 
+                activeFilters={activeFilters} 
+                onToggleFilter={toggleFilter} 
+                location={locationQuery}
+                onLocationChange={setLocationQuery}
+              />
             </div>
           </div>
           
@@ -280,6 +318,8 @@ export default function CandidatesSearch() {
                       setHasSearched(false);
                       setSearchResults(null);
                       setSearchQuery("");
+                      setLocationQuery("");
+                      setActiveFilters([]);
                       setSortOption('Best Match');
                     }}
                   >

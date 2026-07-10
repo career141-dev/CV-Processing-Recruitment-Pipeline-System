@@ -68,6 +68,12 @@ export const aiSearch = action({
     query: v.string(),
     industry: v.optional(v.string()),
     seniority: v.optional(v.string()),
+    minExperience: v.optional(v.number()),
+    maxExperience: v.optional(v.number()),
+    location: v.optional(v.string()),
+    education: v.optional(v.array(v.string())),
+    sources: v.optional(v.array(v.string())),
+    customFilters: v.optional(v.array(v.string())),
     limit: v.optional(v.number()),
   },
   handler: async (
@@ -83,6 +89,8 @@ export const aiSearch = action({
       ...parsedReq,
       industry: args.industry ?? parsedReq.industry,
       seniority: args.seniority ?? parsedReq.seniority,
+      location: args.location ?? parsedReq.location,
+      minYearsExperience: args.minExperience ?? parsedReq.minYearsExperience,
     };
 
     const interp: SearchInterpretation = {
@@ -160,7 +168,153 @@ export const aiSearch = action({
       return { interpretation: interp, results: [] };
     }
 
-    const topCandidates = rawResults.slice(0, 30);
+    let filteredResults = rawResults;
+
+    if (args.location) {
+      const searchLoc = args.location.toLowerCase().trim();
+      if (searchLoc) {
+        filteredResults = filteredResults.filter((c) => {
+          const dbLoc = (c.location || "").toLowerCase();
+          if (searchLoc === "remote") {
+            return (
+              dbLoc.includes("remote") ||
+              dbLoc.includes("wfh") ||
+              dbLoc.includes("home") ||
+              dbLoc.includes("work from home")
+            );
+          }
+          return dbLoc.includes(searchLoc);
+        });
+      }
+    }
+
+    if (args.seniority) {
+      const searchSeniority = args.seniority.toLowerCase().trim();
+      filteredResults = filteredResults.filter((c) => {
+        const dbLevel = (c.seniorityLevel || "").toLowerCase();
+        const currentTitle = (c.currentJobTitle || c.currentTitle || "").toLowerCase();
+        const histTitles = (c.jobHistory || []).map((h) => (h.title || "").toLowerCase());
+        const allTitles = [currentTitle, ...histTitles];
+
+        if (searchSeniority === "senior") {
+          return (
+            dbLevel.includes("senior") ||
+            dbLevel.includes("snr") ||
+            allTitles.some((t) => t.includes("senior") || t.includes("snr") || t.includes("sr "))
+          );
+        }
+        if (searchSeniority === "lead") {
+          return (
+            dbLevel.includes("lead") ||
+            dbLevel.includes("principal") ||
+            dbLevel.includes("executive") ||
+            allTitles.some((t) =>
+              t.includes("lead") ||
+              t.includes("principal") ||
+              t.includes("head") ||
+              t.includes("manager") ||
+              t.includes("director") ||
+              t.includes("vp") ||
+              t.includes("chief") ||
+              t.includes("cto") ||
+              t.includes("ceo") ||
+              t.includes("coo")
+            )
+          );
+        }
+        return true;
+      });
+    }
+
+    if (args.minExperience !== undefined) {
+      filteredResults = filteredResults.filter((c) => {
+        const exp = c.totalExperienceYears ?? c.yearsOfExperience;
+        if (exp === undefined || exp === null) return true; // Keep candidate if experience data is missing
+        return exp >= args.minExperience!;
+      });
+    }
+
+    if (args.maxExperience !== undefined) {
+      filteredResults = filteredResults.filter((c) => {
+        const exp = c.totalExperienceYears ?? c.yearsOfExperience;
+        if (exp === undefined || exp === null) return true; // Keep candidate if experience data is missing
+        return exp <= args.maxExperience!;
+      });
+    }
+
+    if (args.education && args.education.length > 0) {
+      filteredResults = filteredResults.filter((c) => {
+        const degree = (c.educationDegree || "").toLowerCase();
+        return args.education!.some((edu) => {
+          if (edu === "Bachelor") {
+            return (
+              degree.includes("bachelor") ||
+              degree.includes("bsc") ||
+              degree.includes("ba") ||
+              degree.includes("b.tech") ||
+              degree.includes("b.e.") ||
+              degree.includes("b.a.") ||
+              degree.includes("b.s.")
+            );
+          }
+          if (edu === "Masters") {
+            return (
+              degree.includes("master") ||
+              degree.includes("msc") ||
+              degree.includes("ma") ||
+              degree.includes("mba") ||
+              degree.includes("m.tech") ||
+              degree.includes("m.s.") ||
+              degree.includes("m.phil")
+            );
+          }
+          return degree.includes(edu.toLowerCase());
+        });
+      });
+    }
+
+    if (args.sources && args.sources.length > 0) {
+      filteredResults = filteredResults.filter((c) => {
+        const source = (c.sourceChannel || c.firstSourceChannel || "").toLowerCase();
+        return args.sources!.some((s) => {
+          const filterSrc = s.toLowerCase();
+          if (filterSrc === "whatsapp") {
+            return source === "whatsapp" || source === "meta_campaign";
+          }
+          return source === filterSrc;
+        });
+      });
+    }
+
+    if (args.customFilters && args.customFilters.length > 0) {
+      filteredResults = filteredResults.filter((c) => {
+        const skills = (c.skills || []).map((s) =>
+          (typeof s === "string" ? s : (s as any).value || "").toLowerCase()
+        );
+        const certs = (c.certifications || []).map((cert) => cert.toLowerCase());
+        const summary = (c.summary || "").toLowerCase();
+        const fullName = (c.fullName || "").toLowerCase();
+        const rawText = (c.rawText || "").toLowerCase();
+
+        return args.customFilters!.every((filter) => {
+          const search = filter.toLowerCase().trim();
+          if (!search) return true;
+          return (
+            skills.some((s) => s.includes(search)) ||
+            certs.some((cert) => cert.includes(search)) ||
+            summary.includes(search) ||
+            fullName.includes(search) ||
+            rawText.includes(search)
+          );
+        });
+      });
+    }
+
+    if (filteredResults.length === 0) {
+      return { interpretation: interp, results: [] };
+    }
+
+    const topCandidates = filteredResults.slice(0, 30);
 
     const ranked = topCandidates
       .map((cv: (typeof rawResults)[0], index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))

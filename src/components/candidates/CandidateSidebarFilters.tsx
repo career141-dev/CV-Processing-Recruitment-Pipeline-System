@@ -7,9 +7,16 @@ import { ManageFiltersModal } from './modals/ManageFiltersModal';
 interface CandidateSidebarFiltersProps {
   activeFilters?: string[];
   onToggleFilter?: (filter: string) => void;
+  location?: string;
+  onLocationChange?: (loc: string) => void;
 }
 
-export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: CandidateSidebarFiltersProps) {
+export function CandidateSidebarFilters({
+  activeFilters = [],
+  onToggleFilter,
+  location = '',
+  onLocationChange,
+}: CandidateSidebarFiltersProps) {
   const [customFilterInput, setCustomFilterInput] = useState('');
   const [savedFilters, setSavedFilters] = useState<string[]>(['PCI-DSS', 'Big 4 experience']);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
@@ -175,7 +182,13 @@ export function CandidateSidebarFilters({ activeFilters = [], onToggleFilter }: 
               className="w-3 h-[15px] object-fill"
               alt="location"
             />
-            <input type="text" placeholder="Remote, New York..." className="border-none outline-none text-[13px] w-full" />
+            <input 
+              type="text" 
+              placeholder="Remote, New York..." 
+              value={location}
+              onChange={(e) => onLocationChange && onLocationChange(e.target.value)}
+              className="border-none outline-none text-[13px] w-full" 
+            />
           </div>
           <div className="w-full h-[1px] bg-gray-200 mt-3"></div>
         </div>
