@@ -1,8 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { handleMetaWhatsappWebhook } from "./communications/metaWhatsappAgent";
-import { handleLocalWhatsappWebhook } from "./communications/localWhatsappAgent";
 import { handleWhatChimpWebhook } from "./communications/whatchimp";
 import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
 
@@ -27,19 +25,6 @@ http.route({
 });
 
 // Meta Webhook Inbound Events
-http.route({
-  path: "/api/whatsapp",
-  method: "POST",
-  handler: handleMetaWhatsappWebhook,
-});
-
-// Local WhatsApp Bridge Webhook Inbound Events
-http.route({
-  path: "/api/local-whatsapp-inbound",
-  method: "POST",
-  handler: handleLocalWhatsappWebhook,
-});
-
 // WhatChimp Webhook Inbound Events
 http.route({
   path: "/api/whatsapp-whatchimp",

@@ -12,8 +12,8 @@ Career141 collects CVs from multiple channels into a single Convex database. Eve
 ## 1. Entry Points and Routing
 
 1. **WhatsApp Webhooks (Agent 4)**:
-   - Inbound WhatsApp messages are received via Meta Cloud webhooks (`/api/whatsapp`) or forwarded from a local client running [whatsapp-bridge.js](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/whatsapp-bridge.js) (`/api/local-whatsapp-inbound`).
-   - Webhooks trigger [insertCvRecord](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex/cvs/ingestion.ts#L58) to check SHA-256 duplicates, create a placeholder candidate, and queue extraction.
+   - Inbound WhatsApp messages are received via the WhatChimp webhook at `/api/whatsapp-whatchimp`.
+   - Webhooks trigger [insertCvRecord](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex/cvs/ingestion.ts#L58) to check SHA-256 duplicates, resolve the target jobId, and queue extraction.
 2. **Microsoft Graph Webhook (Agent 7)**:
    - Change notifications hit `/api/graph-webhook` when emails arrive. Polling fetches the recent inbox messages, extracts CV attachments, and submits them.
 3. **Portal & Bulk Uploads**:

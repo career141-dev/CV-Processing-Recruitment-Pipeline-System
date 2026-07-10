@@ -10,7 +10,7 @@ Career141 is an AI-driven recruitment pipeline system built on:
 - **Database & Serverless Backend**: [Convex](https://www.convex.dev/) (defined in the [convex/](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex) directory).
 - **Frontend App**: Next.js (located in the [src/](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/src) directory).
 - **AI Voice Screening (Agent 5)**: [ElevenLabs Conversational AI API](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex/integrations/elevenlabs.ts) paired with Twilio for outbound phone calls.
-- **Inbound & Outbound WhatsApp Bridge**: Built using `@whiskeysockets/baileys` (defined in [whatsapp-bridge.js](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/whatsapp-bridge.js)) and WhatChimp API.
+- **Inbound & Outbound WhatsApp Integration**: Managed via WhatChimp API webhook and send endpoints.
 - **Email Ingestion & Outreach (Agent 7)**: Microsoft Graph API integrations.
 - **AI Models & Embeddings**: NVIDIA NIM API (Llama 3.1 70B for extraction/chat, Nemotron-70B for query parsing, and `nv-embedqa-e5-v5` for vector indexing).
 
@@ -140,7 +140,7 @@ The core backend ingestion and parsing logic is found in [convex/pipeline/ingest
 
 ```
 [Inbound Source] 
-(WhatsApp bridge, email, portal) 
+(WhatsApp campaigns, email, portal) 
        │
        ▼
 [processCvIngestion] ──(Check SHA-256 duplicate)──> [cvUploads (pending)]
@@ -172,8 +172,7 @@ The core backend ingestion and parsing logic is found in [convex/pipeline/ingest
 
 ### Inbound Media Sources
 1. **WhatsApp Webhooks**: Webhooks forward documents/images.
-   - Meta Cloud API sends payloads to `/api/whatsapp`, which runs [handleMetaWhatsappWebhook](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex/communications/metaWhatsappAgent.ts#L33).
-   - WhatsApp Local Bridge (running Baileys) listens on the phone, downloads media, and forwards it to `/api/local-whatsapp-inbound` which runs [handleLocalWhatsappWebhook](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex/communications/localWhatsappAgent.ts#L5).
+   - WhatChimp API sends payloads to `/api/whatsapp-whatchimp`, which runs [handleWhatChimpWebhook](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex/communications/whatchimp.ts).
    - Handles **two-tap forwarding extraction**: extracts the candidate's phone number from message context `message.context?.from` when a TA forwards a CV.
 2. **Microsoft Graph Webhook**: Change notifications hit `/api/graph-webhook` when emails land in the TA inbox. This schedules [readInboxMessages](file:///c:/Users/hdbin/Documents/Projects/cv-processing-recruitment-pipeline-system/convex/communications/graphEmail.ts) to read the email, detect CV attachments, and queue them.
 

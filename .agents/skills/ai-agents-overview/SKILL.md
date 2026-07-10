@@ -14,7 +14,7 @@ Career141 runs 8 AI agents that handle the operational recruitment and candidate
 | 1 | CV Parsing | `cv-parsing` | Immediate upon ingestion log creation | Asynchronous action |
 | 2 | Candidate Matching | `candidate-matching` | Job publication or manual rescanning | On event |
 | 3 | Follow-up Sequences | `follow-up-sequences` | Candidate enters `follow_up` stage | Hourly sweep cron |
-| 4 | WhatsApp Monitor | `whatsapp-processing` | Inbound WhatsApp webhook (Meta Cloud or Local Bridge) | Real-time |
+| 4 | WhatsApp Monitor | `whatsapp-processing` | Inbound WhatsApp webhook (WhatChimp API) | Real-time |
 | 5 | AI Phone Call | `pipeline-management` | Candidate enters `ai_call` stage or manual trigger | On event |
 | 6 | Deduplication | `candidate-deduplication` | Candidate record creation in `createCandidate` | Inline mutation |
 | 7 | Email Monitor | `email-monitoring` | MS Graph webhook inbox messages poll | On notification |
@@ -25,7 +25,7 @@ Career141 runs 8 AI agents that handle the operational recruitment and candidate
 ```
 Inbound CV File
     │
-    ├── Agent 4 (WhatsApp Webhooks / Bridge) ──┐
+    ├── Agent 4 (WhatChimp WhatsApp Webhook) ──┐
     ├── Agent 7 (Email Subscriptions / Graph) ──┤
     └── Portal / Manual Upload ─────────────────┤
                                                 ▼
@@ -108,12 +108,8 @@ await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, { cvUp
 await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, { candidateId, jobId });
 ```
 
-### Webhook-Triggered (Convex HTTP Actions)
-```ts
 // Webhook handlers in convex/http.ts
-http.route({ path: "/api/whatsapp", method: "POST", handler: handleMetaWhatsappWebhook });
-http.route({ path: "/api/local-whatsapp-inbound", method: "POST", handler: handleLocalWhatsappWebhook });
-```
+http.route({ path: "/api/whatsapp-whatchimp", method: "POST", handler: handleWhatChimpWebhook });
 
 ## Tech Stack Per Agent
 
@@ -122,7 +118,7 @@ http.route({ path: "/api/local-whatsapp-inbound", method: "POST", handler: handl
 | 1 — Parsing | `meta/llama-3.1-70b-instruct` | NVIDIA NIM AI details extraction |
 | 2 — Matching | `nvidia/nv-embedqa-e5-v5` / Heuristics / OpenAI | Cosine similarity & weighted scoring |
 | 3 — Follow-ups | MS Graph API, Meta Cloud API, WhatChimp API | Outbound notifications & reply checks |
-| 4 — WhatsApp | Meta Cloud API / Baileys bridge | Inbound messages & attachments |
+| 4 — WhatsApp | WhatChimp API | Inbound messages & attachments |
 | 5 — Phone Call | Twilio / ElevenLabs ConvAI | Dynamic screening voice calls |
 | 6 — Dedup | Convex inline queries | 4-Factor (hash, email, phone, linkedin) |
 | 7 — Email | MS Graph API | Inbox monitoring & polling |

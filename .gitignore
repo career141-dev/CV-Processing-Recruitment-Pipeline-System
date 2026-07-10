@@ -44,5 +44,3 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
-
-.baileys_auth
