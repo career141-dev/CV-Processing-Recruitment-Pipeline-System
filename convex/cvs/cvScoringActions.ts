@@ -106,10 +106,10 @@ export const processCvScoring = action({
     );
 
     // 5. Call LLM for deeper scoring
-    const llmScore = await scoreWithLLM({ cv: candidate }, req as any);
+    const llmResult = await scoreWithLLM({ cv: candidate }, req as any);
 
     // Blend the scores (e.g., 60% Heuristic, 40% LLM)
-    const finalScore = Math.round((weightedScore * 0.6) + (llmScore * 0.4));
+    const finalScore = Math.round((weightedScore * 0.6) + (llmResult.score * 0.4));
     
     // 6. Save the final score
     await ctx.runMutation(internal.cvs.cvScoringActions.saveMatchScore, {
@@ -117,7 +117,7 @@ export const processCvScoring = action({
       jobId: job._id,
       candidateId: candidate._id,
       score: finalScore,
-      reason: `${scored.reason} (LLM Adjusted Score: ${llmScore})`,
+      reason: llmResult.reason || scored.reason,
       minMatchScoreToShow: job.minMatchScoreToShow ?? 60,
     });
   },
