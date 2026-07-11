@@ -204,7 +204,7 @@ export default function CandidatesSearch() {
                 ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => setActiveTab('management')}
+            onClick={() => { setActiveTab('management'); setSelectedCandidates([]); }}
           >
             Candidate Management
           </button>
@@ -214,7 +214,7 @@ export default function CandidatesSearch() {
                 ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => setActiveTab('search')}
+            onClick={() => { setActiveTab('search'); setSelectedCandidates([]); }}
           >
             Candidate Search
           </button>
@@ -222,7 +222,12 @@ export default function CandidatesSearch() {
       </div>
 
       {activeTab === 'management' && (
-        <CandidateManagementTable onDeleteClick={(id: string) => setDeletingCandidateId(id)} />
+        <CandidateManagementTable 
+          onDeleteClick={(id: string) => setDeletingCandidateId(id)}
+          selectedCandidates={selectedCandidates}
+          onToggleCandidate={toggleCandidate}
+          onSelectAll={(ids) => setSelectedCandidates(ids)}
+        />
       )}
 
       {activeTab === 'search' && (
@@ -441,10 +446,7 @@ export default function CandidatesSearch() {
               ))
             )}
             
-            <FloatingActionBar 
-              selectedCount={selectedCandidates.length} 
-              onClear={() => setSelectedCandidates([])} 
-            />
+            {/* Floating action bar rendered globally below */}
 
             {/* Search Pagination Controls */}
             {candidatesToRender.length > 0 && (
@@ -477,7 +479,12 @@ export default function CandidatesSearch() {
       </div>
       )}
 
-            {messageCandidate && (
+            <FloatingActionBar 
+        selectedCandidates={selectedCandidates} 
+        onClear={() => setSelectedCandidates([])} 
+      />
+
+      {messageCandidate && (
         <MessageComposer
           isOpen={!!messageCandidate}
           onClose={() => setMessageCandidate(null)}

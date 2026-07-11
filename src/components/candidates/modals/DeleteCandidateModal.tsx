@@ -9,22 +9,33 @@ import { AlertTriangle } from 'lucide-react';
 interface DeleteCandidateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  candidateId: string | null;
+  candidateId?: string | null;
+  candidateIds?: string[];
+  onSuccess?: () => void;
 }
 
-export function DeleteCandidateModal({ isOpen, onClose, candidateId }: DeleteCandidateModalProps) {
+export function DeleteCandidateModal({ isOpen, onClose, candidateId, candidateIds, onSuccess }: DeleteCandidateModalProps) {
   const deleteCandidate = useMutation(api.candidates.candidates.deleteCandidate);
+  const bulkDeleteCandidates = useMutation(api.candidates.candidates.bulkDeleteCandidates);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDelete = async () => {
-    if (!candidateId) return;
     setIsDeleting(true);
     try {
-      await deleteCandidate({ candidateId: candidateId as any });
-      toast.success("Candidate successfully deleted");
+      if (candidateIds && candidateIds.length > 0) {
+        await bulkDeleteCandidates({ candidateIds: candidateIds as any[] });
+        toast.success(`Successfully deleted ${candidateIds.length} candidate(s)`);
+      } else if (candidateId) {
+        await deleteCandidate({ candidateId: candidateId as any });
+        toast.success("Candidate successfully deleted");
+      } else {
+        setIsDeleting(false);
+        return;
+      }
+      if (onSuccess) onSuccess();
       onClose();
     } catch (e: any) {
-      toast.error("Failed to delete candidate: " + e.message);
+      toast.error("Failed to delete candidate(s): " + e.message);
     } finally {
       setIsDeleting(false);
     }
@@ -34,7 +45,7 @@ export function DeleteCandidateModal({ isOpen, onClose, candidateId }: DeleteCan
     <Modal
       isOpen={isOpen}
       onClose={isDeleting ? () => {} : onClose}
-      title="Delete Candidate"
+      title="Delete Candidate(s)"
       maxWidth="max-w-md"
       footer={
         <>
@@ -58,7 +69,7 @@ export function DeleteCandidateModal({ isOpen, onClose, candidateId }: DeleteCan
         </div>
         <h3 className="text-lg font-bold text-gray-900 mb-2">Are you sure?</h3>
         <p className="text-sm text-gray-500">
-          This action cannot be undone. This will permanently delete the candidate's profile, CVs, match scores, applications, and all communication logs.
+          This action cannot be undone. This will permanently delete the candidate profile(s), CVs, match scores, applications, and all communication logs.
         </p>
       </div>
     </Modal>

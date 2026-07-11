@@ -43,7 +43,7 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess, onCon
       if (onConfirm) {
         await onConfirm(selectedJob);
       }
-      toast.success(`Successfully added ${selectedCount} candidate(s) to job at "New" stage.`);
+      toast.success(`Successfully added ${selectedCount} candidate(s) to job at "TA Shortlisted" stage.`);
       if (onSuccess) onSuccess();
       onClose();
       setSelectedJob(null);
@@ -72,7 +72,7 @@ export function AddToJobModal({ isOpen, onClose, selectedCount, onSuccess, onCon
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-gray-600">
-          Select an active job to add the {selectedCount} selected candidate{selectedCount !== 1 ? 's' : ''}. They will be placed in the "New" stage.
+          Select an active job to add the {selectedCount} selected candidate{selectedCount !== 1 ? 's' : ''}. They will be placed in the "TA Shortlisted" stage.
         </p>
         
         {/* Search */}

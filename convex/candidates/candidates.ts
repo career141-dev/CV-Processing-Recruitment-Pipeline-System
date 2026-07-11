@@ -7,10 +7,32 @@ export const listCandidates = query({
   handler: async (ctx) => {
     const candidates = await ctx.db.query("candidates").order("desc").collect();
     return await Promise.all(
-      candidates.map(async (c) => ({
-        ...c,
-        profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
-      }))
+      candidates.map(async (c) => {
+        const apps = await ctx.db
+          .query("applications")
+          .withIndex("by_candidateId", (q: any) => q.eq("candidateId", c._id))
+          .collect();
+
+        const activeApplications = await Promise.all(
+          apps.map(async (app) => {
+            const job = await ctx.db.get(app.jobId);
+            return {
+              jobId: app.jobId,
+              jobTitle: job ? job.title : "Unknown Job",
+              stage: app.currentStage,
+              isActive: app.isActive,
+            };
+          })
+        );
+
+        const profileImageUrl = c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null;
+
+        return {
+          ...c,
+          profileImageUrl,
+          activeApplications,
+        };
+      })
     );
   },
 });
@@ -534,6 +556,53 @@ export const deleteCandidate = mutation({
 
     // Finally, delete the candidate
     await ctx.db.delete(candidateId);
+  }
+});
+
+export const bulkDeleteCandidates = mutation({
+  args: { candidateIds: v.array(v.id("candidates")) },
+  handler: async (ctx, args) => {
+    for (const candidateId of args.candidateIds) {
+      const apps = await ctx.db.query("applications")
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+        .collect();
+      for (const app of apps) await ctx.db.delete(app._id);
+
+      const scores = await ctx.db.query("match_scores")
+        .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+        .collect();
+      for (const score of scores) await ctx.db.delete(score._id);
+
+      const events = await ctx.db.query("pipelineEvents")
+        .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+        .collect();
+      for (const e of events) await ctx.db.delete(e._id);
+
+      const calls = await ctx.db.query("aiCalls")
+        .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+        .collect();
+      for (const call of calls) await ctx.db.delete(call._id);
+
+      const comms = await ctx.db.query("communications")
+        .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+        .collect();
+      for (const comm of comms) await ctx.db.delete(comm._id);
+
+      const cvs = await ctx.db.query("cvs")
+        .filter((q: any) => q.eq(q.field("candidateId"), candidateId))
+        .collect();
+      for (const cv of cvs) {
+        const uploads = await ctx.db.query("cvUploads")
+          .filter((q: any) => q.eq(q.field("storageId"), cv.storageId))
+          .collect();
+        for (const upload of uploads) {
+          await ctx.db.delete(upload._id);
+        }
+        await ctx.db.delete(cv._id);
+      }
+
+      await ctx.db.delete(candidateId);
+    }
   }
 });
 

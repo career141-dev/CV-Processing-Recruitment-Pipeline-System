@@ -244,31 +244,37 @@ export const aiSearch = action({
 
     if (args.education && args.education.length > 0) {
       filteredResults = filteredResults.filter((c) => {
-        const degree = (c.educationDegree || "").toLowerCase();
+        const degrees = [
+          c.educationDegree || "",
+          ...(c.education || []).map((edu: any) => edu.degree || ""),
+        ].map((d) => d.toLowerCase());
+
         return args.education!.some((edu) => {
           if (edu === "Bachelor") {
-            return (
-              degree.includes("bachelor") ||
-              degree.includes("bsc") ||
-              degree.includes("ba") ||
-              degree.includes("b.tech") ||
-              degree.includes("b.e.") ||
-              degree.includes("b.a.") ||
-              degree.includes("b.s.")
+            return degrees.some(
+              (degree) =>
+                degree.includes("bachelor") ||
+                degree.includes("bsc") ||
+                degree.includes("ba") ||
+                degree.includes("b.tech") ||
+                degree.includes("b.e.") ||
+                degree.includes("b.a.") ||
+                degree.includes("b.s.")
             );
           }
           if (edu === "Masters") {
-            return (
-              degree.includes("master") ||
-              degree.includes("msc") ||
-              degree.includes("ma") ||
-              degree.includes("mba") ||
-              degree.includes("m.tech") ||
-              degree.includes("m.s.") ||
-              degree.includes("m.phil")
+            return degrees.some(
+              (degree) =>
+                degree.includes("master") ||
+                degree.includes("msc") ||
+                degree.includes("ma") ||
+                degree.includes("mba") ||
+                degree.includes("m.tech") ||
+                degree.includes("m.s.") ||
+                degree.includes("m.phil")
             );
           }
-          return degree.includes(edu.toLowerCase());
+          return degrees.some((degree) => degree.includes(edu.toLowerCase()));
         });
       });
     }
@@ -432,6 +438,7 @@ export const bulkAddToPipeline = mutation({
     candidateIds: v.array(v.id("candidates")),
     jobId: v.id("jobs"),
     sourceChannel: v.string(),
+    stage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Basic bulk insert to applications
@@ -446,7 +453,7 @@ export const bulkAddToPipeline = mutation({
           candidateId,
           jobId: args.jobId,
           sourceChannel: args.sourceChannel,
-          currentStage: "new_cvs",
+          currentStage: (args.stage ?? "new_cvs") as any,
           loopIteration: 0,
           isActive: true,
           createdAt: Date.now(),
