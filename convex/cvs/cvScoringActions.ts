@@ -98,9 +98,9 @@ export const processCvScoring = action({
 
     // 4. Overwrite overallScore with weighted AI Config
     const weightedScore = Math.round(
-      (scored.titleScore * ((job.scoreWeightJobTitle ?? 20) / 100)) +
+      (scored.titleScore * ((job.scoreWeightJobTitle ?? 30) / 100)) +
       (scored.skillScore * ((job.scoreWeightSkills ?? 35) / 100)) +
-      (scored.experienceScore * ((job.scoreWeightExperience ?? 25) / 100)) +
+      (scored.experienceScore * ((job.scoreWeightExperience ?? 15) / 100)) +
       (scored.industryScore * ((job.scoreWeightIndustry ?? 15) / 100)) +
       (scored.locationScore * ((job.scoreWeightLocation ?? 5) / 100))
     );

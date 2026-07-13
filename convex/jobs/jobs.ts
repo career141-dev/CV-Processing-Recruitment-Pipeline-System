@@ -69,18 +69,18 @@ export const createJob = mutation({
       keyword,
       status: "draft",
       scoreWeightSkills: 35,
-      scoreWeightExperience: 25,
-      scoreWeightJobTitle: 20,
+      scoreWeightExperience: 15,
+      scoreWeightJobTitle: 30,
       scoreWeightIndustry: 15,
       scoreWeightLocation: 5,
       minMatchScoreToShow: 60,
       reverseMatchOnPublish: true,
       agent3Enabled: true,
       agent3AfterDay7: "mark_unresponsive",
-      agent5Enabled: true,
-      agent5Trigger: "all_new_applicants",
+      agent5Enabled: false,
+      agent5Trigger: "manual_only",
       agent5CallScript: "default",
-      agent5NoAnswerAction: "trigger_agent3",
+      agent5NoAnswerAction: "notify_ta",
       agent5HideCompany: args.isConfidential,
       directorReviewEnabled: false,
       clientReviewEnabled: false,
@@ -188,8 +188,8 @@ export const createDraftJob = mutation({
       supportingRecruiterIds: args.supportingRecruiterIds,
       
       scoreWeightSkills: 35,
-      scoreWeightExperience: 25,
-      scoreWeightJobTitle: 20,
+      scoreWeightExperience: 15,
+      scoreWeightJobTitle: 30,
       scoreWeightIndustry: 15,
       scoreWeightLocation: 5,
       minMatchScoreToShow: 60,
@@ -522,8 +522,8 @@ export const publishJob = mutation({
     }
 
     const weightSum = (job.scoreWeightSkills ?? 35) +
-      (job.scoreWeightExperience ?? 25) +
-      (job.scoreWeightJobTitle ?? 20) +
+      (job.scoreWeightExperience ?? 15) +
+      (job.scoreWeightJobTitle ?? 30) +
       (job.scoreWeightIndustry ?? 15) +
       (job.scoreWeightLocation ?? 5);
     if (weightSum !== 100) errors.push(`AI match weights must sum to 100 (currently ${weightSum})`);
@@ -544,6 +544,9 @@ export const publishJob = mutation({
 
     if (job.directorReviewEnabled && !job.directorId) {
       errors.push("Director review enabled but no director assigned");
+    }
+    if (job.clientReviewEnabled && !job.clientContactEmail) {
+      errors.push("Client review enabled but no client contact email provided");
     }
 
     if (errors.length > 0) {
@@ -642,20 +645,10 @@ export const list = query({
   handler: async (ctx) => {
     const jobs = await ctx.db.query("jobs").order("desc").take(100);
 
-    // For each job, count applications per stage
-    const jobsWithStats = await Promise.all(jobs.map(async (job) => {
-      const applications = await ctx.db.query("applications")
-        .withIndex("by_job_stage", (q) => q.eq("jobId", job._id))
-        .collect();
-
-      const stageCounts: Record<string, number> = {};
-      for (const app of applications) {
-        const s = app.currentStage || "new_cvs";
-        stageCounts[s] = (stageCounts[s] || 0) + 1;
-      }
-
+    const jobsWithStats = jobs.map((job) => {
+      const stageCounts: Record<string, number> = job.stageCounts || {};
       const newCvsCount = stageCounts["new_cvs"] || 0;
-      const totalApplications = applications.length;
+      const totalApplications = job.totalApplications || 0;
 
       // Determine dominant stage (highest priority non-new stage, or new_cvs)
       const STAGE_PRIORITY = [
@@ -677,7 +670,7 @@ export const list = query({
         dominantStage,
         stageCounts,
       };
-    }));
+    });
 
     return jobsWithStats;
   },
@@ -801,3 +794,29 @@ export const getActiveJobsBasicInfo = query({
   }
 });
 
+export const recalculateAllJobStats = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Recalculate stats for active jobs
+    const jobs = await ctx.db.query("jobs")
+      .withIndex("by_status", q => q.eq("status", "active"))
+      .collect();
+
+    for (const job of jobs) {
+      const applications = await ctx.db.query("applications")
+        .withIndex("by_job_stage", (q) => q.eq("jobId", job._id))
+        .collect();
+
+      const stageCounts: Record<string, number> = {};
+      for (const app of applications) {
+        const s = app.currentStage || "new_cvs";
+        stageCounts[s] = (stageCounts[s] || 0) + 1;
+      }
+
+      await ctx.db.patch(job._id, {
+        stageCounts,
+        totalApplications: applications.length
+      });
+    }
+  }
+});

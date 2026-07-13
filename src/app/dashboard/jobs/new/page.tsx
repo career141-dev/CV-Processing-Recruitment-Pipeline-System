@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { usePermissions } from '@/hooks/usePermissions';
@@ -29,9 +29,12 @@ export default function CreateJobWizard() {
   const updateJobAiConfig = useMutation(api.jobs.jobs.updateJobAiConfig);
   const publishJob = useMutation(api.jobs.jobs.publishJob);
   const assignTeamToJob = useMutation(api.jobs.jobs.assignTeamToJob);
+  const extractRequirements = useAction(api.jobs.actions.extractRequirementsAction);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
+  const [showRecruiterDropdown, setShowRecruiterDropdown] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -56,10 +59,11 @@ export default function CreateJobWizard() {
     primaryRecruiter: 'Shambra Ameen',
     hiringManager: '',
     director: '',
-    clientContact: '',
+    clientContactName: '',
+    clientContactEmail: '',
 
     // Step 2: Channel Setup
-    jobKeyword: 'BRAND24',
+    jobKeyword: '',
     linkedinEmail: 'linkedin@career141.com',
     linkedinEmailSaved: false,
     commonWhatsAppNumber: '',
@@ -92,6 +96,7 @@ export default function CreateJobWizard() {
       industry: 15,
       location: 5,
     },
+    agent3TriggerStages: ['shortlisted'] as string[],
     enableFollowUps: false,
     unresponsiveDays: '7',
     followUpSchedule: {
@@ -142,9 +147,16 @@ export default function CreateJobWizard() {
       clientReviewPending: '5',
       interviewNotScheduled: '3',
       offerNotMade: '2',
-      dailyReport: true,
     }
   });
+
+  const [isCustomNumber, setIsCustomNumber] = useState(false);
+
+  const whatChimpNumbers = [
+    { number: "+94 74 011 0130", name: "Jesmeen Mohammad" },
+    { number: "+94 74 219 7476", name: "Sudaraka De Alwis" },
+    { number: "+94 75 377 8899", name: "Uzmaan" }
+  ];
 
   if (!isLoaded || !canCreateJob) {
     return (
@@ -188,7 +200,23 @@ export default function CreateJobWizard() {
     return false;
   };
 
-  const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, 4));
+  const handleNext = () => {
+    if (currentStep === 1 && !formData.jobKeyword) {
+      const title = formData.jobTitle?.trim() || '';
+      let prefix = 'JOB';
+      if (title) {
+        const words = title.split(/\s+/);
+        if (words.length > 1) {
+          prefix = words.map(w => w[0]).join('').substring(0, 4).toUpperCase();
+        } else {
+          prefix = title.substring(0, 4).toUpperCase();
+        }
+        prefix = prefix.replace(/[^A-Z]/g, '') || 'JOB';
+      }
+      setFormData(prev => ({ ...prev, jobKeyword: prefix + Math.floor(100 + Math.random() * 900) }));
+    }
+    setCurrentStep(prev => Math.min(prev + 1, 4));
+  };
   const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -226,11 +254,13 @@ export default function CreateJobWizard() {
         salaryMin: parseInt(formData.salaryRange.split("-")[0]?.replace(/[^0-9]/g, '')) || undefined,
         salaryMax: parseInt(formData.salaryRange.split("-")[1]?.replace(/[^0-9]/g, '')) || undefined,
         salaryCurrency: formData.salaryRange.replace(/[0-9\- ]/g, '').trim() || "LKR",
+        educationLevel: formData.educationLevel ? formData.educationLevel.toLowerCase().replace(/ /g, "_") : undefined,
+        languagesRequired: formData.languages ? formData.languages.split(",").map(s => s.trim()).filter(Boolean) : undefined,
         primaryRecruiterId: primaryRecruiterId as any,
         supportingRecruiterIds: supportingRecruiterIds as any,
         directorId: directorId as any,
-        clientContactName: formData.clientContact || undefined,
-        clientContactEmail: formData.clientContact || undefined,
+        clientContactName: formData.clientContactName || undefined,
+        clientContactEmail: formData.clientContactEmail || undefined,
       });
 
       // Step 2: updateJobChannels
@@ -251,15 +281,14 @@ export default function CreateJobWizard() {
       }
       if (formData.channels.metaCampaign) {
         channelsPayload.push({
-          channelType: "meta",
+          channelType: "meta_campaign",
           isEnabled: true,
-          metaCampaignId: formData.metaCampaignId || undefined,
           whatsappNumber: (formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : formData.commonWhatsAppNumber) || undefined,
         });
       }
       if (formData.channels.emailCampaign) {
         channelsPayload.push({
-          channelType: "email",
+          channelType: "email_campaign",
           isEnabled: true,
           emailInbox: formData.emailInbox || undefined,
         });
@@ -289,25 +318,26 @@ export default function CreateJobWizard() {
         scoreWeightLocation: formData.scoreWeights.location,
         
         agent3Enabled: formData.enableFollowUps,
+        agent3TriggerStages: formData.agent3TriggerStages,
         agent3Day2Channel: formData.followUpSchedule.day2 ? formData.followUpSchedule.day2Channel.toLowerCase() : undefined,
         agent3Day4Channel: formData.followUpSchedule.day4 ? formData.followUpSchedule.day4Channel.toLowerCase() : undefined,
         agent3Day7Channel: formData.followUpSchedule.day7 ? formData.followUpSchedule.day7Channel.toLowerCase() : undefined,
-        agent3AfterDay7: formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "trigger_agent5",
+        agent3AfterDay7: formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "continue_weekly",
         
         agent5Enabled: false,
         agent5Trigger: "manual_only",
         agent5CallScript: "default",
         agent5CustomQuestions: formData.additionalQuestions,
-        agent5NoAnswerAction: "trigger_agent3",
+        agent5NoAnswerAction: "notify_ta",
         agent5HideCompany: false,
         
         directorReviewEnabled: formData.reviewLevels.directorReview,
         clientReviewEnabled: formData.reviewLevels.clientReview,
         clientContactName: formData.reviewLevels.clientName || undefined,
         clientContactEmail: formData.reviewLevels.clientEmail || undefined,
-        clientAccessLevel: "view_comment",
+        clientAccessLevel: formData.reviewLevels.clientAccess === 'Approve & Reject' ? 'approve_reject' : formData.reviewLevels.clientAccess === 'View Only' ? 'view_only' : 'view_comment',
         esaCheckEnabled: formData.reviewLevels.esaStatusCheck,
-        rejectionLoopAction: "restart_from_new_cvs",
+        rejectionLoopAction: formData.reviewLevels.offerRejectionLoop === "restart" ? "restart_from_new_cvs" : formData.reviewLevels.offerRejectionLoop === "clientReview" ? "return_to_client_review" : "ask_ta_each_time",
         
         slaNoNewCvsDays: parseInt(formData.pipelineAlerts.noNewCvs) || 5,
         slaTaReviewDays: parseInt(formData.pipelineAlerts.taReviewPending) || 2,
@@ -382,14 +412,36 @@ export default function CreateJobWizard() {
           <label className="block text-sm font-medium text-text-secondary mb-1.5">Job Description *</label>
           <textarea rows={5} className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.jobDescription} onChange={e => updateFormData('jobDescription', e.target.value)} placeholder="Paste full job description including responsibilities, requirements..."></textarea>
           <div className="mt-2 flex justify-end">
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-primary-container/10 text-primary-container rounded hover:bg-primary-container/20 transition-colors text-xs font-medium" onClick={(e) => {
+            <button className="flex items-center gap-2 px-3 py-1.5 bg-primary-container/10 text-primary-container rounded hover:bg-primary-container/20 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled={isExtracting || !formData.jobDescription} onClick={async (e) => {
               e.preventDefault();
-              alert("AI is extracting requirements...");
-              updateFormData('requiredSkills', 'Brand Strategy, P&L Management, Marketing');
-              updateFormData('niceToHaveSkills', 'Nielsen, Digital Marketing');
+              if (!formData.jobDescription) return;
+              setIsExtracting(true);
+              try {
+                const res = await extractRequirements({ description: formData.jobDescription });
+                setFormData(prev => ({
+                  ...prev,
+                  requiredSkills: res.requiredSkills ? res.requiredSkills.join(", ") : "",
+                  niceToHaveSkills: res.niceToHaveSkills ? res.niceToHaveSkills.join(", ") : "",
+                  location: res.location ? res.location : prev.location,
+                  jobTitle: res.title ? res.title : prev.jobTitle,
+                  industry: res.industry ? res.industry : prev.industry,
+                  experienceMin: res.minYearsExperience !== null && res.minYearsExperience !== undefined ? String(res.minYearsExperience) : prev.experienceMin,
+                  seniorityLevel: res.seniority ? res.seniority.charAt(0).toUpperCase() + res.seniority.slice(1) : prev.seniorityLevel,
+                  educationLevel: res.education ? res.education : prev.educationLevel,
+                  languages: res.languages && res.languages.length > 0 ? res.languages.join(", ") : prev.languages,
+                  clientCompany: res.clientCompany ? res.clientCompany : prev.clientCompany,
+                  clientContactEmail: res.clientContactEmail ? res.clientContactEmail : prev.clientContactEmail,
+                  salaryRange: res.salaryRange ? res.salaryRange : prev.salaryRange,
+                }));
+              } catch (err) {
+                alert("Failed to extract requirements. Please try again.");
+                console.error(err);
+              } finally {
+                setIsExtracting(false);
+              }
             }}>
-              <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-              Auto-Extract Requirements
+              {isExtracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="material-symbols-outlined text-[16px]">auto_awesome</span>}
+              {isExtracting ? "Extracting..." : "Auto-Extract Requirements"}
             </button>
           </div>
         </div>
@@ -565,33 +617,80 @@ export default function CreateJobWizard() {
               )}
             </select>
           </div>
-          <div>
+          <div className="relative">
             <label className="block text-sm font-medium text-text-secondary mb-1.5">Supporting Recruiters</label>
-            <select 
-              multiple 
-              className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface h-[80px]" 
-              value={formData.supportingRecruiters} 
-              onChange={e => {
-                const values = Array.from(e.target.selectedOptions, option => option.value);
-                updateFormData('supportingRecruiters', values);
-              }}
+            <div 
+              className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface cursor-pointer min-h-[42px] flex flex-wrap gap-2 items-center"
+              onClick={() => setShowRecruiterDropdown(!showRecruiterDropdown)}
             >
-              {availableRecruiters?.map(member => (
-                <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
-              ))}
-            </select>
+              {formData.supportingRecruiters.length === 0 ? (
+                <span className="text-gray-400">Select supporting recruiters...</span>
+              ) : (
+                formData.supportingRecruiters.map(rec => (
+                  <span key={rec} className="bg-primary-container text-on-primary text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                    {rec}
+                    <button 
+                      type="button" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateFormData('supportingRecruiters', formData.supportingRecruiters.filter(r => r !== rec));
+                      }}
+                      className="hover:text-red-500 font-bold"
+                    >×</button>
+                  </span>
+                ))
+              )}
+            </div>
+            {showRecruiterDropdown && (
+              <div className="absolute z-10 w-full mt-1 bg-surface border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                {availableRecruiters?.map(member => {
+                  const isSelected = formData.supportingRecruiters.includes(member.fullName);
+                  return (
+                    <div 
+                      key={member._id} 
+                      className="px-3 py-2 hover:bg-surface-container cursor-pointer flex items-center gap-2"
+                      onClick={() => {
+                        if (isSelected) {
+                          updateFormData('supportingRecruiters', formData.supportingRecruiters.filter(r => r !== member.fullName));
+                        } else {
+                          updateFormData('supportingRecruiters', [...formData.supportingRecruiters, member.fullName]);
+                        }
+                      }}
+                    >
+                      <input type="checkbox" checked={isSelected} readOnly className="rounded border-border" />
+                      <span className="text-sm">{member.fullName} <span className="text-gray-400 text-xs">({member.role})</span></span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {showRecruiterDropdown && (
+              <div className="fixed inset-0 z-[5]" onClick={() => setShowRecruiterDropdown(false)}></div>
+            )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Client Contact Name / Email</label>
-            <input type="text" className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.clientContact} onChange={e => updateFormData('clientContact', e.target.value)} placeholder="Contact person at client" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1.5">Client Contact Name</label>
+              <input type="text" className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.clientContactName} onChange={e => updateFormData('clientContactName', e.target.value)} placeholder="Name of contact" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1.5">Client Contact Email</label>
+              <input type="email" className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.clientContactEmail} onChange={e => updateFormData('clientContactEmail', e.target.value)} placeholder="Email address" />
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
+
   const renderStep2 = () => {
     const commonWhatsAppNumber = formData.commonWhatsAppNumber || "";
     const keyword = formData.jobKeyword;
+    
+    // Construct the full webhook URL dynamically
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "";
+    const webhookUrl = convexUrl ? `${convexUrl.replace('.cloud', '.site')}/api/whatsapp-whatchimp` : "Your Convex Site URL + /api/whatsapp-whatchimp";
+
     const metaNumber = formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : commonWhatsAppNumber;
     const displayMetaNumber = metaNumber ? metaNumber.replace(/[^0-9]/g, '') : '[WhatsApp Number]';
 
@@ -605,13 +704,27 @@ export default function CreateJobWizard() {
         <div className="bg-surface border border-border rounded-xl p-5 shadow-sm">
           <label className="block text-sm font-medium text-text-secondary mb-2">Job Keyword (Auto-generated)</label>
           <div className="flex gap-3">
-            <input type="text" className="w-64 border border-border rounded-md px-3 py-2 text-body font-mono bg-surface-container-low" value={keyword} onChange={e => updateFormData('jobKeyword', e.target.value)} />
-            <button className="bg-surface-variant text-text-primary border border-border px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high transition-colors flex items-center gap-1.5" onClick={(e) => { e.preventDefault(); updateFormData('jobKeyword', 'BRAND' + Math.floor(100 + Math.random() * 900)); }}>
+            <input type="text" className="w-64 border border-gray-700 rounded-md px-3 py-2 text-white font-mono font-bold bg-gray-800" value={keyword} onChange={e => updateFormData('jobKeyword', e.target.value)} />
+            <button className="bg-surface-variant text-text-primary border border-border px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high transition-colors flex items-center gap-1.5" onClick={(e) => { 
+              e.preventDefault(); 
+              const title = formData.jobTitle?.trim() || '';
+              let prefix = 'JOB';
+              if (title) {
+                const words = title.split(/\s+/);
+                if (words.length > 1) {
+                  prefix = words.map(w => w[0]).join('').substring(0, 4).toUpperCase();
+                } else {
+                  prefix = title.substring(0, 4).toUpperCase();
+                }
+                prefix = prefix.replace(/[^A-Z]/g, '') || 'JOB';
+              }
+              updateFormData('jobKeyword', prefix + Math.floor(100 + Math.random() * 900)); 
+            }}>
               <span className="material-symbols-outlined text-[16px]">refresh</span>
               Regenerate
             </button>
           </div>
-          <p className="text-xs text-text-secondary mt-2">Required for routing applicants to this job (used in WhatsApp and Email subjects).</p>
+          <p className="text-xs text-text-secondary mt-2">Required for routing applicants to this job (used only in Meta Campaigns).</p>
         </div>
 
         <div className="space-y-4">
@@ -654,16 +767,75 @@ export default function CreateJobWizard() {
             </div>
             {formData.channels.whatsapp && (
               <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">WhatsApp Number (E.164 format)</label>
-                <div className="flex items-center gap-2 mb-3">
-                  <input type="text" className="w-64 border border-border rounded-md px-3 py-2 text-sm bg-surface" placeholder="e.g. +94 77 000 0001" value={commonWhatsAppNumber} onChange={e => updateFormData('commonWhatsAppNumber', e.target.value)} />
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">WhatsApp Number</label>
+                <div className="flex flex-col gap-2 mb-2">
+                  <select 
+                    className="w-64 border border-border rounded-md px-3 py-2 text-sm bg-surface text-text-primary"
+                    value={isCustomNumber ? "custom" : (commonWhatsAppNumber || "")} 
+                    onChange={e => {
+                      if (e.target.value === "custom") {
+                        setIsCustomNumber(true);
+                        updateFormData('commonWhatsAppNumber', "");
+                      } else {
+                        setIsCustomNumber(false);
+                        updateFormData('commonWhatsAppNumber', e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="" disabled>Select a number...</option>
+                    {whatChimpNumbers.map(item => (
+                      <option key={item.number} value={item.number}>
+                        {item.name} ({item.number})
+                      </option>
+                    ))}
+                    <option value="custom">+ Custom / Add New</option>
+                  </select>
+
+                  {isCustomNumber && (
+                    <input 
+                      type="text"
+                      className="w-64 border border-border rounded-md px-3 py-2 text-sm bg-surface text-text-primary animate-in fade-in"
+                      placeholder="e.g. +94 77 000 0001"
+                      value={commonWhatsAppNumber} 
+                      onChange={e => updateFormData('commonWhatsAppNumber', e.target.value)}
+                    />
+                  )}
                 </div>
-                <div className="p-3 bg-surface-container-low border border-border rounded-lg text-sm text-text-primary flex items-start gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-text-secondary">info</span>
-                  <div className="text-xs leading-relaxed">
-                    Instruct candidates to send their CV to <span className="font-mono bg-surface px-1 py-0.5 rounded border border-border">{commonWhatsAppNumber || '+94 77 000 0001'}</span> and start their message with: <span className="font-mono bg-surface px-1 py-0.5 rounded border border-border">{keyword}</span>
+                
+                {isCustomNumber && (
+                  <div className="bg-primary-container/10 border border-primary-container/20 rounded-lg p-3 mb-4 animate-in fade-in slide-in-from-top-2">
+                    <p className="text-xs font-medium text-primary-container mb-1 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">webhook</span> Adding a new number?
+                    </p>
+                    <p className="text-xs text-text-secondary leading-relaxed">
+                      First, configure it in WhatChimp. Then, set your WhatChimp Webhook URL exactly to this address so CVs are routed here:
+                    </p>
+                    <code className="block mt-2 bg-surface text-text-primary px-2 py-1.5 rounded border border-border text-[11px] font-mono select-all">
+                      {webhookUrl}
+                    </code>
                   </div>
-                </div>
+                )}
+
+
+                {commonWhatsAppNumber ? (
+                  <div className="p-3 bg-surface-container-low border border-border rounded-lg text-sm text-text-primary flex items-start gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-text-secondary">share</span>
+                    <div className="text-xs leading-relaxed">
+                      Share this direct application link with candidates: 
+                      <br/>
+                      <a href={`https://wa.me/${commonWhatsAppNumber.replace(/[^0-9]/g, '')}?text=${keyword}`} target="_blank" rel="noreferrer" className="text-primary-container hover:underline mt-1 inline-block font-mono bg-surface px-1.5 py-0.5 rounded border border-border">
+                        https://wa.me/{commonWhatsAppNumber.replace(/[^0-9]/g, '')}?text={keyword}
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-surface-container-low border border-border rounded-lg text-sm text-text-primary flex items-start gap-2 opacity-70">
+                    <span className="material-symbols-outlined text-[18px] text-text-secondary">info</span>
+                    <div className="text-xs leading-relaxed">
+                      Select or type a WhatsApp number above to generate a shareable application link.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -692,7 +864,7 @@ export default function CreateJobWizard() {
                 <div className="p-3 bg-surface-container-low border border-border rounded-lg text-sm text-text-primary flex items-start gap-2">
                   <span className="material-symbols-outlined text-[18px] text-text-secondary">info</span>
                   <div className="text-xs leading-relaxed">
-                    CVs sent to this inbox with the subject line <span className="font-mono bg-surface px-1 py-0.5 rounded border border-border">{keyword}</span> will be auto-imported.
+                    CVs sent to this inbox will be auto-imported and routed by the Email Agent.
                   </div>
                 </div>
               </div>
@@ -719,7 +891,7 @@ export default function CreateJobWizard() {
             {formData.channels.linkedin && (
               <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
                  <p className="text-xs text-text-secondary flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">info</span> No additional config needed. Include the keyword <span className="font-mono bg-surface px-1 py-0.5 rounded border border-border">{keyword}</span> in your LinkedIn job title.
+                  <span className="material-symbols-outlined text-[16px]">info</span> No additional config needed. CVs will be automatically collected by the Email Agent.
                 </p>
               </div>
             )}
@@ -744,11 +916,6 @@ export default function CreateJobWizard() {
             </div>
             {formData.channels.metaCampaign && (
               <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Meta Campaign ID</label>
-                  <input type="text" className="w-64 border border-border rounded-md px-3 py-2 text-sm bg-surface" value={formData.metaCampaignId} onChange={e => updateFormData('metaCampaignId', e.target.value)} placeholder="Campaign ID from Meta Ads Manager" />
-                </div>
-                
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1.5">WhatsApp Number for Ads</label>
                   <div className="space-y-2">
@@ -961,11 +1128,17 @@ export default function CreateJobWizard() {
                     { value: "interview_scheduled", label: "Interview Scheduled" },
                     { value: "offered", label: "Offered" }
                   ].map((stage) => {
-                    const selected = stage.value === "shortlisted"; // Hardcoded default behavior
+                    const selected = formData.agent3TriggerStages.includes(stage.value);
                     return (
                       <button
                         key={stage.value}
                         type="button"
+                        onClick={() => {
+                          const newStages = selected 
+                            ? formData.agent3TriggerStages.filter(s => s !== stage.value) 
+                            : [...formData.agent3TriggerStages, stage.value];
+                          updateFormData('agent3TriggerStages', newStages);
+                        }}
                         className={`text-xs px-3 py-1.5 rounded-full border transition-all cursor-pointer ${selected ? 'bg-primary-container text-white border-primary-container' : 'bg-surface text-text-secondary hover:border-primary-container/40'}`}
                       >
                         {stage.label}
@@ -1031,7 +1204,6 @@ export default function CreateJobWizard() {
               {[
                 { key: "noNewCvs", label: "No New CVs", def: formData.pipelineAlerts.noNewCvs },
                 { key: "taReviewPending", label: "TA Review", def: formData.pipelineAlerts.taReviewPending },
-                { key: "aiCallNotCompleted", label: "AI Call", def: formData.pipelineAlerts.aiCallNotCompleted },
                 { key: "secondShortlistPending", label: "2nd Shortlist", def: formData.pipelineAlerts.secondShortlistPending },
                 { key: "directorReviewPending", label: "Director Review", def: formData.pipelineAlerts.directorReviewPending },
                 { key: "clientReviewPending", label: "Client Review", def: formData.pipelineAlerts.clientReviewPending },
@@ -1081,7 +1253,7 @@ export default function CreateJobWizard() {
     else if (formData.channels.emailCampaign && !formData.emailInbox) mustFix.push({ msg: "Email Campaign: Inbox address is missing", action: "Fix Now", step: 2 });
     if (formData.enableMatching) ready.push("Agent 2 Matching enabled");
     
-    const keyword = formData.jobKeyword || 'BRAND24';
+    const keyword = formData.jobKeyword || 'JOB24';
     const commonWhatsAppNumber = "+94770000001";
 
     const enabledChannels = Object.entries(formData.channels).filter(([_, enabled]) => enabled).map(([key]) => key);
@@ -1192,7 +1364,6 @@ export default function CreateJobWizard() {
             <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">AI Config</p>
             <div className="space-y-1.5 text-xs">
               <p><span className="text-text-secondary inline-block w-28">Matching:</span> <span className="text-text-primary font-medium">{formData.enableMatching ? `Score Min ${formData.minMatchScore}` : 'Disabled'}</span></p>
-              <p><span className="text-text-secondary inline-block w-28">Phone Screen:</span> <span className="text-text-primary font-medium">{formData.enablePhoneScreening ? 'Active' : 'Disabled'}</span></p>
               <p><span className="text-text-secondary inline-block w-28">Follow-Ups:</span> <span className="text-text-primary font-medium">{formData.enableFollowUps ? 'Active' : 'Disabled'}</span></p>
               <p><span className="text-text-secondary inline-block w-28">Pipeline Health:</span> <span className="text-text-primary font-medium">{formData.enablePipelineHealth ? 'Active' : 'Disabled'}</span></p>
             </div>
@@ -1293,8 +1464,8 @@ export default function CreateJobWizard() {
               <p className="text-text-secondary text-center text-sm font-medium">
                 {formData.jobTitle || 'Brand Manager'} — {formData.clientCompany || 'Atlas Holdings'}
               </p>
-              <div className="mt-3 bg-white px-3 py-1 rounded-full border border-border text-xs font-mono text-text-secondary shadow-sm">
-                Keyword: {formData.jobKeyword || 'BRAND24'}
+              <div className="mt-3 bg-gray-800 px-3 py-1 rounded-full border border-gray-700 text-xs font-mono font-bold text-white shadow-sm inline-block">
+                Keyword: {formData.jobKeyword || 'JOB24'}
               </div>
             </div>
             

@@ -45,6 +45,7 @@ import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
+import type * as jobs_actions from "../jobs/actions.js";
 import type * as jobs_assignments from "../jobs/assignments.js";
 import type * as jobs_jobs from "../jobs/jobs.js";
 import type * as lib_activityLog from "../lib/activityLog.js";
@@ -112,6 +113,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/elevenlabs": typeof integrations_elevenlabs;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
+  "jobs/actions": typeof jobs_actions;
   "jobs/assignments": typeof jobs_assignments;
   "jobs/jobs": typeof jobs_jobs;
   "lib/activityLog": typeof lib_activityLog;

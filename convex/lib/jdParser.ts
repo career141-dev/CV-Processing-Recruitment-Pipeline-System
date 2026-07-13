@@ -17,6 +17,10 @@ export type SearchRequirements = {
   education: string | null;
   summary: string;
   keywords: string[];
+  languages: string[];
+  clientCompany: string | null;
+  clientContactEmail: string | null;
+  salaryRange: string | null;
 };
 
 function normalizeRequirements(req: SearchRequirements): SearchRequirements {
@@ -52,7 +56,11 @@ Return ONLY valid JSON with these fields:
   "location": "location or null",
   "education": "education requirement or null",
   "summary": "one sentence summary of the role",
-  "keywords": ["important keywords, tools, frameworks, company names, brands, certifications, acronyms"]
+  "keywords": ["important keywords, tools, frameworks, company names, brands, certifications, acronyms"],
+  "languages": ["required languages e.g. English, Arabic"],
+  "clientCompany": "company name if mentioned, or null",
+  "clientContactEmail": "email address if mentioned, or null",
+  "salaryRange": "salary range if mentioned e.g. 200k - 300k LKR, or null"
 }
 If a skill is implied by the role and clearly important, include it in requiredSkills even if not explicitly written. Do not over-prune skills.
 For occupationSynonyms, include alternative job titles that represent the same occupation as the primary title — not seniority variations, but genuinely equivalent role names a candidate might use on their CV. For example for "Accountant" include ["Finance Officer", "Accounts Executive"].`
@@ -71,7 +79,11 @@ Return ONLY valid JSON with these fields:
   "location": "location or null",
   "education": "education requirement or null",
   "summary": "one sentence summary of the search intent",
-  "keywords": ["important keywords, tools, frameworks, company names, brands, certifications, acronyms"]
+  "keywords": ["important keywords, tools, frameworks, company names, brands, certifications, acronyms"],
+  "languages": ["required languages"],
+  "clientCompany": "company name if mentioned, or null",
+  "clientContactEmail": "email address if mentioned, or null",
+  "salaryRange": "salary range if mentioned, or null"
 }
 If the query is vague, infer the most likely role and include likely related skills so the search remains broad enough.
 For occupationSynonyms, include alternative job titles that represent the same occupation as the primary title — not seniority variations, but genuinely equivalent role names a candidate might use on their CV.`;

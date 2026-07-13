@@ -1,4 +1,4 @@
-import { httpAction, mutation, query } from "../_generated/server";
+import { httpAction, mutation, query, action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 
@@ -365,3 +365,54 @@ export const deleteSession = mutation({
     }
   },
 });
+
+export const getConfiguredNumbers = action({
+  args: {},
+  handler: async (ctx) => {
+    const apiToken = process.env.WHATCHIMP_API_TOKEN;
+    if (!apiToken) {
+      console.warn("[WhatChimp] No WHATCHIMP_API_TOKEN configured");
+      return [];
+    }
+    
+    try {
+      // Pass apiToken as a query parameter for the GET request
+      const response = await fetch(`https://app.whatchimp.com/api/v1/whatsapp/numbers?apiToken=${encodeURIComponent(apiToken)}`);
+      if (!response.ok) {
+        console.error("[WhatChimp] Failed to fetch numbers, status:", response.status);
+        return [];
+      }
+      
+      const data = await response.json();
+      // Assuming the response is an array of number objects like [{ number: "94770000001", id: "123" }, ...]
+      // or { data: [...] }
+      const numbersList = Array.isArray(data) ? data : (data.data || []);
+      
+      // Extract just the phone strings, cleaning them up
+      return numbersList
+        .map((n: any) => n.phone_number || n.number || n.phone || n.display_phone_number || typeof n === 'string' ? n : null)
+        .filter(Boolean)
+        .map((n: string) => "+" + n.replace(/[^0-9]/g, ""));
+    } catch (err: any) {
+      console.error("[WhatChimp] Error fetching numbers:", err.message);
+      return [];
+    }
+  },
+});
+
+export const testFetchWhatChimp = action({
+  args: {},
+  handler: async (ctx) => {
+    const apiToken = process.env.WHATCHIMP_API_TOKEN;
+    if (!apiToken) return { error: "No API token" };
+    try {
+      const response = await fetch(`https://app.whatchimp.com/api/v1/whatsapp/numbers?apiToken=${encodeURIComponent(apiToken)}`);
+      const text = await response.text();
+      return { status: response.status, body: text };
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  },
+});
+
+

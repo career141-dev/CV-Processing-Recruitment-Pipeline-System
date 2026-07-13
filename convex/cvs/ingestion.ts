@@ -190,13 +190,64 @@ export const insertCvRecord = internalMutation({
       stage: "queued",
     });
 
-    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
-      cvUploadId,
-      storageId: args.storageId,
-      fileType: "application/pdf",
-      uploadedBy: taUser ? taUser._id : "system",
-      sourceChannel: "whatsapp",
-      skipLLM: false,
-    });
+    // 8. Check Channel Toggles for Pausing
+    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    const toggles = configRow?.channel_toggles;
+    
+    if (toggles?.whatsappIngestion === false) {
+      await ctx.db.patch(cvUploadId, { status: "paused" });
+      await ctx.db.patch(logId, { stage: "paused" });
+      console.log(`[insertCvRecord] WhatsApp is paused. CV ${cvUploadId} queued for later.`);
+    } else {
+      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+        cvUploadId,
+        storageId: args.storageId,
+        fileType: "application/pdf",
+        uploadedBy: taUser ? taUser._id : "system",
+        sourceChannel: "whatsapp",
+        skipLLM: false,
+      });
+    }
+  }
+  }
+});
+
+export const resumePausedUploads = internalMutation({
+  args: {
+    channel: v.union(v.literal("whatsapp"), v.literal("email"), v.literal("email_campaign"))
+  },
+  handler: async (ctx, args) => {
+    const pausedUploads = await ctx.db.query("cvUploads")
+      .withIndex("by_status", q => q.eq("status", "paused"))
+      .filter(q => q.eq(q.field("source"), args.channel))
+      .collect();
+
+    let resumedCount = 0;
+    for (const upload of pausedUploads) {
+      if (!upload.storageId) continue;
+      
+      await ctx.db.patch(upload._id, { status: "queued" });
+      
+      // Update ingestionLog if exists
+      const log = await ctx.db.query("ingestionLog")
+        .filter(q => q.eq(q.field("cvFileId"), upload._id))
+        .first();
+      if (log) {
+        await ctx.db.patch(log._id, { stage: "queued" });
+      }
+
+      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId,
+        fileType: upload.fileType || "application/pdf",
+        uploadedBy: upload.uploadedBy || "system",
+        sourceChannel: upload.source || "unknown",
+        skipLLM: false,
+        logId: log?._id,
+      });
+      resumedCount++;
+    }
+    
+    return { success: true, resumedCount };
   }
 });

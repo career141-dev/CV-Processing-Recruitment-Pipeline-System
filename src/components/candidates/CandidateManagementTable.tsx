@@ -9,6 +9,7 @@ const SOURCE_COLORS: Record<string, string> = {
   linkedin: "bg-[#0A66C2] text-white",
   whatsapp: "bg-[#25D366] text-white",
   email_campaign: "bg-orange-400 text-white",
+  email: "bg-orange-400 text-white",
   headhunting: "bg-purple-500 text-white",
   manual_upload: "bg-surface-container text-text-secondary",
   workable: "bg-sky-500 text-white",

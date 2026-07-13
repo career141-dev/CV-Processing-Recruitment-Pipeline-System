@@ -295,7 +295,7 @@ Respond ONLY with a valid JSON object in this exact format:
       // Process CV ingestion
       await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
         jobId: resolvedJobId || undefined,
-        sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : "email_campaign",
+        sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign"),
         rawSender: message.from?.emailAddress?.address,
         storageId: storageId,
         fileHash: fileHash,
@@ -361,12 +361,8 @@ export const checkAndRecordEmailReply = internalMutation({
     if (isTestMode && testRecipient && args.senderEmail.toLowerCase() === testRecipient.toLowerCase()) {
       const lastOutbound = await ctx.db
         .query("communications")
-        .filter((q: any) => 
-          q.and(
-            q.eq(q.field("direction"), "outbound"),
-            q.eq(q.field("channel"), "email")
-          )
-        )
+        .withIndex("by_channel_time", (q: any) => q.eq("channel", "email"))
+        .filter((q: any) => q.eq(q.field("direction"), "outbound"))
         .order("desc")
         .first();
 
@@ -549,12 +545,8 @@ export const getLastOutboundEmailCommunication = internalQuery({
   handler: async (ctx: any) => {
     const lastOutbound = await ctx.db
       .query("communications")
-      .filter((q: any) => 
-        q.and(
-          q.eq(q.field("direction"), "outbound"),
-          q.eq(q.field("channel"), "email")
-        )
-      )
+      .withIndex("by_channel_time", (q: any) => q.eq("channel", "email"))
+      .filter((q: any) => q.eq(q.field("direction"), "outbound"))
       .order("desc")
       .first();
 

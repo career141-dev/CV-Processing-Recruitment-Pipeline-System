@@ -14,9 +14,14 @@ export const evaluateFollowUpStage = internalMutation({
       console.log("Autopilot disabled via appSettings - skipping sweep");
       return;
     }
+    
+    const toggles = configRow?.channel_toggles;
+    const whatsappFollowUpPaused = toggles?.whatsappFollowUp === false;
+    const emailFollowUpPaused = toggles?.emailFollowUp === false;
+    const allFollowUpsPaused = whatsappFollowUpPaused && emailFollowUpPaused;
 
     const followUpApps = await ctx.db.query("applications")
-      .filter(q => q.eq(q.field("currentStage"), "follow_up"))
+      .withIndex("by_stage", q => q.eq("currentStage", "follow_up"))
       .collect();
 
     const now = Date.now();
@@ -106,7 +111,8 @@ export const evaluateFollowUpStage = internalMutation({
       // If 7 days elapsed, move to Unresponsive (not rejected)
       // DA will manually call these candidates using the Unresponsive sub-section
       // in the Follow-up tab. AI voice call is suspended.
-      if (timeInStage >= SEVEN_DAYS_MS) {
+      // Note: We suspend the 7-day expiration timer if ALL follow-up channels are globally paused.
+      if (timeInStage >= SEVEN_DAYS_MS && !allFollowUpsPaused) {
         await ctx.db.patch(app._id, {
           currentStage: "unresponsive",
           lastStageChangedAt: now,
@@ -198,21 +204,18 @@ export const evaluateFollowUpStage = internalMutation({
       let triggerEmail = false;
       let triggerAiCall = false;
 
-      if (targetDay === 0) {
-        triggerWhatsApp = true;
-        triggerEmail = true;
+      if (targetDay === 0 || targetDay === 4 || targetDay === 6) {
+        triggerWhatsApp = !whatsappFollowUpPaused;
+        triggerEmail = !emailFollowUpPaused;
       } else if (targetDay === 2) {
         // AI voice call suspended (Sri Lankan phone number not yet available).
         // Backend code in elevenlabs.ts remains intact for future reactivation.
         // Day 2 is intentionally silent — next contact is Day 4 WhatsApp/Email.
         continue;
-      } else if (targetDay === 4) {
-        triggerWhatsApp = true;
-        triggerEmail = true;
-      } else if (targetDay === 6) {
-        triggerWhatsApp = true;
-        triggerEmail = true;
       }
+
+      // If all scheduled actions for this day are paused, skip the rest to avoid empty states
+      if (!triggerWhatsApp && !triggerEmail && !triggerAiCall) continue;
 
       // 3 & 4. Rate Limiting and Calling Hours for AI Calls
       if (triggerAiCall) {
@@ -344,5 +347,101 @@ crons.interval(
   { inboxEmail: "linkedin@career141.com" }
 );
 
-export default crons;
+export const checkSlaBreaches = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Check Kill Switch
+    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    if (configRow && configRow.autopilotEnabled === false) return;
 
+    const apps = await ctx.db.query("applications")
+      .withIndex("by_active", q => q.eq("isActive", true))
+      .collect();
+
+    for (const app of apps) {
+      if (!app.lastStageChangedAt) continue;
+
+      const job = await ctx.db.get(app.jobId);
+      if (!job || job.status !== "active") continue;
+
+      let slaLimit = 0;
+      let stageName = "";
+      switch (app.currentStage) {
+        case "ta_shortlist":
+          slaLimit = job.slaTaReviewDays ?? 2;
+          stageName = "TA Review";
+          break;
+        case "director_shortlist":
+          slaLimit = job.slaDirectorReviewDays ?? 3;
+          stageName = "Director Review";
+          break;
+        case "client_review":
+          slaLimit = job.slaClientReviewDays ?? 5;
+          stageName = "Client Review";
+          break;
+        case "interview":
+          slaLimit = job.slaInterviewDays ?? 3;
+          stageName = "Interview";
+          break;
+        case "offer":
+          slaLimit = job.slaOfferDays ?? 2;
+          stageName = "Offer";
+          break;
+        case "second_shortlist":
+          slaLimit = job.slaSecondShortlistDays ?? 2;
+          stageName = "2nd Shortlist";
+          break;
+        case "ai_call":
+          slaLimit = job.slaAiCallDays ?? 1;
+          stageName = "AI Call";
+          break;
+        default:
+          continue;
+      }
+
+      const msElapsed = Date.now() - app.lastStageChangedAt;
+      const daysElapsed = msElapsed / (1000 * 60 * 60 * 24);
+
+      if (daysElapsed > slaLimit) {
+        const existingNotifs = await ctx.db.query("notifications")
+          .filter(q => q.and(
+            q.eq(q.field("type"), "sla_breached"),
+            q.eq(q.field("candidateId"), app.candidateId),
+            q.eq(q.field("jobId"), app.jobId)
+          )).collect();
+        
+        // Prevent spam: only alert once per stage entry
+        const recentNotif = existingNotifs.find(n => new Date(n.createdAt).getTime() > app.lastStageChangedAt);
+        
+        if (!recentNotif && job.primaryRecruiterId) {
+           const candidate = await ctx.db.get(app.candidateId);
+           await ctx.db.insert("notifications", {
+              userId: job.primaryRecruiterId,
+              type: "sla_breached",
+              title: "Pipeline SLA Breached",
+              body: `${candidate?.fullName || "A candidate"} has been stuck in ${stageName} for ${Math.floor(daysElapsed)} days (Limit: ${slaLimit}).`,
+              candidateId: app.candidateId,
+              jobId: app.jobId,
+              read: false,
+              createdAt: new Date().toISOString()
+           });
+           console.log(`[SLA] Breached for ${candidate?.fullName} in ${stageName}`);
+        }
+      }
+    }
+  }
+});
+
+crons.daily(
+  "check-sla-breaches",
+  { hourUTC: 8, minuteUTC: 0 },
+  internal.crons.checkSlaBreaches
+);
+
+crons.interval(
+  "recalculate-job-stats",
+  { minutes: 2 },
+  internal.jobs.jobs.recalculateAllJobStats
+);
+
+export default crons;

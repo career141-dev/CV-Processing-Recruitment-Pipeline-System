@@ -566,6 +566,7 @@ export default function CandidateProfile() {
                           candidate.firstSourceChannel === 'linkedin' ? 'bg-blue-500' :
                           candidate.firstSourceChannel === 'whatsapp' ? 'bg-[#25D366]' :
                           candidate.firstSourceChannel === 'email_campaign' ? 'bg-orange-400' :
+                          candidate.firstSourceChannel === 'email' ? 'bg-orange-400' :
                           'bg-gray-400'
                         }`} />
                         <div className="flex flex-col">

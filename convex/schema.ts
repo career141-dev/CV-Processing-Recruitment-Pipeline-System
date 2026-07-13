@@ -159,8 +159,8 @@ v.literal("ask_ta_each_time")),
 
 // Agent 2 — AI Match Scoring Weights
 scoreWeightSkills: v.optional(v.number()), // default 35
-scoreWeightExperience: v.optional(v.number()), // default 25
-scoreWeightJobTitle: v.optional(v.number()), // default 20
+scoreWeightExperience: v.optional(v.number()), // default 15
+scoreWeightJobTitle: v.optional(v.number()), // default 30
 scoreWeightIndustry: v.optional(v.number()), // default 15
 scoreWeightLocation: v.optional(v.number()), // default 5
 minMatchScoreToShow: v.optional(v.number()), // default 60
@@ -233,6 +233,10 @@ slaOfferDays: v.optional(v.number()),
 // Headhunting
 headhuntingEnabled: v.boolean(),
 benchmarkProfileUrl: v.optional(v.string()),
+
+// Aggregated Stats
+stageCounts: v.optional(v.any()),
+totalApplications: v.optional(v.number()),
 
 // AI Embedding (set async after creation)
 embedding: v.optional(v.array(v.number())),
@@ -605,7 +609,9 @@ generatedAt: v.string(),
     .index("by_job_score", ["jobId", "aiMatchScore"])
     .index("by_job_active", ["jobId", "isActive"])
     .index("by_job_stage_changed", ["jobId", "lastStageChangedAt"])
-    .index("by_candidate_job", ["candidateId", "jobId"]),
+    .index("by_candidate_job", ["candidateId", "jobId"])
+    .index("by_stage", ["currentStage"])
+    .index("by_active", ["isActive"]),
 
   pipelineEvents: defineTable({
     applicationId: v.optional(v.id("applications")),
@@ -1126,6 +1132,12 @@ errorMessage: v.optional(v.string()),
     autopilotEnabled: v.optional(v.boolean()),
     updatedBy: v.optional(v.id("users")),
     updatedAt: v.optional(v.string()),
+    channel_toggles: v.optional(v.object({
+      whatsappIngestion: v.boolean(),
+      emailIngestion: v.boolean(),
+      whatsappFollowUp: v.boolean(),
+      emailFollowUp: v.boolean(),
+    })),
   }).index("by_key", ["key"]),
 
   searchHistory: defineTable({

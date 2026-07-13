@@ -10,6 +10,8 @@ import { TeamTab } from '@/components/settings/tabs/TeamTab';
 import { Card } from '@/components/ui/Card';
 import { useRole } from '@/hooks/useRole';
 
+import { IntegrationsTab } from '@/components/settings/tabs/IntegrationsTab';
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile');
   const { user } = useUser();
@@ -58,10 +60,7 @@ export default function SettingsPage() {
           )}
 
           {activeTab === 'integrations' && (
-            <Card className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <h2 className="text-text-primary text-[14px] font-bold mb-6">Channel Integrations</h2>
-              <p className="text-text-secondary text-[13px]">Manage your connected channels like Slack, WhatsApp, and LinkedIn.</p>
-            </Card>
+            <IntegrationsTab />
           )}
 
           {activeTab === 'email' && (
