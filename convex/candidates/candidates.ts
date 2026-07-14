@@ -5,6 +5,7 @@ import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/follow
 
 
 
+
 export const listCandidatesByIds = query({
   args: { ids: v.array(v.id("candidates")) },
   handler: async (ctx, args) => {
@@ -12,9 +13,11 @@ export const listCandidatesByIds = query({
     for (const id of args.ids) {
       const c = await ctx.db.get(id);
       if (c) {
+        const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
         candidates.push({
-          ...c,
+          ...safeCandidate,
           profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+          activeApplications: [],
         });
       }
     }
@@ -49,6 +52,7 @@ export const listCandidatesPaginated = query({
       ...page,
       page: await Promise.all(
         page.page.map(async (c) => {
+          const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
           const apps = await ctx.db
             .query("applications")
             .withIndex("by_candidateId", (q: any) => q.eq("candidateId", c._id))
@@ -67,7 +71,7 @@ export const listCandidatesPaginated = query({
           );
 
           return {
-            ...c,
+            ...safeCandidate,
             profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
             activeApplications,
           };
@@ -82,8 +86,9 @@ export const getCandidate = query({
   handler: async (ctx, args) => {
     const candidate = await ctx.db.get(args.id);
     if (!candidate) return null;
+    const { rawText, embedding, jobHistory, ...safeCandidate } = candidate as any;
     return {
-      ...candidate,
+      ...safeCandidate,
       profileImageUrl: candidate.profileImageId ? await ctx.storage.getUrl(candidate.profileImageId) : null,
     };
   },
@@ -315,7 +320,7 @@ export const createCandidate = mutation({
         return existingCandidateId;
       }
 
-      const { rawText, jobHistory, ...candidateArgs } = args;
+      const { rawText, jobHistory, embedding, ...candidateArgs } = args;
       
       let pastJobTitles: string[] | undefined = undefined;
       if (jobHistory && jobHistory.length > 0) {
@@ -334,18 +339,20 @@ export const createCandidate = mutation({
         status: "new",
       });
 
-      if (rawText || jobHistory) {
+      if (rawText || jobHistory || embedding) {
         const existingResume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId as any)).first();
         if (existingResume) {
           await ctx.db.patch(existingResume._id, { 
             rawText: rawText ?? existingResume.rawText, 
-            jobHistory 
+            jobHistory,
+            embedding: embedding ?? existingResume.embedding
           });
         } else {
           await ctx.db.insert("candidateResumes", { 
             candidateId: existingCandidateId, 
             rawText: rawText ?? "", 
-            jobHistory 
+            jobHistory,
+            embedding 
           });
         }
       }
@@ -360,7 +367,7 @@ export const createCandidate = mutation({
       return existingCandidateId;
     }
 
-    const { rawText, jobHistory, ...candidateArgs } = args;
+    const { rawText, jobHistory, embedding, ...candidateArgs } = args;
 
     let pastJobTitles: string[] | undefined = undefined;
     if (jobHistory && jobHistory.length > 0) {
@@ -379,11 +386,12 @@ export const createCandidate = mutation({
       status: "new",
     });
 
-    if (rawText || jobHistory) {
+    if (rawText || jobHistory || embedding) {
       await ctx.db.insert("candidateResumes", {
         candidateId: newId,
         rawText: rawText ?? "",
         jobHistory,
+        embedding,
       });
     }
 
