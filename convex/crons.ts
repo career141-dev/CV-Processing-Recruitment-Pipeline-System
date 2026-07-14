@@ -443,4 +443,10 @@ crons.daily(
   internal.crons.checkSlaBreaches
 );
 
+crons.interval(
+  "update-dashboard-stats-cache",
+  { minutes: 5 },
+  internal.stats.stats.updateDashboardStatsCache
+);
+
 export default crons;

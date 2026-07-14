@@ -1,4 +1,4 @@
-import { query } from "../_generated/server";
+import { query, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 // Force sync
 export const getSystemStats = query({
@@ -87,6 +87,15 @@ export const getRecentChannelLogs = query({
 export const getDashboardStats = query({
   args: {},
   handler: async (ctx) => {
+    const cached = await ctx.db.query("dashboardStatsCache")
+      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
+      .first();
+
+    if (cached) {
+      return cached.data;
+    }
+
+    // Fallback: If cache not populated yet, compute live
     const sysStat = await ctx.db.query("systemStats")
       .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
       .first();
@@ -153,6 +162,95 @@ export const getDashboardStats = query({
         trendType: placedTrendType,
       },
     };
+  }
+});
+
+export const updateDashboardStatsCache = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const sysStat = await ctx.db.query("systemStats")
+      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
+      .first();
+
+    const dailyStats = await ctx.db.query("dailyStats").order("desc").take(60);
+    
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+    const sevenDaysAgoStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    let candidatesThisWeek = 0;
+    let cvsToday = 0;
+    let cvsYesterday = 0;
+    let jobsAddedThisWeek = 0;
+    let placedThisMonth = 0;
+    let placedLastMonth = 0;
+
+    for (const d of dailyStats) {
+      if (d.dateStr >= sevenDaysAgoStr) {
+        candidatesThisWeek += (d.newCandidates || 0);
+        jobsAddedThisWeek += (d.newJobs || 0);
+      }
+      if (d.dateStr === todayStr) {
+        cvsToday += (d.newCvUploads || 0);
+      }
+      if (d.dateStr === yesterdayStr) {
+        cvsYesterday += (d.newCvUploads || 0);
+      }
+      if (d.dateStr >= thirtyDaysAgoStr) {
+        placedThisMonth += (d.placements || 0);
+      } else {
+        placedLastMonth += (d.placements || 0);
+      }
+    }
+
+    const cvsVsYesterday = cvsToday - cvsYesterday;
+    const cvsTrendType = cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral";
+
+    const placedVsLastMonth = placedThisMonth - placedLastMonth;
+    const placedTrendType = placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral";
+
+    const statsData = {
+      candidates: {
+        total: sysStat?.totalCandidates || 0,
+        trendText: `${candidatesThisWeek.toLocaleString()} this week`,
+        trendType: "up", 
+      },
+      cvsToday: {
+        total: cvsToday,
+        trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
+        trendType: cvsTrendType,
+      },
+      activeJobs: {
+        total: sysStat?.activeJobsCount || 0,
+        trendText: `${jobsAddedThisWeek} added this week`,
+        trendType: jobsAddedThisWeek > 0 ? "up" : "neutral",
+      },
+      placedThisMonth: {
+        total: placedThisMonth,
+        trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
+        trendType: placedTrendType,
+      },
+    };
+
+    const existing = await ctx.db.query("dashboardStatsCache")
+      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        data: statsData,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.insert("dashboardStatsCache", {
+        singletonKey: "global_dashboard_stats",
+        data: statsData,
+        updatedAt: Date.now(),
+      });
+    }
   }
 });
 
