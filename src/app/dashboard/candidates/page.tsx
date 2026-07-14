@@ -192,25 +192,6 @@ export default function CandidatesSearch() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // 4. Textarea auto-sizing effect (Capped at 1/3 window height, debounced)
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const handleResize = () => {
-      const scrollPos = window.scrollY;
-      textarea.style.height = 'auto';
-      const scrollHeight = textarea.scrollHeight;
-      const maxHeight = window.innerHeight / 3;
-      const targetHeight = Math.min(scrollHeight, maxHeight);
-      setTextareaHeight(`${Math.max(80, targetHeight)}px`);
-      window.scrollTo(window.scrollX, scrollPos);
-    };
-
-    const timer = setTimeout(handleResize, 100);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
   // 5. Public batch resolver query for displaying candidate cards
   const searchIds = useMemo(() => {
     return (searchResults?.results || []).map(r => r.candidateId as Id<"candidates">);
@@ -497,7 +478,7 @@ export default function CandidatesSearch() {
           <div className="flex items-start self-stretch relative w-full">
           
           {/* 4.1 Filter Panel Always Visible Left Column */}
-          <div className="w-[260px] shrink-0 mr-[21px] pl-6">
+          <div className="w-[260px] shrink-0 mr-[40px] pl-6">
             <CandidateSidebarFilters 
               activeFilters={activeFilters} 
               onToggleFilter={toggleFilter} 

@@ -86,3 +86,13 @@ export const updateJobEmbedding = internalMutation({
     });
   },
 });
+
+export const getRecentCandidates = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidates")
+      .order("desc")
+      .take(args.limit);
+  },
+});

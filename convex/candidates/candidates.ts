@@ -770,3 +770,13 @@ export const isCandidateInFollowUp = query({
     return !!activeApp;
   },
 });
+
+export const getCandidatesByIds = query({
+  args: { ids: v.array(v.id("candidates")) },
+  handler: async (ctx, args) => {
+    const results = await Promise.all(
+      args.ids.map((id) => ctx.db.get(id))
+    );
+    return results.filter((c) => c !== null);
+  },
+});

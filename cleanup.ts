@@ -3,14 +3,14 @@ import { ConvexHttpClient } from "convex/browser";
 const client = new ConvexHttpClient(process.env.CONVEX_URL || "http://127.0.0.1:3210");
 
 async function run() {
-  let cursor = null;
+  let cursor: string | null = null;
   let totalCleaned = 0;
   let isDone = false;
   
   console.log("Starting heavy field cleanup on candidates...");
   
   while (!isDone) {
-    const result = await client.mutation("admin/cleanupCandidates:cleanupAllHeavyFields", { cursor });
+    const result: any = await client.mutation("admin/cleanupCandidates:cleanupAllHeavyFields" as any, { cursor });
     
     totalCleaned += result.cleaned;
     cursor = result.continueCursor;
