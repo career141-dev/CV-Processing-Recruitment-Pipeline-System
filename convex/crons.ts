@@ -347,7 +347,7 @@ crons.daily(
 // Replace "fallback_job_id_here" with a real default Job ID if you want a catch-all.
 crons.interval(
   "poll-linkedin-inbox",
-  { minutes: 1 }, // Changed to 1 minute for faster testing
+  { minutes: 5 }, // Changed back to 5 minutes
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "linkedin@career141.com" }
 );

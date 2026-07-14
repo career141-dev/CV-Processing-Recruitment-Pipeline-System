@@ -13,6 +13,7 @@ import type * as admin_checkData from "../admin/checkData.js";
 import type * as admin_cleanupCandidates from "../admin/cleanupCandidates.js";
 import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
 import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
+import type * as admin_recalculateGlobalStats from "../admin/recalculateGlobalStats.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
 import type * as admin_settings from "../admin/settings.js";
 import type * as admin_testIngedup from "../admin/testIngedup.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   "admin/cleanupCandidates": typeof admin_cleanupCandidates;
   "admin/migrateCandidates": typeof admin_migrateCandidates;
   "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
+  "admin/recalculateGlobalStats": typeof admin_recalculateGlobalStats;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
   "admin/settings": typeof admin_settings;
   "admin/testIngedup": typeof admin_testIngedup;

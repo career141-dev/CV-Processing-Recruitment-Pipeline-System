@@ -789,9 +789,15 @@ export const saveReverseMatchResults = internalMutation({
 export const getActiveJobsBasicInfo = query({
   args: {},
   handler: async (ctx) => {
-    const jobs = await ctx.db.query("jobs")
+    const activeJobs = await ctx.db.query("jobs")
       .withIndex("by_status", (q) => q.eq("status", "active"))
       .collect();
+      
+    const pausedJobs = await ctx.db.query("jobs")
+      .withIndex("by_status", (q) => q.eq("status", "on_hold"))
+      .collect();
+      
+    const jobs = [...activeJobs, ...pausedJobs];
       
     return jobs.map(job => ({
       _id: job._id,
