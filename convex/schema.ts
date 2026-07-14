@@ -1147,8 +1147,7 @@ errorMessage: v.optional(v.string()),
     createdAt: v.string(),
   })
     .index("by_user", ["userId"])
-    .index("by_user_and_read", ["userId", "read"])
-    .index("by_candidate_job_type", ["candidateId", "jobId", "type"]),
+    .index("by_user_and_read", ["userId", "read"]),
 
   appSettings: defineTable({
     key: v.string(),

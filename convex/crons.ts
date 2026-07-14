@@ -356,7 +356,7 @@ export const checkSlaBreaches = internalMutation({
   args: {},
   handler: async (ctx) => {
     // Check Kill Switch
-    const configRow = await ctx.db.query("appSettings").withIndex("by_key", (q) => q.eq("key", "system")).first();
+    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
     if (configRow && configRow.autopilotEnabled === false) return;
 
     const apps = await ctx.db.query("applications")
@@ -409,12 +409,11 @@ export const checkSlaBreaches = internalMutation({
 
       if (daysElapsed > slaLimit) {
         const existingNotifs = await ctx.db.query("notifications")
-          .withIndex("by_candidate_job_type", (q) =>
-            q.eq("candidateId", app.candidateId)
-             .eq("jobId", app.jobId)
-             .eq("type", "sla_breached")
-          )
-          .collect();
+          .filter(q => q.and(
+            q.eq(q.field("type"), "sla_breached"),
+            q.eq(q.field("candidateId"), app.candidateId),
+            q.eq(q.field("jobId"), app.jobId)
+          )).collect();
         
         // Prevent spam: only alert once per stage entry
         const recentNotif = existingNotifs.find(n => new Date(n.createdAt).getTime() > app.lastStageChangedAt);
