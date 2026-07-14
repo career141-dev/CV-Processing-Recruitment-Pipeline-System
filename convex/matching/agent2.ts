@@ -48,10 +48,13 @@ export const generateAndStoreEmbedding = internalAction({
   args: { candidateId: v.id("candidates") },
   handler: async (ctx, args) => {
     const candidate = await ctx.runQuery(internal.matching.queries.getCandidate, { candidateId: args.candidateId });
-    if (!candidate || !candidate.rawText) return;
+    if (!candidate) return;
+
+    const resume = await ctx.runQuery(internal.matching.queries.getCandidateResume, { candidateId: args.candidateId });
+    if (!resume || !resume.rawText) return;
 
     // We can truncate to avoid massive payload. NVIDIA embedqa usually takes up to 4096 or 8192 tokens.
-    const textToEmbed = candidate.rawText.slice(0, 15000); 
+    const textToEmbed = resume.rawText.slice(0, 15000); 
     const embedding = await embedText(textToEmbed, "passage");
 
     await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
@@ -166,19 +169,37 @@ export const runReverseMatch = action({
       }
 
       // 3. Perform Vector Search across all candidates
-      const results = await ctx.vectorSearch("candidates", "vector_index_candidates", {
+      const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
         vector: jobEmbedding,
         limit: 150,
       });
 
       const vectorResultsMap = new Map<string, number>();
-      for (const r of results) {
-        vectorResultsMap.set(r._id.toString(), r._score);
+      if (results.length > 0) {
+        const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidatesByResumeIds, {
+          resumeIds: results.map((r) => r._id),
+        });
+        const resumeIdToCandidateId = new Map(mappedResumes.map((item: any) => [item.resumeId, item.candidate._id]));
+        for (const r of results) {
+          const cId = resumeIdToCandidateId.get(r._id);
+          if (cId) {
+            vectorResultsMap.set(cId.toString(), r._score);
+          }
+        }
       }
 
       // 4. Generate missing embeddings on the fly for keyword-matched candidates (up to 15)
+      const allKeywordCandidateIds = Array.from(dedupedKeywordsMap.keys());
+      const allKeywordResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
+        candidateIds: allKeywordCandidateIds as Id<"candidates">[]
+      });
+      const keywordResumeMap = new Map(allKeywordResumes.map((r: any) => [r.candidateId, r]));
+
       const missingEmbeddings = Array.from(dedupedKeywordsMap.values()).filter(
-        cv => !cv.embedding || cv.embedding.length === 0
+        cv => {
+          const resume: any = keywordResumeMap.get(cv._id);
+          return !resume || !resume.embedding || resume.embedding.length === 0;
+        }
       );
 
       if (missingEmbeddings.length > 0) {
@@ -186,14 +207,15 @@ export const runReverseMatch = action({
         await Promise.all(
           limitToEmbed.map(async (cv) => {
             try {
-              if (cv.rawText) {
-                const textToEmbed = cv.rawText.slice(0, 15000);
+              const resume: any = keywordResumeMap.get(cv._id);
+              if (resume && resume.rawText) {
+                const textToEmbed = resume.rawText.slice(0, 15000);
                 const embedding = await embedText(textToEmbed, "passage");
                 await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
                   candidateId: cv._id,
                   embedding,
                 });
-                cv.embedding = embedding; // Update in-memory reference
+                resume.embedding = embedding; // Update in-memory reference
               }
             } catch (err) {
               console.error(`Failed to generate on-the-fly embedding for candidate ${cv._id}:`, err);
@@ -220,8 +242,9 @@ export const runReverseMatch = action({
 
         let score = vectorResultsMap.get(cid);
         if (score === undefined) {
-          if (candidate.embedding && candidate.embedding.length > 0) {
-            score = cosineSimilarity(jobEmbedding, candidate.embedding);
+          const resume: any = keywordResumeMap.get(cid);
+          if (resume && resume.embedding && resume.embedding.length > 0) {
+            score = cosineSimilarity(jobEmbedding, resume.embedding);
           } else {
             score = 0;
           }
@@ -229,6 +252,11 @@ export const runReverseMatch = action({
 
         enrichedCandidates.push({ candidate, vectorScore: score });
       }
+
+      const allResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
+        candidateIds: Array.from(allCandidateIds) as Id<"candidates">[]
+      });
+      const resumeMap = new Map(allResumes.map((r: any) => [r.candidateId, r]));
 
       const { scoreCandidateAgainstRequirements } = await import("../cvs/cvScoring.js");
 
@@ -258,16 +286,16 @@ export const runReverseMatch = action({
             yearsOfExperience: cv.yearsOfExperience || cv.totalExperienceYears,
             location: cv.location,
             skills: cv.skills,
-            rawText: cv.rawText,
+            rawText: resumeMap.get(cv._id)?.rawText,
             summary: cv.summary,
           };
 
           const scored = scoreCandidateAgainstRequirements(cvPayload as any, req as any, 0);
 
           const matchScore = Math.round(
-            (scored.titleScore * ((job.scoreWeightJobTitle ?? 20) / 100)) +
+            (scored.titleScore * ((job.scoreWeightJobTitle ?? 30) / 100)) +
             (scored.skillScore * ((job.scoreWeightSkills ?? 35) / 100)) +
-            (scored.experienceScore * ((job.scoreWeightExperience ?? 25) / 100)) +
+            (scored.experienceScore * ((job.scoreWeightExperience ?? 15) / 100)) +
             (scored.industryScore * ((job.scoreWeightIndustry ?? 15) / 100)) +
             (scored.locationScore * ((job.scoreWeightLocation ?? 5) / 100))
           );

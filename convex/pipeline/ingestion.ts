@@ -105,16 +105,30 @@ export const processCvIngestion = mutation({
       candidateName: "Unknown — Pending Parse",
     } as any);
 
-    // Trigger Agent 1 (CV Parsing) immediately using standard api
-    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
-      storageId: args.storageId,
-      fileType: args.fileType,
-      sourceChannel: args.sourceChannel,
-      uploadedBy: "system",
-      cvUploadId,
-      batchId: args.batchId,
-      logId: logId,
-    });
+    // 8. Check Channel Toggles for Pausing
+    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    const toggles = configRow?.channel_toggles;
+    
+    let isPaused = false;
+    if (args.sourceChannel === "whatsapp" && toggles?.whatsappIngestion === false) isPaused = true;
+    if ((args.sourceChannel === "email" || args.sourceChannel === "email_campaign") && toggles?.emailIngestion === false) isPaused = true;
+
+    if (isPaused) {
+      await ctx.db.patch(cvUploadId, { status: "paused" });
+      await ctx.db.patch(logId, { stage: "paused" });
+      console.log(`[processCvIngestion] Channel ${args.sourceChannel} is paused. CV ${cvUploadId} queued for later.`);
+    } else {
+      // Trigger Agent 1 (CV Parsing) immediately using standard api
+      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: args.storageId,
+        fileType: args.fileType,
+        sourceChannel: args.sourceChannel,
+        uploadedBy: "system",
+        cvUploadId,
+        batchId: args.batchId,
+        logId: logId,
+      });
+    }
 
     return { success: true, cvUploadId };
   },

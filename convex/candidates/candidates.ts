@@ -5,7 +5,7 @@ import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/follow
 
 export const listCandidates = query({
   handler: async (ctx) => {
-    const candidates = await ctx.db.query("candidates").order("desc").collect();
+    const candidates = await ctx.db.query("candidates").order("desc").take(100);
     return await Promise.all(
       candidates.map(async (c) => {
         const apps = await ctx.db
@@ -37,13 +37,45 @@ export const listCandidates = query({
   },
 });
 
-export const listCandidatesPaginated = query({
-  args: { paginationOpts: v.any() },
+export const listCandidatesByIds = query({
+  args: { ids: v.array(v.id("candidates")) },
   handler: async (ctx, args) => {
-    const page = await ctx.db
-      .query("candidates")
-      .order("desc")
-      .paginate(args.paginationOpts);
+    const candidates = [];
+    for (const id of args.ids) {
+      const c = await ctx.db.get(id);
+      if (c) {
+        candidates.push({
+          ...c,
+          profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+        });
+      }
+    }
+    return candidates;
+  },
+});
+
+export const listCandidatesPaginated = query({
+  args: { 
+    paginationOpts: v.any(),
+    searchQuery: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let q;
+    
+    if (args.searchQuery) {
+      const sq = args.searchQuery.trim();
+      if (sq.includes("@")) {
+        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
+      } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
+        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
+      } else {
+        q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
+      }
+    } else {
+      q = ctx.db.query("candidates").order("desc");
+    }
+
+    const page = await q.paginate(args.paginationOpts);
       
     return {
       ...page,
@@ -158,8 +190,24 @@ export const updateCandidateAfterLazyParse = mutation({
     isParsed: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const { candidateId, ...updates } = args;
+    const { candidateId, jobHistory, ...updates } = args;
+
+    let pastJobTitles: string[] | undefined = undefined;
+    if (jobHistory && jobHistory.length > 0) {
+      pastJobTitles = jobHistory.map((j: any) => j.title).filter((t: any) => !!t);
+      (updates as any).pastJobTitles = pastJobTitles;
+    }
+
     await ctx.db.patch(candidateId, updates);
+
+    if (jobHistory) {
+      const existingResume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId as any)).first();
+      if (existingResume) {
+        await ctx.db.patch(existingResume._id, { jobHistory });
+      } else {
+        await ctx.db.insert("candidateResumes", { candidateId, rawText: "", jobHistory });
+      }
+    }
   },
 });
 
@@ -279,10 +327,40 @@ export const createCandidate = mutation({
         return existingCandidateId;
       }
 
+      const { rawText, jobHistory, ...candidateArgs } = args;
+      
+      let pastJobTitles: string[] | undefined = undefined;
+      if (jobHistory && jobHistory.length > 0) {
+        pastJobTitles = jobHistory.map((j: any) => j.title).filter((t: any) => !!t);
+      }
+
+      let phoneClean: string | undefined = undefined;
+      if (args.phone) {
+        phoneClean = args.phone.replace(/[^0-9]/g, "");
+      }
+
       await ctx.db.patch(existingCandidateId, {
-        ...args,
+        ...candidateArgs,
+        pastJobTitles,
+        phoneClean,
         status: "new",
       });
+
+      if (rawText || jobHistory) {
+        const existingResume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId as any)).first();
+        if (existingResume) {
+          await ctx.db.patch(existingResume._id, { 
+            rawText: rawText ?? existingResume.rawText, 
+            jobHistory 
+          });
+        } else {
+          await ctx.db.insert("candidateResumes", { 
+            candidateId: existingCandidateId, 
+            rawText: rawText ?? "", 
+            jobHistory 
+          });
+        }
+      }
 
       // Sync follow-up flags on all candidate applications
       const candidate = await ctx.db.get(existingCandidateId);
@@ -294,10 +372,32 @@ export const createCandidate = mutation({
       return existingCandidateId;
     }
 
+    const { rawText, jobHistory, ...candidateArgs } = args;
+
+    let pastJobTitles: string[] | undefined = undefined;
+    if (jobHistory && jobHistory.length > 0) {
+      pastJobTitles = jobHistory.map((j: any) => j.title).filter((t: any) => !!t);
+    }
+    
+    let phoneClean: string | undefined = undefined;
+    if (args.phone) {
+      phoneClean = args.phone.replace(/[^0-9]/g, "");
+    }
+
     const newId = await ctx.db.insert("candidates", {
-      ...args,
+      ...candidateArgs,
+      pastJobTitles,
+      phoneClean,
       status: "new",
     });
+
+    if (rawText || jobHistory) {
+      await ctx.db.insert("candidateResumes", {
+        candidateId: newId,
+        rawText: rawText ?? "",
+        jobHistory,
+      });
+    }
 
     // Sync follow-up flags on all candidate applications
     const candidate = await ctx.db.get(newId);

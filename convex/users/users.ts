@@ -130,8 +130,12 @@ export const getCurrentUser = query({
 export const listByRoles = query({
   args: { roles: v.array(v.string()) },
   handler: async (ctx, args) => {
-    const users = await ctx.db.query("users").collect();
-    return users.filter((u) => args.roles.includes(u.role));
+    const userGroups = await Promise.all(
+      args.roles.map(role => 
+        ctx.db.query("users").withIndex("by_role", q => q.eq("role", role as any)).collect()
+      )
+    );
+    return userGroups.flat();
   },
 });
 

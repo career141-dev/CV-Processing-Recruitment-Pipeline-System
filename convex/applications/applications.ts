@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags, initiateFollowUpOutreach } from "../pipeline/followUpHelper";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
-
+import { adjustJobStageStat } from "../jobs/stats";
+import { adjustGlobalStat } from "../stats/statsHelper";
 export const getApplicationsByCandidateId = query({
   args: { candidateId: v.id("candidates") },
   handler: async (ctx, args) => {
@@ -125,8 +126,7 @@ export const getUnresponsiveForJob = query({
 
     const applications = await ctx.db
       .query("applications")
-      .withIndex("by_job_active", (q) => q.eq("jobId", args.jobId).eq("isActive", true))
-      .filter((q) => q.eq(q.field("currentStage"), "unresponsive"))
+      .withIndex("by_job_stage", (q) => q.eq("jobId", args.jobId).eq("currentStage", "unresponsive"))
       .collect();
 
     const now = Date.now();
@@ -256,7 +256,9 @@ export const createApplication = mutation({
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existing._id, updates);
         
+        
         if (updates.currentStage) {
+          await adjustJobStageStat(ctx, args.jobId, existing.currentStage, updates.currentStage);
           await syncCandidateOverallStatus(ctx, args.candidateId);
         }
         
@@ -283,6 +285,9 @@ export const createApplication = mutation({
       lastStageChangedAt: now,
       createdAt: now,
     });
+    
+    await adjustJobStageStat(ctx, args.jobId, null, initialStage as any, true);
+    await adjustGlobalStat(ctx, "new_application");
     await syncCandidateOverallStatus(ctx, args.candidateId);
     return appId;
   },
@@ -512,6 +517,8 @@ export const createHeadhuntApplication = mutation({
       cvUploadId: args.cvUploadId,
       candidateConsent: true,
     });
+    
+    await adjustGlobalStat(ctx, "new_candidate");
 
     // Create application directly at second_shortlist with all flags set
     const now = Date.now();
@@ -531,6 +538,9 @@ export const createHeadhuntApplication = mutation({
       followUpExpectedSalary: true,
       followUpNoticePeriod: true,
     });
+    
+    await adjustJobStageStat(ctx, args.jobId, null, "second_shortlist", true);
+    await adjustGlobalStat(ctx, "new_application");
 
     // Log pipeline event
     await ctx.db.insert("pipelineEvents", {
@@ -559,7 +569,9 @@ export const removeApplication = mutation({
     await requireUser(ctx);
     const app = await ctx.db.get(args.applicationId);
     if (app) {
+      await adjustJobStageStat(ctx, app.jobId, app.currentStage, app.currentStage, false, true);
       await ctx.db.delete(args.applicationId);
+      await adjustGlobalStat(ctx, "deleted_application");
       await syncCandidateOverallStatus(ctx, app.candidateId);
     }
   }

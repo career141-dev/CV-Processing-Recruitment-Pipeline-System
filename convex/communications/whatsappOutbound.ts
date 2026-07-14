@@ -159,19 +159,18 @@ export const checkAndRecordFollowUpReply = internalMutation({
 
     const phoneClean = targetPhone.replace(/[^0-9]/g, "");
 
-    // Find candidate by phone
+    // Find candidate by phone (exact match first)
     let candidate = await ctx.db
       .query("candidates")
       .withIndex("by_phone", (q: any) => q.eq("phone", targetPhone))
       .first();
 
     if (!candidate) {
-      const candidates = await ctx.db.query("candidates").collect();
-      candidate = candidates.find(c => {
-        if (!c.phone) return false;
-        const cPhoneClean = c.phone.replace(/[^0-9]/g, "");
-        return cPhoneClean.endsWith(phoneClean) || phoneClean.endsWith(cPhoneClean);
-      }) || null;
+      // Fallback: search by phoneClean index
+      candidate = await ctx.db
+        .query("candidates")
+        .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", phoneClean))
+        .first();
     }
 
     if (!candidate) return { isFollowUpReply: false, candidateId: null, jobId: null };
@@ -258,12 +257,11 @@ export const processLocalWhatsappInbound = internalMutation({
       .first();
 
     if (!candidate) {
-      const candidates = await ctx.db.query("candidates").collect();
-      candidate = candidates.find(c => {
-        if (!c.phone) return false;
-        const cPhoneClean = c.phone.replace(/[^0-9]/g, "");
-        return cPhoneClean.endsWith(phoneClean) || phoneClean.endsWith(cPhoneClean);
-      }) || null;
+      // Fallback: search by phoneClean index
+      candidate = await ctx.db
+        .query("candidates")
+        .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", phoneClean))
+        .first();
     }
 
     let activeApp = null;

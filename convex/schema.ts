@@ -87,6 +87,7 @@ jobAssignments: defineTable({
 })
   .index("by_jobId", ["jobId"])
   .index("by_userId", ["userId"])
+  .index("by_jobId_userId", ["jobId", "userId"])
   .index("by_jobId_assignmentRole", ["jobId", "assignmentRole"])
   .index("by_userId_isActive", ["userId", "isActive"]),
 
@@ -160,8 +161,8 @@ v.literal("ask_ta_each_time")),
 
 // Agent 2 — AI Match Scoring Weights
 scoreWeightSkills: v.optional(v.number()), // default 35
-scoreWeightExperience: v.optional(v.number()), // default 25
-scoreWeightJobTitle: v.optional(v.number()), // default 20
+scoreWeightExperience: v.optional(v.number()), // default 15
+scoreWeightJobTitle: v.optional(v.number()), // default 30
 scoreWeightIndustry: v.optional(v.number()), // default 15
 scoreWeightLocation: v.optional(v.number()), // default 5
 minMatchScoreToShow: v.optional(v.number()), // default 60
@@ -234,6 +235,10 @@ slaOfferDays: v.optional(v.number()),
 // Headhunting
 headhuntingEnabled: v.boolean(),
 benchmarkProfileUrl: v.optional(v.string()),
+
+// Aggregated Stats
+stageCounts: v.optional(v.any()),
+totalApplications: v.optional(v.number()),
 
 // AI Embedding (set async after creation)
 embedding: v.optional(v.array(v.number())),
@@ -392,12 +397,34 @@ generatedAt: v.string(),
     .index("by_status", ["status"])
     .index("by_fileHash", ["fileHash"]),
 
+  candidateResumes: defineTable({
+    candidateId: v.id("candidates"),
+    rawText: v.string(),
+    jobHistory: v.optional(v.array(v.object({
+      company: v.string(),
+      title: v.string(),
+      startDate: v.optional(v.string()),
+      endDate: v.optional(v.string()),
+      description: v.optional(v.string()),
+    }))),
+    embedding: v.optional(v.array(v.float64())),
+  })
+    .index("by_candidateId", ["candidateId"])
+    .searchIndex("search_text", {
+      searchField: "rawText",
+    })
+    .vectorIndex("vector_index_candidates", {
+      vectorField: "embedding",
+      dimensions: 1024,
+    }),
+
   candidates: defineTable({
     // New fields from PDF (kept optional to avoid breaking existing queries)
     fullName: v.optional(v.string()),
     isParsed: v.optional(v.boolean()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
+    phoneClean: v.optional(v.string()),
     location: v.optional(v.string()),
     linkedinUrl: v.optional(v.string()),
     currentJobTitle: v.optional(v.string()),
@@ -434,9 +461,8 @@ generatedAt: v.string(),
     isDuplicateOf: v.optional(v.id("candidates")),
     mergedInto: v.optional(v.id("candidates")),
     vectorEmbeddingId: v.optional(v.string()),
-    embedding: v.optional(v.array(v.float64())),
     rawText: v.optional(v.string()),
-    profileImageId: v.optional(v.id("_storage")),
+    pastJobTitles: v.optional(v.array(v.string())),
     jobHistory: v.optional(v.array(v.object({
       company: v.string(),
       title: v.string(),
@@ -444,6 +470,7 @@ generatedAt: v.string(),
       endDate: v.optional(v.string()),
       description: v.optional(v.string()),
     }))),
+    profileImageId: v.optional(v.id("_storage")),
     sector: v.optional(v.string()),
     overallStatus: v.optional(
       v.union(
@@ -468,8 +495,7 @@ generatedAt: v.string(),
 
     // Existing legacy fields to prevent breaking changes
     status: v.optional(v.string()),
-    pastJobTitles: v.optional(v.array(v.string())),
-    phoneClean: v.optional(v.string()),
+    embedding: v.optional(v.array(v.float64())),
     isArchivedLocally: v.optional(v.boolean()),
     currentTitle: v.optional(v.string()),
     seniorityLevel: v.optional(v.string()),
@@ -500,6 +526,7 @@ generatedAt: v.string(),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
+    .index("by_phoneClean", ["phoneClean"])
     .index("by_status", ["status"])
     .index("by_workableCandidateId", ["workableCandidateId"])
     .index("by_fullName", ["fullName"])
@@ -508,9 +535,6 @@ generatedAt: v.string(),
     .index("by_linkedinUrl", ["linkedinUrl"])
     .index("by_overallStatus", ["overallStatus"])
     .index("by_lastUpdatedAt", ["lastUpdatedAt"])
-    .searchIndex("search_text", {
-      searchField: "rawText",
-    })
     .searchIndex("search_skills", {
       searchField: "skills",
     })
@@ -520,9 +544,8 @@ generatedAt: v.string(),
     .searchIndex("search_summary", {
       searchField: "summary",
     })
-    .vectorIndex("vector_index_candidates", {
-      vectorField: "embedding",
-      dimensions: 1024,
+    .searchIndex("search_name", {
+      searchField: "fullName",
     }),
 
   applications: defineTable({
@@ -609,7 +632,8 @@ generatedAt: v.string(),
     .index("by_job_active", ["jobId", "isActive"])
     .index("by_job_stage_changed", ["jobId", "lastStageChangedAt"])
     .index("by_candidate_job", ["candidateId", "jobId"])
-    .index("by_stage", ["currentStage"]),
+    .index("by_stage", ["currentStage"])
+    .index("by_active", ["isActive"]),
 
   pipelineEvents: defineTable({
     applicationId: v.optional(v.id("applications")),
@@ -740,7 +764,8 @@ errorMessage: v.optional(v.string()),
     .index("by_candidate_time", ["candidateId", "sentAt"])
     .index("by_applicationId", ["applicationId"])
     .index("by_channel_time", ["channel", "sentAt"])
-    .index("by_app_sequence", ["applicationId", "sequenceDay"]),
+    .index("by_app_sequence", ["applicationId", "sequenceDay"])
+    .index("by_job", ["jobId"]),
 
   directorReviews: defineTable({
     applicationId: v.id("applications"),
@@ -1130,6 +1155,12 @@ errorMessage: v.optional(v.string()),
     autopilotEnabled: v.optional(v.boolean()),
     updatedBy: v.optional(v.id("users")),
     updatedAt: v.optional(v.string()),
+    channel_toggles: v.optional(v.object({
+      whatsappIngestion: v.boolean(),
+      emailIngestion: v.boolean(),
+      whatsappFollowUp: v.boolean(),
+      emailFollowUp: v.boolean(),
+    })),
   }).index("by_key", ["key"]),
 
   searchHistory: defineTable({
@@ -1208,5 +1239,23 @@ errorMessage: v.optional(v.string()),
     keyword: v.string(),
     lastInteractionAt: v.number(),
   }).index("by_phone", ["phone"]),
+
+  systemStats: defineTable({
+    singletonKey: v.string(), // e.g. "global_stats"
+    totalCandidates: v.number(),
+    totalCvUploads: v.number(),
+    totalApplications: v.number(),
+    activeJobsCount: v.number(),
+  }).index("by_singletonKey", ["singletonKey"]),
+
+  dailyStats: defineTable({
+    dateStr: v.string(), // "YYYY-MM-DD"
+    newCandidates: v.number(),
+    newCvUploads: v.number(),
+    newApplications: v.number(),
+    newJobs: v.number(),
+    placements: v.number(),
+    cvsBySource: v.record(v.string(), v.number()), // e.g. { "WhatsApp": 5, "Email": 2 }
+  }).index("by_dateStr", ["dateStr"]),
 
 });

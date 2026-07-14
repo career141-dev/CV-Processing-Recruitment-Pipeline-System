@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
+import { adjustJobStageStat } from "../jobs/stats";
 
 // 1. Internal Query to get the necessary data for scoring
 export const getScoringData = internalQuery({
@@ -58,6 +59,7 @@ export const saveMatchScore = internalMutation({
         currentStage: "ta_shortlist",
         lastStageChangedAt: Date.now(),
       });
+      await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
       await syncCandidateOverallStatus(ctx, args.candidateId);
     }
   },
@@ -98,9 +100,9 @@ export const processCvScoring = action({
 
     // 4. Overwrite overallScore with weighted AI Config
     const weightedScore = Math.round(
-      (scored.titleScore * ((job.scoreWeightJobTitle ?? 20) / 100)) +
+      (scored.titleScore * ((job.scoreWeightJobTitle ?? 30) / 100)) +
       (scored.skillScore * ((job.scoreWeightSkills ?? 35) / 100)) +
-      (scored.experienceScore * ((job.scoreWeightExperience ?? 25) / 100)) +
+      (scored.experienceScore * ((job.scoreWeightExperience ?? 15) / 100)) +
       (scored.industryScore * ((job.scoreWeightIndustry ?? 15) / 100)) +
       (scored.locationScore * ((job.scoreWeightLocation ?? 5) / 100))
     );

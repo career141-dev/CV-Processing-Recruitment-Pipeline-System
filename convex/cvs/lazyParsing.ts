@@ -2,7 +2,7 @@
 
 import { v } from "convex/values";
 import { action } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { callNvidiaLLM } from "./cvExtraction";
 
 export const triggerLazyParse = action({
@@ -23,7 +23,8 @@ export const triggerLazyParse = action({
       return { status: "already_parsed" };
     }
     
-    if (!candidate.rawText) {
+    const resume = await ctx.runQuery(internal.matching.queries.getCandidateResume, { candidateId: args.candidateId });
+    if (!resume || !resume.rawText) {
       throw new Error("No raw text available for parsing");
     }
 
@@ -36,7 +37,7 @@ Email: ${candidate.email || 'Unknown'}
 Phone: ${candidate.phone || 'Unknown'}
 
 `;
-    const textToSend = injectedContext + candidate.rawText;
+    const textToSend = injectedContext + resume.rawText;
 
     // 3. Call LLM with the raw text
     const extracted = await callNvidiaLLM(textToSend);
@@ -46,11 +47,11 @@ Phone: ${candidate.phone || 'Unknown'}
     }
 
     // 4. Format and update the candidate
-    const formattedSkills = extracted.skills?.map((s: any) => s.value) || [];
+    const formattedSkills = (extracted.skills as any[])?.map((s: any) => s.value) || [];
     const parsingConfidence = {
       ...(candidate.parsingConfidence || {}),
-      skills: extracted.skills?.map((s: any) => ({ skill: s.value, confidence: s.confidence })),
-      jobHistory: extracted.jobHistory?.map((jh: any) => ({ company: jh.company, title: jh.title, confidence: jh.confidence }))
+      skills: (extracted.skills as any[])?.map((s: any) => ({ skill: s.value, confidence: s.confidence })),
+      jobHistory: (extracted.jobHistory as any[])?.map((jh: any) => ({ company: jh.company, title: jh.title, confidence: jh.confidence }))
     };
 
     const formattedJobHistory = extracted.jobHistory?.map((jh: any) => ({

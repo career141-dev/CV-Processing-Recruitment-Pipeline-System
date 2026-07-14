@@ -9,7 +9,11 @@
  */
 
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
+import type * as admin_checkData from "../admin/checkData.js";
+import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
+import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
+import type * as admin_settings from "../admin/settings.js";
 import type * as admin_testIngedup from "../admin/testIngedup.js";
 import type * as admin_testIngedupMut from "../admin/testIngedupMut.js";
 import type * as admin_updateJDs from "../admin/updateJDs.js";
@@ -43,8 +47,10 @@ import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
+import type * as jobs_actions from "../jobs/actions.js";
 import type * as jobs_assignments from "../jobs/assignments.js";
 import type * as jobs_jobs from "../jobs/jobs.js";
+import type * as jobs_stats from "../jobs/stats.js";
 import type * as lib_activityLog from "../lib/activityLog.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_graphClient from "../lib/graphClient.js";
@@ -63,6 +69,7 @@ import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as stats_stats from "../stats/stats.js";
+import type * as stats_statsHelper from "../stats/statsHelper.js";
 import type * as testDerivation from "../testDerivation.js";
 import type * as users_users from "../users/users.js";
 
@@ -74,7 +81,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "admin/activateReactDev": typeof admin_activateReactDev;
+  "admin/checkData": typeof admin_checkData;
+  "admin/migrateCandidates": typeof admin_migrateCandidates;
+  "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
+  "admin/settings": typeof admin_settings;
   "admin/testIngedup": typeof admin_testIngedup;
   "admin/testIngedupMut": typeof admin_testIngedupMut;
   "admin/updateJDs": typeof admin_updateJDs;
@@ -108,8 +119,10 @@ declare const fullApi: ApiFromModules<{
   "integrations/elevenlabs": typeof integrations_elevenlabs;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
+  "jobs/actions": typeof jobs_actions;
   "jobs/assignments": typeof jobs_assignments;
   "jobs/jobs": typeof jobs_jobs;
+  "jobs/stats": typeof jobs_stats;
   "lib/activityLog": typeof lib_activityLog;
   "lib/auth": typeof lib_auth;
   "lib/graphClient": typeof lib_graphClient;
@@ -128,6 +141,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
   "stats/stats": typeof stats_stats;
+  "stats/statsHelper": typeof stats_statsHelper;
   testDerivation: typeof testDerivation;
   "users/users": typeof users_users;
 }>;

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Doc } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { PageHeader } from '@/components/ui/PageHeader';
 import { CandidateSidebarFilters } from '@/components/candidates/CandidateSidebarFilters';
 import { CandidateCard } from '@/components/candidates/CandidateCard';
@@ -51,7 +51,6 @@ function formatSkills(skills?: string[] | null, max = 2): string[] {
 }
 
 export default function CandidatesSearch() {
-  const candidates = useQuery(api.candidates.candidates.listCandidates);
   const aiSearchAction = useAction(api.matching.search.aiSearch);
 
 
@@ -81,6 +80,10 @@ export default function CandidatesSearch() {
     };
     results: { candidateId: string; score: number; reason: string }[];
   } | null>(null);
+
+  const searchIds = (searchResults?.results || []).map(r => r.candidateId as Id<"candidates">);
+  const searchedCandidatesList = useQuery(api.candidates.candidates.listCandidatesByIds, { ids: searchIds }) || [];
+  const searchCandidateMap = new Map(searchedCandidatesList.map(c => [c._id, c]));
 
   // Message Composer State
   const [messageCandidate, setMessageCandidate] = useState<{ id: string; name: string; initials: string; role: string } | null>(null);
@@ -163,17 +166,15 @@ export default function CandidatesSearch() {
     setActiveFilters(prev => prev.filter(f => f !== filter));
   };
 
-  const candidateMap = new Map((candidates ?? []).map((c: Doc<"candidates">) => [c._id, c]));
-
   const candidatesToRender = (hasSearched && searchResults
     ? searchResults.results
         .map(res => {
-          const cand = candidateMap.get(res.candidateId as any);
+          const cand = searchCandidateMap.get(res.candidateId as any);
           if (!cand) return null;
           return { ...cand, score: res.score, matchReason: res.reason };
         })
         .filter(Boolean)
-    : (candidates ?? []).map((c: Doc<"candidates">) => ({ ...c, score: undefined as number | undefined, matchReason: undefined as string | undefined }))) ?? [];
+    : []) as any[];
 
   const sortedCandidates = React.useMemo(() => {
     const list = [...candidatesToRender];
@@ -351,7 +352,7 @@ export default function CandidatesSearch() {
             {/* Sort Bar */}
             <div className="flex justify-between items-center self-stretch mb-2">
               <span className="text-text-secondary text-[13px] font-bold">
-                {candidates === undefined
+                {searchedCandidatesList === undefined
                   ? "Loading..."
                   : `Showing ${sortedCandidates.length === 0 ? 0 : Math.min((searchPage - 1) * searchItemsPerPage + 1, sortedCandidates.length)} to ${Math.min(searchPage * searchItemsPerPage, sortedCandidates.length)} of ${sortedCandidates.length} candidate${sortedCandidates.length !== 1 ? "s" : ""}`}
               </span>
@@ -411,7 +412,7 @@ export default function CandidatesSearch() {
             </div>
             
             {/* Candidate List */}
-            {candidates === undefined ? (
+            {searchedCandidatesList === undefined ? (
               <div className="flex justify-center py-10 text-text-disabled text-sm">Loading candidates...</div>
             ) : candidatesToRender.length === 0 ? (
               <div className="flex justify-center py-10 text-text-disabled text-sm">

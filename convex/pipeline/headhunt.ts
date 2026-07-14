@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 
+import { adjustJobStageStat } from "../jobs/stats";
+
 export const uploadHeadhuntedCandidate = mutation({
   args: {
     jobId: v.id("jobs"),
@@ -63,6 +65,8 @@ export const uploadHeadhuntedCandidate = mutation({
         }
       ]
     });
+    
+    await adjustJobStageStat(ctx, args.jobId, null, "second_shortlist", true);
 
     await syncCandidateOverallStatus(ctx, candidateId);
 
