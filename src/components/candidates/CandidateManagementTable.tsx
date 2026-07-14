@@ -1,5 +1,5 @@
 import React from 'react';
-import { useQuery } from "convex/react";
+import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Trash2, Search, X } from 'lucide-react';
@@ -58,18 +58,13 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
   const [currentPage, setCurrentPage] = React.useState(1);
   const [nameSearch, setNameSearch] = React.useState('');
 
-  const rawResults = useQuery(api.candidates.candidates.listCandidates) || [];
-
-  // Filter candidates by name/email search
-  const filteredResults = React.useMemo(() => {
-    if (!nameSearch.trim()) return rawResults;
-    const q = nameSearch.toLowerCase();
-    return rawResults.filter(c =>
-      c.fullName?.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q) ||
-      (c as any).phone?.toLowerCase().includes(q)
-    );
-  }, [rawResults, nameSearch]);
+  const {
+    results: filteredResults,
+    status,
+    loadMore,
+  } = usePaginatedQuery(api.candidates.candidates.listCandidatesPaginated, {
+    searchQuery: nameSearch || undefined
+  }, { initialNumItems: 15 });
 
   // Reset to page 1 when search changes
   React.useEffect(() => { setCurrentPage(1); }, [nameSearch]);
@@ -84,6 +79,9 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
 
   const handleNext = () => {
     if (canGoNext) {
+      setCurrentPage((p) => p + 1);
+    } else if (status === "CanLoadMore") {
+      loadMore(15);
       setCurrentPage((p) => p + 1);
     }
   };
@@ -230,23 +228,23 @@ export function CandidateManagementTable({ onDeleteClick }: { onDeleteClick?: (i
         
         {/* Pagination Controls */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-surface-bright">
-          <div className="text-[13px] text-text-secondary">
-            Showing <span className="font-medium text-text-primary">{Math.min(startIndex + 1, filteredResults.length)}</span> to <span className="font-medium text-text-primary">{Math.min(endIndex, filteredResults.length)}</span> candidates
-          </div>
+          <span className="text-[13px] text-text-secondary">
+            Showing {startIndex + 1}-{Math.min(endIndex, filteredResults.length)} of {filteredResults.length} {status === "CanLoadMore" ? "(More available)" : ""}
+          </span>
           <div className="flex gap-2">
             <button
-              className="flex items-center gap-1 border border-border px-3 py-1.5 rounded-[8px] text-[13px] text-text-secondary hover:bg-surface-container transition-colors disabled:opacity-40"
               onClick={handlePrev}
               disabled={!canGoPrev}
+              className="p-1.5 border border-border rounded-md text-text-secondary hover:bg-surface-bright hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              <ChevronLeft className="w-4 h-4" /> Prev
+              <ChevronLeft className="w-4 h-4" />
             </button>
             <button
-              className="flex items-center gap-1 border border-border px-3 py-1.5 rounded-[8px] text-[13px] text-text-secondary hover:bg-surface-container transition-colors disabled:opacity-40"
               onClick={handleNext}
-              disabled={!canGoNext || status === "LoadingMore"}
+              disabled={!canGoNext && status !== "CanLoadMore"}
+              className="p-1.5 border border-border rounded-md text-text-secondary hover:bg-surface-bright hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              Next <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>

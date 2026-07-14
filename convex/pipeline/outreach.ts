@@ -11,7 +11,13 @@ export const getAiCalls = query({
     dateRange: v.optional(v.string()), // 'today', '7days'
   },
   handler: async (ctx, args) => {
-    let calls = await ctx.db.query("aiCalls").order("desc").take(100);
+    let callsQuery;
+    if (args.jobId) {
+      callsQuery = ctx.db.query("aiCalls").withIndex("by_job", q => q.eq("jobId", args.jobId as any));
+    } else {
+      callsQuery = ctx.db.query("aiCalls");
+    }
+    let calls = await callsQuery.order("desc").take(100);
 
     // Join with candidates and jobs
     const enrichedCalls = await Promise.all(
@@ -33,10 +39,6 @@ export const getAiCalls = query({
     );
 
     let filtered = enrichedCalls;
-
-    if (args.jobId) {
-      filtered = filtered.filter(c => c.jobId === args.jobId);
-    }
 
     if (args.outcome && args.outcome !== "All Outcomes") {
       filtered = filtered.filter(c => {
@@ -123,11 +125,13 @@ export const getCommunications = query({
     jobId: v.optional(v.id("jobs")),
   },
   handler: async (ctx, args) => {
-    let comms = await ctx.db.query("communications").order("desc").take(100);
-    
+    let commsQuery;
     if (args.jobId) {
-      comms = comms.filter(c => c.jobId === args.jobId);
+      commsQuery = ctx.db.query("communications").withIndex("by_job", q => q.eq("jobId", args.jobId as any));
+    } else {
+      commsQuery = ctx.db.query("communications");
     }
+    let comms = await commsQuery.order("desc").take(100);
     
     return Promise.all(
       comms.map(async (c) => {

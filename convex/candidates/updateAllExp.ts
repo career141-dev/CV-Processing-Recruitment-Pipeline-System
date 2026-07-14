@@ -7,8 +7,8 @@ export default mutation({
     let updatedCount = 0;
 
     for (const candidate of candidates) {
-      if (candidate.jobHistory && candidate.jobHistory.length > 0) {
-        const correctExp = deriveTotalExperienceYears(candidate.jobHistory, undefined);
+      if ((candidate as any).jobHistory && Array.isArray((candidate as any).jobHistory)) {
+        const correctExp = deriveTotalExperienceYears((candidate as any).jobHistory, undefined);
         if (correctExp !== undefined && correctExp !== candidate.totalExperienceYears) {
           await ctx.db.patch(candidate._id, { totalExperienceYears: correctExp });
           updatedCount++;

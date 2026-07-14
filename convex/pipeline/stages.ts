@@ -5,6 +5,8 @@ import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { initiateFollowUpOutreach } from "./followUpHelper";
+import { adjustJobStageStat } from "../jobs/stats";
+import { adjustGlobalStat } from "../stats/statsHelper";
 
 export const moveToTAShortlist = mutation({
   args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
@@ -44,6 +46,8 @@ export const moveToTAShortlist = mutation({
       taShortlistAt: now,
       lastStageChangedAt: now,
     });
+    
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "follow_up");
 
     await ctx.db.insert("pipelineEvents", {
       applicationId: args.applicationId,
@@ -89,6 +93,7 @@ export const directorApprove = mutation({
       directorReviewId: user._id,
       lastStageChangedAt: Date.now(),
     });
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "client_review");
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
@@ -115,6 +120,7 @@ export const rejectCandidate = mutation({
         note: reason,
       }],
     });
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "rejected");
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
@@ -157,6 +163,10 @@ export const setPipelineStage = mutation({
         note: note,
       }],
     });
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, newStage);
+    if (newStage === "placed") {
+      await adjustGlobalStat(ctx, "placement");
+    }
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
@@ -201,6 +211,7 @@ export const directorReject = mutation({
       notes: args.reason,
       createdAt: Date.now(),
     });
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "rejected");
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
@@ -241,6 +252,7 @@ export const directorRequestChanges = mutation({
       notes: args.note,
       createdAt: Date.now(),
     });
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "ta_shortlist");
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
@@ -269,6 +281,7 @@ export const clientApprove = mutation({
         note: args.note ?? "Client approved — selected for interview",
       }],
     });
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "interview");
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
@@ -338,6 +351,7 @@ export const clientReject = mutation({
       notes: args.reason,
       createdAt: Date.now(),
     });
+    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "rejected");
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });

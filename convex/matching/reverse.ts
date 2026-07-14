@@ -85,6 +85,12 @@ export const runReverseMatch = action({
 
       // Compact candidate payload for the scoring model (cap at 40).
       const pool = candidates.slice(0, 40);
+      
+      const allResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
+        candidateIds: pool.map(c => c._id)
+      });
+      const resumeMap = new Map(allResumes.map((r: any) => [r.candidateId, r]));
+
       const candidateSummaries = pool.map((cv, i) => ({
         index: i,
         name: cv.fullName ?? cv.email ?? "Unknown",
@@ -94,7 +100,7 @@ export const runReverseMatch = action({
         years: cv.totalExperienceYears ?? null,
         location: cv.location ?? "",
         skills: (cv.skills ?? []).slice(0, 8).join(", "),
-        snippet: (cv.rawText ?? "").slice(0, 400),
+        snippet: ((resumeMap.get(cv._id) as any)?.rawText ?? "").slice(0, 400),
       }));
 
       const jobReq = {

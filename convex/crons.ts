@@ -2,6 +2,7 @@ import { cronJobs } from "convex/server";
 import { internalMutation } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { syncCandidateOverallStatus } from "./candidates/candidates";
+import { adjustJobStageStat } from "./jobs/stats";
 
 const crons = cronJobs();
 
@@ -96,6 +97,7 @@ export const evaluateFollowUpStage = internalMutation({
             },
           ],
         });
+        await adjustJobStageStat(ctx, app.jobId, "follow_up", "second_shortlist");
         await syncCandidateOverallStatus(ctx, app.candidateId);
         continue;
       }
@@ -133,6 +135,7 @@ export const evaluateFollowUpStage = internalMutation({
             replyChannel: "unresponsive",
           }
         });
+        await adjustJobStageStat(ctx, app.jobId, "follow_up", "unresponsive");
         await syncCandidateOverallStatus(ctx, app.candidateId);
         continue;
       }
@@ -436,12 +439,6 @@ crons.daily(
   "check-sla-breaches",
   { hourUTC: 8, minuteUTC: 0 },
   internal.crons.checkSlaBreaches
-);
-
-crons.interval(
-  "recalculate-job-stats",
-  { minutes: 2 },
-  internal.jobs.jobs.recalculateAllJobStats
 );
 
 export default crons;

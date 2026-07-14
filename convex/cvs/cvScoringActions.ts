@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
+import { adjustJobStageStat } from "../jobs/stats";
 
 // 1. Internal Query to get the necessary data for scoring
 export const getScoringData = internalQuery({
@@ -58,6 +59,7 @@ export const saveMatchScore = internalMutation({
         currentStage: "ta_shortlist",
         lastStageChangedAt: Date.now(),
       });
+      await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
       await syncCandidateOverallStatus(ctx, args.candidateId);
     }
   },

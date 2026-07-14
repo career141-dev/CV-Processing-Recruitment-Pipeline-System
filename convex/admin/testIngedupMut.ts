@@ -53,7 +53,6 @@ export default mutation({
 
     // Call createCandidate (Pass 1 - pre-parse placeholder)
     const initialCandidateId = await ctx.db.insert("candidates", {
-      rawText: "Initial CV Text",
       sourceChannel: "whatsapp",
       fileHash: file1Hash,
       cvUploadId: ingest1,
@@ -107,7 +106,6 @@ export default mutation({
 
     // Create placeholder candidate (Pass 1)
     const placeholder2Id = await ctx.db.insert("candidates", {
-      rawText: "Updated CV Text",
       sourceChannel: "whatsapp",
       fileHash: file2Hash,
       cvUploadId: ingest2,

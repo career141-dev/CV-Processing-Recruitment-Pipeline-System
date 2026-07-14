@@ -18,18 +18,24 @@ export const searchCandidates = query({
     const limit = args.limit ?? 20;
 
     const searchWithFilters = (
-      index: "search_text" | "search_skills" | "search_title" | "search_summary",
-      field: "rawText" | "skills" | "currentJobTitle" | "summary"
+      index: "search_skills" | "search_title" | "search_summary",
+      field: "skills" | "currentJobTitle" | "summary"
     ) =>
-      ctx.db.query("candidates").withSearchIndex(index, (q) => {
+      ctx.db.query("candidates").withSearchIndex(index, (q: any) => {
         return q.search(field, args.query);
       }).take(limit);
 
-    const [textResults, titleResults, summaryResults] = await Promise.all([
-      searchWithFilters("search_text", "rawText"),
+    const [titleResults, summaryResults, resumeResults] = await Promise.all([
       searchWithFilters("search_title", "currentJobTitle"),
       searchWithFilters("search_summary", "summary"),
+      ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
     ]);
+
+    const textResults = [];
+    for (const res of resumeResults) {
+      const candidate = await ctx.db.get(res.candidateId);
+      if (candidate) textResults.push(candidate);
+    }
 
     // Weighted scoring: title match > text match > summary match
     const weight = new Map<string, number>();
@@ -105,9 +111,9 @@ export const aiSearch = action({
     }
 
     // 2. Run vector search only if embedding succeeded
-    let vectorResults: { _id: Id<"candidates">; _score: number }[] = [];
+    let vectorResults: { _id: Id<"candidateResumes">; _score: number }[] = [];
     if (queryEmbedding) {
-      vectorResults = await ctx.vectorSearch("candidates", "vector_index_candidates", {
+      vectorResults = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
         vector: queryEmbedding,
         limit: fetchLimit,
       });
@@ -118,13 +124,16 @@ export const aiSearch = action({
 
     const scoreById = new Map(vectorResults.map((r) => [r._id, r._score]));
 
-    const vectorCandidates: ScoredCandidateDoc[] = vectorResults.length
-      ? (
-          await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
-            candidateIds: vectorResults.map((r) => r._id),
-          })
-        ).map((c) => ({ ...c, vectorScore: scoreById.get(c._id) }))
-      : [];
+    let vectorCandidates: ScoredCandidateDoc[] = [];
+    if (vectorResults.length) {
+      const mapped = await ctx.runQuery(internal.matching.queries.getCandidatesByResumeIds, {
+        resumeIds: vectorResults.map((r) => r._id),
+      });
+      vectorCandidates = mapped.map((item: any) => ({
+        ...item.candidate,
+        vectorScore: scoreById.get(item.resumeId)
+      }));
+    }
 
     // 4. Keyword search batches
     const searchTerms = buildSearchTerms(effectiveReq, args.query);
@@ -258,17 +267,29 @@ export const semanticSearch = action({
     const queryEmbedding = await embedText(args.query);
 
     // 2. Vector search
-    const results = await ctx.vectorSearch("candidates", "vector_index_candidates", {
+    const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
       vector: queryEmbedding,
       limit: args.limit ?? 100,
     });
 
+    if (!results.length) return [];
+
+    const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidatesByResumeIds, {
+      resumeIds: results.map(r => r._id)
+    });
+    const resumeIdToCandidateId = new Map(mappedResumes.map((item: any) => [item.resumeId, item.candidate._id]));
+    
+    const mappedResults: any[] = results.map((r: any, i: number) => {
+      const candidateId = resumeIdToCandidateId.get(r._id);
+      return {
+        candidateId,
+        matchScore: Math.round(r._score * 100),
+        matchReason: `Semantic match based on vector similarity (${(r._score * 100).toFixed(1)}%)`,
+      };
+    }).filter(r => !!r.candidateId);
+
     // 3. Return IDs and scores
-    return results.map(r => ({
-      candidateId: r._id,
-      matchScore: Math.round(r._score * 100),
-      matchReason: `Semantic match based on vector similarity (${(r._score * 100).toFixed(1)}%)`,
-    }));
+    return mappedResults;
   }
 });
 

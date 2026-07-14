@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { api } from "../_generated/api";
+import { adjustGlobalStat } from "../stats/statsHelper";
 
 export const generateUploadUrl = mutation({
   handler: async (ctx) => {
@@ -20,7 +21,7 @@ export const saveUpload = mutation({
     uploadedBy: v.string(),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("cvUploads", {
+    const cvId = await ctx.db.insert("cvUploads", {
       storageId: args.storageId,
       fileName: args.fileName,
       fileSize: args.fileSize,
@@ -31,6 +32,10 @@ export const saveUpload = mutation({
       uploadedBy: args.uploadedBy,
       status: "uploaded",
     });
+    
+    // @ts-ignore
+    await adjustGlobalStat(ctx, "new_cv_upload", 1, { sourceChannel: args.source || "Manual" });
+    return cvId;
   },
 });
 

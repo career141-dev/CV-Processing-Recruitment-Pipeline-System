@@ -3,6 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import { v } from "convex/values";
 import { requireRole, requireUser } from "../lib/permissions";
 import { internal, api } from "../_generated/api";
+import { adjustGlobalStat } from "../stats/statsHelper";
 
 // convex/jobs.ts — generateKeyword helper function
 function generateKeyword(title: string): string {
@@ -570,11 +571,12 @@ export const publishJob = mutation({
 
     // Always generate the embedding for AI semantic search
     await ctx.scheduler.runAfter(0, api.matching.agent2.generateJobEmbedding, { jobId });
-
     if (job.reverseMatchOnPublish) {
        await ctx.db.patch(jobId, { reverseMatchStatus: "running" });
        await ctx.scheduler.runAfter(0, api.matching.agent2.runReverseMatch, { jobId });
     }
+    
+    await adjustGlobalStat(ctx, "new_job");
 
     return { success: true, keyword: job.keyword };
   },
@@ -593,10 +595,18 @@ export const updateJobStatus = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    const oldJob = await ctx.db.get(args.jobId);
+    
     const updates: any = { status: args.status, updatedAt: new Date().toISOString() };
     if (args.status === "filled") updates.filledAt = new Date().toISOString();
     
     await ctx.db.patch(args.jobId, updates);
+    
+    if (oldJob && oldJob.status === "active" && (args.status === "filled" || args.status === "cancelled" || args.status === "on_hold")) {
+      await adjustGlobalStat(ctx, "closed_job");
+    } else if (oldJob && oldJob.status !== "active" && args.status === "active") {
+      await adjustGlobalStat(ctx, "new_job");
+    }
     
     await ctx.db.insert("activityLog", {
       actorId: user._id,
@@ -721,8 +731,7 @@ export const getMyAssignment = query({
     if (!user) return null;
 
     return await ctx.db.query("jobAssignments")
-      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
-      .filter((q) => q.eq(q.field("userId"), user._id))
+      .withIndex("by_jobId_userId", (q) => q.eq("jobId", args.jobId).eq("userId", user._id))
       .filter((q) => q.eq(q.field("isActive"), true))
       .first();
   },
@@ -794,29 +803,3 @@ export const getActiveJobsBasicInfo = query({
   }
 });
 
-export const recalculateAllJobStats = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    // Recalculate stats for active jobs
-    const jobs = await ctx.db.query("jobs")
-      .withIndex("by_status", q => q.eq("status", "active"))
-      .collect();
-
-    for (const job of jobs) {
-      const applications = await ctx.db.query("applications")
-        .withIndex("by_job_stage", (q) => q.eq("jobId", job._id))
-        .collect();
-
-      const stageCounts: Record<string, number> = {};
-      for (const app of applications) {
-        const s = app.currentStage || "new_cvs";
-        stageCounts[s] = (stageCounts[s] || 0) + 1;
-      }
-
-      await ctx.db.patch(job._id, {
-        stageCounts,
-        totalApplications: applications.length
-      });
-    }
-  }
-});

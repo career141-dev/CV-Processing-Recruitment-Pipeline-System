@@ -1,6 +1,7 @@
 import { internalAction, internalMutation } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { v } from "convex/values";
+import { adjustGlobalStat } from "../stats/statsHelper";
 
 export const processInboundCV = internalAction({
   args: {
@@ -162,6 +163,7 @@ export const insertCvRecord = internalMutation({
         status: "active",
       });
       candidate = await ctx.db.get(candidateId);
+      await adjustGlobalStat(ctx, "new_candidate");
     }
 
     const cvUploadId = await ctx.db.insert("cvUploads", {
@@ -176,6 +178,8 @@ export const insertCvRecord = internalMutation({
       uploadedBy: taUser ? taUser._id : "system",
       status: "queued",
     });
+    
+    await adjustGlobalStat(ctx, "new_cv_upload", 1, { sourceChannel: "whatsapp" });
 
     const logId = await ctx.db.insert("ingestionLog", {
       jobId: jobId || undefined,

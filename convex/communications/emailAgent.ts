@@ -206,6 +206,7 @@ export const pollEmailInbox = action({
           continue;
         }
         console.log(`[EmailAgent] Skipping message: ${message.subject} - No CV attachment and not a follow-up reply.`);
+        await markEmailAsRead(targetInboxEmail, message.id);
         continue; // No CV attachment and not a follow-up reply — skip
       }
       

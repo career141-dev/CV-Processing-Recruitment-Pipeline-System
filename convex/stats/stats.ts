@@ -4,13 +4,13 @@ import { v } from "convex/values";
 export const getSystemStats = query({
   args: {},
   handler: async (ctx) => {
-    // For small/medium sets, collecting is fine.
-    const candidates = await ctx.db.query("candidates").collect();
-    const cvUploads = await ctx.db.query("cvUploads").collect();
+    const sysStat = await ctx.db.query("systemStats")
+      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
+      .first();
     
     return {
-      candidatesCount: candidates.length,
-      cvUploadsCount: cvUploads.length,
+      candidatesCount: sysStat?.totalCandidates || 0,
+      cvUploadsCount: sysStat?.totalCvUploads || 0,
     };
   },
 });
@@ -18,32 +18,33 @@ export const getSystemStats = query({
 export const getIngestionStats = query({
   args: {},
   handler: async (ctx) => {
-    // We will collect cvUploads to calculate channel stats
-    const allUploads = await ctx.db.query("cvUploads").order("desc").collect();
+    const todayStr = new Date().toISOString().split("T")[0];
+    const dailyStat = await ctx.db.query("dailyStats")
+      .withIndex("by_dateStr", q => q.eq("dateStr", todayStr))
+      .first();
+      
+    // Fetch only recent uploads for active/failed lists and lastReceived timestamp
+    const recentUploads = await ctx.db.query("cvUploads").order("desc").take(50);
     
-    // Group by source
     const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {};
-    
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    
     const activeUploads = [];
     const failedUploads = [];
     const recentDone = [];
 
-    for (const upload of allUploads) {
+    if (dailyStat && dailyStat.cvsBySource) {
+      for (const [source, count] of Object.entries(dailyStat.cvsBySource)) {
+        statsBySource[source] = { todayCount: count, lastReceived: null };
+      }
+    }
+
+    for (const upload of recentUploads) {
       const source = upload.source || "Manual";
-      
       if (!statsBySource[source]) {
         statsBySource[source] = { todayCount: 0, lastReceived: null };
       }
       
-      if (statsBySource[source].lastReceived === null || upload._creationTime > statsBySource[source].lastReceived!) {
+      if (statsBySource[source].lastReceived === null) {
         statsBySource[source].lastReceived = upload._creationTime;
-      }
-      
-      if (upload._creationTime >= startOfToday) {
-        statsBySource[source].todayCount++;
       }
       
       if (upload.status === "failed") {
@@ -86,43 +87,55 @@ export const getRecentChannelLogs = query({
 export const getDashboardStats = query({
   args: {},
   handler: async (ctx) => {
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-    const oneWeek = 7 * oneDay;
-    const thirtyDays = 30 * oneDay;
+    const sysStat = await ctx.db.query("systemStats")
+      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
+      .first();
 
-    // 1. CANDIDATES IN DATABASE
-    const candidates = await ctx.db.query("candidates").collect();
-    const totalCandidates = candidates.length;
-    const candidatesThisWeek = candidates.filter(c => c._creationTime > now - oneWeek).length;
+    const dailyStats = await ctx.db.query("dailyStats").order("desc").take(60);
+    
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+    const sevenDaysAgoStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-    // 2. CVS TODAY
-    const cvs = await ctx.db.query("cvUploads").collect();
-    const startOfToday = new Date().setHours(0, 0, 0, 0);
-    const startOfYesterday = startOfToday - oneDay;
-    const cvsToday = cvs.filter(c => c._creationTime >= startOfToday).length;
-    const cvsYesterday = cvs.filter(c => c._creationTime >= startOfYesterday && c._creationTime < startOfToday).length;
+    let candidatesThisWeek = 0;
+    let cvsToday = 0;
+    let cvsYesterday = 0;
+    let jobsAddedThisWeek = 0;
+    let placedThisMonth = 0;
+    let placedLastMonth = 0;
+
+    for (const d of dailyStats) {
+      if (d.dateStr >= sevenDaysAgoStr) {
+        candidatesThisWeek += (d.newCandidates || 0);
+        jobsAddedThisWeek += (d.newJobs || 0);
+      }
+      if (d.dateStr === todayStr) {
+        cvsToday += (d.newCvUploads || 0);
+      }
+      if (d.dateStr === yesterdayStr) {
+        cvsYesterday += (d.newCvUploads || 0);
+      }
+      if (d.dateStr >= thirtyDaysAgoStr) {
+        placedThisMonth += (d.placements || 0);
+      } else {
+        placedLastMonth += (d.placements || 0);
+      }
+    }
+
     const cvsVsYesterday = cvsToday - cvsYesterday;
     const cvsTrendType = cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral";
 
-    // 3. ACTIVE JOBS
-    const jobs = await ctx.db.query("jobs").withIndex("by_status", q => q.eq("status", "active")).collect();
-    const activeJobsCount = jobs.length;
-    const jobsAddedThisWeek = jobs.filter(j => j._creationTime > now - oneWeek).length;
-
-    // 4. PLACED THIS MONTH
-    const applications = await ctx.db.query("applications").collect(); // Assuming placements are applications with "placed" stage
-    const placedApplications = applications.filter(a => a.currentStage === "placed");
-    const placedThisMonth = placedApplications.filter(a => a.lastStageChangedAt > now - thirtyDays).length;
-    const placedLastMonth = placedApplications.filter(a => a.lastStageChangedAt > now - 60 * oneDay && a.lastStageChangedAt <= now - thirtyDays).length;
     const placedVsLastMonth = placedThisMonth - placedLastMonth;
     const placedTrendType = placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral";
 
     return {
       candidates: {
-        total: totalCandidates,
+        total: sysStat?.totalCandidates || 0,
         trendText: `${candidatesThisWeek.toLocaleString()} this week`,
-        trendType: "up", // generally up
+        trendType: "up", 
       },
       cvsToday: {
         total: cvsToday,
@@ -130,7 +143,7 @@ export const getDashboardStats = query({
         trendType: cvsTrendType,
       },
       activeJobs: {
-        total: activeJobsCount,
+        total: sysStat?.activeJobsCount || 0,
         trendText: `${jobsAddedThisWeek} added this week`,
         trendType: jobsAddedThisWeek > 0 ? "up" : "neutral",
       },
