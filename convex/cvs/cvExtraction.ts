@@ -129,6 +129,7 @@ const ExtractionActionArgs = {
   })),
   batchId: v.optional(v.id("ingestionBatches")),
   logId: v.optional(v.id("ingestionLog")),
+  isRetry: v.optional(v.boolean()),
 };
 
 // ──────────────────────────────────────────────────
@@ -742,7 +743,9 @@ export async function runCvExtraction(
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
-      status: isInsufficientBalance ? "processed" : "failed",
+      status: isInsufficientBalance 
+        ? "processed" 
+        : ((args as any).isRetry ? "failed_retry" : "failed"),
       errorMessage: isInsufficientBalance
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : message,
@@ -812,6 +815,7 @@ export const resumeBatch = internalAction({
         sourceChannel: upload.source || "Retry Failed",
         uploadedBy: upload.uploadedBy,
         batchId: args.batchId,
+        isRetry: true,
       });
     }
 
@@ -825,6 +829,84 @@ export const resumeBatch = internalAction({
           batchId: args.batchId,
         },
       );
+    }
+  },
+});
+
+export const startBatchExtraction = action({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    await ctx.runAction(internal.cvs.cvExtraction.processNextBatch, {
+      batchId: args.batchId,
+    });
+  },
+});
+
+export const processNextBatch = internalAction({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    // 1. Get up to 5 uploads in this batch that are still "uploaded"
+    const uploads = await ctx.runQuery(internal.cvs.cvUploads.listUploadedInBatch, {
+      batchId: args.batchId,
+      limit: 5,
+    });
+
+    if (uploads.length === 0) {
+      console.log(`[processNextBatch] No more uploads to process for batch ${args.batchId}`);
+      return;
+    }
+
+    // 2. Queue those 5 uploads
+    const cvUploadIds = [];
+    for (const upload of uploads) {
+      cvUploadIds.push(upload._id);
+      
+      // Update status to "queued" and schedule extraction
+      await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId as Id<"_storage">,
+        fileName: upload.fileName,
+        fileType: upload.fileType,
+        sourceChannel: upload.source || "Manual",
+        uploadedBy: upload.uploadedBy,
+        batchId: args.batchId,
+      });
+    }
+
+    // 3. Start polling progress of these 5 specific uploads
+    await ctx.scheduler.runAfter(2000, internal.cvs.cvExtraction.pollBatchProgress, {
+      batchId: args.batchId,
+      cvUploadIds,
+    });
+  },
+});
+
+export const pollBatchProgress = internalAction({
+  args: {
+    batchId: v.id("ingestionBatches"),
+    cvUploadIds: v.array(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    // Query the status of these 5 uploads
+    const statuses = await ctx.runQuery(internal.cvs.cvUploads.checkUploadsStatus, {
+      cvUploadIds: args.cvUploadIds,
+    });
+
+    // If all are finished (either "processed" or "failed" or "failed_retry")
+    const allFinished = statuses.every((s) => s === "processed" || s === "failed" || s === "failed_retry");
+
+    if (allFinished) {
+      console.log(`[pollBatchProgress] All ${args.cvUploadIds.length} uploads finished. Triggering next 5.`);
+      // Run next batch immediately!
+      await ctx.runAction(internal.cvs.cvExtraction.processNextBatch, {
+        batchId: args.batchId,
+      });
+    } else {
+      // Not all finished yet. Poll again in 2 seconds.
+      await ctx.scheduler.runAfter(2000, internal.cvs.cvExtraction.pollBatchProgress, {
+        batchId: args.batchId,
+        cvUploadIds: args.cvUploadIds,
+      });
     }
   },
 });

@@ -248,6 +248,7 @@ createdAt: v.string(),
 publishedAt: v.optional(v.string()),
 filledAt: v.optional(v.string()),
 updatedAt: v.string(),
+muteDefaultWhatsappReply: v.optional(v.boolean()),
 })
 .index("by_keyword", ["keyword"])
 .index("by_status", ["status"])
@@ -392,10 +393,12 @@ generatedAt: v.string(),
     status: v.string(),
     errorMessage: v.optional(v.string()),
     candidateId: v.optional(v.id("candidates")),
+    batchId: v.optional(v.id("ingestionBatches")),
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
-    .index("by_fileHash", ["fileHash"]),
+    .index("by_fileHash", ["fileHash"])
+    .index("by_batchId", ["batchId"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),

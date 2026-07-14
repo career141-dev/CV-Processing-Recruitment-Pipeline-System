@@ -29,6 +29,7 @@ export const getIngestionStats = query({
     const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {};
     const activeUploads = [];
     const failedUploads = [];
+    const failedRetryUploads = [];
     const recentDone = [];
 
     if (dailyStat && dailyStat.cvsBySource) {
@@ -49,9 +50,11 @@ export const getIngestionStats = query({
       
       if (upload.status === "failed") {
         failedUploads.push(upload);
-      } else if (upload.status === "uploaded" || upload.status === "processing") {
+      } else if (upload.status === "failed_retry") {
+        failedRetryUploads.push(upload);
+      } else if (upload.status === "uploaded" || upload.status === "processing" || upload.status === "queued") {
         activeUploads.push(upload);
-      } else if (upload.status === "done" && recentDone.length < 50) {
+      } else if ((upload.status === "done" || upload.status === "processed") && recentDone.length < 50) {
         recentDone.push(upload);
       }
     }
@@ -60,6 +63,7 @@ export const getIngestionStats = query({
       statsBySource,
       activeUploads,
       failedUploads,
+      failedRetryUploads,
       recentDone
     };
   },

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "../_generated/server";
+import { mutation, internalQuery } from "../_generated/server";
 import { api } from "../_generated/api";
 import { adjustGlobalStat } from "../stats/statsHelper";
 
@@ -19,6 +19,7 @@ export const saveUpload = mutation({
     campaignLabel: v.optional(v.string()),
     assignToJob: v.optional(v.string()),
     uploadedBy: v.string(),
+    batchId: v.optional(v.id("ingestionBatches")),
   },
   handler: async (ctx, args) => {
     const cvId = await ctx.db.insert("cvUploads", {
@@ -30,6 +31,7 @@ export const saveUpload = mutation({
       campaignLabel: args.campaignLabel,
       assignToJob: args.assignToJob,
       uploadedBy: args.uploadedBy,
+      batchId: args.batchId,
       status: "uploaded",
     });
     
@@ -48,6 +50,7 @@ export const queueManualExtraction = mutation({
     sourceChannel: v.string(),
     uploadedBy: v.string(),
     batchId: v.optional(v.id("ingestionBatches")),
+    isRetry: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const logId = await ctx.db.insert("ingestionLog", {
@@ -69,6 +72,7 @@ export const queueManualExtraction = mutation({
       cvUploadId: args.cvUploadId,
       batchId: args.batchId,
       logId,
+      isRetry: args.isRetry,
     });
 
     return logId;
@@ -92,5 +96,33 @@ export const deleteStorageFiles = mutation({
       await ctx.storage.delete(id);
     }
     return args.storageIds.length;
+  },
+});
+
+export const listUploadedInBatch = internalQuery({
+  args: {
+    batchId: v.id("ingestionBatches"),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("cvUploads")
+      .withIndex("by_batchId", (q) => q.eq("batchId", args.batchId))
+      .filter((q) => q.eq(q.field("status"), "uploaded"))
+      .take(args.limit);
+  },
+});
+
+export const checkUploadsStatus = internalQuery({
+  args: {
+    cvUploadIds: v.array(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    const statuses = [];
+    for (const id of args.cvUploadIds) {
+      const upload = await ctx.db.get(id);
+      statuses.push(upload ? upload.status : "failed");
+    }
+    return statuses;
   },
 });
