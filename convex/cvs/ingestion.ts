@@ -177,7 +177,7 @@ export const insertCvRecord = internalMutation({
       status: "queued",
     });
 
-    await ctx.db.insert("ingestionLog", {
+    const logId = await ctx.db.insert("ingestionLog", {
       jobId: jobId || undefined,
       channelType: "whatsapp",
       rawSender: rawSenderDisplay,
@@ -208,7 +208,6 @@ export const insertCvRecord = internalMutation({
         skipLLM: false,
       });
     }
-  }
   }
 });
 

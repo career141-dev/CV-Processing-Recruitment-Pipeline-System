@@ -33,7 +33,7 @@ export const updateChannelToggles = mutation({
     
     let configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
     
-    const oldToggles = configRow?.channel_toggles || {};
+    const oldToggles: any = configRow?.channel_toggles || {};
     
     if (configRow) {
       await ctx.db.patch(configRow._id, {

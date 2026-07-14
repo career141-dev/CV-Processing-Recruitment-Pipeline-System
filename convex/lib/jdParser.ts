@@ -131,6 +131,10 @@ For occupationSynonyms, include alternative job titles that represent the same o
         summary: parsed.summary ?? "Searching for a qualified candidate",
         occupationSynonyms: parsed.occupationSynonyms ?? [],
         keywords: parsed.keywords ?? [],
+        languages: parsed.languages ?? [],
+        clientCompany: parsed.clientCompany ?? null,
+        clientContactEmail: parsed.clientContactEmail ?? null,
+        salaryRange: parsed.salaryRange ?? null,
       });
     } catch {
       await logLLMUsage(
@@ -155,6 +159,10 @@ For occupationSynonyms, include alternative job titles that represent the same o
         summary: "Searching for a qualified candidate",
         occupationSynonyms: [],
         keywords: [],
+        languages: [],
+        clientCompany: null,
+        clientContactEmail: null,
+        salaryRange: null,
       });
     }
   } catch (error) {
@@ -181,6 +189,10 @@ For occupationSynonyms, include alternative job titles that represent the same o
       summary: "Searching for a qualified candidate",
       occupationSynonyms: [],
       keywords: [],
+      languages: [],
+      clientCompany: null,
+      clientContactEmail: null,
+      salaryRange: null,
     });
   }
 }
