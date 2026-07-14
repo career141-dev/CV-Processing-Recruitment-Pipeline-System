@@ -249,6 +249,7 @@ publishedAt: v.optional(v.string()),
 filledAt: v.optional(v.string()),
 updatedAt: v.string(),
 muteDefaultWhatsappReply: v.optional(v.boolean()),
+pausedChannels: v.optional(v.array(v.string())),
 })
 .index("by_keyword", ["keyword"])
 .index("by_status", ["status"])
@@ -1290,5 +1291,21 @@ errorMessage: v.optional(v.string()),
     placements: v.number(),
     cvsBySource: v.record(v.string(), v.number()), // e.g. { "WhatsApp": 5, "Email": 2 }
   }).index("by_dateStr", ["dateStr"]),
+
+  nvidiaTokenLogs: defineTable({
+    taskType: v.string(), // e.g. "cv_structuring", "jd_matching", "embedding"
+    model: v.string(), // e.g. "meta/llama-3.1-70b-instruct"
+    promptTokens: v.number(),
+    completionTokens: v.number(),
+    totalTokens: v.number(),
+    success: v.boolean(),
+    error: v.optional(v.string()),
+    timestamp: v.number(), // Unix timestamp (ms)
+    cvUploadId: v.optional(v.id("cvUploads")), // Link to specific CV for per-CV cost tracking
+  })
+    .index("by_timestamp", ["timestamp"])
+    .index("by_taskType", ["taskType"])
+    .index("by_model", ["model"])
+    .index("by_cvUploadId", ["cvUploadId"]),
 
 });

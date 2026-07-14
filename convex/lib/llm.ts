@@ -30,19 +30,40 @@ export function getModelForTask(taskType: TaskType): string {
   return MODEL_CONFIG[taskType];
 }
 
+import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+
 export async function logLLMUsage(
   ctx: ActionCtx,
-  taskType: TaskType,
+  taskType: string,
   model: string,
   inputTokens: number,
   outputTokens: number,
   success: boolean,
-  error?: string
+  error?: string,
+  cvUploadId?: Id<"cvUploads">
 ): Promise<void> {
-  // No-op for target system to keep schema simple
+  try {
+    await ctx.runMutation(internal.stats.tokenLogging.logNvidiaCallMutation, {
+      taskType,
+      model,
+      promptTokens: inputTokens,
+      completionTokens: outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      success,
+      error,
+      cvUploadId,
+    });
+  } catch (err) {
+    console.error("Failed to log LLM usage:", err);
+  }
 }
 
-export async function generateNvidiaEmbedding(text: string): Promise<number[] | undefined> {
+export async function generateNvidiaEmbedding(
+  ctx: ActionCtx,
+  text: string,
+  cvUploadId?: Id<"cvUploads">
+): Promise<number[] | undefined> {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
 
@@ -59,10 +80,37 @@ export async function generateNvidiaEmbedding(text: string): Promise<number[] | 
         input: [safeText],
         model: "baai/bge-m3",
       });
+
+      // Log successful call
+      const promptTokens = response.usage?.prompt_tokens ?? 0;
+      await logLLMUsage(
+        ctx,
+        "embedding",
+        "baai/bge-m3",
+        promptTokens,
+        0,
+        true,
+        undefined,
+        cvUploadId
+      );
+
       return response.data[0]?.embedding;
     } catch (error: any) {
       lastError = error;
       const status = error?.status ?? 0;
+      
+      // Log failed call attempt
+      await logLLMUsage(
+        ctx,
+        "embedding",
+        "baai/bge-m3",
+        0,
+        0,
+        false,
+        error?.message || "Unknown error",
+        cvUploadId
+      );
+
       // Only retry on transient server errors (5xx)
       if (status >= 500 && attempt < maxRetries) {
         const waitMs = Math.pow(2, attempt) * 1000; // 2s, 4s

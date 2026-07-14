@@ -19,7 +19,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -390,7 +390,9 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
  * The caller decides whether to treat empty data as an error.
  */
 export async function callNvidiaLLM(
+  ctx: ActionCtx,
   rawText: string,
+  cvUploadId?: Id<"cvUploads">
 ): Promise<CvExtractionResult | null> {
   const MAX_CHARS = 15000;
   const textToSend =
@@ -458,6 +460,20 @@ ${textToSend}`,
       ],
     });
 
+    // Log successful token usage
+    if (response.usage) {
+      await logLLMUsage(
+        ctx,
+        "cv_structuring",
+        "meta/llama-3.1-70b-instruct",
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+        true,
+        undefined,
+        cvUploadId
+      );
+    }
+
     const content = response.choices[0]?.message?.content;
     if (!content) return null;
 
@@ -473,6 +489,18 @@ ${textToSend}`,
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[callNvidiaLLM] LLM call failed:", message);
+    
+    // Log failed call
+    await logLLMUsage(
+      ctx,
+      "cv_structuring",
+      "meta/llama-3.1-70b-instruct",
+      0,
+      0,
+      false,
+      message,
+      cvUploadId
+    );
     if (
       message.includes("403") ||
       message.toLowerCase().includes("insufficient") ||
@@ -625,7 +653,7 @@ export async function runCvExtraction(
           stage: "ai_extraction"
         });
       }
-      extracted = await callNvidiaLLM(cappedRawText);
+      extracted = await callNvidiaLLM(ctx, cappedRawText, cvUploadId);
       if (!extracted) {
         throw new Error("LLM failed to extract candidate data (API timeout or invalid response)");
       }
@@ -664,7 +692,7 @@ export async function runCvExtraction(
       }
       let embedding: number[] | undefined = undefined;
       try {
-        embedding = await generateNvidiaEmbedding(cappedRawText);
+        embedding = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId);
       } catch (embedErr: any) {
         console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", embedErr.message || embedErr);
       }

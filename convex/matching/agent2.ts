@@ -1,12 +1,14 @@
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel.d.ts";
+import type { Id } from "../_generated/dataModel";
+import { logLLMUsage } from "../lib/llm";
+import type { ActionCtx } from "../_generated/server";
 
 /**
  * Helper to get vector embeddings from NVIDIA API
  */
-export async function embedText(text: string, inputType: "query" | "passage" = "query"): Promise<number[]> {
+export async function embedText(ctx: ActionCtx, text: string, inputType: "query" | "passage" = "query", cvUploadId?: Id<"cvUploads">): Promise<number[]> {
   const apiKey = process.env.NVIDIA_API_KEY;
   if (!apiKey) {
     throw new Error("NVIDIA_API_KEY environment variable not set.");
@@ -30,13 +32,45 @@ export async function embedText(text: string, inputType: "query" | "passage" = "
 
   if (!response.ok) {
     const errorText = await response.text();
+    await logLLMUsage(
+      ctx,
+      "embedding",
+      "nvidia/nv-embedqa-e5-v5",
+      0,
+      0,
+      false,
+      `NVIDIA API Error: ${response.status} ${errorText}`,
+      cvUploadId
+    );
     throw new Error(`NVIDIA API Error: ${response.status} ${errorText}`);
   }
 
   const data = await response.json();
   if (!data.data || !data.data[0] || !data.data[0].embedding) {
+    await logLLMUsage(
+      ctx,
+      "embedding",
+      "nvidia/nv-embedqa-e5-v5",
+      0,
+      0,
+      false,
+      "Invalid response format from NVIDIA Embedding API",
+      cvUploadId
+    );
     throw new Error("Invalid response format from NVIDIA Embedding API");
   }
+
+  const promptTokens = data.usage?.prompt_tokens ?? 0;
+  await logLLMUsage(
+    ctx,
+    "embedding",
+    "nvidia/nv-embedqa-e5-v5",
+    promptTokens,
+    0,
+    true,
+    undefined,
+    cvUploadId
+  );
 
   return data.data[0].embedding;
 }
@@ -55,7 +89,7 @@ export const generateAndStoreEmbedding = internalAction({
 
     // We can truncate to avoid massive payload. NVIDIA embedqa usually takes up to 4096 or 8192 tokens.
     const textToEmbed = resume.rawText.slice(0, 15000); 
-    const embedding = await embedText(textToEmbed, "passage");
+    const embedding = await embedText(ctx, textToEmbed, "passage", candidate.cvUploadId);
 
     await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
       candidateId: args.candidateId,
@@ -79,7 +113,7 @@ export const generateJobEmbedding = action({
       Seniority: ${job.seniorityLevel || ""}
     `;
 
-    const jobEmbedding = await embedText(jobRequirementsText);
+    const jobEmbedding = await embedText(ctx, jobRequirementsText);
     
     await ctx.runMutation(internal.matching.queries.updateJobEmbedding, {
       jobId: args.jobId,
@@ -132,7 +166,7 @@ export const runReverseMatch = action({
           Seniority: ${job.seniorityLevel || ""}
         `;
 
-        jobEmbedding = await embedText(jobRequirementsText);
+        jobEmbedding = await embedText(ctx, jobRequirementsText);
         
         // Save the embedding to the job record
         await ctx.runMutation(internal.matching.queries.updateJobEmbedding, {
@@ -210,7 +244,7 @@ export const runReverseMatch = action({
               const resume: any = keywordResumeMap.get(cv._id);
               if (resume && resume.rawText) {
                 const textToEmbed = resume.rawText.slice(0, 15000);
-                const embedding = await embedText(textToEmbed, "passage");
+                const embedding = await embedText(ctx, textToEmbed, "passage", cv.cvUploadId);
                 await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
                   candidateId: cv._id,
                   embedding,

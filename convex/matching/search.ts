@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { action, query } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { logLLMUsage } from "../lib/llm";
 import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
 import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
@@ -149,7 +150,7 @@ export const aiSearch = action({
     if (!isQueryEmpty) {
       try {
         const { embedText } = await import("./agent2.js");
-        queryEmbedding = await embedText(args.query, "query");
+        queryEmbedding = await embedText(ctx, args.query, "query");
       } catch (err) {
         console.error("NVIDIA embedding call failed, falling back to keyword-only search:", err);
         queryEmbedding = null;
@@ -504,9 +505,34 @@ export const parseNLQuery = action({
       })
     });
 
-    if (!response.ok) throw new Error("NVIDIA API failed");
+    if (!response.ok) {
+      const errorText = await response.text();
+      await logLLMUsage(
+        ctx,
+        "jd_matching",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        0,
+        0,
+        false,
+        `NVIDIA API Error: ${response.status} ${errorText}`
+      );
+      throw new Error("NVIDIA API failed");
+    }
     
     const data = await response.json();
+    
+    // Log successful token usage
+    const promptTokens = data.usage?.prompt_tokens ?? 0;
+    const completionTokens = data.usage?.completion_tokens ?? 0;
+    await logLLMUsage(
+      ctx,
+      "jd_matching",
+      "nvidia/llama-3.1-nemotron-70b-instruct",
+      promptTokens,
+      completionTokens,
+      true
+    );
+
     try {
       let content = data.choices[0].message.content;
       // Strip markdown code blocks if any
@@ -527,7 +553,7 @@ export const semanticSearch = action({
   handler: async (ctx, args) => {
     // 1. Embed query
     const { embedText } = await import("./agent2.js");
-    const queryEmbedding = await embedText(args.query);
+    const queryEmbedding = await embedText(ctx, args.query);
 
     // 2. Vector search
     const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
