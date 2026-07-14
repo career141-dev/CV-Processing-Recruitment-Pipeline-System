@@ -468,6 +468,8 @@ generatedAt: v.string(),
 
     // Existing legacy fields to prevent breaking changes
     status: v.optional(v.string()),
+    pastJobTitles: v.optional(v.array(v.string())),
+    phoneClean: v.optional(v.string()),
     isArchivedLocally: v.optional(v.boolean()),
     currentTitle: v.optional(v.string()),
     seniorityLevel: v.optional(v.string()),
