@@ -765,7 +765,8 @@ errorMessage: v.optional(v.string()),
     .index("by_applicationId", ["applicationId"])
     .index("by_channel_time", ["channel", "sentAt"])
     .index("by_app_sequence", ["applicationId", "sequenceDay"])
-    .index("by_job", ["jobId"]),
+    .index("by_job", ["jobId"])
+    .index("by_direction_channel_time", ["direction", "channel", "sentAt"]),
 
   directorReviews: defineTable({
     applicationId: v.id("applications"),
