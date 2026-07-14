@@ -147,10 +147,10 @@ export const aiSearch = action({
     const searchTerms = buildSearchTerms(effectiveReq, args.query);
     const searchBatches = await Promise.all([
       ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
-      ...searchTerms.slice(0, 7).filter((term) => term !== args.query).map((term) =>
+      ...searchTerms.slice(0, 5).filter((term) => term !== args.query).map((term) =>
         ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit })
       ),
-      ...interp.keywords.slice(0, 3).map((kw) =>
+      ...interp.keywords.slice(0, 2).map((kw) =>
         ctx.runQuery(api.matching.search.searchCandidates, { query: kw, limit: 12 })
       ),
     ]);

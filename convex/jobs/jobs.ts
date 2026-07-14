@@ -187,6 +187,7 @@ export const createDraftJob = mutation({
       clientContactName: args.clientContactName,
       clientContactEmail: args.clientContactEmail,
       supportingRecruiterIds: args.supportingRecruiterIds,
+      muteDefaultWhatsappReply: false,
       
       scoreWeightSkills: 35,
       scoreWeightExperience: 15,
@@ -262,6 +263,7 @@ export const updateJobDetails = mutation({
     clientContactEmail: v.optional(v.string()),
     primaryRecruiterId: v.optional(v.id("users")),
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
+    muteDefaultWhatsappReply: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter"]);

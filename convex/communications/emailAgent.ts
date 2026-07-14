@@ -8,6 +8,11 @@ import { getOpenAI, getModelForTask } from "../lib/llm";
 // MICROSOFT GRAPH API IMPLEMENTATION
 // ----------------------------------------------------------------------------------
 
+// Module-level token cache — persists across warm function invocations on the same worker
+// MS Graph tokens are valid for 3600s; we expire ours at 3300s to be safe
+let _cachedToken: string | null = null;
+let _tokenExpiresAt = 0;
+
 export async function getGraphToken(): Promise<string | null> {
   const tenantId = process.env.MS_GRAPH_TENANT_ID;
   const clientId = process.env.MS_GRAPH_CLIENT_ID;
@@ -16,6 +21,12 @@ export async function getGraphToken(): Promise<string | null> {
   if (!tenantId || !clientId || !clientSecret) {
     console.log("[EmailAgent] Missing Microsoft Graph API credentials in environment variables.");
     return null;
+  }
+
+  // Return cached token if still valid (with 5-min buffer)
+  const now = Date.now();
+  if (_cachedToken && now < _tokenExpiresAt) {
+    return _cachedToken;
   }
 
   try {
@@ -36,7 +47,10 @@ export async function getGraphToken(): Promise<string | null> {
     }
 
     const data = await response.json();
-    return data.access_token;
+    _cachedToken = data.access_token;
+    // Cache for (expires_in - 300) seconds, defaulting to 55 minutes
+    _tokenExpiresAt = now + ((data.expires_in ?? 3600) - 300) * 1000;
+    return _cachedToken;
   } catch (error) {
     console.error("[EmailAgent] Error fetching Graph token:", error);
     return null;
@@ -565,8 +579,14 @@ export const extractAndApplyEmailBodyDetails = internalAction({
   args: {
     senderEmail: v.string(),
     emailBody: v.string(),
+    _retryCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Give up after 6 retries (6 × 20s = 120s max wait)
+    if ((args._retryCount ?? 0) >= 6) {
+      console.warn(`[Email Agent Inbound Details] Max retries reached for ${args.senderEmail} — giving up.`);
+      return;
+    }
     let lookupEmail = args.senderEmail;
     const isTestMode = process.env.EMAIL_TEST_MODE === "true";
     const testRecipient = process.env.EMAIL_TEST_RECIPIENT;
@@ -578,17 +598,24 @@ export const extractAndApplyEmailBodyDetails = internalAction({
       }
     }
 
-    let candidate = null;
-    for (let attempt = 0; attempt < 6; attempt++) {
-      candidate = await ctx.runQuery(api.candidates.candidates.getCandidateByEmail, {
-        email: lookupEmail,
+    const candidate = await ctx.runQuery(api.candidates.candidates.getCandidateByEmail, {
+      email: lookupEmail,
+    });
+
+    if (!candidate) {
+      // Candidate not yet created (CV parsing still in flight) — retry in 20 seconds
+      // instead of sleeping inside the action for up to 60 seconds
+      await ctx.scheduler.runAfter(20000, internal.communications.emailAgent.extractAndApplyEmailBodyDetails, {
+        senderEmail: args.senderEmail,
+        emailBody: args.emailBody,
+        _retryCount: (args._retryCount ?? 0) + 1,
       });
-      if (candidate) break;
-      await new Promise((resolve) => setTimeout(resolve, 10000));
+      console.log(`[Email Agent Inbound Details] Candidate not yet found for ${lookupEmail} — retrying in 20s (attempt ${(args._retryCount ?? 0) + 1}/6)`);
+      return;
     }
 
     if (!candidate) {
-      console.warn(`[Email Agent Inbound Details] Candidate not found for email: ${lookupEmail}`);
+      console.warn(`[Email Agent Inbound Details] Candidate not found for email: ${lookupEmail} after retries`);
       return;
     }
 

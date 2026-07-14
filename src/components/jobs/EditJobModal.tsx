@@ -48,6 +48,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     seniorityLevel: 'mid_level',
     experienceMinYears: 0,
     jobDescription: '',
+    muteDefaultWhatsappReply: false,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,6 +66,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         seniorityLevel: job.seniorityLevel || 'mid_level',
         experienceMinYears: job.experienceMinYears || 0,
         jobDescription: job.jobDescription || '',
+        muteDefaultWhatsappReply: job.muteDefaultWhatsappReply || false,
       });
     }
   }, [job, isOpen]);
@@ -105,6 +107,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         seniorityLevel: formData.seniorityLevel,
         experienceMinYears: formData.experienceMinYears,
         description: formData.jobDescription,
+        muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
       });
 
       toast.success('Job details updated successfully!');
@@ -268,6 +271,23 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               rows={5}
               className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container resize-none"
             />
+          </div>
+
+          {/* Mute Default WhatsApp Reply */}
+          <div className="flex items-center gap-3 col-span-2 p-3 bg-surface border border-border rounded-lg mt-2">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-text-primary">Mute Default Auto-Reply</p>
+              <p className="text-xs text-text-secondary mt-0.5">Turn this ON if you are running a custom WhatChimp auto-reply for this campaign and don't want the ATS to send its default "Thank you" message.</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={formData.muteDefaultWhatsappReply} 
+                onChange={e => setFormData(prev => ({ ...prev, muteDefaultWhatsappReply: e.target.checked }))} 
+              />
+              <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+            </label>
           </div>
         </div>
       </form>

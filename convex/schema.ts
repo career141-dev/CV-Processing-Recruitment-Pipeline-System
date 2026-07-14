@@ -139,6 +139,7 @@ keyword: v.string(), // UNIQUE — routing key for all agents
 status: v.union(v.literal("active"), v.literal("on_hold"),
 v.literal("filled"), v.literal("cancelled"),
 v.literal("draft")),
+muteDefaultWhatsappReply: v.optional(v.boolean()),
 
 // Team Assignment
 primaryRecruiterId: v.id("users"),
@@ -523,6 +524,7 @@ generatedAt: v.string(),
     doNotContactReason: v.optional(v.string()),
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
+    activeApplicationsSummary: v.optional(v.any()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])

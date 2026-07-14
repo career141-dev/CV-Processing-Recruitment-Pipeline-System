@@ -9,17 +9,16 @@ import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/follow
 export const listCandidatesByIds = query({
   args: { ids: v.array(v.id("candidates")) },
   handler: async (ctx, args) => {
+    const results = await Promise.all(args.ids.map(id => ctx.db.get(id)));
     const candidates = [];
-    for (const id of args.ids) {
-      const c = await ctx.db.get(id);
-      if (c) {
-        const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
-        candidates.push({
-          ...safeCandidate,
-          profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
-          activeApplications: [],
-        });
-      }
+    for (const c of results) {
+      if (!c) continue;
+      const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
+      candidates.push({
+        ...safeCandidate,
+        profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+        activeApplications: [],
+      });
     }
     return candidates;
   },
@@ -53,22 +52,29 @@ export const listCandidatesPaginated = query({
       page: await Promise.all(
         page.page.map(async (c) => {
           const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
-          const apps = await ctx.db
-            .query("applications")
-            .withIndex("by_candidateId", (q: any) => q.eq("candidateId", c._id))
-            .collect();
 
-          const activeApplications = await Promise.all(
-            apps.map(async (app) => {
-              const job = await ctx.db.get(app.jobId);
-              return {
-                jobId: app.jobId,
-                jobTitle: job ? job.title : "Unknown Job",
-                stage: app.currentStage,
-                isActive: app.isActive,
-              };
-            })
-          );
+          // Prefer the pre-computed summary field (O(1)) over the live N+2 query
+          let activeApplications: any[] = [];
+          if (Array.isArray((c as any).activeApplicationsSummary)) {
+            activeApplications = (c as any).activeApplicationsSummary;
+          } else {
+            // Fallback: live query for candidates created before the summary field was added
+            const apps = await ctx.db
+              .query("applications")
+              .withIndex("by_candidateId", (q: any) => q.eq("candidateId", c._id))
+              .collect();
+            activeApplications = await Promise.all(
+              apps.map(async (app) => {
+                const job = await ctx.db.get(app.jobId);
+                return {
+                  jobId: app.jobId,
+                  jobTitle: job ? job.title : "Unknown Job",
+                  stage: app.currentStage,
+                  isActive: app.isActive,
+                };
+              })
+            );
+          }
 
           return {
             ...safeCandidate,
@@ -557,7 +563,7 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
     .collect();
 
   if (applications.length === 0) {
-    await ctx.db.patch(candidateId, { overallStatus: "active" });
+    await ctx.db.patch(candidateId, { overallStatus: "active", activeApplicationsSummary: [] });
     return;
   }
 
@@ -580,19 +586,38 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
   let highestStage = "rejected";
   let highestPriority = -1;
 
+  // Build activeApplicationsSummary in the same pass — no extra reads needed
+  const appSummaries = [];
+  // Batch-fetch unique job titles (avoid duplicate reads)
+  const jobCache = new Map<string, string>();
   for (const app of applications) {
     const priority = STAGE_PRIORITY[app.currentStage] ?? -1;
     if (priority > highestPriority) {
       highestPriority = priority;
       highestStage = app.currentStage;
     }
+    let jobTitle = jobCache.get(app.jobId);
+    if (jobTitle === undefined) {
+      const job = await ctx.db.get(app.jobId);
+      jobTitle = (job?.title ?? "Unknown Job") as string;
+      jobCache.set(app.jobId, jobTitle);
+    }
+    appSummaries.push({
+      jobId: app.jobId,
+      jobTitle,
+      stage: app.currentStage,
+      isActive: app.isActive,
+    });
   }
 
   const finalStatus = (highestStage === "ta_shortlist" || highestStage === "matched_candidates")
     ? "shortlisted"
     : highestStage;
 
-  await ctx.db.patch(candidateId, { overallStatus: finalStatus as any });
+  await ctx.db.patch(candidateId, {
+    overallStatus: finalStatus as any,
+    activeApplicationsSummary: appSummaries,
+  });
 }
 
 export const getCandidateByEmail = query({

@@ -8,7 +8,7 @@ export const getSystemSettings = query({
   handler: async (ctx) => {
     await requireRole(ctx, ["admin", "ta_manager"]);
     
-    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
     
     return configRow?.channel_toggles || {
       whatsappIngestion: true,
@@ -31,7 +31,7 @@ export const updateChannelToggles = mutation({
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager"]);
     
-    let configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    let configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
     
     const oldToggles: any = configRow?.channel_toggles || {};
     
