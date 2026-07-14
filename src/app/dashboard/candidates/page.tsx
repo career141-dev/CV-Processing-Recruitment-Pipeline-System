@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
-import { useQuery, useAction, useMutation } from "convex/react";
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -10,8 +10,7 @@ import { CandidateCard } from '@/components/candidates/CandidateCard';
 import { FloatingActionBar } from '@/components/candidates/FloatingActionBar';
 import { CandidateManagementTable } from '@/components/candidates/CandidateManagementTable';
 import { Button } from '@/components/ui/Button';
-import { CustomSelect } from '@/components/ui/CustomSelect';
-import { X, Loader2, ChevronDown, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Loader2, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Pin } from 'lucide-react';
 import { MessageComposer } from '@/components/communications/MessageComposer';
 import { DeleteCandidateModal } from '@/components/candidates/modals/DeleteCandidateModal';
 import { toast } from 'sonner';
@@ -50,9 +49,10 @@ function formatSkills(skills?: string[] | null, max = 2): string[] {
   return shown;
 }
 
+const SESSION_STORAGE_KEY = "career141_search_session";
+
 export default function CandidatesSearch() {
   const aiSearchAction = useAction(api.matching.search.aiSearch);
-
 
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -61,7 +61,6 @@ export default function CandidatesSearch() {
   const [locationQuery, setLocationQuery] = useState("");
   const [sortOption, setSortOption] = useState('Best Match');
   const [isSortOpen, setIsSortOpen] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'management' | 'search'>('management');
   
   // Search Tab Pagination
@@ -78,75 +77,214 @@ export default function CandidatesSearch() {
       interpretation: string;
       keywords: string[];
     };
-    results: { candidateId: string; score: number; reason: string }[];
+    results: {
+      candidateId: string;
+      score: number;
+      reason: string;
+      breakdown?: {
+        title: string;
+        skills: string;
+        experience: string;
+        location: string;
+        industry: string;
+      };
+    }[];
   } | null>(null);
 
-  const searchIds = (searchResults?.results || []).map(r => r.candidateId as Id<"candidates">);
-  const searchedCandidatesList = useQuery(api.candidates.candidates.listCandidatesByIds, { ids: searchIds }) || [];
-  const searchCandidateMap = new Map(searchedCandidatesList.map(c => [c._id, c]));
+  // Search History State
+  const [searchHistory, setSearchHistory] = useState<any[]>([]);
+
+  // Textarea Expansion Ref
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    // Reset height to get correct scrollHeight
+    textarea.style.height = "auto";
+    const scrollHeight = textarea.scrollHeight;
+
+    // Bound between 80px and 300px
+    if (scrollHeight <= 80) {
+      textarea.style.height = "80px";
+      textarea.style.overflowY = "hidden";
+    } else if (scrollHeight >= 300) {
+      textarea.style.height = "300px";
+      textarea.style.overflowY = "auto";
+    } else {
+      textarea.style.height = `${scrollHeight}px`;
+      textarea.style.overflowY = "hidden";
+    }
+  }, [searchQuery]);
 
   // Message Composer State
   const [messageCandidate, setMessageCandidate] = useState<{ id: string; name: string; initials: string; role: string } | null>(null);
   const [deletingCandidateId, setDeletingCandidateId] = useState<string | null>(null);
 
-  const toggleCandidate = (id: string) => {
-    setSelectedCandidates(prev => 
-      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-    );
+  // 1. Mount effect: Load Search History from localStorage and Search Session from sessionStorage
+  useEffect(() => {
+    // Load History
+    const savedHistory = localStorage.getItem("career141_search_history");
+    if (savedHistory) {
+      try {
+        setSearchHistory(JSON.parse(savedHistory));
+      } catch (e) {}
+    }
+
+    // Load Session
+    const sessionData = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (sessionData) {
+      try {
+        const parsed = JSON.parse(sessionData);
+        if (parsed.activeTab) setActiveTab(parsed.activeTab);
+        if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+        if (parsed.activeFilters) setActiveFilters(parsed.activeFilters);
+        if (parsed.locationQuery !== undefined) setLocationQuery(parsed.locationQuery);
+        if (parsed.sortOption) setSortOption(parsed.sortOption);
+        if (parsed.searchResults) setSearchResults(parsed.searchResults);
+        if (parsed.hasSearched !== undefined) setHasSearched(parsed.hasSearched);
+        if (parsed.searchPage) setSearchPage(parsed.searchPage);
+        
+        if (parsed.scrollPosition) {
+          setTimeout(() => {
+            window.scrollTo({
+              top: parsed.scrollPosition,
+              behavior: 'instant'
+            });
+          }, 250); // Delay to allow paginated query cache restoration
+        }
+      } catch (e) {
+        console.error("Error restoring search session", e);
+      }
+    }
+  }, []);
+
+  // 2. State-saving effect: Sync active tab, queries, filters, pagination, and results to sessionStorage
+  useEffect(() => {
+    const saveState = {
+      activeTab,
+      searchQuery,
+      activeFilters,
+      locationQuery,
+      sortOption,
+      searchResults,
+      hasSearched,
+      searchPage,
+      scrollPosition: window.scrollY
+    };
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(saveState));
+  }, [activeTab, searchQuery, activeFilters, locationQuery, sortOption, searchResults, hasSearched, searchPage]);
+
+  // 3. Scroll listener effect: Update scroll position in sessionStorage
+  useEffect(() => {
+    const handleScroll = () => {
+      const sessionData = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (sessionData) {
+        try {
+          const parsed = JSON.parse(sessionData);
+          parsed.scrollPosition = window.scrollY;
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
+        } catch (e) {}
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 4. Textarea auto-sizing effect (Capped at 1/3 window height, debounced)
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const handleResize = () => {
+      const scrollPos = window.scrollY;
+      textarea.style.height = 'auto';
+      const scrollHeight = textarea.scrollHeight;
+      const maxHeight = window.innerHeight / 3;
+      const targetHeight = Math.min(scrollHeight, maxHeight);
+      setTextareaHeight(`${Math.max(80, targetHeight)}px`);
+      window.scrollTo(window.scrollX, scrollPos);
+    };
+
+    const timer = setTimeout(handleResize, 100);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // 5. Public batch resolver query for displaying candidate cards
+  const searchIds = useMemo(() => {
+    return (searchResults?.results || []).map(r => r.candidateId as Id<"candidates">);
+  }, [searchResults]);
+  
+  const searchedCandidatesList = useQuery(api.candidates.candidates.listCandidatesByIds, { ids: searchIds });
+  
+  const searchCandidateMap = useMemo(() => {
+    return new Map((searchedCandidatesList || []).map(c => [c._id, c]));
+  }, [searchedCandidatesList]);
+
+  // 6. Abstract Search runner function
+  const runSearch = async (q: string, flts: string[], loc: string) => {
+    let seniorityFilter: string | undefined = undefined;
+    if (flts.includes("Senior")) seniorityFilter = "senior";
+    else if (flts.includes("Lead")) seniorityFilter = "lead";
+
+    let minExperience: number | undefined = undefined;
+    let maxExperience: number | undefined = undefined;
+    const expFilter = flts.find(f => f.includes("years"));
+    if (expFilter) {
+      const match = expFilter.match(/(\d+)\s*(?:-|–)\s*(\d+)/);
+      if (match) {
+        minExperience = parseInt(match[1], 10);
+        maxExperience = parseInt(match[2], 10);
+      }
+    }
+
+    const educationFilter = flts.filter(f => f === "Bachelor" || f === "Masters");
+    const education = educationFilter.length > 0 ? educationFilter : undefined;
+
+    const sourceFilter = flts.filter(f => f === "LinkedIn" || f === "WhatsApp");
+    const sources = sourceFilter.length > 0 ? sourceFilter : undefined;
+
+    const customFilters = flts.filter(f => {
+      if (f === "Senior" || f === "Lead") return false;
+      if (f.includes("years")) return false;
+      if (f === "Bachelor" || f === "Masters") return false;
+      if (f === "LinkedIn" || f === "WhatsApp") return false;
+      return true;
+    });
+    const customFiltersParam = customFilters.length > 0 ? customFilters : undefined;
+
+    return await aiSearchAction({
+      query: q,
+      seniority: seniorityFilter,
+      minExperience,
+      maxExperience,
+      location: loc.trim() || undefined,
+      education,
+      sources,
+      customFilters: customFiltersParam,
+    });
   };
 
   const handleAiSearch = async () => {
-    if (!searchQuery.trim()) {
-      toast.error("Please enter a search description");
+    const hasQuery = searchQuery.trim() !== "";
+    const hasFilters = activeFilters.length > 0 || locationQuery.trim() !== "";
+
+    if (!hasQuery && !hasFilters) {
+      toast.error("Please enter a description or select filters to browse");
       return;
     }
+
     setIsAiSearching(true);
     try {
-      // Extract optional filters if they are applied in UI
-      let seniorityFilter: string | undefined = undefined;
-      if (activeFilters.includes("Senior")) seniorityFilter = "senior";
-      else if (activeFilters.includes("Lead")) seniorityFilter = "lead";
-
-      let minExperience: number | undefined = undefined;
-      let maxExperience: number | undefined = undefined;
-      const expFilter = activeFilters.find(f => f.includes("years"));
-      if (expFilter) {
-        const match = expFilter.match(/(\d+)\s*(?:-|–)\s*(\d+)/);
-        if (match) {
-          minExperience = parseInt(match[1], 10);
-          maxExperience = parseInt(match[2], 10);
-        }
-      }
-
-      const educationFilter = activeFilters.filter(f => f === "Bachelor" || f === "Masters");
-      const education = educationFilter.length > 0 ? educationFilter : undefined;
-
-      const sourceFilter = activeFilters.filter(f => f === "LinkedIn" || f === "WhatsApp");
-      const sources = sourceFilter.length > 0 ? sourceFilter : undefined;
-
-      const customFilters = activeFilters.filter(f => {
-        if (f === "Senior" || f === "Lead") return false;
-        if (f.includes("years")) return false;
-        if (f === "Bachelor" || f === "Masters") return false;
-        if (f === "LinkedIn" || f === "WhatsApp") return false;
-        return true;
-      });
-      const customFiltersParam = customFilters.length > 0 ? customFilters : undefined;
-
-      const res = await aiSearchAction({
-        query: searchQuery,
-        seniority: seniorityFilter,
-        minExperience,
-        maxExperience,
-        location: locationQuery.trim() || undefined,
-        education,
-        sources,
-        customFilters: customFiltersParam,
-      });
+      const res = await runSearch(searchQuery, activeFilters, locationQuery);
       setSearchResults(res);
       setHasSearched(true);
-      setSortOption('AI Relevancy');
+      setSortOption(searchQuery.trim() ? 'AI Relevancy' : 'Experience');
       setSearchPage(1);
+
+      // Add to search history
+      addToHistory(searchQuery, activeFilters, locationQuery, res.results.length);
       toast.success(`Found ${res.results.length} candidate matches`);
     } catch (error) {
       console.error(error);
@@ -154,6 +292,121 @@ export default function CandidatesSearch() {
     } finally {
       setIsAiSearching(false);
     }
+  };
+
+  // 7. Auto-trigger search when filters/location change (Debounced, Server-side filtering)
+  useEffect(() => {
+    if (activeTab !== 'search') return;
+
+    const hasQuery = searchQuery.trim() !== "";
+    const hasFilters = activeFilters.length > 0 || locationQuery.trim() !== "";
+
+    if (!hasQuery && !hasFilters) {
+      setSearchResults(null);
+      setHasSearched(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      handleAiSearch();
+    }, 450); // 450ms debounce for input/checkbox updates
+
+    return () => clearTimeout(timer);
+  }, [activeFilters, locationQuery]);
+
+  // 8. Search History management logic
+  const saveSearchHistoryToStorage = (newHistory: any[]) => {
+    setSearchHistory(newHistory);
+    localStorage.setItem("career141_search_history", JSON.stringify(newHistory));
+  };
+
+  const addToHistory = (q: string, flts: string[], loc: string, count: number) => {
+    const parts = [];
+    if (q.trim()) parts.push(q.trim());
+    if (loc.trim()) parts.push(loc.trim());
+    if (flts.length > 0) parts.push(...flts);
+
+    const summaryText = `${parts.join(", ") || "Filter-Only Search"} — ${count} result${count !== 1 ? 's' : ''}`;
+
+    const newEntry = {
+      id: Math.random().toString(36).substring(7),
+      query: q,
+      filters: flts,
+      location: loc,
+      resultCount: count,
+      summary: summaryText,
+      isPinned: false,
+      timestamp: Date.now()
+    };
+
+    const isSame = (item: any) =>
+      item.query.trim().toLowerCase() === newEntry.query.trim().toLowerCase() &&
+      item.location.trim().toLowerCase() === newEntry.location.trim().toLowerCase() &&
+      item.filters.length === newEntry.filters.length &&
+      item.filters.every((f: string) => newEntry.filters.includes(f));
+
+    const filtered = searchHistory.filter(item => !isSame(item));
+    const merged = [newEntry, ...filtered];
+
+    let finalHistory = merged;
+    if (merged.length > 10) {
+      let toEvict = merged.length - 10;
+      const result = [];
+      for (let i = merged.length - 1; i >= 0; i--) {
+        const item = merged[i];
+        if (toEvict > 0 && !item.isPinned) {
+          toEvict--;
+        } else {
+          result.unshift(item);
+        }
+      }
+      finalHistory = result.slice(0, 10);
+    }
+
+    saveSearchHistoryToStorage(finalHistory);
+  };
+
+  const togglePinHistory = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const updated = searchHistory.map(item => {
+      if (item.id === id) return { ...item, isPinned: !item.isPinned };
+      return item;
+    });
+    saveSearchHistoryToStorage(updated);
+  };
+
+  const deleteHistoryEntry = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const updated = searchHistory.filter(item => item.id !== id);
+    saveSearchHistoryToStorage(updated);
+  };
+
+  const triggerHistorySearch = async (entry: any) => {
+    setSearchQuery(entry.query);
+    setActiveFilters(entry.filters);
+    setLocationQuery(entry.location);
+    setSearchPage(1);
+
+    setIsAiSearching(true);
+    try {
+      const res = await runSearch(entry.query, entry.filters, entry.location);
+      setSearchResults(res);
+      setHasSearched(true);
+      setSortOption(entry.query.trim() ? 'AI Relevancy' : 'Experience');
+      toast.success(`Restored Search: Found ${res.results.length} candidate matches`);
+    } catch (e) {
+      toast.error("Failed to run search");
+    } finally {
+      setIsAiSearching(false);
+    }
+  };
+
+  const toggleCandidate = (id: string) => {
+    setSelectedCandidates(prev => 
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
   };
 
   const toggleFilter = (filter: string) => {
@@ -166,17 +419,23 @@ export default function CandidatesSearch() {
     setActiveFilters(prev => prev.filter(f => f !== filter));
   };
 
-  const candidatesToRender = (hasSearched && searchResults
-    ? searchResults.results
-        .map(res => {
-          const cand = searchCandidateMap.get(res.candidateId as any);
-          if (!cand) return null;
-          return { ...cand, score: res.score, matchReason: res.reason };
-        })
-        .filter(Boolean)
-    : []) as any[];
+  const candidatesToRender = useMemo(() => {
+    if (!hasSearched || !searchResults) return [];
+    return searchResults.results
+      .map(res => {
+        const cand = searchCandidateMap.get(res.candidateId as any);
+        if (!cand) return null;
+        return { 
+          ...cand, 
+          score: res.score, 
+          matchReason: res.reason,
+          breakdown: res.breakdown 
+        };
+      })
+      .filter(Boolean);
+  }, [hasSearched, searchResults, searchCandidateMap]);
 
-  const sortedCandidates = React.useMemo(() => {
+  const sortedCandidates = useMemo(() => {
     const list = [...candidatesToRender];
     if (sortOption === 'AI Score') {
       list.sort((a: any, b: any) => (b.score ?? 0) - (a.score ?? 0));
@@ -191,6 +450,8 @@ export default function CandidatesSearch() {
   const searchStartIndex = (searchPage - 1) * searchItemsPerPage;
   const currentSearchItems = sortedCandidates.slice(searchStartIndex, searchStartIndex + searchItemsPerPage);
   const totalSearchPages = Math.ceil(sortedCandidates.length / searchItemsPerPage);
+
+  const isPromptState = !hasSearched && activeFilters.length === 0 && locationQuery.trim() === "";
 
   return (
     <div className="flex-1 relative w-full bg-surface">
@@ -233,18 +494,16 @@ export default function CandidatesSearch() {
 
       {activeTab === 'search' && (
         <div className="flex flex-col items-start self-stretch relative">
-          <div className="flex items-start self-stretch relative">
+          <div className="flex items-start self-stretch relative w-full">
           
-          {/* Animated Sidebar Container */}
-          <div className={`transition-all duration-300 ease-in-out shrink-0 overflow-hidden ${isSidebarOpen ? 'w-[260px] opacity-100 mr-[21px]' : 'w-0 opacity-0 mr-0'}`}>
-            <div className="w-[260px]">
-              <CandidateSidebarFilters 
-                activeFilters={activeFilters} 
-                onToggleFilter={toggleFilter} 
-                location={locationQuery}
-                onLocationChange={setLocationQuery}
-              />
-            </div>
+          {/* 4.1 Filter Panel Always Visible Left Column */}
+          <div className="w-[260px] shrink-0 mr-[21px] pl-6">
+            <CandidateSidebarFilters 
+              activeFilters={activeFilters} 
+              onToggleFilter={toggleFilter} 
+              location={locationQuery}
+              onLocationChange={setLocationQuery}
+            />
           </div>
           
           {/* Main Feed */}
@@ -257,44 +516,82 @@ export default function CandidatesSearch() {
               </p>
             </div>
 
-            {/* Top row with Filter toggle button and applied filters */}
-            <div className="flex items-start gap-3 mb-4">
-              <button 
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="flex shrink-0 items-center justify-center p-2.5 rounded-lg transition-colors shadow-sm bg-primary-container text-on-primary hover:bg-[#144718]"
-                title="Toggle Filters"
-              >
-                <Filter className="w-5 h-5" />
-              </button>
+            {/* AI Search Banner Area */}
+            <div className="flex flex-col self-stretch bg-surface py-[17px] mb-2 gap-[17px] rounded-[10px] border border-solid border-border" style={{ boxShadow: '0px 2px 4px #0000000D' }}>
               
-              {/* Applied Filters Summary */}
-              {activeFilters.length > 0 && (
-                <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg border border-gray-200 w-full">
-                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider mr-2">Applied Filters:</span>
-                  <div className="flex flex-wrap gap-2 flex-1">
-                    {activeFilters.map(filter => (
-                      <div key={filter} className="flex items-center bg-surface border border-gray-200 rounded-md py-1 px-2 gap-1 text-xs text-gray-700 shadow-sm">
-                        {filter}
-                        <button onClick={() => removeFilter(filter)} className="text-gray-400 hover:text-red-500 ml-1">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={() => setActiveFilters([])} className="text-xs text-primary-container font-medium hover:underline shrink-0">
+              {/* 4.2 Applied Filters Shown as Chips in the Search Bar Area */}
+              {((hasSearched && searchQuery.trim() !== "") || activeFilters.length > 0 || locationQuery.trim() !== "") && (
+                <div className="flex flex-wrap items-center gap-2 px-[21px] pb-3 border-b border-gray-100">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">Active Criteria:</span>
+                  
+                  {/* AI Query Chip */}
+                  {hasSearched && searchQuery.trim() !== "" && (
+                    <div className="inline-flex items-center gap-1.5 bg-[#EAF5EC] border border-[#CDE5D2] text-[#1B5E20] text-xs px-2.5 py-1 rounded-md font-medium max-w-full">
+                      <Sparkles className="w-3.5 h-3.5 shrink-0 text-[#1B5E20]" />
+                      <span className="truncate max-w-[240px] text-[11px]">Query: "{searchQuery}"</span>
+                      <button 
+                        onClick={() => {
+                          setSearchQuery("");
+                          setHasSearched(false);
+                          setSearchResults(null);
+                        }} 
+                        className="text-[#1B5E20] hover:text-[#0C3C11] ml-1 font-bold text-sm leading-none"
+                        title="Clear query"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Location Chip */}
+                  {locationQuery.trim() !== "" && (
+                    <div className="inline-flex items-center gap-1 bg-surface-container-high border border-border text-text-primary text-[11px] px-2.5 py-1 rounded-md">
+                      <span className="text-text-secondary">Location:</span>
+                      <span className="font-semibold">{locationQuery}</span>
+                      <button 
+                        onClick={() => setLocationQuery("")} 
+                        className="text-text-disabled hover:text-red-500 ml-1 font-bold text-sm leading-none"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Structured Filter Chips */}
+                  {activeFilters.map(filter => (
+                    <div key={filter} className="inline-flex items-center gap-1 bg-surface-container-high border border-border text-text-primary text-[11px] px-2.5 py-1 rounded-md">
+                      <span className="font-semibold">{filter}</span>
+                      <button 
+                        onClick={() => removeFilter(filter)} 
+                        className="text-text-disabled hover:text-red-500 ml-1 font-bold text-sm leading-none"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  
+                  <button 
+                    onClick={() => {
+                      setSearchQuery("");
+                      setLocationQuery("");
+                      setActiveFilters([]);
+                      setHasSearched(false);
+                      setSearchResults(null);
+                    }} 
+                    className="text-xs text-[#006E1C] font-semibold hover:underline shrink-0 ml-auto"
+                  >
                     Clear All
                   </button>
                 </div>
               )}
-            </div>
 
-            {/* AI Search Banner */}
-            <div className="flex flex-col self-stretch bg-surface py-[17px] mb-2 gap-[21px] rounded-[10px] border border-solid border-border" style={{ boxShadow: '0px 2px 4px #0000000D' }}>
+              {/* 4.3 Auto-expanding search textarea container */}
               <div className="flex flex-col items-start self-stretch bg-surface pt-[13px] pb-[33px] px-[17px] mx-[21px] rounded-lg border border-solid border-border">
                 <textarea 
-                  className="text-text-primary text-[13px] w-full border-none outline-none resize-none bg-transparent"
+                  ref={textareaRef}
+                  style={{ height: "80px" }}
+                  className="text-text-primary text-[13px] w-full border-none outline-none resize-none bg-transparent overflow-y-auto"
                   placeholder="Describe the ideal candidate (e.g. Senior Frontend Developer with experience in SaaS, React, and Fintech compliance)..."
-                  rows={2}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => {
@@ -306,6 +603,8 @@ export default function CandidatesSearch() {
                   disabled={isAiSearching}
                 ></textarea>
               </div>
+
+              {/* Bottom bar of input area */}
               <div className="flex items-center self-stretch ml-[21px] mr-9 gap-1.5">
                 <img
                   src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/vj27hvjd_expires_30_days.png" 
@@ -348,139 +647,220 @@ export default function CandidatesSearch() {
                 </Button>
               </div>
             </div>
-            
-            {/* Sort Bar */}
-            <div className="flex justify-between items-center self-stretch mb-2">
-              <span className="text-text-secondary text-[13px] font-bold">
-                {searchedCandidatesList === undefined
-                  ? "Loading..."
-                  : `Showing ${sortedCandidates.length === 0 ? 0 : Math.min((searchPage - 1) * searchItemsPerPage + 1, sortedCandidates.length)} to ${Math.min(searchPage * searchItemsPerPage, sortedCandidates.length)} of ${sortedCandidates.length} candidate${sortedCandidates.length !== 1 ? "s" : ""}`}
-              </span>
-              <div className="relative">
-                <div 
-                  onClick={() => setIsSortOpen(!isSortOpen)}
-                  className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer select-none"
-                >
-                  <span className="text-text-secondary text-[13px]">
-                    Sort by:
-                  </span>
-                  <span className="text-text-primary text-[13px] font-bold flex items-center gap-1">
-                    {sortOption} <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
-                  </span>
+
+            {/* 4.6 Search History Section */}
+            {searchHistory.length > 0 && (
+              <div className="flex flex-col gap-2 bg-surface p-4 rounded-[10px] border border-solid border-border mb-2 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Recent Searches</span>
+                  <button 
+                    onClick={() => saveSearchHistoryToStorage([])} 
+                    className="text-[11px] text-red-500 hover:underline font-semibold"
+                  >
+                    Clear History
+                  </button>
                 </div>
-                
-                {isSortOpen && (
-                  <div className="absolute right-0 mt-1 w-40 bg-surface rounded-md border border-border shadow-lg py-1 z-50">
-                    {hasSearched ? (
-                      <>
-                        <button
-                          onClick={() => { setSortOption('AI Relevancy'); setIsSortOpen(false); }}
-                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'AI Relevancy' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
-                        >
-                          AI Relevancy
-                        </button>
-                        <button
-                          onClick={() => { setSortOption('AI Score'); setIsSortOpen(false); }}
-                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'AI Score' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
-                        >
-                          AI Score
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => { setSortOption('Best Match'); setIsSortOpen(false); }}
-                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Best Match' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                <div className="flex flex-col gap-1.5 max-h-[140px] overflow-y-auto">
+                  {searchHistory.map(entry => (
+                    <div key={entry.id} className="flex items-center justify-between py-1 px-2 hover:bg-gray-50 rounded-md transition-colors group">
+                      <button 
+                        onClick={() => triggerHistorySearch(entry)}
+                        className="flex-1 text-left text-xs text-text-primary hover:text-[#006E1C] font-semibold truncate"
                       >
-                        Best Match
+                        {entry.summary}
                       </button>
-                    )}
-                    <button
-                      onClick={() => { setSortOption('Experience'); setIsSortOpen(false); }}
-                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Experience' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
-                    >
-                      Experience
-                    </button>
-                    <button
-                      onClick={() => { setSortOption('Name'); setIsSortOpen(false); }}
-                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Name' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
-                    >
-                      Name
-                    </button>
-                  </div>
-                )}
+                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={(e) => togglePinHistory(entry.id, e)}
+                          className={`p-1 rounded hover:bg-gray-200 transition-colors ${entry.isPinned ? 'text-primary' : 'text-gray-400'}`}
+                          title={entry.isPinned ? "Unpin Search" : "Pin Search"}
+                        >
+                          <Pin className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={(e) => deleteHistoryEntry(entry.id, e)}
+                          className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors"
+                          title="Delete from history"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-            
-            {/* Candidate List */}
-            {searchedCandidatesList === undefined ? (
-              <div className="flex justify-center py-10 text-text-disabled text-sm">Loading candidates...</div>
-            ) : candidatesToRender.length === 0 ? (
-              <div className="flex justify-center py-10 text-text-disabled text-sm">
-                {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates yet. Upload CVs to get started.'}
-              </div>
-            ) : (
-              (currentSearchItems as any[]).map((c) => c && (
-                <CandidateCard
-                  key={c._id}
-                  id={c._id}
-                  name={c.fullName || "Unknown"}
-                  initials={getInitials(c.fullName)}
-                  sourceText={(c.sourceChannel || "Manual").toUpperCase()}
-                  sourceVariant={getSourceVariant(c.sourceChannel)}
-                  role={formatRole(c.currentTitle, c.currentEmployer)}
-                  location={c.location || "Unknown"}
-                  skills={formatSkills(c.skills)}
-                  score={c.score}
-                  matchReason={c.matchReason}
-                  isSelected={selectedCandidates.includes(c._id)}
-                  onToggle={() => toggleCandidate(c._id)}
-                  profileHref={`/dashboard/candidates/${c._id}`}
-                  imageUrl={(c as any).profileImageUrl}
-                  onDelete={() => setDeletingCandidateId(c._id)}
-                  onMessage={() => setMessageCandidate({
-                    id: c._id,
-                    name: c.fullName || "Unknown",
-                    initials: getInitials(c.fullName),
-                    role: formatRole(c.currentTitle, c.currentEmployer)
-                  })}
-                />
-              ))
             )}
             
-            {/* Floating action bar rendered globally below */}
-
-            {/* Search Pagination Controls */}
-            {candidatesToRender.length > 0 && (
-              <div className="flex items-center justify-between mt-4 bg-surface p-3 rounded-lg border border-gray-200">
-                <span className="text-sm text-gray-500">
-                  Page <span className="font-medium text-gray-900">{searchPage}</span> of <span className="font-medium text-gray-900">{totalSearchPages}</span>
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
-                    onClick={() => setSearchPage(p => Math.max(1, p - 1))}
-                    disabled={searchPage === 1}
+            {/* 4.4 No candidates shown before search is triggered / Clean Prompt State */}
+            {isPromptState ? (
+              <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-surface border border-dashed border-border rounded-xl">
+                <div className="flex items-center justify-center bg-[#EAF5EC] p-4 rounded-full text-[#1B5E20] mb-4">
+                  <Sparkles className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-text-primary mb-1">
+                  Smart Talent Sourcing
+                </h3>
+                <p className="text-xs text-text-secondary max-w-sm leading-relaxed mb-6">
+                  Describe your ideal candidate in the prompt above, or apply structured filters on the left panel to browse matching profiles.
+                </p>
+                
+                {/* Example Search Prompts */}
+                <div className="flex flex-col sm:flex-row gap-3 max-w-xl w-full justify-center">
+                  <button
+                    onClick={() => {
+                      setSearchQuery("Senior React Developer with 5+ years of experience in SaaS and Fintech compliance");
+                    }}
+                    className="flex-1 bg-surface-container-low hover:bg-surface-container border border-border p-3 rounded-lg text-left text-xs transition-colors cursor-pointer group"
                   >
-                    <ChevronLeft className="w-4 h-4 mr-1" /> Prev
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
-                    onClick={() => setSearchPage(p => Math.min(totalSearchPages, p + 1))}
-                    disabled={searchPage === totalSearchPages || totalSearchPages === 0}
+                    <span className="font-bold text-text-primary group-hover:text-[#006E1C] transition-colors block mb-1">Fintech Frontend Dev</span>
+                    <span className="text-text-secondary text-[11px] line-clamp-2">"Senior React Developer with 5+ years of experience in SaaS and Fintech compliance"</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSearchQuery("Data Engineer who knows Python, Spark, AWS Redshift, and data pipeline orchestration");
+                    }}
+                    className="flex-1 bg-surface-container-low hover:bg-surface-container border border-border p-3 rounded-lg text-left text-xs transition-colors cursor-pointer group"
                   >
-                    Next <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
+                    <span className="font-bold text-text-primary group-hover:text-[#006E1C] transition-colors block mb-1">Data Pipeline Builder</span>
+                    <span className="text-text-secondary text-[11px] line-clamp-2">"Data Engineer who knows Python, Spark, AWS Redshift, and data pipeline orchestration"</span>
+                  </button>
                 </div>
               </div>
+            ) : (
+              <>
+                {/* Sort Bar */}
+                <div className="flex justify-between items-center self-stretch mb-2">
+                  <span className="text-text-secondary text-[13px] font-bold">
+                    {searchedCandidatesList === undefined
+                      ? "Loading..."
+                      : `Showing ${sortedCandidates.length === 0 ? 0 : Math.min((searchPage - 1) * searchItemsPerPage + 1, sortedCandidates.length)} to ${Math.min(searchPage * searchItemsPerPage, sortedCandidates.length)} of ${sortedCandidates.length} candidate${sortedCandidates.length !== 1 ? "s" : ""}`}
+                  </span>
+                  <div className="relative">
+                    <div 
+                      onClick={() => setIsSortOpen(!isSortOpen)}
+                      className="flex shrink-0 items-center py-1 px-[3px] gap-2 rounded cursor-pointer select-none"
+                    >
+                      <span className="text-text-secondary text-[13px]">
+                        Sort by:
+                      </span>
+                      <span className="text-text-primary text-[13px] font-bold flex items-center gap-1">
+                        {sortOption} <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                      </span>
+                    </div>
+                    
+                    {isSortOpen && (
+                      <div className="absolute right-0 mt-1 w-40 bg-surface rounded-md border border-border shadow-lg py-1 z-50">
+                        {hasSearched ? (
+                          <>
+                            <button
+                              onClick={() => { setSortOption('AI Relevancy'); setIsSortOpen(false); }}
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'AI Relevancy' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                            >
+                              AI Relevancy
+                            </button>
+                            <button
+                              onClick={() => { setSortOption('AI Score'); setIsSortOpen(false); }}
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'AI Score' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                            >
+                              AI Score
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => { setSortOption('Best Match'); setIsSortOpen(false); }}
+                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Best Match' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                          >
+                            Best Match
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setSortOption('Experience'); setIsSortOpen(false); }}
+                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Experience' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                        >
+                          Experience
+                        </button>
+                        <button
+                          onClick={() => { setSortOption('Name'); setIsSortOpen(false); }}
+                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 transition-colors ${sortOption === 'Name' ? 'font-bold text-primary bg-primary-container' : 'text-text-primary'}`}
+                        >
+                          Name
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Candidate List */}
+                {searchedCandidatesList === undefined ? (
+                  <div className="flex justify-center py-10 text-text-disabled text-sm">Loading candidates...</div>
+                ) : candidatesToRender.length === 0 ? (
+                  <div className="flex justify-center py-10 text-text-disabled text-sm">
+                    {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates matching filters found.'}
+                  </div>
+                ) : (
+                  (currentSearchItems as any[]).map((c) => c && (
+                    <CandidateCard
+                      key={c._id}
+                      id={c._id}
+                      name={c.fullName || "Unknown"}
+                      initials={getInitials(c.fullName)}
+                      sourceText={(c.sourceChannel || "Manual").toUpperCase()}
+                      sourceVariant={getSourceVariant(c.sourceChannel)}
+                      role={formatRole(c.currentTitle, c.currentEmployer)}
+                      location={c.location || "Unknown"}
+                      skills={formatSkills(c.skills)}
+                      score={c.score}
+                      matchReason={c.matchReason}
+                      breakdown={c.breakdown}
+                      isSelected={selectedCandidates.includes(c._id)}
+                      onToggle={() => toggleCandidate(c._id)}
+                      profileHref={`/dashboard/candidates/${c._id}`}
+                      imageUrl={(c as any).profileImageUrl}
+                      onDelete={() => setDeletingCandidateId(c._id)}
+                      onMessage={() => setMessageCandidate({
+                        id: c._id,
+                        name: c.fullName || "Unknown",
+                        initials: getInitials(c.fullName),
+                        role: formatRole(c.currentTitle, c.currentEmployer)
+                      })}
+                    />
+                  ))
+                )}
+                
+                {/* Search Pagination Controls */}
+                {candidatesToRender.length > 0 && (
+                  <div className="flex items-center justify-between mt-4 bg-surface p-3 rounded-lg border border-gray-200">
+                    <span className="text-sm text-gray-500">
+                      Page <span className="font-medium text-gray-900">{searchPage}</span> of <span className="font-medium text-gray-900">{totalSearchPages}</span>
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
+                        onClick={() => setSearchPage(p => Math.max(1, p - 1))}
+                        disabled={searchPage === 1}
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" /> Prev
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs py-1 px-3 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
+                        onClick={() => setSearchPage(p => Math.min(totalSearchPages, p + 1))}
+                        disabled={searchPage === totalSearchPages || totalSearchPages === 0}
+                      >
+                        Next <ChevronRight className="w-4 h-4 ml-1" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
       )}
 
-            <FloatingActionBar 
+      <FloatingActionBar 
         selectedCandidates={selectedCandidates} 
         onClear={() => setSelectedCandidates([])} 
       />
