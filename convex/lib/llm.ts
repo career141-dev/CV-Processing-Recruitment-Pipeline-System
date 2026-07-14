@@ -44,7 +44,7 @@ export async function logLLMUsage(
   cvUploadId?: Id<"cvUploads">
 ): Promise<void> {
   try {
-    await ctx.runMutation(internal.stats.tokenLogging.logNvidiaCallMutation, {
+    await ctx.runMutation(internal.stats.stats.logNvidiaCallMutation, {
       taskType,
       model,
       promptTokens: inputTokens,

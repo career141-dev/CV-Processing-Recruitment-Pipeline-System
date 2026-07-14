@@ -72,7 +72,6 @@ import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
-import type * as stats_tokenLogging from "../stats/tokenLogging.js";
 import type * as testDerivation from "../testDerivation.js";
 import type * as users_users from "../users/users.js";
 
@@ -147,7 +146,6 @@ declare const fullApi: ApiFromModules<{
   "pipeline/stages": typeof pipeline_stages;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
-  "stats/tokenLogging": typeof stats_tokenLogging;
   testDerivation: typeof testDerivation;
   "users/users": typeof users_users;
 }>;

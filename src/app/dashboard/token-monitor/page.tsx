@@ -32,11 +32,11 @@ export default function TokenMonitorPage() {
   const [limit, setLimit] = useState(100);
 
   // Queries
-  const metrics = useQuery(api.stats.tokenLogging.getTokenMetrics);
-  const logs = useQuery(api.stats.tokenLogging.getRecentTokenLogs, { limit });
+  const metrics = useQuery(api.stats.stats.getTokenMetrics);
+  const logs = useQuery(api.stats.stats.getRecentTokenLogs, { limit });
 
   // Mutations
-  const clearLogs = useMutation(api.stats.tokenLogging.clearAllTokenLogs);
+  const clearLogs = useMutation(api.stats.stats.clearAllTokenLogs);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
