@@ -3,40 +3,8 @@ import { query, mutation } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
 
-export const listCandidates = query({
-  handler: async (ctx) => {
-    const candidates = await ctx.db.query("candidates").order("desc").take(100);
-    return await Promise.all(
-      candidates.map(async (c) => {
-        const apps = await ctx.db
-          .query("applications")
-          .withIndex("by_candidateId", (q: any) => q.eq("candidateId", c._id))
-          .collect();
 
-        const activeApplications = await Promise.all(
-          apps.map(async (app) => {
-            const job = await ctx.db.get(app.jobId);
-            return {
-              jobId: app.jobId,
-              jobTitle: job ? job.title : "Unknown Job",
-              stage: app.currentStage,
-              isActive: app.isActive,
-            };
-          })
-        );
 
-        const profileImageUrl = c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null;
-
-        const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
-        return {
-          ...safeCandidate,
-          profileImageUrl,
-          activeApplications,
-        };
-      })
-    );
-  },
-});
 
 export const listCandidatesByIds = query({
   args: { ids: v.array(v.id("candidates")) },
@@ -85,9 +53,27 @@ export const listCandidatesPaginated = query({
       page: await Promise.all(
         page.page.map(async (c) => {
           const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
+          const apps = await ctx.db
+            .query("applications")
+            .withIndex("by_candidateId", (q: any) => q.eq("candidateId", c._id))
+            .collect();
+
+          const activeApplications = await Promise.all(
+            apps.map(async (app) => {
+              const job = await ctx.db.get(app.jobId);
+              return {
+                jobId: app.jobId,
+                jobTitle: job ? job.title : "Unknown Job",
+                stage: app.currentStage,
+                isActive: app.isActive,
+              };
+            })
+          );
+
           return {
             ...safeCandidate,
             profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+            activeApplications,
           };
         })
       ),

@@ -2,6 +2,47 @@ import { v } from "convex/values";
 import { internalAction, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
+async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<string> {
+  const isTestMode = process.env.WHATSAPP_TEST_MODE === "true" && process.env.NODE_ENV !== "production";
+  const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
+  const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
+
+  if (isTestMode && testRecipient && cleanNum(senderPhone) === cleanNum(testRecipient)) {
+    const lastOutbound = await ctx.db
+      .query("communications")
+      .withIndex("by_direction_channel_time", (q: any) =>
+        q.eq("direction", "outbound").eq("channel", "whatsapp")
+      )
+      .order("desc")
+      .first();
+
+    if (lastOutbound) {
+      const testCandidate = await ctx.db.get(lastOutbound.candidateId);
+      if (testCandidate && testCandidate.phone) {
+        console.log(`[WhatsApp Test Mode] Mapped test sender ${senderPhone} to actual candidate phone: ${testCandidate.phone}`);
+        return testCandidate.phone;
+      }
+    }
+  }
+  return senderPhone;
+}
+
+async function findCandidateByPhone(ctx: any, targetPhone: string) {
+  let candidate = await ctx.db
+    .query("candidates")
+    .withIndex("by_phone", (q: any) => q.eq("phone", targetPhone))
+    .first();
+
+  if (!candidate) {
+    const phoneClean = targetPhone.replace(/[^0-9]/g, "");
+    candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", phoneClean))
+      .first();
+  }
+  return candidate;
+}
+
 export const sendWhatsApp = internalAction({
   args: {
     communicationId: v.id("communications"),
@@ -130,48 +171,8 @@ export const checkAndRecordFollowUpReply = internalMutation({
     textBody: v.string(),
   },
   handler: async (ctx, args) => {
-    let targetPhone = args.senderPhone;
-    const isTestMode = process.env.WHATSAPP_TEST_MODE === "true";
-    const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
-
-    const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
-
-    if (isTestMode && testRecipient && cleanNum(args.senderPhone) === cleanNum(testRecipient)) {
-      const lastOutbound = await ctx.db
-        .query("communications")
-        .filter((q: any) => 
-          q.and(
-            q.eq(q.field("direction"), "outbound"),
-            q.eq(q.field("channel"), "whatsapp")
-          )
-        )
-        .order("desc")
-        .first();
-
-      if (lastOutbound) {
-        const testCandidate = await ctx.db.get(lastOutbound.candidateId);
-        if (testCandidate && testCandidate.phone) {
-          targetPhone = testCandidate.phone;
-          console.log(`[WhatsApp Test Mode] Mapped test sender ${args.senderPhone} to actual candidate phone: ${targetPhone}`);
-        }
-      }
-    }
-
-    const phoneClean = targetPhone.replace(/[^0-9]/g, "");
-
-    // Find candidate by phone (exact match first)
-    let candidate = await ctx.db
-      .query("candidates")
-      .withIndex("by_phone", (q: any) => q.eq("phone", targetPhone))
-      .first();
-
-    if (!candidate) {
-      // Fallback: search by phoneClean index
-      candidate = await ctx.db
-        .query("candidates")
-        .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", phoneClean))
-        .first();
-    }
+    const targetPhone = await resolveTestModePhone(ctx, args.senderPhone);
+    const candidate = await findCandidateByPhone(ctx, targetPhone);
 
     if (!candidate) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
@@ -221,48 +222,8 @@ export const processLocalWhatsappInbound = internalMutation({
     textBody: v.string(),
   },
   handler: async (ctx, args) => {
-    let targetPhone = args.senderPhone;
-    const isTestMode = process.env.WHATSAPP_TEST_MODE === "true";
-    const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
-
-    const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
-
-    if (isTestMode && testRecipient && cleanNum(args.senderPhone) === cleanNum(testRecipient)) {
-      const lastOutbound = await ctx.db
-        .query("communications")
-        .filter((q: any) => 
-          q.and(
-            q.eq(q.field("direction"), "outbound"),
-            q.eq(q.field("channel"), "whatsapp")
-          )
-        )
-        .order("desc")
-        .first();
-
-      if (lastOutbound) {
-        const testCandidate = await ctx.db.get(lastOutbound.candidateId);
-        if (testCandidate && testCandidate.phone) {
-          targetPhone = testCandidate.phone;
-          console.log(`[WhatsApp Test Mode] Mapped test sender ${args.senderPhone} to actual candidate phone: ${targetPhone}`);
-        }
-      }
-    }
-
-    const phoneClean = targetPhone.replace(/[^0-9]/g, "");
-
-    // Find candidate by phone number
-    let candidate = await ctx.db
-      .query("candidates")
-      .withIndex("by_phone", (q: any) => q.eq("phone", targetPhone))
-      .first();
-
-    if (!candidate) {
-      // Fallback: search by phoneClean index
-      candidate = await ctx.db
-        .query("candidates")
-        .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", phoneClean))
-        .first();
-    }
+    const targetPhone = await resolveTestModePhone(ctx, args.senderPhone);
+    const candidate = await findCandidateByPhone(ctx, targetPhone);
 
     let activeApp = null;
     let job = null;
