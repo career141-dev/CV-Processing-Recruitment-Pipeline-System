@@ -495,7 +495,7 @@ export default function IngestionMonitorPage() {
           />
 
           <ChannelStatusCard
-            title="Link / Portal"
+            title="Career Portal / Web Form"
             isSelected={selectedChannel === 'Link'}
             onClick={() => setSelectedChannel(selectedChannel === 'Link' ? null : 'Link')}
             status={linkStats.lastReceived ? "Active" : "Monitoring"}

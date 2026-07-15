@@ -199,13 +199,16 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const storageId = await ctx.storage.store(storageBlob);
 
       // 4. Extract keyword if message text is present
-      let resolvedJobId = null;
+      let resolvedJobId: string | null | undefined = null;
+      let isPaused = false;
+
       if (text) {
         const upperText = text.toUpperCase();
         const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
         for (const job of activeJobs) {
           if (job.keyword && upperText.includes(job.keyword.toUpperCase())) {
             resolvedJobId = job._id;
+            if (job.pausedChannels?.includes("whatsapp")) isPaused = true;
             break;
           }
         }
@@ -223,10 +226,16 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           await ctx.runMutation(api.communications.whatchimp.deleteSession, {
             phone: cleanFrom,
           });
+          const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+          const matchedJob = activeJobs.find(j => j._id === resolvedJobId);
+          if (matchedJob?.pausedChannels?.includes("whatsapp")) isPaused = true;
         }
       }
 
-      if (!resolvedJobId) {
+      if (isPaused) {
+        console.log(`[WhatChimp Webhook] Job ${resolvedJobId} has WhatsApp paused. Dropping CV to general pool.`);
+        resolvedJobId = undefined; // Drop to general pool
+      } else if (resolvedJobId === null) {
         // No active session — candidate did not send a keyword first. Reject silently.
         console.warn(`[WhatChimp Webhook] No active session for +${cleanFrom}. CV rejected silently — no keyword was sent first.`);
         return new Response("OK", { status: 200 });
@@ -234,7 +243,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
       // 5. Ingest into central pipeline (only reached when a valid session/job exists)
       const ingestionResult = await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-        jobId: resolvedJobId,
+        jobId: resolvedJobId as any,
         sourceChannel: "whatsapp",
         rawSender: cleanFrom,
         storageId,

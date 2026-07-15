@@ -139,6 +139,9 @@ keyword: v.string(), // UNIQUE — routing key for all agents
 status: v.union(v.literal("active"), v.literal("on_hold"),
 v.literal("filled"), v.literal("cancelled"),
 v.literal("draft")),
+
+// Ingestion Toggles
+pausedChannels: v.optional(v.array(v.string())),
 muteDefaultWhatsappReply: v.optional(v.boolean()),
 
 // Team Assignment
@@ -899,6 +902,7 @@ errorMessage: v.optional(v.string()),
     channelType: v.union(
       v.literal("whatsapp"),
       v.literal("meta_campaign"),
+      v.literal("email"),
       v.literal("email_campaign"),
       v.literal("linkedin"),
       v.literal("workable"),
@@ -931,6 +935,7 @@ errorMessage: v.optional(v.string()),
     .index("by_job_time", ["jobId", "receivedAt"])
     .index("by_channel_time", ["channelType", "receivedAt"])
     .index("by_receivedAt", ["receivedAt"])
+    .index("by_cvFileId", ["cvFileId"])
     .index("by_batchId", ["batchId"]),
 
   systemLogs: defineTable({

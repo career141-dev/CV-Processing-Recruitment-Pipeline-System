@@ -344,12 +344,27 @@ crons.daily(
 );
 
 // Poll linkedin's inbox every 5 minutes
-// Replace "fallback_job_id_here" with a real default Job ID if you want a catch-all.
 crons.interval(
   "poll-linkedin-inbox",
-  { minutes: 5 }, // Changed back to 5 minutes
+  { minutes: 5 },
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "linkedin@career141.com" }
+);
+
+// Poll general CV inbox every 5 minutes
+crons.interval(
+  "poll-cv-inbox",
+  { minutes: 5 },
+  api.communications.emailAgent.pollEmailInbox,
+  { inboxEmail: "cv@career141.com" }
+);
+
+// Poll jobs website inbox every 5 minutes
+crons.interval(
+  "poll-job-inbox",
+  { minutes: 5 },
+  api.communications.emailAgent.pollEmailInbox,
+  { inboxEmail: "job@career141.com" }
 );
 
 export const checkSlaBreaches = internalMutation({

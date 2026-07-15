@@ -214,35 +214,25 @@ export const pollEmailInbox = action({
         }
       }
 
-      if (!attachment) {
+         // 2. Find CV attachments (including .doc, .docx, .pdf)
+      const cvAttachments = attachments.filter(
+        (a: any) =>
+          a.contentType?.includes("pdf") ||
+          a.contentType?.includes("msword") ||
+          a.contentType?.includes("officedocument.wordprocessingml")
+      );
+
+      if (cvAttachments.length === 0) {
         if (isReplyProcessed || isCandidateMatched) {
           await markEmailAsRead(targetInboxEmail, message.id);
           continue;
         }
-        console.log(`[EmailAgent] Skipping message: ${message.subject} - No CV attachment and not a follow-up reply.`);
+        console.log(`[EmailAgent] No CV attachments found in email: "${subject}"`);
         await markEmailAsRead(targetInboxEmail, message.id);
         continue; // No CV attachment and not a follow-up reply — skip
       }
       
-      console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType})`);
-
-      const binaryString = atob(attachment.contentBytes);
-      const fileBuffer = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        fileBuffer[i] = binaryString.charCodeAt(i);
-      }
-      
-      // Hash the file
-      const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
-      const fileHash = Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2, "0"))
-        .join("");
-
-      // Store in Convex Storage natively
-      const fileBlob = new Blob([fileBuffer], { type: attachment.contentType || "application/pdf" });
-      const storageId = await ctx.storage.store(fileBlob);
-
-      // Intelligent Email Routing via LLM
+      // Intelligent Email Routing via LLMia LLM
       let resolvedJobId = jobId;
       
       const isCommonInbox = targetInboxEmail.toLowerCase() === "cv@career141.com" || inboxEmail.toLowerCase() === "cv@career141.com";
@@ -287,10 +277,16 @@ Respond ONLY with a valid JSON object in this exact format:
               const resultObj = JSON.parse(resultStr);
               if (resultObj.matchedJobId) {
                 // Verify the ID actually exists in our active jobs
-                const isValid = activeJobs.some((j: any) => j._id === resultObj.matchedJobId);
-                if (isValid) {
-                  resolvedJobId = resultObj.matchedJobId;
-                  console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
+                const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
+                if (matchedJob) {
+                  const channel = (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : "email";
+                  if (matchedJob.pausedChannels?.includes(channel)) {
+                    console.log(`[EmailAgent] Job ${resultObj.matchedJobId} has ${channel} paused. Routing to general pool.`);
+                    resolvedJobId = undefined;
+                  } else {
+                    resolvedJobId = resultObj.matchedJobId;
+                    console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
+                  }
                 }
               }
             }
@@ -299,25 +295,54 @@ Respond ONLY with a valid JSON object in this exact format:
           }
         }
         
-        // If AI couldn't match a job, skip this CV — do NOT fall back to a random job
+        // If AI couldn't match a job, skip this CV unless it's the jobs@/job@ inbox
         if (!resolvedJobId) {
-          console.log(`[EmailAgent] Skipping CV — no matching active job found for: "${subject}"`);
-          await markEmailAsRead(targetInboxEmail, message.id);
-          continue;
+          const targetLower = targetInboxEmail.toLowerCase();
+          const inboxLower = inboxEmail.toLowerCase();
+          const isJobsInbox = targetLower === "jobs@career141.com" || targetLower === "job@career141.com" || inboxLower === "jobs@career141.com" || inboxLower === "job@career141.com";
+          
+          if (isJobsInbox) {
+            console.log(`[EmailAgent] No job match found for "${subject}", but routing to general DB pool since inbox is ${targetInboxEmail}.`);
+          } else {
+            console.log(`[EmailAgent] Skipping CVs — no matching active job found for: "${subject}"`);
+            await markEmailAsRead(targetInboxEmail, message.id);
+            continue;
+          }
         }
       }
 
-      // Process CV ingestion
-      await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-        jobId: resolvedJobId || undefined,
-        sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign"),
-        rawSender: message.from?.emailAddress?.address,
-        storageId: storageId,
-        fileHash: fileHash,
-        fileName: attachment.name ?? "cv.pdf",
-        fileType: attachment.contentType || "application/pdf",
-        fileSizeBytes: fileBuffer.length,
-      });
+      // Loop over all CV attachments and process them
+      for (const attachment of cvAttachments) {
+        console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType})`);
+
+        const binaryString = atob(attachment.contentBytes);
+        const fileBuffer = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          fileBuffer[i] = binaryString.charCodeAt(i);
+        }
+        
+        // Hash the file
+        const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
+        const fileHash = Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, "0"))
+          .join("");
+
+        // Store in Convex Storage natively
+        const fileBlob = new Blob([fileBuffer], { type: attachment.contentType || "application/pdf" });
+        const storageId = await ctx.storage.store(fileBlob);
+
+        // Process CV ingestion
+        await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
+          jobId: resolvedJobId || undefined,
+          sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign"),
+          rawSender: message.from?.emailAddress?.address,
+          storageId: storageId,
+          fileHash: fileHash,
+          fileName: attachment.name ?? "cv.pdf",
+          fileType: attachment.contentType || "application/pdf",
+          fileSizeBytes: fileBuffer.length,
+        });
+      }
 
       const isLinkedInNoReply = senderEmail?.toLowerCase().includes("jobs-listings@linkedin.com");
 
@@ -329,8 +354,9 @@ Respond ONLY with a valid JSON object in this exact format:
         });
       }
 
-      // Mark as read & reply
+      // Mark as read & reply (Auto-reply temporarily disabled as per request)
       await markEmailAsRead(targetInboxEmail, message.id);
+      /*
       if (!isReplyProcessed && !isLinkedInNoReply) {
         if (resolvedJobId) {
           await sendConfirmationEmail(message.from?.emailAddress?.address, resolvedJobId);
@@ -338,6 +364,7 @@ Respond ONLY with a valid JSON object in this exact format:
           console.log(`[Email Mock] Sent generic confirmation email to ${message.from?.emailAddress?.address} for general application pool.`);
         }
       }
+      */
     }
   },
 });

@@ -233,7 +233,7 @@ export const resumePausedUploads = internalMutation({
       
       // Update ingestionLog if exists
       const log = await ctx.db.query("ingestionLog")
-        .filter(q => q.eq(q.field("cvFileId"), upload._id))
+        .withIndex("by_cvFileId", q => q.eq("cvFileId", upload._id))
         .first();
       if (log) {
         await ctx.db.patch(log._id, { stage: "queued" });

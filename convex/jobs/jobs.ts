@@ -146,6 +146,8 @@ export const createDraftJob = mutation({
     clientContactEmail: v.optional(v.string()),
     primaryRecruiterId: v.optional(v.id("users")),
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
+    muteDefaultWhatsappReply: v.optional(v.boolean()),
+    pausedChannels: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
@@ -264,6 +266,7 @@ export const updateJobDetails = mutation({
     primaryRecruiterId: v.optional(v.id("users")),
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
     muteDefaultWhatsappReply: v.optional(v.boolean()),
+    pausedChannels: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter"]);
@@ -806,7 +809,8 @@ export const getActiveJobsBasicInfo = query({
       title: job.title,
       keyword: job.keyword,
       clientName: job.clientName,
-      location: job.location
+      location: job.location,
+      pausedChannels: job.pausedChannels || []
     }));
   }
 });
