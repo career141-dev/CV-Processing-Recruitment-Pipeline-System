@@ -120,10 +120,46 @@ export const processCvScoring = action({
     );
 
     // 5. Call LLM for deeper scoring
-    const llmResult = await scoreWithLLM({ cv: candidate }, req as any);
+    let llmScore = 0;
+    let llmReason = "";
+    try {
+      const { result: llmResult, usage } = await scoreWithLLM({ cv: candidate }, req as any);
+      llmScore = llmResult.score;
+      llmReason = llmResult.reason;
+
+      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+        logs: [
+          {
+            taskType: "jd_matching",
+            model: usage.model,
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            success: true,
+            cvUploadId: candidate.cvUploadId ?? undefined,
+          }
+        ]
+      });
+    } catch (err) {
+      llmScore = 0;
+      llmReason = "Failed to evaluate candidate with LLM.";
+
+      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+        logs: [
+          {
+            taskType: "jd_matching",
+            model: "meta/llama-3.1-70b-instruct",
+            promptTokens: 0,
+            completionTokens: 0,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+            cvUploadId: candidate.cvUploadId ?? undefined,
+          }
+        ]
+      });
+    }
 
     // Blend the scores (e.g., 60% Heuristic, 40% LLM)
-    const finalScore = Math.round((weightedScore * 0.6) + (llmResult.score * 0.4));
+    const finalScore = Math.round((weightedScore * 0.6) + (llmScore * 0.4));
     
     // 6. Save the final score
     await ctx.runMutation(internal.cvs.cvScoringActions.saveMatchScore, {
@@ -131,7 +167,7 @@ export const processCvScoring = action({
       jobId: job._id,
       candidateId: candidate._id,
       score: finalScore,
-      reason: llmResult.reason || scored.reason,
+      reason: llmReason || scored.reason,
       minMatchScoreToShow: job.minMatchScoreToShow ?? 60,
     });
   },

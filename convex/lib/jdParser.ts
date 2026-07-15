@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getOpenAI, getModelForTask, logLLMUsage } from "./llm";
+import { getOpenAI, getModelForTask } from "./llm";
 
 function distinct(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -39,7 +39,10 @@ function normalizeRequirements(req: SearchRequirements): SearchRequirements {
 export async function extractSearchRequirements(
   text: string,
   kind: "job_description" | "natural_language"
-): Promise<SearchRequirements> {
+): Promise<{
+  requirements: SearchRequirements;
+  usage: { promptTokens: number; completionTokens: number; model: string };
+}> {
   const prompt =
     kind === "job_description"
       ? `You are a recruitment analyst. Extract the main hiring requirements from this job description.
@@ -106,48 +109,64 @@ For occupationSynonyms, include alternative job titles that represent the same o
     const inputTokens = response.usage?.prompt_tokens || 0;
     const outputTokens = response.usage?.completion_tokens || 0;
     const content = response.choices[0]?.message?.content ?? "{}";
-    const success = !!content && content !== "{}";
 
     try {
       const parsed = JSON.parse(content) as Partial<SearchRequirements>;
-      await logLLMUsage(
-        {} as any,
-        "jd_extraction",
-        model,
-        inputTokens,
-        outputTokens,
-        success,
-        !success ? "JSON parsing failed" : undefined
-      );
-      return normalizeRequirements({
-        title: parsed.title ?? "Position",
-        alternativeTitles: parsed.alternativeTitles ?? [],
-        requiredSkills: parsed.requiredSkills ?? [],
-        preferredSkills: parsed.preferredSkills ?? [],
-        minYearsExperience: parsed.minYearsExperience ?? null,
-        industry: parsed.industry ?? null,
-        seniority: parsed.seniority ?? null,
-        location: parsed.location ?? null,
-        education: parsed.education ?? null,
-        summary: parsed.summary ?? "Searching for a qualified candidate",
-        occupationSynonyms: parsed.occupationSynonyms ?? [],
-        keywords: parsed.keywords ?? [],
-        languages: parsed.languages ?? [],
-        clientCompany: parsed.clientCompany ?? null,
-        clientContactEmail: parsed.clientContactEmail ?? null,
-        salaryRange: parsed.salaryRange ?? null,
-      });
+      return {
+        requirements: normalizeRequirements({
+          title: parsed.title ?? "Position",
+          alternativeTitles: parsed.alternativeTitles ?? [],
+          requiredSkills: parsed.requiredSkills ?? [],
+          preferredSkills: parsed.preferredSkills ?? [],
+          minYearsExperience: parsed.minYearsExperience ?? null,
+          industry: parsed.industry ?? null,
+          seniority: parsed.seniority ?? null,
+          location: parsed.location ?? null,
+          education: parsed.education ?? null,
+          summary: parsed.summary ?? "Searching for a qualified candidate",
+          occupationSynonyms: parsed.occupationSynonyms ?? [],
+          keywords: parsed.keywords ?? [],
+          languages: parsed.languages ?? [],
+          clientCompany: parsed.clientCompany ?? null,
+          clientContactEmail: parsed.clientContactEmail ?? null,
+          salaryRange: parsed.salaryRange ?? null,
+        }),
+        usage: {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
+          model,
+        },
+      };
     } catch {
-      await logLLMUsage(
-        {} as any,
-        "jd_extraction",
-        model,
-        inputTokens,
-        outputTokens,
-        false,
-        "JSON parsing failed"
-      );
-      return normalizeRequirements({
+      return {
+        requirements: normalizeRequirements({
+          title: "Position",
+          alternativeTitles: [],
+          requiredSkills: [],
+          preferredSkills: [],
+          minYearsExperience: null,
+          industry: null,
+          seniority: null,
+          location: null,
+          education: null,
+          summary: "Searching for a qualified candidate",
+          occupationSynonyms: [],
+          keywords: [],
+          languages: [],
+          clientCompany: null,
+          clientContactEmail: null,
+          salaryRange: null,
+        }),
+        usage: {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
+          model,
+        },
+      };
+    }
+  } catch (error) {
+    return {
+      requirements: normalizeRequirements({
         title: "Position",
         alternativeTitles: [],
         requiredSkills: [],
@@ -164,37 +183,13 @@ For occupationSynonyms, include alternative job titles that represent the same o
         clientCompany: null,
         clientContactEmail: null,
         salaryRange: null,
-      });
-    }
-  } catch (error) {
-    // Log the error and return default requirements to fall back to deterministic search
-    await logLLMUsage(
-      {} as any,
-      "jd_extraction",
-      model,
-      0,
-      0,
-      false,
-      error instanceof Error ? error.message : "API call failed"
-    );
-    return normalizeRequirements({
-      title: "Position",
-      alternativeTitles: [],
-      requiredSkills: [],
-      preferredSkills: [],
-      minYearsExperience: null,
-      industry: null,
-      seniority: null,
-      location: null,
-      education: null,
-      summary: "Searching for a qualified candidate",
-      occupationSynonyms: [],
-      keywords: [],
-      languages: [],
-      clientCompany: null,
-      clientContactEmail: null,
-      salaryRange: null,
-    });
+      }),
+      usage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        model,
+      },
+    };
   }
 }
 

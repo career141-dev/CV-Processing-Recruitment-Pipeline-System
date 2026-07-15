@@ -117,12 +117,26 @@ export const runReverseMatch = action({
       const model = getModelForTask("jd_matching");
       const openai = getOpenAI("jd_matching");
 
-      const scoreResponse = await openai.chat.completions.create({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: `You are a talent matching expert. Score each candidate against a job's requirements.
+      type ScoreItem = {
+        index: number;
+        overallScore: number;
+        breakdown: Breakdown;
+        matchedSkills: string[];
+        missingSkills: string[];
+        reason: string;
+      };
+
+      let scored: ScoreItem[] = [];
+      let inputTokens = 0;
+      let outputTokens = 0;
+
+      try {
+        const scoreResponse = await openai.chat.completions.create({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: `You are a talent matching expert. Score each candidate against a job's requirements.
 For each candidate return a breakdown score (0-100) across 5 dimensions, plus which required skills they have/lack.
 Return JSON:
 {
@@ -138,32 +152,46 @@ Return JSON:
   ]
 }
 Only include candidates with overallScore >= ${minScore}. Sort by overallScore descending. Max 30 results.`,
-          },
-          {
-            role: "user",
-            content: `Job Requirements:\n${JSON.stringify(jobReq, null, 2)}\n\nCandidates:\n${JSON.stringify(candidateSummaries, null, 2)}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
+            },
+            {
+              role: "user",
+              content: `Job Requirements:\n${JSON.stringify(jobReq, null, 2)}\n\nCandidates:\n${JSON.stringify(candidateSummaries, null, 2)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
 
-      type ScoreItem = {
-        index: number;
-        overallScore: number;
-        breakdown: Breakdown;
-        matchedSkills: string[];
-        missingSkills: string[];
-        reason: string;
-      };
-
-      let scored: ScoreItem[] = [];
-      try {
-        const parsed = JSON.parse(
-          scoreResponse.choices[0]?.message?.content ?? "{}"
-        ) as { matches?: ScoreItem[] };
+        inputTokens = scoreResponse.usage?.prompt_tokens || 0;
+        outputTokens = scoreResponse.usage?.completion_tokens || 0;
+        const content = scoreResponse.choices[0]?.message?.content ?? "{}";
+        const parsed = JSON.parse(content) as { matches?: ScoreItem[] };
         scored = parsed.matches ?? [];
-      } catch {
+
+        await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+          logs: [
+            {
+              taskType: "jd_matching",
+              model,
+              promptTokens: inputTokens,
+              completionTokens: outputTokens,
+              success: true,
+            }
+          ]
+        });
+      } catch (err) {
         scored = [];
+        await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+          logs: [
+            {
+              taskType: "jd_matching",
+              model,
+              promptTokens: inputTokens,
+              completionTokens: outputTokens,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            }
+          ]
+        });
       }
 
       const results: ReverseMatchResult[] = scored

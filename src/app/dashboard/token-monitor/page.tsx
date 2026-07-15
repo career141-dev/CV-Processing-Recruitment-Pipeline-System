@@ -97,7 +97,7 @@ export default function TokenMonitorPage() {
   const chartWidth = 500;
   const barPadding = 12;
 
-  const maxCostInChart = metrics?.dailyChartData?.reduce((max, d) => {
+  const maxCostInChart = metrics?.dailyChartData?.reduce((max: number, d: any) => {
     const val = chartMode === "all" ? d.totalCost : d.cvExtractionCost;
     return val > max ? val : max;
   }, 0.001) || 0.001;
@@ -312,7 +312,7 @@ export default function TokenMonitorPage() {
                   })}
 
                   {/* Bars & Labels */}
-                  {metrics.dailyChartData.map((d, index) => {
+                  {metrics.dailyChartData.map((d: any, index: number) => {
                     const barCount = metrics.dailyChartData.length;
                     const blockWidth = (chartWidth - 50) / barCount;
                     const x = 50 + index * blockWidth;
@@ -401,7 +401,7 @@ export default function TokenMonitorPage() {
 
             <div className="flex flex-col gap-4 justify-center flex-1">
               {metrics && Object.keys(metrics.taskBreakdown).length > 0 ? (
-                Object.entries(metrics.taskBreakdown).map(([task, details]) => {
+                Object.entries(metrics.taskBreakdown).map(([task, details]: [string, any]) => {
                   const share = (details.credits / (metrics.overall.totalCredits || 1)) * 100;
                   
                   // Simple color selector

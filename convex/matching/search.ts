@@ -103,6 +103,7 @@ export const aiSearch = action({
   }> => {
     const fetchLimit = 100;
     const isQueryEmpty = !args.query || !args.query.trim();
+    const tokenLogs: any[] = [];
 
     let parsedReq: SearchRequirements;
     if (isQueryEmpty) {
@@ -125,7 +126,15 @@ export const aiSearch = action({
         salaryRange: null,
       };
     } else {
-      parsedReq = await extractSearchRequirements(args.query, "natural_language");
+      const parseResult = await extractSearchRequirements(args.query, "natural_language");
+      parsedReq = parseResult.requirements;
+      tokenLogs.push({
+        taskType: "jd_extraction",
+        model: parseResult.usage.model,
+        promptTokens: parseResult.usage.promptTokens,
+        completionTokens: parseResult.usage.completionTokens,
+        success: true,
+      });
     }
 
     const effectiveReq: SearchRequirements = {
@@ -150,10 +159,26 @@ export const aiSearch = action({
     if (!isQueryEmpty) {
       try {
         const { embedText } = await import("./agent2.js");
-        queryEmbedding = await embedText(args.query, "query");
+        const embedResult = await embedText(args.query, "query");
+        queryEmbedding = embedResult.embedding;
+        tokenLogs.push({
+          taskType: "embedding",
+          model: embedResult.usage.model,
+          promptTokens: embedResult.usage.promptTokens,
+          completionTokens: 0,
+          success: true,
+        });
       } catch (err) {
         console.error("NVIDIA embedding call failed, falling back to keyword-only search:", err);
         queryEmbedding = null;
+        tokenLogs.push({
+          taskType: "embedding",
+          model: "nvidia/nv-embedqa-e5-v5",
+          promptTokens: 0,
+          completionTokens: 0,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
@@ -420,8 +445,29 @@ export const aiSearch = action({
       const llmPool = selectLlmPool(ranked);
       const llmScored = await Promise.all(
         llmPool.map(async (cv) => {
-          const llmScore = await scoreWithLLM(cv.cv, effectiveReq);
-          return { ...cv, llmScore };
+          try {
+            const { result: llmScore, usage } = await scoreWithLLM(cv.cv, effectiveReq);
+            tokenLogs.push({
+              taskType: "jd_matching",
+              model: usage.model,
+              promptTokens: usage.promptTokens,
+              completionTokens: usage.completionTokens,
+              success: true,
+              cvUploadId: (cv.cv as any).cvUploadId ?? undefined,
+            });
+            return { ...cv, llmScore };
+          } catch (err) {
+            tokenLogs.push({
+              taskType: "jd_matching",
+              model: "meta/llama-3.1-70b-instruct",
+              promptTokens: 0,
+              completionTokens: 0,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+              cvUploadId: (cv.cv as any).cvUploadId ?? undefined,
+            });
+            return { ...cv, llmScore: { score: 0, reason: "LLM scoring failed." } };
+          }
         })
       );
 
@@ -472,6 +518,16 @@ export const aiSearch = action({
           }
         };
       });
+
+    if (tokenLogs.length > 0) {
+      try {
+        await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+          logs: tokenLogs,
+        });
+      } catch (logErr) {
+        console.error("Failed to write token logs for aiSearch:", logErr);
+      }
+    }
 
     return { interpretation: interp, results };
   },
@@ -556,7 +612,37 @@ export const semanticSearch = action({
   handler: async (ctx, args) => {
     // 1. Embed query
     const { embedText } = await import("./agent2.js");
-    const queryEmbedding = await embedText(args.query);
+    let queryEmbedding: number[];
+    try {
+      const embedResult = await embedText(args.query);
+      queryEmbedding = embedResult.embedding;
+
+      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+        logs: [
+          {
+            taskType: "embedding",
+            model: embedResult.usage.model,
+            promptTokens: embedResult.usage.promptTokens,
+            completionTokens: 0,
+            success: true,
+          }
+        ]
+      });
+    } catch (err) {
+      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+        logs: [
+          {
+            taskType: "embedding",
+            model: "nvidia/nv-embedqa-e5-v5",
+            promptTokens: 0,
+            completionTokens: 0,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          }
+        ]
+      });
+      throw err;
+    }
 
     // 2. Vector search
     const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
