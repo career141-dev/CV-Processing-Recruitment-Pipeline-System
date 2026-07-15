@@ -96,7 +96,18 @@ export const getByJobId = query({
       if (!app.candidateName) {
         const fullCandidate = await ctx.db.get(app.candidateId);
         if (fullCandidate) {
-          candidateObj = fullCandidate;
+          candidateObj = {
+            _id: fullCandidate._id,
+            fullName: fullCandidate.fullName,
+            email: fullCandidate.email,
+            phone: fullCandidate.phone,
+            currentTitle: fullCandidate.currentTitle || fullCandidate.currentJobTitle,
+            totalExperienceYears: fullCandidate.totalExperienceYears || fullCandidate.yearsOfExperience,
+            cvUploadId: fullCandidate.cvUploadId,
+            currentSalary: fullCandidate.currentSalary,
+            expectedSalary: fullCandidate.expectedSalary,
+            noticePeriodDays: fullCandidate.noticePeriodDays,
+          };
         }
       }
 
