@@ -150,7 +150,7 @@ export const aiSearch = action({
     if (!isQueryEmpty) {
       try {
         const { embedText } = await import("./agent2.js");
-        queryEmbedding = await embedText(ctx, args.query, "query");
+        queryEmbedding = await embedText(args.query, "query");
       } catch (err) {
         console.error("NVIDIA embedding call failed, falling back to keyword-only search:", err);
         queryEmbedding = null;
@@ -553,7 +553,7 @@ export const semanticSearch = action({
   handler: async (ctx, args) => {
     // 1. Embed query
     const { embedText } = await import("./agent2.js");
-    const queryEmbedding = await embedText(ctx, args.query);
+    const queryEmbedding = await embedText(args.query);
 
     // 2. Vector search
     const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {

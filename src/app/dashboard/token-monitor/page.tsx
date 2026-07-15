@@ -29,7 +29,7 @@ export default function TokenMonitorPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [limit, setLimit] = useState(100);
+  const [limit, setLimit] = useState(20);
 
   // Queries
   const metrics = useQuery(api.stats.stats.getTokenMetrics);
@@ -579,10 +579,10 @@ export default function TokenMonitorPage() {
           {filteredLogs && filteredLogs.length >= limit && (
             <div className="flex justify-center mt-2">
               <button
-                onClick={() => setLimit((prev) => prev + 100)}
+                onClick={() => setLimit((prev) => prev + 20)}
                 className="py-2 px-6 rounded-xl border border-border text-xs font-bold text-text-primary bg-surface hover:bg-surface-container-high transition-all"
               >
-                Load More History
+                Load 20 More
               </button>
             </div>
           )}

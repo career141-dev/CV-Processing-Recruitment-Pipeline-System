@@ -152,7 +152,8 @@ function skillMatches(requiredSkill: string, candidateSkills: string[]): string 
     const candidateSet = new Set(candidateTokens);
     const overlap = [...requiredSet].filter((token) => candidateSet.has(token)).length;
     const score = overlap / Math.max(requiredSet.size, candidateSet.size);
-    if (score >= 0.75) return candidateSkill;
+    // Loosened threshold from 0.75 to 0.6 to capture more true multi-word skill matches, subject to validation
+    if (score >= 0.6) return candidateSkill;
   }
 
   return null;
@@ -280,6 +281,25 @@ const skillSynonyms: Record<string, string[]> = {
   AWS: ["amazon web services", "amazon aws"],
   Azure: ["microsoft azure", "ms azure"],
   "UI/UX": ["ux design", "ui design", "user experience", "user interface"],
+  TypeScript: ["ts", "typescript", "type script"],
+  Java: ["java", "j2ee", "jee"],
+  Vue: ["vue", "vuejs", "vue.js"],
+  Angular: ["angular", "angularjs", "angular.js"],
+  DevOps: ["devops", "ci/cd", "cicd", "pipelines"],
+  Docker: ["docker", "container", "containers", "containerization"],
+  Kubernetes: ["k8s", "kubernetes"],
+  Git: ["git", "github", "gitlab"],
+  HTML: ["html", "html5"],
+  CSS: ["css", "css3", "sass", "scss"],
+  NoSQL: ["mongodb", "mongo", "nosql", "redis", "elasticsearch"],
+  "Project Management": ["project manager", "project management", "pmp", "agile", "scrum"],
+  Go: ["go", "golang"],
+  "C++": ["c++", "cpp"],
+  PHP: ["php", "laravel", "symfony"],
+  Ruby: ["ruby", "rails", "ror"],
+  Figma: ["figma", "figma design"],
+  QA: ["qa", "quality assurance", "testing", "manual testing", "automation testing", "selenium"],
+  HR: ["hr", "human resources", "recruitment", "talent acquisition"],
 };
 
 export function normaliseSkill(skill: string): string {
