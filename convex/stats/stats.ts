@@ -361,7 +361,12 @@ export const getTokenMetrics = query({
   handler: async (ctx) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
 
-    const allLogs = await ctx.db.query("nvidiaTokenLogs").collect();
+    // Limit to last 30 days to prevent unbounded query growth and I/O spikes
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const allLogs = await ctx.db
+      .query("nvidiaTokenLogs")
+      .withIndex("by_timestamp", (q) => q.gte("timestamp", thirtyDaysAgo))
+      .collect();
 
     let totalTokens = 0;
     let totalPromptTokens = 0;

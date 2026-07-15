@@ -752,7 +752,9 @@ isBackwardMove: v.optional(v.boolean()),
     .index("by_job", ["jobId"])
     .index("by_candidate_time", ["candidateId", "calledAt"])
     .index("by_job_time", ["jobId", "calledAt"])
-    .index("by_callStatus", ["callStatus"]),
+    .index("by_callStatus", ["callStatus"])
+    .index("by_twilio", ["twilioCallSid"])
+    .index("by_elevenlabs", ["elevenlabsConversationId"]),
 
   communications: defineTable({
     candidateId: v.id("candidates"),

@@ -663,18 +663,20 @@ export const updatePipelineCandidateDetails = mutation({
 export const findAiCallBySid = query({
   args: { twilioCallSid: v.string() },
   handler: async (ctx, args) => {
-    const calls = await ctx.db
+    return await ctx.db
       .query("aiCalls")
-      .collect();
-    return calls.find(c => c.twilioCallSid === args.twilioCallSid) ?? null;
+      .withIndex("by_twilio", (q) => q.eq("twilioCallSid", args.twilioCallSid))
+      .first();
   },
 });
 
 export const findAiCallByElevenLabsId = query({
   args: { conversationId: v.string() },
   handler: async (ctx, args) => {
-    const calls = await ctx.db.query("aiCalls").collect();
-    return calls.find(c => c.elevenlabsConversationId === args.conversationId) ?? null;
+    return await ctx.db
+      .query("aiCalls")
+      .withIndex("by_elevenlabs", (q) => q.eq("elevenlabsConversationId", args.conversationId))
+      .first();
   },
 });
 
