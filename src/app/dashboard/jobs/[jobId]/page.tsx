@@ -1354,7 +1354,11 @@ export default function JobDetailPage() {
     </div>
   );
 
-  const renderNewCVsTable = () => (
+  const renderNewCVsTable = () => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const currentNewCvs = newCvs.slice(startIndex, startIndex + itemsPerPage);
+    
+    return (
     <table className="w-full text-left border-collapse">
       <thead>
         <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
@@ -1368,10 +1372,10 @@ export default function JobDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="text-[13px] text-text-primary divide-y divide-border">
-                  {newCvs.length === 0 ? (
+                  {currentNewCvs.length === 0 ? (
                     <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No candidates found. Start by sourcing!</td></tr>
                   ) : (
-                    newCvs.map(app => (
+                    currentNewCvs.map(app => (
                       <tr key={app._id} className="hover:bg-surface-bright transition-colors group">
                         <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
                         <td className="p-4 font-medium">
@@ -1409,6 +1413,7 @@ export default function JobDetailPage() {
                 </tbody>
     </table>
   );
+  };
 
   const renderPipelineTable = () => {
     // Map TABS to PIPELINE_STAGES ids
