@@ -11,6 +11,7 @@
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
 import type * as admin_checkData from "../admin/checkData.js";
 import type * as admin_cleanupCandidates from "../admin/cleanupCandidates.js";
+import type * as admin_ioPerformanceMigrations from "../admin/ioPerformanceMigrations.js";
 import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
 import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
 import type * as admin_mute from "../admin/mute.js";
@@ -84,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   "admin/activateReactDev": typeof admin_activateReactDev;
   "admin/checkData": typeof admin_checkData;
   "admin/cleanupCandidates": typeof admin_cleanupCandidates;
+  "admin/ioPerformanceMigrations": typeof admin_ioPerformanceMigrations;
   "admin/migrateCandidates": typeof admin_migrateCandidates;
   "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
   "admin/mute": typeof admin_mute;

@@ -411,6 +411,7 @@ export async function callNvidiaLLM(
         {
           role: "user",
           content: `Extract candidate information from the CV text below and return it as a JSON object.
+CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile (e.g., if it is an email signature, company brochure, invoice, cover letter without a CV, or random text), you MUST return an empty JSON object: {}
 1. Return only valid JSON. No markdown, no backticks, no explanation.
 2. If a field is not found, return null. Never invent or guess.
 3. Return skills as an array of objects with value and confidence (0.0 to 1.0).
@@ -479,6 +480,11 @@ ${textToSend}`,
 
     const parsed = parseJsonRobustly(content);
     if (!parsed) return null;
+
+    // Check if the AI determined this is NOT a CV
+    if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
+      throw new Error("NOT_A_CV");
+    }
 
     try {
       return cvExtractionSchema.parse(parsed);
@@ -573,6 +579,8 @@ export async function runCvExtraction(
     });
   }
 
+  let candidateId: any = null;
+
   try {
     const url = await ctx.storage.getUrl(storageId);
     if (!url) throw new Error("File URL not found in Convex storage");
@@ -606,7 +614,7 @@ export async function runCvExtraction(
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
       : trimmed;
 
-    const candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
+    candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
       rawText: cappedRawText,
       sourceChannel: sourceChannel ?? undefined,
       fileHash,
@@ -770,13 +778,23 @@ export async function runCvExtraction(
       message.toLowerCase().includes("balance") ||
       message.toLowerCase().includes("credits");
 
+    const isNotACV = message.includes("NOT_A_CV");
+
+    // Clean up the blank candidate stub since extraction failed
+    if (candidateId) {
+      console.log(`[CvExtraction] Extraction failed, cleaning up blank candidate: ${candidateId}`);
+      await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
+    }
+
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
-      status: isInsufficientBalance 
+      status: (isInsufficientBalance || isNotACV) 
         ? "processed" 
         : ((args as any).isRetry ? "failed_retry" : "failed"),
       errorMessage: isInsufficientBalance
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
+        : isNotACV 
+        ? "Document rejected: Not recognized as a valid CV or Resume."
         : message,
     });
 

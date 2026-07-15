@@ -1386,7 +1386,18 @@ export default function JobDetailPage() {
                             <CvViewButton cvUploadId={(app.candidate as any)?.cvUploadId} />
                           </div>
                         </td>
-                        <td className="p-4"><span className="text-[#0A66C2] font-medium">{(app.candidate as any)?.source || 'LinkedIn'}</span></td>
+                        <td className="p-4">
+                          <span className={`font-medium ${
+                            (app.sourceChannel === 'whatsapp') ? 'text-[#25D366]' : 
+                            (app.sourceChannel === 'linkedin') ? 'text-[#0A66C2]' : 
+                            'text-text-secondary'
+                          }`}>
+                            {app.sourceChannel === 'whatsapp' ? 'WhatsApp' : 
+                             app.sourceChannel === 'linkedin' ? 'LinkedIn' : 
+                             app.sourceChannel ? app.sourceChannel.charAt(0).toUpperCase() + app.sourceChannel.slice(1).replace('_', ' ') : 
+                             ((app.candidate as any)?.source || 'Manual')}
+                          </span>
+                        </td>
                         <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} reason={(app as any).aiMatchExplanation} /></td>
                         <td className="p-4 text-[13px]">
                           <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}</div>

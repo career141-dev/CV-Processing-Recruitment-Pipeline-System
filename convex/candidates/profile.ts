@@ -114,6 +114,8 @@ export const getCandidateApplications = query({
     // Get all pipeline entries for these CVs
     const allEntries: Array<Doc<"pipeline"> & { job: Doc<"jobs"> | null; cvFileName: string }> = [];
 
+    // Cache job lookups to avoid repeated fetches for the same job
+    const jobCache = new Map<string, Doc<"jobs"> | null>();
     for (const cv of cvs) {
       const entries = await ctx.db
         .query("pipeline")
@@ -121,7 +123,11 @@ export const getCandidateApplications = query({
         .collect();
 
       for (const entry of entries) {
-        const job = await ctx.db.get(entry.jobId);
+        let job = jobCache.get(entry.jobId);
+        if (job === undefined) {
+          job = await ctx.db.get(entry.jobId);
+          jobCache.set(entry.jobId, job);
+        }
         allEntries.push({ ...entry, job, cvFileName: cv.fileName });
       }
     }
@@ -162,15 +168,22 @@ export const getCandidateNotes = query({
 
     // Track which (job:cv) pairs have logged note events so we don't duplicate
     const pairsWithNoteEvents = new Set<string>();
+    // Cache job lookups to avoid repeated fetches
+    const jobCache = new Map<string, string>();
 
     for (const e of events) {
       if (e.eventType !== "note_added" || !e.notes) continue;
       pairsWithNoteEvents.add(`${e.jobId}:${e.cvId}`);
-      const job = await ctx.db.get(e.jobId);
+      let jobTitle = jobCache.get(e.jobId);
+      if (jobTitle === undefined) {
+        const job = await ctx.db.get(e.jobId);
+        jobTitle = job?.title ?? "Unknown Job";
+        jobCache.set(e.jobId, jobTitle);
+      }
       notes.push({
         id: e._id,
         note: e.notes,
-        jobTitle: job?.title ?? "Unknown Job",
+        jobTitle,
         jobId: e.jobId,
         authorName: e.actorName ?? (e.actorType === "system" ? "System" : "Recruiter"),
         movedAt: new Date(e._creationTime).toISOString(),
@@ -193,11 +206,16 @@ export const getCandidateNotes = query({
         if (!entry.notes) continue;
         // Skip if this pair already has note events (avoids duplication)
         if (pairsWithNoteEvents.has(`${entry.jobId}:${entry.cvId}`)) continue;
-        const job = await ctx.db.get(entry.jobId);
+        let jobTitle = jobCache.get(entry.jobId);
+        if (jobTitle === undefined) {
+          const job = await ctx.db.get(entry.jobId);
+          jobTitle = job?.title ?? "Unknown Job";
+          jobCache.set(entry.jobId, jobTitle);
+        }
         notes.push({
           id: entry._id,
           note: entry.notes ?? "",
-          jobTitle: job?.title ?? "Unknown Job",
+          jobTitle,
           jobId: entry.jobId,
           authorName: "Recruiter",
           movedAt: entry.movedAt,
@@ -245,14 +263,21 @@ export const getCandidateTimeline = query({
 
     // Track (job:cv) pairs that have logged events
     const pairsWithEvents = new Set<string>();
+    // Cache job lookups to avoid repeated fetches
+    const jobCache = new Map<string, string>();
 
     for (const e of eventLog) {
       pairsWithEvents.add(`${e.jobId}:${e.cvId}`);
-      const job = await ctx.db.get(e.jobId);
+      let jobTitle = jobCache.get(e.jobId);
+      if (jobTitle === undefined) {
+        const job = await ctx.db.get(e.jobId);
+        jobTitle = job?.title ?? "Unknown Job";
+        jobCache.set(e.jobId, jobTitle);
+      }
       events.push({
         id: e._id,
         type: e.eventType,
-        jobTitle: job?.title ?? "Unknown Job",
+        jobTitle,
         jobId: e.jobId,
         stage: e.toStage ?? "",
         fromStage: e.fromStage,
@@ -274,11 +299,16 @@ export const getCandidateTimeline = query({
 
       for (const entry of entries) {
         if (pairsWithEvents.has(`${entry.jobId}:${entry.cvId}`)) continue;
-        const job = await ctx.db.get(entry.jobId);
+        let jobTitle = jobCache.get(entry.jobId);
+        if (jobTitle === undefined) {
+          const job = await ctx.db.get(entry.jobId);
+          jobTitle = job?.title ?? "Unknown Job";
+          jobCache.set(entry.jobId, jobTitle);
+        }
         events.push({
           id: entry._id,
           type: "stage_change",
-          jobTitle: job?.title ?? "Unknown Job",
+          jobTitle,
           jobId: entry.jobId,
           stage: entry.stage,
           fromStage: undefined,

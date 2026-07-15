@@ -366,8 +366,9 @@ scoredAt: v.string(),
 scoreSource: v.optional(v.string()),
 scoredBy: v.optional(v.string()),
 })
-.index("by_job_score", ["jobId", "score"])
-.index("by_candidate_job", ["candidateId", "jobId"]),
+    .index("by_job_score", ["jobId", "score"])
+    .index("by_candidate_job", ["candidateId", "jobId"])
+    .index("by_candidateId", ["candidateId"]),
 
 // ■■ PIPELINE_HEALTH_REPORTS ■■■■■■■■■■■■■■■■■■■■■■■■■■■
 pipeline_health_reports: defineTable({
@@ -404,7 +405,8 @@ generatedAt: v.string(),
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
     .index("by_fileHash", ["fileHash"])
-    .index("by_batchId", ["batchId"]),
+    .index("by_batchId", ["batchId"])
+    .index("by_storageId", ["storageId"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),

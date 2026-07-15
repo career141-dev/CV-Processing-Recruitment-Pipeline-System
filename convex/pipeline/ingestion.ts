@@ -15,6 +15,7 @@ export const processCvIngestion = mutation({
     fileSizeBytes: v.number(),
     metaCampaignId: v.optional(v.string()),
     batchId: v.optional(v.id("ingestionBatches")),
+    extractionDelayMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
@@ -118,8 +119,9 @@ export const processCvIngestion = mutation({
       await ctx.db.patch(logId, { stage: "paused" });
       console.log(`[processCvIngestion] Channel ${args.sourceChannel} is paused. CV ${cvUploadId} queued for later.`);
     } else {
-      // Trigger Agent 1 (CV Parsing) immediately using standard api
-      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      // Trigger Agent 1 (CV Parsing) with optional delay to prevent I/O and API spikes
+      const delayMs = args.extractionDelayMs || 0;
+      await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
         storageId: args.storageId,
         fileType: args.fileType,
         sourceChannel: args.sourceChannel,

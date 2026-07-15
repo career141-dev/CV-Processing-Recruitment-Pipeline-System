@@ -86,7 +86,7 @@ async function fetchUnreadEmails(inboxEmail: string) {
 
   console.log(`[EmailAgent] Fetching unread emails for ${inboxEmail}`);
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false&$expand=attachments&$select=id,subject,body,from,attachments,hasAttachments`;
+    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false&$select=id,subject,body,from,hasAttachments`;
     
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -154,6 +154,8 @@ export const pollEmailInbox = action({
       console.log(`[EmailAgent] No unread messages found.`);
     }
     
+    let currentExtractionDelayMs = 0; // Stagger AI extractions by 10s
+
     for (const message of messages as any[]) {
       console.log(`[EmailAgent] Processing message: ${message.subject} from ${message.from?.emailAddress?.address}`);
       let attachments = message.attachments || [];
@@ -341,7 +343,11 @@ Respond ONLY with a valid JSON object in this exact format:
           fileName: attachment.name ?? "cv.pdf",
           fileType: attachment.contentType || "application/pdf",
           fileSizeBytes: fileBuffer.length,
+          extractionDelayMs: currentExtractionDelayMs,
         });
+
+        // Stagger the next extraction by 10 seconds to prevent AI API timeouts and DB spikes
+        currentExtractionDelayMs += 10000;
       }
 
       const isLinkedInNoReply = senderEmail?.toLowerCase().includes("jobs-listings@linkedin.com");

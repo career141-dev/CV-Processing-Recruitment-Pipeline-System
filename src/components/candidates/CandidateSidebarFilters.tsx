@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
-import { X } from 'lucide-react';
+import { X, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { ManageFiltersModal } from './modals/ManageFiltersModal';
 
@@ -97,11 +97,7 @@ export function CandidateSidebarFilters({
           <span className="text-primary-container text-base font-bold">Career141</span>
         </div>
         <div className="flex items-center bg-surface-container-low py-2 pl-[19px] pr-[110px] w-full mb-4 gap-2 border-r-2 border-solid border-r-[#1B5E20]">
-        <img
-          src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/t5q3a73c_expires_30_days.png" 
-          className="w-[15px] h-3.5 object-fill"
-          alt="search"
-        />
+        <Search className="w-4 h-4 text-[#1B5E20]" />
         <span className="text-primary-container text-[13px] font-bold">Search</span>
       </div>
       
