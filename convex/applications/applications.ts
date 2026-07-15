@@ -78,10 +78,9 @@ export const getByJobId = query({
       .withIndex("by_job_active", (q) => q.eq("jobId", actualJobId!).eq("isActive", true))
       .collect();
 
-    // Return denormalized details to avoid N+1 scans
-    const enriched = applications.map((app) => ({
-      ...app,
-      candidate: {
+    // Return denormalized details, fallback to full fetch if missing to fix "Unknown Candidate"
+    const enriched = await Promise.all(applications.map(async (app) => {
+      let candidateObj: any = {
         _id: app.candidateId,
         fullName: app.candidateName,
         email: app.candidateEmail,
@@ -92,8 +91,20 @@ export const getByJobId = query({
         currentSalary: app.candidateCurrentSalary,
         expectedSalary: app.candidateExpectedSalary,
         noticePeriodDays: app.candidateNoticePeriodDays,
-      },
-      cv: app.cvFileName ? { fileName: app.cvFileName } : null,
+      };
+
+      if (!app.candidateName) {
+        const fullCandidate = await ctx.db.get(app.candidateId);
+        if (fullCandidate) {
+          candidateObj = fullCandidate;
+        }
+      }
+
+      return {
+        ...app,
+        candidate: candidateObj,
+        cv: app.cvFileName ? { fileName: app.cvFileName } : null,
+      };
     }));
 
     return enriched;
@@ -279,11 +290,23 @@ export const createApplication = mutation({
     const now = Date.now();
     const initialStage = args.sourceChannel === "database" ? "matched_candidates" : "new_cvs";
     
+    // Fetch candidate to populate denormalized fields
+    const candidate = await ctx.db.get(args.candidateId);
+    
     const appId = await ctx.db.insert("applications", {
       candidateId: args.candidateId,
       jobId: args.jobId,
       cvFileId: args.cvFileId,
       sourceChannel: args.sourceChannel,
+      candidateName: candidate?.fullName,
+      candidateEmail: candidate?.email,
+      candidatePhone: candidate?.phone,
+      candidateTitle: candidate?.currentTitle || candidate?.currentJobTitle,
+      candidateExperience: candidate?.totalExperienceYears || candidate?.yearsOfExperience,
+      candidateCvUploadId: candidate?.cvUploadId,
+      candidateCurrentSalary: candidate?.currentSalary,
+      candidateExpectedSalary: candidate?.expectedSalary,
+      candidateNoticePeriodDays: candidate?.noticePeriodDays,
       currentStage: initialStage as any,
       loopIteration: 1,
       isActive: true,
