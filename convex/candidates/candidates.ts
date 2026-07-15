@@ -57,24 +57,9 @@ export const listCandidatesPaginated = query({
           let activeApplications: any[] = [];
           if (Array.isArray(activeApplicationsSummary)) {
             activeApplications = activeApplicationsSummary;
-          } else {
-            // Fallback: live query for candidates created before the summary field was added
-            const apps = await ctx.db
-              .query("applications")
-              .withIndex("by_candidateId", (q: any) => q.eq("candidateId", c._id))
-              .collect();
-            activeApplications = await Promise.all(
-              apps.map(async (app) => {
-                const job = await ctx.db.get(app.jobId);
-                return {
-                  jobId: app.jobId,
-                  jobTitle: job ? job.title : "Unknown Job",
-                  stage: app.currentStage,
-                  isActive: app.isActive,
-                };
-              })
-            );
           }
+          // Fallback omitted: backfill confirmed all candidates have activeApplicationsSummary.
+          // Using [] is safe — summary self-heals on next candidate write.
 
           return {
             ...safeCandidate,

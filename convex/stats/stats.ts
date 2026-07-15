@@ -1,7 +1,7 @@
 import { query, mutation, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "../lib/permissions";
-// Force sync
+
 export const getSystemStats = query({
   args: {},
   handler: async (ctx) => {
@@ -267,7 +267,6 @@ export const getTeamActivity = query({
       .take(10);
       
     return logs.map(l => {
-      // Determine icon based on action
       let iconUrl = "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/4d093c8c-cdbb-4660-939f-6f3503eaac6e";
       let iconBg = "bg-primary-container/15";
       
@@ -280,7 +279,6 @@ export const getTeamActivity = query({
         iconBg = "bg-[#6B1D3D26]";
       }
       
-      // Calculate time string (e.g. "2 mins ago")
       const diffMs = Date.now() - new Date(l.occurredAt || l._creationTime).getTime();
       const diffMins = Math.floor(diffMs / 60000);
       const diffHours = Math.floor(diffMins / 60);
@@ -321,7 +319,7 @@ export function calculateNvidiaCredits(model: string, promptTokens: number, comp
     return (promptTokens + completionTokens) * (0.07 / 1_000_000);
   }
   
-  // 2. Chat/Instruction LLMs (Nemotron-70B, Llama-3.1-70B): $2.66 / million tokens
+  // 2. Chat/Instruction LLMs (8B models): $0.18 / million tokens
   if (modelName.includes("8b")) {
     return (promptTokens + completionTokens) * (0.18 / 1_000_000);
   }
@@ -332,7 +330,9 @@ export function calculateNvidiaCredits(model: string, promptTokens: number, comp
 
 /**
  * Internal mutation to record an NVIDIA API call.
- * Can be called from Convex actions running in Node.js runtime.
+ * Denormalizes fileName at write-time and updates the rolling aggregate cache
+ * so getTokenMetrics and getRecentTokenLogs never need to do N+1 joins or
+ * full-table scans at read time.
  */
 export const logNvidiaCallMutation = internalMutation({
   args: {
@@ -346,93 +346,141 @@ export const logNvidiaCallMutation = internalMutation({
     cvUploadId: v.optional(v.id("cvUploads")),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("nvidiaTokenLogs", {
+    const now = Date.now();
+    const cost = calculateNvidiaCredits(args.model, args.promptTokens, args.completionTokens);
+
+    // --- 1. Denormalize fileName at write-time (1 read once, instead of 1 read per dashboard load) ---
+    let fileName: string | undefined = undefined;
+    if (args.cvUploadId) {
+      const cv = await ctx.db.get(args.cvUploadId);
+      if (cv) fileName = cv.fileName;
+    }
+
+    // Insert the log with the denormalized field
+    await ctx.db.insert("nvidiaTokenLogs", {
       ...args,
-      timestamp: Date.now(),
+      timestamp: now,
+      fileName,
     });
+
+    // --- 2. Update the all-time rolling singleton cache ---
+    const SINGLETON_KEY = "global_token_stats";
+    const existing = await ctx.db
+      .query("tokenStatsCache")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", SINGLETON_KEY))
+      .first();
+
+    const isCvExtraction = args.taskType === "cv_structuring" && args.success;
+    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number }> =
+      (existing?.taskBreakdown as any) ?? {};
+    if (!taskBreakdown[args.taskType]) {
+      taskBreakdown[args.taskType] = { tokens: 0, credits: 0, count: 0 };
+    }
+    taskBreakdown[args.taskType].tokens += args.totalTokens;
+    taskBreakdown[args.taskType].credits += cost;
+    taskBreakdown[args.taskType].count += 1;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        totalTokens: existing.totalTokens + args.totalTokens,
+        totalPromptTokens: existing.totalPromptTokens + args.promptTokens,
+        totalCompletionTokens: existing.totalCompletionTokens + args.completionTokens,
+        totalCredits: existing.totalCredits + cost,
+        successfulCalls: existing.successfulCalls + (args.success ? 1 : 0),
+        totalRequests: existing.totalRequests + 1,
+        totalCvExtractionsCount: existing.totalCvExtractionsCount + (isCvExtraction ? 1 : 0),
+        cvExtractionCredits: existing.cvExtractionCredits + (isCvExtraction ? cost : 0),
+        taskBreakdown,
+      });
+    } else {
+      await ctx.db.insert("tokenStatsCache", {
+        singletonKey: SINGLETON_KEY,
+        totalTokens: args.totalTokens,
+        totalPromptTokens: args.promptTokens,
+        totalCompletionTokens: args.completionTokens,
+        totalCredits: cost,
+        successfulCalls: args.success ? 1 : 0,
+        totalRequests: 1,
+        totalCvExtractionsCount: isCvExtraction ? 1 : 0,
+        cvExtractionCredits: isCvExtraction ? cost : 0,
+        taskBreakdown,
+      });
+    }
+
+    // --- 3. Update today's daily cost row for the 7-day chart ---
+    const dateStr = new Date(now).toISOString().split("T")[0];
+    const dailyRow = await ctx.db
+      .query("dailyTokenStats")
+      .withIndex("by_dateStr", (q) => q.eq("dateStr", dateStr))
+      .first();
+
+    if (dailyRow) {
+      await ctx.db.patch(dailyRow._id, {
+        totalCost: dailyRow.totalCost + cost,
+        cvExtractionCost: dailyRow.cvExtractionCost + (args.taskType === "cv_structuring" ? cost : 0),
+      });
+    } else {
+      await ctx.db.insert("dailyTokenStats", {
+        dateStr,
+        totalCost: cost,
+        cvExtractionCost: args.taskType === "cv_structuring" ? cost : 0,
+      });
+    }
   },
 });
 
 /**
  * Query to fetch aggregated metrics for the dashboard cards and charts.
+ * Reads from the pre-computed cache — O(8 docs) instead of O(14,000+ logs).
  */
 export const getTokenMetrics = query({
   args: {},
   handler: async (ctx) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
 
-    // Limit to last 7 days (which matches the chart scope) to drastically reduce I/O spikes
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const allLogs = await ctx.db
-      .query("nvidiaTokenLogs")
-      .withIndex("by_timestamp", (q) => q.gte("timestamp", sevenDaysAgo))
-      .collect();
+    // --- 1. Read the all-time singleton cache (1 document read) ---
+    const cache = await ctx.db
+      .query("tokenStatsCache")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_token_stats"))
+      .first();
 
-    let totalTokens = 0;
-    let totalPromptTokens = 0;
-    let totalCompletionTokens = 0;
-    let totalCredits = 0;
-    let successfulCalls = 0;
-    
-    let totalCvExtractionsCount = 0;
-    let cvExtractionCredits = 0;
+    const totalTokens = cache?.totalTokens ?? 0;
+    const totalPromptTokens = cache?.totalPromptTokens ?? 0;
+    const totalCompletionTokens = cache?.totalCompletionTokens ?? 0;
+    const totalCredits = cache?.totalCredits ?? 0;
+    const totalRequests = cache?.totalRequests ?? 0;
+    const successfulCalls = cache?.successfulCalls ?? 0;
+    const totalCvExtractionsCount = cache?.totalCvExtractionsCount ?? 0;
+    const cvExtractionCredits = cache?.cvExtractionCredits ?? 0;
+    const taskBreakdown = (cache?.taskBreakdown as Record<string, { tokens: number; credits: number; count: number }>) ?? {};
 
-    // Task breakdowns
-    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number }> = {};
+    const successRate = totalRequests > 0 ? (successfulCalls / totalRequests) * 100 : 100;
+    const avgCostPerCv = totalCvExtractionsCount > 0 ? cvExtractionCredits / totalCvExtractionsCount : 0;
 
-    for (const log of allLogs) {
-      totalTokens += log.totalTokens;
-      totalPromptTokens += log.promptTokens;
-      totalCompletionTokens += log.completionTokens;
-      
-      const cost = calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens);
-      totalCredits += cost;
-
-      if (log.success) {
-        successfulCalls++;
-      }
-
-      // Track CV Extractions specifically
-      if (log.taskType === "cv_structuring" && log.success) {
-        totalCvExtractionsCount++;
-        cvExtractionCredits += cost;
-      }
-
-      // Update task breakdown
-      if (!taskBreakdown[log.taskType]) {
-        taskBreakdown[log.taskType] = { tokens: 0, credits: 0, count: 0 };
-      }
-      taskBreakdown[log.taskType].tokens += log.totalTokens;
-      taskBreakdown[log.taskType].credits += cost;
-      taskBreakdown[log.taskType].count += 1;
-    }
-
-    const successRate = allLogs.length > 0 ? (successfulCalls / allLogs.length) * 100 : 100;
-    const avgCostPerCv = totalCvExtractionsCount > 0 ? (cvExtractionCredits / totalCvExtractionsCount) : 0;
-
-    // Daily credits charting data (Last 7 days)
-    const dailyDataMap = new Map<string, { date: string; totalCost: number; cvExtractionCost: number }>();
+    // --- 2. Read the last 7 days of daily rows (7 document reads max) ---
     const now = Date.now();
     const oneDayMs = 24 * 60 * 60 * 1000;
+    const dailyDataMap = new Map<string, { date: string; totalCost: number; cvExtractionCost: number }>();
 
-    // Initialize map with last 7 days
+    // Seed map with 7 days so days with zero activity still appear in the chart
     for (let i = 6; i >= 0; i--) {
       const dateStr = new Date(now - i * oneDayMs).toISOString().split("T")[0];
       dailyDataMap.set(dateStr, { date: dateStr, totalCost: 0, cvExtractionCost: 0 });
     }
 
-    for (const log of allLogs) {
-      const logDateStr = new Date(log.timestamp).toISOString().split("T")[0];
-      if (dailyDataMap.has(logDateStr)) {
-        const current = dailyDataMap.get(logDateStr)!;
-        const cost = calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens);
-        
-        current.totalCost += cost;
-        if (log.taskType === "cv_structuring") {
-          current.cvExtractionCost += cost;
-        }
-        
-        dailyDataMap.set(logDateStr, current);
+    // Overwrite with actual stored rows
+    const sevenDaysAgoStr = new Date(now - 6 * oneDayMs).toISOString().split("T")[0];
+    const dailyRows = await ctx.db
+      .query("dailyTokenStats")
+      .withIndex("by_dateStr", (q) => q.gte("dateStr", sevenDaysAgoStr))
+      .collect();
+    for (const row of dailyRows) {
+      if (dailyDataMap.has(row.dateStr)) {
+        dailyDataMap.set(row.dateStr, {
+          date: row.dateStr,
+          totalCost: row.totalCost,
+          cvExtractionCost: row.cvExtractionCost,
+        });
       }
     }
 
@@ -442,7 +490,7 @@ export const getTokenMetrics = query({
         totalPromptTokens,
         totalCompletionTokens,
         totalCredits,
-        totalRequests: allLogs.length,
+        totalRequests,
         successRate,
       },
       cvExtraction: {
@@ -458,6 +506,7 @@ export const getTokenMetrics = query({
 
 /**
  * Query to fetch recent logs with linked CV filename details.
+ * fileName is denormalized at write-time — zero N+1 joins at read-time.
  */
 export const getRecentTokenLogs = query({
   args: {
@@ -472,34 +521,12 @@ export const getRecentTokenLogs = query({
       .order("desc")
       .take(limit);
 
-    // Fetch related CV info for linked logs
-    const results = [];
-    for (const log of logs) {
-      let fileName: string | undefined = undefined;
-      let candidateName: string | undefined = undefined;
-      
-      if (log.cvUploadId) {
-        const cv = await ctx.db.get(log.cvUploadId);
-        if (cv) {
-          fileName = cv.fileName;
-          // IMPORTANT: Do NOT fetch the Candidate record here using ctx.db.get(cv.candidateId)
-          // It causes a massive 100+ MB I/O spike because it pulls the candidate's rawText and vector embeddings into memory.
-          // Instead, fallback to using the CV file name as the candidate name for logging purposes.
-          candidateName = cv.fileName;
-        }
-      }
-
-      const cost = calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens);
-
-      results.push({
-        ...log,
-        fileName,
-        candidateName,
-        estimatedCost: cost,
-      });
-    }
-
-    return results;
+    // fileName is already stored on the document — no per-row db.get() needed
+    return logs.map((log) => ({
+      ...log,
+      candidateName: log.fileName, // alias for backwards compat with frontend
+      estimatedCost: calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens),
+    }));
   },
 });
 
@@ -517,5 +544,22 @@ export const clearAllTokenLogs = mutation({
     }
 
     return { success: true, count: logs.length };
+  },
+});
+
+export const logNvidiaCallMutationPublic = mutation({
+  args: {
+    taskType: v.string(),
+    model: v.string(),
+    promptTokens: v.number(),
+    completionTokens: v.number(),
+    totalTokens: v.number(),
+    success: v.boolean(),
+    error: v.optional(v.string()),
+    cvUploadId: v.optional(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    await requireRole(ctx, ["admin"]);
+    return "Use the internal mutation instead";
   },
 });
