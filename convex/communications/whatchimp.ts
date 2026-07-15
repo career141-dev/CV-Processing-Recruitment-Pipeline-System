@@ -155,7 +155,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     const firstWordUpper = text.trim().split(/\s+/)[0]?.toUpperCase() || "";
     if (firstWordUpper) {
       const activeJobsCheck = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
-      isNewKeywordMessage = activeJobsCheck.some(j => j.keyword && j.keyword.toUpperCase() === firstWordUpper);
+      isNewKeywordMessage = activeJobsCheck.some((j: any) => j.keyword && j.keyword.toUpperCase() === firstWordUpper);
     }
   }
 
@@ -227,7 +227,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
             phone: cleanFrom,
           });
           const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
-          const matchedJob = activeJobs.find(j => j._id === resolvedJobId);
+          const matchedJob = activeJobs.find((j: any) => j._id === resolvedJobId);
           if (matchedJob?.pausedChannels?.includes("whatsapp")) isPaused = true;
         }
       }

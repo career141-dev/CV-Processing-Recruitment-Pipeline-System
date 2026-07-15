@@ -28,10 +28,15 @@ export const listCandidatesPaginated = query({
   args: { 
     paginationOpts: v.any(),
     searchQuery: v.optional(v.string()),
+    overallStatus: v.optional(v.string()),
+    sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     let q;
     
+    const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;
+    const sourceChannel = args.sourceChannel && args.sourceChannel !== "all" ? args.sourceChannel : undefined;
+
     if (args.searchQuery) {
       const sq = args.searchQuery.trim();
       if (sq.includes("@")) {
@@ -41,8 +46,23 @@ export const listCandidatesPaginated = query({
       } else {
         q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
       }
+    } else if (overallStatus) {
+      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
     } else {
       q = ctx.db.query("candidates").order("desc");
+    }
+
+    if (sourceChannel) {
+      q = q.filter(q => 
+        q.or(
+          q.eq(q.field("firstSourceChannel"), sourceChannel as any),
+          q.eq(q.field("sourceChannel"), sourceChannel)
+        )
+      );
+    }
+
+    if (args.searchQuery && overallStatus) {
+      q = q.filter(q => q.eq(q.field("overallStatus"), overallStatus as any));
     }
 
     const page = await q.paginate(args.paginationOpts);
@@ -187,9 +207,10 @@ export const updateCandidateAfterLazyParse = mutation({
     if (jobHistory) {
       const existingResume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId as any)).first();
       if (existingResume) {
-        await ctx.db.patch(existingResume._id, { jobHistory });
+        const hasEmb = !!(existingResume.embedding && existingResume.embedding.length > 0);
+        await ctx.db.patch(existingResume._id, { jobHistory, hasEmbedding: hasEmb });
       } else {
-        await ctx.db.insert("candidateResumes", { candidateId, rawText: "", jobHistory });
+        await ctx.db.insert("candidateResumes", { candidateId, rawText: "", jobHistory, hasEmbedding: false });
       }
     }
   },
@@ -332,17 +353,20 @@ export const createCandidate = mutation({
       if (rawText || jobHistory || embedding) {
         const existingResume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId as any)).first();
         if (existingResume) {
+          const updatedEmbedding = embedding ?? existingResume.embedding;
           await ctx.db.patch(existingResume._id, { 
             rawText: rawText ?? existingResume.rawText, 
             jobHistory,
-            embedding: embedding ?? existingResume.embedding
+            embedding: updatedEmbedding,
+            hasEmbedding: !!(updatedEmbedding && updatedEmbedding.length > 0)
           });
         } else {
           await ctx.db.insert("candidateResumes", { 
             candidateId: existingCandidateId, 
             rawText: rawText ?? "", 
             jobHistory,
-            embedding 
+            embedding,
+            hasEmbedding: !!(embedding && embedding.length > 0)
           });
         }
       }
@@ -384,6 +408,7 @@ export const createCandidate = mutation({
         rawText: rawText ?? "",
         jobHistory,
         embedding,
+        hasEmbedding: !!(embedding && embedding.length > 0)
       });
     }
 
@@ -786,5 +811,26 @@ export const getCandidatesByIds = query({
         const { rawText, embedding, jobHistory, ...safe } = c as any;
         return safe;
       });
+  },
+});
+
+export const countHeavyCandidates = query({
+  args: {},
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("candidates").collect();
+    let hasRawText = 0;
+    let hasEmbedding = 0;
+    let hasJobHistory = 0;
+    for (const c of candidates) {
+      if ((c as any).rawText !== undefined) hasRawText++;
+      if ((c as any).embedding !== undefined) hasEmbedding++;
+      if ((c as any).jobHistory !== undefined) hasJobHistory++;
+    }
+    return {
+      total: candidates.length,
+      hasRawText,
+      hasEmbedding,
+      hasJobHistory,
+    };
   },
 });

@@ -1,6 +1,7 @@
-import { query, mutation, internalMutation } from "../_generated/server";
+import { query, mutation, action, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "../lib/permissions";
+import { api } from "../_generated/api";
 
 export const getSystemStats = query({
   args: {},
@@ -561,5 +562,19 @@ export const logNvidiaCallMutationPublic = mutation({
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin"]);
     return "Use the internal mutation instead";
+  },
+});
+
+export const getTokenMetricsAction = action({
+  args: {},
+  handler: async (ctx): Promise<any> => {
+    return await ctx.runQuery(api.stats.stats.getTokenMetrics);
+  },
+});
+
+export const getRecentTokenLogsAction = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<any> => {
+    return await ctx.runQuery(api.stats.stats.getRecentTokenLogs, { limit: args.limit });
   },
 });

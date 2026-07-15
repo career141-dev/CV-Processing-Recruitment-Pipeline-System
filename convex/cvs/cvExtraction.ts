@@ -929,7 +929,7 @@ export const pollBatchProgress = internalAction({
     });
 
     // If all are finished (either "processed" or "failed" or "failed_retry")
-    const allFinished = statuses.every((s) => s === "processed" || s === "failed" || s === "failed_retry");
+    const allFinished = statuses.every((s: string) => s === "processed" || s === "failed" || s === "failed_retry");
 
     if (allFinished) {
       console.log(`[pollBatchProgress] All ${args.cvUploadIds.length} uploads finished. Triggering next 5.`);
