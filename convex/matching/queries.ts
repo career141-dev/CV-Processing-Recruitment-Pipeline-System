@@ -96,3 +96,45 @@ export const getRecentCandidates = internalQuery({
       .take(args.limit);
   },
 });
+
+export const getCandidateResumesMissingEmbeddings = internalQuery({
+  args: { limit: v.number(), cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    let currentCursor = args.cursor ?? null;
+    const missing: any[] = [];
+    let isDone = false;
+
+    // Scan up to 3 pages (300 resumes max) to keep execution limits safe
+    for (let i = 0; i < 3; i++) {
+      const page: any = await ctx.db.query("candidateResumes").paginate({
+        numItems: 100,
+        cursor: currentCursor,
+      });
+
+      const pageMissing = page.page.filter((r: any) => !r.embedding || r.embedding.length === 0);
+      missing.push(...pageMissing);
+      currentCursor = page.continueCursor;
+      isDone = page.isDone;
+
+      if (missing.length >= args.limit || isDone) {
+        break;
+      }
+    }
+
+    return {
+      missing: missing.slice(0, args.limit),
+      continueCursor: currentCursor,
+      isDone,
+    };
+  },
+});
+
+export const getApplicationsByJobIdInternal = internalQuery({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("applications")
+      .withIndex("by_job_active", (q) => q.eq("jobId", args.jobId).eq("isActive", true))
+      .collect();
+  },
+});

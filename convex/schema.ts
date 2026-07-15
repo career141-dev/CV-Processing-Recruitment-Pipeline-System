@@ -192,7 +192,6 @@ export default defineSchema({
       candidateExp: v.optional(v.number()),
     }))),
 
-
     // Agent 3 — Follow-up Config
 
     agent3TriggerStages: v.optional(v.array(v.string())),
