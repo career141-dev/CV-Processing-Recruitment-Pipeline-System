@@ -140,6 +140,10 @@ status: v.union(v.literal("active"), v.literal("on_hold"),
 v.literal("filled"), v.literal("cancelled"),
 v.literal("draft")),
 
+// Ingestion Toggles
+pausedChannels: v.optional(v.array(v.string())),
+muteDefaultWhatsappReply: v.optional(v.boolean()),
+
 // Team Assignment
 primaryRecruiterId: v.id("users"),
 supportingRecruiterIds: v.optional(v.array(v.id("users"))),
@@ -248,8 +252,6 @@ createdAt: v.string(),
 publishedAt: v.optional(v.string()),
 filledAt: v.optional(v.string()),
 updatedAt: v.string(),
-muteDefaultWhatsappReply: v.optional(v.boolean()),
-pausedChannels: v.optional(v.array(v.string())),
 })
 .index("by_keyword", ["keyword"])
 .index("by_status", ["status"])
@@ -956,6 +958,7 @@ errorMessage: v.optional(v.string()),
     .index("by_job_time", ["jobId", "receivedAt"])
     .index("by_channel_time", ["channelType", "receivedAt"])
     .index("by_receivedAt", ["receivedAt"])
+    .index("by_cvFileId", ["cvFileId"])
     .index("by_batchId", ["batchId"]),
 
   systemLogs: defineTable({

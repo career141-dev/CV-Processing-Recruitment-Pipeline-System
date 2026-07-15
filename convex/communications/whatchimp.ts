@@ -69,7 +69,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
             const apiToken = process.env.WHATCHIMP_API_TOKEN;
             const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
-            if (apiToken && phoneNumberId) {
+            if (apiToken && phoneNumberId && !job.muteDefaultWhatsappReply) {
               const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
               const params = new URLSearchParams();
               params.append("apiToken", apiToken);
@@ -84,6 +84,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
                 },
                 body: params
               }).then(r => r.text()).catch(console.error);
+            } else if (job.muteDefaultWhatsappReply) {
+              console.log(`[WhatChimp Webhook] Skipped default reply for ${firstWord} because muteDefaultWhatsappReply is true`);
             }
           }
         }
@@ -147,8 +149,18 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Resolve candidate details (skip for media/document messages — textBody is not meaningful there)
-  const checkResult = !mediaUrl ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+  // Pre-check: if text starts with a known job keyword, it's a new applicant — skip follow-up check
+  let isNewKeywordMessage = false;
+  if (!mediaUrl && text) {
+    const firstWordUpper = text.trim().split(/\s+/)[0]?.toUpperCase() || "";
+    if (firstWordUpper) {
+      const activeJobsCheck = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      isNewKeywordMessage = activeJobsCheck.some(j => j.keyword && j.keyword.toUpperCase() === firstWordUpper);
+    }
+  }
+
+  // Resolve candidate details (skip for media/document messages and fresh keyword messages — not follow-up replies)
+  const checkResult = (!mediaUrl && !isNewKeywordMessage) ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
     senderPhone: cleanFrom,
     textBody: text || "",
   }) : null;
@@ -187,13 +199,16 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const storageId = await ctx.storage.store(storageBlob);
 
       // 4. Extract keyword if message text is present
-      let resolvedJobId = null;
+      let resolvedJobId: string | null | undefined = null;
+      let isPaused = false;
+
       if (text) {
         const upperText = text.toUpperCase();
         const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
         for (const job of activeJobs) {
           if (job.keyword && upperText.includes(job.keyword.toUpperCase())) {
             resolvedJobId = job._id;
+            if (job.pausedChannels?.includes("whatsapp")) isPaused = true;
             break;
           }
         }
@@ -211,10 +226,16 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           await ctx.runMutation(api.communications.whatchimp.deleteSession, {
             phone: cleanFrom,
           });
+          const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+          const matchedJob = activeJobs.find(j => j._id === resolvedJobId);
+          if (matchedJob?.pausedChannels?.includes("whatsapp")) isPaused = true;
         }
       }
 
-      if (!resolvedJobId) {
+      if (isPaused) {
+        console.log(`[WhatChimp Webhook] Job ${resolvedJobId} has WhatsApp paused. Dropping CV to general pool.`);
+        resolvedJobId = undefined; // Drop to general pool
+      } else if (resolvedJobId === null) {
         // No active session — candidate did not send a keyword first. Reject silently.
         console.warn(`[WhatChimp Webhook] No active session for +${cleanFrom}. CV rejected silently — no keyword was sent first.`);
         return new Response("OK", { status: 200 });
@@ -222,7 +243,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
       // 5. Ingest into central pipeline (only reached when a valid session/job exists)
       const ingestionResult = await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-        jobId: resolvedJobId,
+        jobId: resolvedJobId as any,
         sourceChannel: "whatsapp",
         rawSender: cleanFrom,
         storageId,
@@ -280,6 +301,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       if (matchedJob) {
         console.log(`[WhatChimp Webhook] Found keyword ${matchedKeyword} in message from +${cleanFrom} for job ${matchedJob.title}`);
         
+        // Fetch full job record to check muteDefaultWhatsappReply flag
+        const fullJob = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: matchedJob._id });
+
         // 1. Create/Update WhatsApp Session mapping phone to job ID
         await ctx.runMutation(api.communications.whatchimp.upsertSession, {
           phone: cleanFrom,
@@ -289,7 +313,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
         const apiToken = process.env.WHATCHIMP_API_TOKEN;
         const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
-        if (apiToken && phoneNumberId) {
+        if (apiToken && phoneNumberId && !fullJob?.muteDefaultWhatsappReply) {
           const replyMessage = `Thank you for your interest in the ${matchedJob.title} position.\n\nPlease upload your latest CV to continue your application.`;
           const params = new URLSearchParams();
           params.append("apiToken", apiToken);
@@ -304,6 +328,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
             },
             body: params
           }).then(r => r.text()).then(t => console.log("[WhatChimp Webhook] Sent auto-response:", t)).catch(console.error);
+        } else if (fullJob?.muteDefaultWhatsappReply) {
+          console.log(`[WhatChimp Webhook] Skipped default reply for ${matchedKeyword} (flat path) because muteDefaultWhatsappReply is true`);
         }
       }
     }

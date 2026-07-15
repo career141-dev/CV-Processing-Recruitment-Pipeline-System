@@ -195,7 +195,7 @@ export const insertCvRecord = internalMutation({
     });
 
     // 8. Check Channel Toggles for Pausing
-    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
     const toggles = configRow?.channel_toggles;
     
     if (toggles?.whatsappIngestion === false) {
@@ -233,7 +233,7 @@ export const resumePausedUploads = internalMutation({
       
       // Update ingestionLog if exists
       const log = await ctx.db.query("ingestionLog")
-        .filter(q => q.eq(q.field("cvFileId"), upload._id))
+        .withIndex("by_cvFileId", q => q.eq("cvFileId", upload._id))
         .first();
       if (log) {
         await ctx.db.patch(log._id, { stage: "queued" });

@@ -92,7 +92,15 @@ export default function JobsPage() {
     const stageInfo = j.totalApplications > 0
       ? (STAGE_LABELS[j.dominantStage] || STAGE_LABELS.new_cvs)
       : { label: "No Applicants", bgClass: "bg-gray-50", textClass: "text-gray-500", borderClass: "border-gray-200" };
-    
+    const ALL_SOURCES = [
+      { id: 'whatsapp', label: 'WA', bgClass: 'bg-green-100', textClass: 'text-green-700' },
+      { id: 'email', label: 'EM', bgClass: 'bg-orange-100', textClass: 'text-orange-700' },
+      { id: 'linkedin', label: 'LI', bgClass: 'bg-blue-100', textClass: 'text-blue-700' },
+      { id: 'portal', label: 'CP', bgClass: 'bg-purple-100', textClass: 'text-purple-700' }
+    ];
+    const paused = j.pausedChannels || [];
+    const activeSources = ALL_SOURCES.filter(src => !paused.includes(src.id));
+
     return {
       id: j._id,
       title: j.title,
@@ -102,7 +110,7 @@ export default function JobsPage() {
       seniority: j.seniorityLevel || 'N/A',
       type: j.recruitmentType || 'N/A',
       salary: j.salaryMin ? `${j.salaryMin}${j.salaryMax ? `-${j.salaryMax}` : ''} ${j.salaryCurrency || 'LKR'}` : '-',
-      sources: [],
+      sources: activeSources,
       newCvs: j.newCvsCount ?? 0,
       newCvsBadge: (j.newCvsCount ?? 0) > 0 ? { text: "new", bgClass: "bg-blue-100", textClass: "text-blue-700" } : undefined,
       stage: stageInfo,

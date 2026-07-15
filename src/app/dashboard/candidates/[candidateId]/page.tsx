@@ -575,7 +575,7 @@ export default function CandidateProfile() {
                           </span>
                           {candidate.firstSeenAt && (
                             <span className="text-text-secondary text-xs mt-1">
-                              {new Date(candidate.firstSeenAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {new Date(candidate.firstSeenAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
                             </span>
                           )}
                         </div>

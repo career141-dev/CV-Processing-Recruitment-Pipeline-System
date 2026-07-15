@@ -25,7 +25,7 @@ export const evaluateFollowUpStage = internalMutation({
 
     const followUpApps = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .collect();
+      .take(200); // Safety cap: process max 200 per hourly run to avoid timeouts
 
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -344,24 +344,39 @@ crons.daily(
 );
 
 // Poll linkedin's inbox every 5 minutes
-// Replace "fallback_job_id_here" with a real default Job ID if you want a catch-all.
 crons.interval(
   "poll-linkedin-inbox",
-  { minutes: 5 }, // Changed back to 5 minutes
+  { minutes: 5 },
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "linkedin@career141.com" }
+);
+
+// Poll general CV inbox every 5 minutes
+crons.interval(
+  "poll-cv-inbox",
+  { minutes: 5 },
+  api.communications.emailAgent.pollEmailInbox,
+  { inboxEmail: "cv@career141.com" }
+);
+
+// Poll jobs website inbox every 5 minutes
+crons.interval(
+  "poll-job-inbox",
+  { minutes: 5 },
+  api.communications.emailAgent.pollEmailInbox,
+  { inboxEmail: "job@career141.com" }
 );
 
 export const checkSlaBreaches = internalMutation({
   args: {},
   handler: async (ctx) => {
     // Check Kill Switch
-    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
     if (configRow && configRow.autopilotEnabled === false) return;
 
     const apps = await ctx.db.query("applications")
       .withIndex("by_active", q => q.eq("isActive", true))
-      .collect();
+      .take(500); // Safety cap: process max 500 per daily run
 
     for (const app of apps) {
       if (!app.lastStageChangedAt) continue;
@@ -408,7 +423,9 @@ export const checkSlaBreaches = internalMutation({
       const daysElapsed = msElapsed / (1000 * 60 * 60 * 24);
 
       if (daysElapsed > slaLimit) {
+        // Check for existing notification using index - avoid full-table filter scan
         const existingNotifs = await ctx.db.query("notifications")
+          .withIndex("by_user", q => q.eq("userId", job.primaryRecruiterId!))
           .filter(q => q.and(
             q.eq(q.field("type"), "sla_breached"),
             q.eq(q.field("candidateId"), app.candidateId),

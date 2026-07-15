@@ -1156,7 +1156,7 @@ export default function JobDetailPage() {
       // 4. Trigger processCvIngestion
       const result = await processCvIngestion({
         jobId: jobId as any,
-        sourceChannel: "manual_upload",
+        sourceChannel: "headhunting",
         rawSender: user?.fullName || user?.primaryEmailAddress?.emailAddress || "recruiter",
         storageId,
         fileHash,
@@ -2217,6 +2217,36 @@ export default function JobDetailPage() {
               {job.isConfidential && (
                 <span className="bg-surface-container text-text-secondary px-3 py-1 rounded-full text-[12px] border border-border">Confidential</span>
               )}
+            </div>
+            <div className="flex items-center gap-2 mt-4">
+              <span className="text-[11px] uppercase tracking-wider font-bold text-text-secondary">Active Sources:</span>
+              <div className="flex items-center gap-2">
+                {!job.pausedChannels?.includes('whatsapp') && (
+                  <span className="flex items-center gap-1 bg-[#25D366] text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="WhatsApp Ingestion Active">
+                    WhatsApp
+                  </span>
+                )}
+                {!job.pausedChannels?.includes('linkedin') && (
+                  <span className="flex items-center gap-1 bg-[#0A66C2] text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="LinkedIn Ingestion Active">
+                    LinkedIn
+                  </span>
+                )}
+                {!job.pausedChannels?.includes('email') && (
+                  <span className="flex items-center gap-1 bg-orange-400 text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="Email Ingestion Active">
+                    Email
+                  </span>
+                )}
+                {!job.pausedChannels?.includes('headhunting') && (
+                  <span className="flex items-center gap-1 bg-purple-500 text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="Headhunting Ingestion Active">
+                    Headhunt
+                  </span>
+                )}
+                {!job.pausedChannels?.includes('workable') && (
+                  <span className="flex items-center gap-1 bg-sky-500 text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="Workable API Active">
+                    Workable
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex flex-col items-end gap-4">

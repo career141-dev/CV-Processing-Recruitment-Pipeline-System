@@ -106,7 +106,7 @@ export const processCvIngestion = mutation({
     } as any);
 
     // 8. Check Channel Toggles for Pausing
-    const configRow = await ctx.db.query("appSettings").filter(q => q.eq(q.field("key"), "system")).first();
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
     const toggles = configRow?.channel_toggles;
     
     let isPaused = false;

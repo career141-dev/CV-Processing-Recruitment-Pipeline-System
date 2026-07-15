@@ -408,11 +408,11 @@ export function CandidateManagementTable({
                     </td>
 
                     {/* Separated Dates */}
-                    <td className="px-6 py-4 text-text-secondary">
-                      {format(new Date(candidate.firstSeenAt || candidate._creationTime), 'MMM d, yyyy')}
+                    <td className="px-6 py-4 text-text-secondary whitespace-nowrap">
+                      {format(new Date(candidate.firstSeenAt || candidate._creationTime), 'MMM d, yyyy, h:mm a')}
                     </td>
-                    <td className="px-6 py-4 text-text-secondary">
-                      {candidate.lastUpdatedAt ? format(new Date(candidate.lastUpdatedAt), 'MMM d, yyyy') : '—'}
+                    <td className="px-6 py-4 text-text-secondary whitespace-nowrap">
+                      {candidate.lastUpdatedAt ? format(new Date(candidate.lastUpdatedAt), 'MMM d, yyyy, h:mm a') : '—'}
                     </td>
 
                     {/* Icon-Only Row Actions */}

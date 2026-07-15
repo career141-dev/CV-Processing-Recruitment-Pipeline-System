@@ -64,6 +64,7 @@ export default function CreateJobWizard() {
 
     // Step 2: Channel Setup
     jobKeyword: '',
+    muteDefaultWhatsappReply: false,
     linkedinEmail: 'linkedin@career141.com',
     linkedinEmailSaved: false,
     commonWhatsAppNumber: '',
@@ -261,6 +262,8 @@ export default function CreateJobWizard() {
         directorId: directorId as any,
         clientContactName: formData.clientContactName || undefined,
         clientContactEmail: formData.clientContactEmail || undefined,
+        // @ts-ignore
+        muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
       });
 
       // Step 2: updateJobChannels
@@ -836,6 +839,17 @@ export default function CreateJobWizard() {
                     </div>
                   </div>
                 )}
+
+                <div className="mt-4 p-3 bg-surface border border-border rounded-lg flex items-start gap-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-text-primary">Mute Default Auto-Reply</p>
+                    <p className="text-xs text-text-secondary mt-0.5">Turn this ON if you are running a custom WhatChimp auto-reply for this campaign and don't want the ATS to send its default "Thank you" message.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                    <input type="checkbox" className="sr-only peer" checked={formData.muteDefaultWhatsappReply} onChange={e => updateFormData('muteDefaultWhatsappReply', e.target.checked)} />
+                    <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+                  </label>
+                </div>
               </div>
             )}
           </div>
