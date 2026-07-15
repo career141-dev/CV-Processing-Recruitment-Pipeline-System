@@ -23,15 +23,16 @@ export const getCandidatesBatch = internalQuery({
 export const getCandidatesByResumeIds = internalQuery({
   args: { resumeIds: v.array(v.id("candidateResumes")) },
   handler: async (ctx, args) => {
+    // Parallel batch fetch instead of serial N+1 loop
+    const resumes = await Promise.all(args.resumeIds.map((id) => ctx.db.get(id)));
+    const candidateIds = resumes
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .map((r) => ({ resumeId: r._id, candidateId: r.candidateId }));
+    const candidates = await Promise.all(candidateIds.map(({ candidateId }) => ctx.db.get(candidateId)));
     const results = [];
-    for (const id of args.resumeIds) {
-      const resume = await ctx.db.get(id);
-      if (resume) {
-        const candidate = await ctx.db.get(resume.candidateId);
-        if (candidate) {
-          results.push({ candidate, resumeId: resume._id });
-        }
-      }
+    for (let i = 0; i < candidateIds.length; i++) {
+      const candidate = candidates[i];
+      if (candidate) results.push({ candidate, resumeId: candidateIds[i].resumeId });
     }
     return results;
   },
