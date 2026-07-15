@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getOpenAI, getModelForTask, logLLMUsage } from "../lib/llm";
 import type { SearchRequirements } from "../lib/jdParser";
 

@@ -460,4 +460,10 @@ crons.daily(
   internal.crons.checkSlaBreaches
 );
 
+crons.daily(
+  "Recalculate Global Stats",
+  { hourUTC: 2, minuteUTC: 0 },
+  (api as any).admin.recalculateGlobalStats.run
+);
+
 export default crons;

@@ -396,6 +396,7 @@ generatedAt: v.string(),
     status: v.string(),
     errorMessage: v.optional(v.string()),
     candidateId: v.optional(v.id("candidates")),
+    batchId: v.optional(v.string()),
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
