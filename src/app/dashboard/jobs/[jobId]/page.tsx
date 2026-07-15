@@ -141,7 +141,7 @@ const CandidateNameDisplay = ({ name, cvUploadId, doNotContact, candidateId }: {
 
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
-  const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
+  const candidate = useQuery(api.candidates.candidates.getCandidate, (match.candidateName) ? "skip" : { id: match.cvId as Id<"candidates"> });
   const createApplication = useMutation(api.applications.applications.createApplication);
   const removeApplication = useMutation(api.applications.applications.removeApplication);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -203,7 +203,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
         <td className="p-4 font-medium">
           <div className="flex items-center gap-2">
             <Link href={`/dashboard/candidates/${match.cvId}`} className="text-text-primary hover:underline">
-              {candidate === undefined ? "Loading..." : (candidate?.fullName || candidate?.email || `Candidate ID: ${match.cvId.slice(0, 8)}...`)}
+              {candidate === undefined && !match.candidateName ? "Loading..." : (candidate?.fullName || candidate?.email || match.candidateName || `Candidate ID: ${match.cvId.slice(0, 8)}...`)}
             </Link>
             <CvViewButton cvUploadId={candidate?.cvUploadId as Id<"cvUploads"> | undefined} />
           </div>
@@ -211,8 +211,8 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
         <td className="p-4"><span className="text-[#0A66C2] font-medium">{match.sourceLevel1 || 'Database'}</span></td>
         <td className="p-4"><ScoreRing score={match.overallScore} reason={match.reason} /></td>
         <td className="p-4 text-[13px]">
-          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}>{(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}</div>
-          <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
+          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(candidate as any)?.currentTitle || candidate?.currentJobTitle || match.candidateRole || 'Unknown Role'}>{(candidate as any)?.currentTitle || candidate?.currentJobTitle || match.candidateRole || 'Unknown Role'}</div>
+          <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : (match.candidateExp ? `${match.candidateExp} yrs exp` : 'Exp not specified'))}</div>
         </td>
         <td className="p-4 text-[13px] text-text-secondary">
           <div className="flex items-center gap-2">
@@ -1354,7 +1354,11 @@ export default function JobDetailPage() {
     </div>
   );
 
-  const renderNewCVsTable = () => (
+  const renderNewCVsTable = () => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const currentNewCvs = newCvs.slice(startIndex, startIndex + itemsPerPage);
+    
+    return (
     <table className="w-full text-left border-collapse">
       <thead>
         <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
@@ -1368,10 +1372,10 @@ export default function JobDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="text-[13px] text-text-primary divide-y divide-border">
-                  {newCvs.length === 0 ? (
+                  {currentNewCvs.length === 0 ? (
                     <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No candidates found. Start by sourcing!</td></tr>
                   ) : (
-                    newCvs.map(app => (
+                    currentNewCvs.map(app => (
                       <tr key={app._id} className="hover:bg-surface-bright transition-colors group">
                         <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
                         <td className="p-4 font-medium">
@@ -1382,7 +1386,18 @@ export default function JobDetailPage() {
                             <CvViewButton cvUploadId={(app.candidate as any)?.cvUploadId} />
                           </div>
                         </td>
-                        <td className="p-4"><span className="text-[#0A66C2] font-medium">{(app.candidate as any)?.source || 'LinkedIn'}</span></td>
+                        <td className="p-4">
+                          <span className={`font-medium ${
+                            (app.sourceChannel === 'whatsapp') ? 'text-[#25D366]' : 
+                            (app.sourceChannel === 'linkedin') ? 'text-[#0A66C2]' : 
+                            'text-text-secondary'
+                          }`}>
+                            {app.sourceChannel === 'whatsapp' ? 'WhatsApp' : 
+                             app.sourceChannel === 'linkedin' ? 'LinkedIn' : 
+                             app.sourceChannel ? app.sourceChannel.charAt(0).toUpperCase() + app.sourceChannel.slice(1).replace('_', ' ') : 
+                             ((app.candidate as any)?.source || 'Manual')}
+                          </span>
+                        </td>
                         <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} reason={(app as any).aiMatchExplanation} /></td>
                         <td className="p-4 text-[13px]">
                           <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}</div>
@@ -1409,6 +1424,7 @@ export default function JobDetailPage() {
                 </tbody>
     </table>
   );
+  };
 
   const renderPipelineTable = () => {
     // Map TABS to PIPELINE_STAGES ids

@@ -361,7 +361,12 @@ export const getTokenMetrics = query({
   handler: async (ctx) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
 
-    const allLogs = await ctx.db.query("nvidiaTokenLogs").collect();
+    // Limit to last 7 days (which matches the chart scope) to drastically reduce I/O spikes
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const allLogs = await ctx.db
+      .query("nvidiaTokenLogs")
+      .withIndex("by_timestamp", (q) => q.gte("timestamp", sevenDaysAgo))
+      .collect();
 
     let totalTokens = 0;
     let totalPromptTokens = 0;
@@ -477,10 +482,10 @@ export const getRecentTokenLogs = query({
         const cv = await ctx.db.get(log.cvUploadId);
         if (cv) {
           fileName = cv.fileName;
-          if (cv.candidateId) {
-            const cand = await ctx.db.get(cv.candidateId);
-            candidateName = cand?.fullName;
-          }
+          // IMPORTANT: Do NOT fetch the Candidate record here using ctx.db.get(cv.candidateId)
+          // It causes a massive 100+ MB I/O spike because it pulls the candidate's rawText and vector embeddings into memory.
+          // Instead, fallback to using the CV file name as the candidate name for logging purposes.
+          candidateName = cv.fileName;
         }
       }
 

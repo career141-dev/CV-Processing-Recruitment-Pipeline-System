@@ -366,8 +366,9 @@ scoredAt: v.string(),
 scoreSource: v.optional(v.string()),
 scoredBy: v.optional(v.string()),
 })
-.index("by_job_score", ["jobId", "score"])
-.index("by_candidate_job", ["candidateId", "jobId"]),
+    .index("by_job_score", ["jobId", "score"])
+    .index("by_candidate_job", ["candidateId", "jobId"])
+    .index("by_candidateId", ["candidateId"]),
 
 // ■■ PIPELINE_HEALTH_REPORTS ■■■■■■■■■■■■■■■■■■■■■■■■■■■
 pipeline_health_reports: defineTable({
@@ -404,7 +405,8 @@ generatedAt: v.string(),
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
     .index("by_fileHash", ["fileHash"])
-    .index("by_batchId", ["batchId"]),
+    .index("by_batchId", ["batchId"])
+    .index("by_storageId", ["storageId"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
@@ -483,14 +485,6 @@ generatedAt: v.string(),
     vectorEmbeddingId: v.optional(v.string()),
     rawText: v.optional(v.string()),
     pastJobTitles: v.optional(v.array(v.string())),
-    jobHistory: v.optional(v.array(v.object({
-      company: v.string(),
-      title: v.string(),
-      startDate: v.optional(v.string()),
-      endDate: v.optional(v.string()),
-      description: v.optional(v.string()),
-    }))),
-    profileImageId: v.optional(v.id("_storage")),
     sector: v.optional(v.string()),
     overallStatus: v.optional(
       v.union(
@@ -752,7 +746,9 @@ isBackwardMove: v.optional(v.boolean()),
     .index("by_job", ["jobId"])
     .index("by_candidate_time", ["candidateId", "calledAt"])
     .index("by_job_time", ["jobId", "calledAt"])
-    .index("by_callStatus", ["callStatus"]),
+    .index("by_callStatus", ["callStatus"])
+    .index("by_twilio", ["twilioCallSid"])
+    .index("by_elevenlabs", ["elevenlabsConversationId"]),
 
   communications: defineTable({
     candidateId: v.id("candidates"),

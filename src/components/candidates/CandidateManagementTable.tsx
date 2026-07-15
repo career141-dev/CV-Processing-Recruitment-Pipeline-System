@@ -66,7 +66,7 @@ export function CandidateManagementTable({
 }: CandidateManagementTableProps) {
   const router = useRouter();
 
-  const itemsPerPage = 20;
+  const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = React.useState(1);
   
   // Filter States
@@ -83,7 +83,7 @@ export function CandidateManagementTable({
     loadMore,
   } = usePaginatedQuery(api.candidates.candidates.listCandidatesPaginated, {
     searchQuery: nameSearch || undefined
-  }, { initialNumItems: 15 });
+  }, { initialNumItems: 10 });
 
   // Filter candidates locally in memory
   const filteredResults = React.useMemo(() => {
@@ -156,7 +156,7 @@ export function CandidateManagementTable({
     if (canGoNext) {
       setCurrentPage((p) => p + 1);
     } else if (status === "CanLoadMore") {
-      loadMore(15);
+      loadMore(10);
       setCurrentPage((p) => p + 1);
     }
   };
@@ -450,18 +450,78 @@ export function CandidateManagementTable({
           <span className="text-[13px] text-text-secondary">
             Showing {startIndex + 1}-{Math.min(endIndex, filteredResults.length)} of {filteredResults.length} {status === "CanLoadMore" ? "(More available)" : ""}
           </span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <button
               onClick={handlePrev}
               disabled={!canGoPrev}
-              className="p-1.5 border border-border rounded-md text-text-secondary hover:bg-surface-bright hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="p-1.5 border border-border rounded-md text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
+            
+            {/* Numeric Page Indicators */}
+            <div className="flex items-center gap-1 mx-2">
+              {(() => {
+                const pages = [];
+                const maxVisiblePages = 5;
+                
+                let startPage = Math.max(1, currentPage - 2);
+                let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+                
+                if (endPage - startPage + 1 < maxVisiblePages) {
+                  startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                }
+
+                if (startPage > 1) {
+                  pages.push(
+                    <button key={1} onClick={() => setCurrentPage(1)} className="px-2.5 py-1 text-[13px] rounded-md transition-colors text-text-secondary hover:bg-surface hover:text-text-primary font-medium">
+                      1
+                    </button>
+                  );
+                  if (startPage > 2) {
+                    pages.push(<span key="start-ellipsis" className="px-1 text-text-secondary">...</span>);
+                  }
+                }
+
+                for (let i = startPage; i <= endPage; i++) {
+                  pages.push(
+                    <button
+                      key={i}
+                      onClick={() => setCurrentPage(i)}
+                      className={`px-2.5 py-1 text-[13px] rounded-md transition-colors font-medium ${
+                        currentPage === i
+                          ? "bg-[#0A66C2] text-white shadow-sm"
+                          : "text-text-secondary hover:bg-surface hover:text-text-primary"
+                      }`}
+                    >
+                      {i}
+                    </button>
+                  );
+                }
+
+                if (endPage < totalPages) {
+                  if (endPage < totalPages - 1) {
+                    pages.push(<span key="end-ellipsis" className="px-1 text-text-secondary">...</span>);
+                  }
+                  pages.push(
+                    <button key={totalPages} onClick={() => setCurrentPage(totalPages)} className="px-2.5 py-1 text-[13px] rounded-md transition-colors text-text-secondary hover:bg-surface hover:text-text-primary font-medium">
+                      {totalPages}
+                    </button>
+                  );
+                }
+
+                if (status === "CanLoadMore" && endPage >= totalPages && totalPages > 0) {
+                    pages.push(<span key="load-more-ellipsis" className="px-1 text-text-secondary" title="More pages available to load">...</span>);
+                }
+
+                return pages;
+              })()}
+            </div>
+
             <button
               onClick={handleNext}
               disabled={!canGoNext && status !== "CanLoadMore"}
-              className="p-1.5 border border-border rounded-md text-text-secondary hover:bg-surface-bright hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="p-1.5 border border-border rounded-md text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               <ChevronRight className="w-4 h-4" />
             </button>

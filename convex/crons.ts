@@ -47,6 +47,8 @@ export const evaluateFollowUpStage = internalMutation({
       return localHour >= 9 && localHour < 20; // 9 AM to 8 PM
     }
 
+    const jobCache = new Map<string, any>();
+
     for (const app of followUpApps) {
       const candidate = await ctx.db.get(app.candidateId);
       if (!candidate) continue;
@@ -56,7 +58,12 @@ export const evaluateFollowUpStage = internalMutation({
         continue;
       }
 
-      const job = await ctx.db.get(app.jobId);
+      let job = jobCache.get(app.jobId);
+      if (job === undefined) {
+        job = await ctx.db.get(app.jobId);
+        jobCache.set(app.jobId, job);
+      }
+      
       if (!job) continue;
       if (job.status !== "active") continue;
 
@@ -378,10 +385,16 @@ export const checkSlaBreaches = internalMutation({
       .withIndex("by_active", q => q.eq("isActive", true))
       .take(500); // Safety cap: process max 500 per daily run
 
+    const jobCache = new Map<string, any>();
+
     for (const app of apps) {
       if (!app.lastStageChangedAt) continue;
 
-      const job = await ctx.db.get(app.jobId);
+      let job = jobCache.get(app.jobId);
+      if (job === undefined) {
+        job = await ctx.db.get(app.jobId);
+        jobCache.set(app.jobId, job);
+      }
       if (!job || job.status !== "active") continue;
 
       let slaLimit = 0;
@@ -458,6 +471,12 @@ crons.daily(
   "check-sla-breaches",
   { hourUTC: 8, minuteUTC: 0 },
   internal.crons.checkSlaBreaches
+);
+
+crons.daily(
+  "Recalculate Global Stats",
+  { hourUTC: 2, minuteUTC: 0 },
+  (api as any).admin.recalculateGlobalStats.run
 );
 
 crons.interval(

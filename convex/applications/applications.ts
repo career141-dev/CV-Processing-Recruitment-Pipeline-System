@@ -78,12 +78,11 @@ export const getByJobId = query({
       .withIndex("by_job_active", (q) => q.eq("jobId", actualJobId!).eq("isActive", true))
       .collect();
 
-    // Return denormalized details to avoid N+1 scans
-    const enriched = applications.map((app) => ({
-      ...app,
-      candidate: {
+    // Return denormalized details directly. Do NOT fallback to full candidate fetch to avoid massive I/O spikes.
+    const enriched = await Promise.all(applications.map(async (app) => {
+      let candidateObj: any = {
         _id: app.candidateId,
-        fullName: app.candidateName,
+        fullName: app.candidateName ?? "Unknown Candidate",
         email: app.candidateEmail,
         phone: app.candidatePhone,
         currentTitle: app.candidateTitle,
@@ -92,8 +91,13 @@ export const getByJobId = query({
         currentSalary: app.candidateCurrentSalary,
         expectedSalary: app.candidateExpectedSalary,
         noticePeriodDays: app.candidateNoticePeriodDays,
-      },
-      cv: app.cvFileName ? { fileName: app.cvFileName } : null,
+      };
+
+      return {
+        ...app,
+        candidate: candidateObj,
+        cv: app.cvFileName ? { fileName: app.cvFileName } : null,
+      };
     }));
 
     return enriched;
@@ -136,21 +140,44 @@ export const getUnresponsiveForJob = query({
 
     const now = Date.now();
 
+    // Cache the job fetch — all applications are for the same job
+    const job = await ctx.db.get(args.jobId);
+    const jobTitle = job?.title ?? "Unknown Job";
+
     return await Promise.all(
       applications.map(async (app) => {
-        const candidate = await ctx.db.get(app.candidateId);
-        const job = await ctx.db.get(app.jobId);
+        // Use denormalized data first, fallback to scalar-only candidate fetch
+        let candidateName = app.candidateName;
+        let candidatePhone = app.candidatePhone;
+        let candidateEmail = app.candidateEmail;
+        let currentSalary = app.candidateCurrentSalary;
+        let expectedSalary = app.candidateExpectedSalary;
+        let noticePeriodDays = app.candidateNoticePeriodDays;
+        let cvUploadId = app.candidateCvUploadId;
+
+        if (!candidateName) {
+          const candidate = await ctx.db.get(app.candidateId);
+          if (candidate) {
+            candidateName = candidate.fullName;
+            candidatePhone = candidate.phone;
+            candidateEmail = candidate.email;
+            currentSalary = candidate.currentSalary;
+            expectedSalary = candidate.expectedSalary;
+            noticePeriodDays = candidate.noticePeriodDays;
+            cvUploadId = candidate.cvUploadId;
+          }
+        }
 
         // Compute which fields are still missing
         const missingFields: string[] = [];
         const hasCV = app.followUpCvReceived === true ||
-          (app.followUpCvReceived === undefined && (!!candidate?.cvUploadId || !!app.cvFileId));
+          (app.followUpCvReceived === undefined && (!!cvUploadId || !!app.cvFileId));
         const hasCurrentSalary = app.followUpCurrentSalary === true ||
-          (app.followUpCurrentSalary === undefined && candidate?.currentSalary !== undefined);
+          (app.followUpCurrentSalary === undefined && currentSalary !== undefined);
         const hasExpectedSalary = app.followUpExpectedSalary === true ||
-          (app.followUpExpectedSalary === undefined && candidate?.expectedSalary !== undefined);
+          (app.followUpExpectedSalary === undefined && expectedSalary !== undefined);
         const hasNoticePeriod = app.followUpNoticePeriod === true ||
-          (app.followUpNoticePeriod === undefined && candidate?.noticePeriodDays !== undefined);
+          (app.followUpNoticePeriod === undefined && noticePeriodDays !== undefined);
 
         if (!hasCV) missingFields.push("CV");
         if (!hasCurrentSalary) missingFields.push("Current Salary");
@@ -164,16 +191,16 @@ export const getUnresponsiveForJob = query({
         return {
           applicationId: app._id,
           candidateId: app.candidateId,
-          candidateName: candidate?.fullName ?? "Unknown",
-          candidatePhone: candidate?.phone ?? null,
-          candidateEmail: candidate?.email ?? null,
-          jobTitle: job?.title ?? "Unknown Job",
+          candidateName: candidateName ?? "Unknown",
+          candidatePhone: candidatePhone ?? null,
+          candidateEmail: candidateEmail ?? null,
+          jobTitle,
           missingFields,
           daysUnresponsive,
           lastStageChangedAt: app.lastStageChangedAt,
-          currentSalary: candidate?.currentSalary,
-          expectedSalary: candidate?.expectedSalary,
-          noticePeriodDays: candidate?.noticePeriodDays,
+          currentSalary,
+          expectedSalary,
+          noticePeriodDays,
           hasCurrentSalary,
           hasExpectedSalary,
           hasNoticePeriod,
@@ -196,13 +223,17 @@ export const getCandidateTimeline = query({
       .order("desc")
       .collect();
 
+    // Cache job lookups to avoid N+1 reads
+    const jobCache = new Map<string, string>();
     return await Promise.all(
       events.map(async (e) => {
-        const job = await ctx.db.get(e.jobId);
-        return {
-          ...e,
-          jobTitle: job?.title ?? "Unknown Job",
-        };
+        let jobTitle = jobCache.get(e.jobId);
+        if (jobTitle === undefined) {
+          const job = await ctx.db.get(e.jobId);
+          jobTitle = job?.title ?? "Unknown Job";
+          jobCache.set(e.jobId, jobTitle);
+        }
+        return { ...e, jobTitle };
       })
     );
   },
@@ -219,13 +250,17 @@ export const getCandidateAiCalls = query({
       .order("desc")
       .collect();
 
+    // Cache job lookups to avoid N+1 reads
+    const jobCache = new Map<string, string>();
     return await Promise.all(
       calls.map(async (call) => {
-        const job = await ctx.db.get(call.jobId);
-        return {
-          ...call,
-          jobTitle: job?.title ?? "Unknown Job",
-        };
+        let jobTitle = jobCache.get(call.jobId);
+        if (jobTitle === undefined) {
+          const job = await ctx.db.get(call.jobId);
+          jobTitle = job?.title ?? "Unknown Job";
+          jobCache.set(call.jobId, jobTitle);
+        }
+        return { ...call, jobTitle };
       })
     );
   },
@@ -279,11 +314,23 @@ export const createApplication = mutation({
     const now = Date.now();
     const initialStage = args.sourceChannel === "database" ? "matched_candidates" : "new_cvs";
     
+    // Fetch candidate to populate denormalized fields
+    const candidate = await ctx.db.get(args.candidateId);
+    
     const appId = await ctx.db.insert("applications", {
       candidateId: args.candidateId,
       jobId: args.jobId,
       cvFileId: args.cvFileId,
       sourceChannel: args.sourceChannel,
+      candidateName: candidate?.fullName,
+      candidateEmail: candidate?.email,
+      candidatePhone: candidate?.phone,
+      candidateTitle: candidate?.currentTitle || candidate?.currentJobTitle,
+      candidateExperience: candidate?.totalExperienceYears || candidate?.yearsOfExperience,
+      candidateCvUploadId: candidate?.cvUploadId,
+      candidateCurrentSalary: candidate?.currentSalary,
+      candidateExpectedSalary: candidate?.expectedSalary,
+      candidateNoticePeriodDays: candidate?.noticePeriodDays,
       currentStage: initialStage as any,
       loopIteration: 1,
       isActive: true,
@@ -640,18 +687,20 @@ export const updatePipelineCandidateDetails = mutation({
 export const findAiCallBySid = query({
   args: { twilioCallSid: v.string() },
   handler: async (ctx, args) => {
-    const calls = await ctx.db
+    return await ctx.db
       .query("aiCalls")
-      .collect();
-    return calls.find(c => c.twilioCallSid === args.twilioCallSid) ?? null;
+      .withIndex("by_twilio", (q) => q.eq("twilioCallSid", args.twilioCallSid))
+      .first();
   },
 });
 
 export const findAiCallByElevenLabsId = query({
   args: { conversationId: v.string() },
   handler: async (ctx, args) => {
-    const calls = await ctx.db.query("aiCalls").collect();
-    return calls.find(c => c.elevenlabsConversationId === args.conversationId) ?? null;
+    return await ctx.db
+      .query("aiCalls")
+      .withIndex("by_elevenlabs", (q) => q.eq("elevenlabsConversationId", args.conversationId))
+      .first();
   },
 });
 
