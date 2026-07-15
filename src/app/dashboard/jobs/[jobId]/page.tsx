@@ -1077,6 +1077,7 @@ export default function JobDetailPage() {
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
   const [activeSourceFilter, setActiveSourceFilter] = useState<'All Sources' | 'LinkedIn' | 'WhatsApp'>('All Sources');
   const [currentPage, setCurrentPage] = useState(1);
+  const [matchesPage, setMatchesPage] = useState(1);
   const itemsPerPage = 6;
 
   // Modal state
@@ -1119,6 +1120,7 @@ export default function JobDetailPage() {
     setIsScanning(true);
     try {
       await runReverseMatch({ jobId: jobId as Id<"jobs"> });
+      setMatchesPage(1);
     } catch (error) {
       console.error(error);
       alert("Error scanning database");
@@ -1280,79 +1282,115 @@ export default function JobDetailPage() {
   };
 
   
-  const renderMatchesTable = () => (
-    <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col mb-0">
-      {/* Toolbar */}
-      <div className="p-4 border-b border-border flex justify-between items-center bg-surface">
-        <div className="flex gap-2 text-[13px]">
-          <h3 className="font-semibold text-[15px]">AI Matches from Database</h3>
-        </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={handleScanDatabase}
-            disabled={isScanning}
-            className="border border-primary text-primary px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1 disabled:opacity-50"
+  const renderMatchesPagination = () => {
+    const matchesPerPage = 6;
+    const totalItems = filteredMatches.length;
+    const totalPages = Math.ceil(totalItems / matchesPerPage);
+    const startIndex = (matchesPage - 1) * matchesPerPage;
+    if (totalItems === 0) return null;
+    return (
+      <div className="p-4 border-t border-border flex justify-between items-center text-[12px] text-text-secondary bg-surface-bright">
+        <span>Showing {Math.min(startIndex + 1, totalItems)} to {Math.min(startIndex + matchesPerPage, totalItems)} of {totalItems} candidates (Page {matchesPage} of {totalPages})</span>
+        <div className="flex gap-2">
+          <button
+            disabled={matchesPage === 1}
+            onClick={() => setMatchesPage(p => p - 1)}
+            className="flex items-center gap-1 border border-border px-2 py-1 rounded hover:bg-surface-container disabled:opacity-50"
           >
-            <Bot className="w-4 h-4" /> {isScanning ? "Scanning..." : "Scan Database"}
+            <ChevronLeft className="w-4 h-4" /> Prev
+          </button>
+          <button
+            disabled={matchesPage === totalPages}
+            onClick={() => setMatchesPage(p => p + 1)}
+            className="flex items-center gap-1 border border-border px-2 py-1 rounded hover:bg-surface-container disabled:opacity-50"
+          >
+            Next <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>
+    );
+  };
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-              <th className="p-4 w-10"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></th>
-              <th className="p-4">Candidate</th>
-              <th className="p-4">Source</th>
-              <th className="p-4">JD Match Score</th>
-              <th className="p-4">Role & Exp</th>
-              <th className="p-4">AI Reason</th>
-              <th className="p-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="text-[13px] text-text-primary divide-y divide-border">
-            {(filteredMatches.length === 0) ? (
-              <tr>
-                <td colSpan={7} className="p-0">
-                  <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface-bright/30">
-                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                      <Bot className="w-8 h-8 text-primary" />
-                    </div>
-                    <h4 className="text-[16px] font-semibold text-text-primary mb-2">No Candidates Found</h4>
-                    <p className="text-[13px] text-text-secondary max-w-[400px] mb-6 leading-relaxed">
-                      We couldn't find any relevant matches for this role in your database. Click 'Scan Database' to let the AI search your entire talent pool against this job description.
-                    </p>
-                    <button 
-                      onClick={handleScanDatabase}
-                      disabled={isScanning}
-                      className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <Bot className="w-4 h-4" /> {isScanning ? "Scanning Database..." : "Scan Database Now"}
-                    </button>
-                  </div>
-                </td>
+  const renderMatchesTable = () => {
+    const matchesPerPage = 6;
+    const startIndex = (matchesPage - 1) * matchesPerPage;
+    const currentMatches = filteredMatches.slice(startIndex, startIndex + matchesPerPage);
+
+    return (
+      <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col mb-0">
+        {/* Toolbar */}
+        <div className="p-4 border-b border-border flex justify-between items-center bg-surface">
+          <div className="flex gap-2 text-[13px]">
+            <h3 className="font-semibold text-[15px]">AI Matches from Database</h3>
+          </div>
+          <div className="flex gap-3">
+            <button 
+              onClick={handleScanDatabase}
+              disabled={isScanning}
+              className="border border-primary text-primary px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1 disabled:opacity-50"
+            >
+              <Bot className="w-4 h-4" /> {isScanning ? "Scanning..." : "Scan Database"}
+            </button>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                <th className="p-4 w-10"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></th>
+                <th className="p-4">Candidate</th>
+                <th className="p-4">Source</th>
+                <th className="p-4">JD Match Score</th>
+                <th className="p-4">Role & Exp</th>
+                <th className="p-4">AI Reason</th>
+                <th className="p-4 text-right">Actions</th>
               </tr>
-            ) : (
-              filteredMatches.map((match: any) => (
-                <MatchRow 
-                  key={match.cvId} 
-                  match={match} 
-                  jobId={jobId} 
-                  applications={applications} 
-                  onNavigate={() => {
-                    setActiveMainTab('pipeline');
-                    setActivePipelineTab('TA Shortlist');
-                  }}
-                />
-              ))
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-[13px] text-text-primary divide-y divide-border">
+              {(filteredMatches.length === 0) ? (
+                <tr>
+                  <td colSpan={7} className="p-0">
+                    <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface-bright/30">
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                        <Bot className="w-8 h-8 text-primary" />
+                      </div>
+                      <h4 className="text-[16px] font-semibold text-text-primary mb-2">No Candidates Found</h4>
+                      <p className="text-[13px] text-text-secondary max-w-[400px] mb-6 leading-relaxed">
+                        We couldn't find any relevant matches for this role in your database. Click 'Scan Database' to let the AI search your entire talent pool against this job description.
+                      </p>
+                      <button 
+                        onClick={handleScanDatabase}
+                        disabled={isScanning}
+                        className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <Bot className="w-4 h-4" /> {isScanning ? "Scanning Database..." : "Scan Database Now"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                currentMatches.map((match: any) => (
+                  <MatchRow 
+                    key={match.cvId} 
+                    match={match} 
+                    jobId={jobId} 
+                    applications={applications} 
+                    onNavigate={() => {
+                      setActiveMainTab('pipeline');
+                      setActivePipelineTab('TA Shortlist');
+                    }}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {renderMatchesPagination()}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderNewCVsTable = () => {
     const startIndex = (currentPage - 1) * itemsPerPage;
