@@ -485,14 +485,6 @@ generatedAt: v.string(),
     vectorEmbeddingId: v.optional(v.string()),
     rawText: v.optional(v.string()),
     pastJobTitles: v.optional(v.array(v.string())),
-    jobHistory: v.optional(v.array(v.object({
-      company: v.string(),
-      title: v.string(),
-      startDate: v.optional(v.string()),
-      endDate: v.optional(v.string()),
-      description: v.optional(v.string()),
-    }))),
-    profileImageId: v.optional(v.id("_storage")),
     sector: v.optional(v.string()),
     overallStatus: v.optional(
       v.union(

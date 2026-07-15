@@ -594,16 +594,6 @@ export async function runCvExtraction(
     }
     const fileHash = computeSha256(buffer);
 
-    let profileImageId: Id<"_storage"> | undefined = undefined;
-    // Feature temporarily disabled to prevent unwanted images from being extracted
-    // if (fileType.toLowerCase().includes("pdf")) {
-    //   const pngBuffer = await extractProfileImage(buffer);
-    //   if (pngBuffer) {
-    //     const imageBlob = new Blob([new Uint8Array(pngBuffer)], { type: "image/png" });
-    //     profileImageId = await ctx.storage.store(imageBlob);
-    //   }
-    // }
-
     const rawText = await extractText(buffer, fileType);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
@@ -621,7 +611,6 @@ export async function runCvExtraction(
       cvUploadId,
       workableCandidateId: workableCandidateId ?? undefined,
       isParsed: !skipLLM,
-      profileImageId,
     });
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {

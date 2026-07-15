@@ -16,6 +16,7 @@ import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
 import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
 import type * as admin_mute from "../admin/mute.js";
 import type * as admin_recalculateGlobalStats from "../admin/recalculateGlobalStats.js";
+import type * as admin_removeProfileImages from "../admin/removeProfileImages.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
 import type * as admin_settings from "../admin/settings.js";
 import type * as admin_updateJDs from "../admin/updateJDs.js";
@@ -90,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
   "admin/mute": typeof admin_mute;
   "admin/recalculateGlobalStats": typeof admin_recalculateGlobalStats;
+  "admin/removeProfileImages": typeof admin_removeProfileImages;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
   "admin/settings": typeof admin_settings;
   "admin/updateJDs": typeof admin_updateJDs;

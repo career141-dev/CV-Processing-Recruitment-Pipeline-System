@@ -263,7 +263,7 @@ export const aiSearch = action({
         list = list.filter((c) => {
           const dbLevel = (c.seniorityLevel || "").toLowerCase();
           const currentTitle = (c.currentJobTitle || c.currentTitle || "").toLowerCase();
-          const histTitles = (c.jobHistory || []).map((h) => (h.title || "").toLowerCase());
+          const histTitles = ((c as any).pastJobTitles || []).map((t: string) => (t || "").toLowerCase());
           const allTitles = [currentTitle, ...histTitles];
 
           if (searchSeniority === "senior") {

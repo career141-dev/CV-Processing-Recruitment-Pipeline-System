@@ -16,7 +16,7 @@ export const listCandidatesByIds = query({
       const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
       candidates.push({
         ...safeCandidate,
-        profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+        profileImageUrl: null,
         activeApplications: [],
       });
     }
@@ -78,7 +78,7 @@ export const listCandidatesPaginated = query({
 
           return {
             ...safeCandidate,
-            profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
+            profileImageUrl: null,
             activeApplications: activeApplications,
           };
         })
@@ -95,7 +95,7 @@ export const getCandidate = query({
     const { rawText, embedding, jobHistory, ...safeCandidate } = candidate as any;
     return {
       ...safeCandidate,
-      profileImageUrl: candidate.profileImageId ? await ctx.storage.getUrl(candidate.profileImageId) : null,
+      profileImageUrl: null,
     };
   },
 });
@@ -265,7 +265,6 @@ export const createCandidate = mutation({
     isParsed: v.optional(v.boolean()),
     parsingConfidence: v.optional(v.any()),
     embedding: v.optional(v.array(v.float64())),
-    profileImageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     // 4-Factor Deduplication (Agent 6)

@@ -18,6 +18,18 @@ export const getScoringData = internalQuery({
       .withIndex("by_candidate_job", (q) => q.eq("candidateId", args.candidateId).eq("jobId", args.jobId))
       .first();
 
+    // Get the resume for heavy fields (rawText, jobHistory, etc.)
+    const resume = await ctx.db.query("candidateResumes")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+      .first();
+
+    if (resume) {
+      // Attach the heavy fields to the candidate object dynamically
+      // so downstream logic (like cvScoring) can use them without knowing about the split.
+      (candidate as any).rawText = resume.rawText;
+      (candidate as any).jobHistory = resume.jobHistory;
+    }
+
     return { candidate, job, application };
   },
 });
