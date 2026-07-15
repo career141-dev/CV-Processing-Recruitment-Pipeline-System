@@ -1,9 +1,9 @@
 import { mutation } from "../_generated/server";
-import { backfillCandidateSummaries } from "./ioPerformanceMigrations";
+import { internal } from "../_generated/api";
 
 export const runBackfill = mutation({
   args: {},
-  handler: async (ctx) => {
-    return await backfillCandidateSummaries(ctx, {} as any);
+  handler: async (ctx): Promise<string> => {
+    return await ctx.runMutation(internal.admin.ioPerformanceMigrations.backfillCandidateSummaries, {});
   }
 });
