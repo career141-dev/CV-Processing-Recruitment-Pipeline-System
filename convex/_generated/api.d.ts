@@ -9,6 +9,7 @@
  */
 
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
+import type * as admin_backfillTokenCache from "../admin/backfillTokenCache.js";
 import type * as admin_checkData from "../admin/checkData.js";
 import type * as admin_cleanupCandidates from "../admin/cleanupCandidates.js";
 import type * as admin_ioPerformanceMigrations from "../admin/ioPerformanceMigrations.js";
@@ -17,8 +18,10 @@ import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
 import type * as admin_mute from "../admin/mute.js";
 import type * as admin_recalculateGlobalStats from "../admin/recalculateGlobalStats.js";
 import type * as admin_removeProfileImages from "../admin/removeProfileImages.js";
+import type * as admin_runBackfill from "../admin/runBackfill.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
 import type * as admin_settings from "../admin/settings.js";
+import type * as admin_testIOMigrations from "../admin/testIOMigrations.js";
 import type * as admin_updateJDs from "../admin/updateJDs.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
@@ -84,6 +87,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "admin/activateReactDev": typeof admin_activateReactDev;
+  "admin/backfillTokenCache": typeof admin_backfillTokenCache;
   "admin/checkData": typeof admin_checkData;
   "admin/cleanupCandidates": typeof admin_cleanupCandidates;
   "admin/ioPerformanceMigrations": typeof admin_ioPerformanceMigrations;
@@ -92,8 +96,10 @@ declare const fullApi: ApiFromModules<{
   "admin/mute": typeof admin_mute;
   "admin/recalculateGlobalStats": typeof admin_recalculateGlobalStats;
   "admin/removeProfileImages": typeof admin_removeProfileImages;
+  "admin/runBackfill": typeof admin_runBackfill;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
   "admin/settings": typeof admin_settings;
+  "admin/testIOMigrations": typeof admin_testIOMigrations;
   "admin/updateJDs": typeof admin_updateJDs;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
