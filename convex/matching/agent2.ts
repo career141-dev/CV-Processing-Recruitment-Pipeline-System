@@ -348,6 +348,9 @@ export const runReverseMatch = action({
             reason: `AI Match score: ${matchScore}% (vector similarity: ${(c.vectorScore * 100).toFixed(1)}%)`,
             sourceLevel1: cv.firstSourceChannel ?? undefined,
             sourceLevel2: cv.firstSourceJobId ?? undefined,
+            candidateName: cv.fullName ?? undefined,
+            candidateRole: cv.currentTitle ?? cv.currentJobTitle ?? undefined,
+            candidateExp: cv.yearsOfExperience ?? cv.totalExperienceYears ?? undefined,
           };
         })
         .filter(r => {

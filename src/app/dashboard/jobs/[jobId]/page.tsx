@@ -141,7 +141,7 @@ const CandidateNameDisplay = ({ name, cvUploadId, doNotContact, candidateId }: {
 
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
-  const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
+  const candidate = useQuery(api.candidates.candidates.getCandidate, (match.candidateName) ? "skip" : { id: match.cvId as Id<"candidates"> });
   const createApplication = useMutation(api.applications.applications.createApplication);
   const removeApplication = useMutation(api.applications.applications.removeApplication);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -203,7 +203,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
         <td className="p-4 font-medium">
           <div className="flex items-center gap-2">
             <Link href={`/dashboard/candidates/${match.cvId}`} className="text-text-primary hover:underline">
-              {candidate === undefined ? "Loading..." : (candidate?.fullName || candidate?.email || `Candidate ID: ${match.cvId.slice(0, 8)}...`)}
+              {candidate === undefined && !match.candidateName ? "Loading..." : (candidate?.fullName || candidate?.email || match.candidateName || `Candidate ID: ${match.cvId.slice(0, 8)}...`)}
             </Link>
             <CvViewButton cvUploadId={candidate?.cvUploadId as Id<"cvUploads"> | undefined} />
           </div>
@@ -211,8 +211,8 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
         <td className="p-4"><span className="text-[#0A66C2] font-medium">{match.sourceLevel1 || 'Database'}</span></td>
         <td className="p-4"><ScoreRing score={match.overallScore} reason={match.reason} /></td>
         <td className="p-4 text-[13px]">
-          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}>{(candidate as any)?.currentTitle || candidate?.currentJobTitle || 'Unknown Role'}</div>
-          <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
+          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(candidate as any)?.currentTitle || candidate?.currentJobTitle || match.candidateRole || 'Unknown Role'}>{(candidate as any)?.currentTitle || candidate?.currentJobTitle || match.candidateRole || 'Unknown Role'}</div>
+          <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : (match.candidateExp ? `${match.candidateExp} yrs exp` : 'Exp not specified'))}</div>
         </td>
         <td className="p-4 text-[13px] text-text-secondary">
           <div className="flex items-center gap-2">

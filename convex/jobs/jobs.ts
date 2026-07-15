@@ -773,6 +773,9 @@ export const saveReverseMatchResults = internalMutation({
         reason: v.string(),
         sourceLevel1: v.optional(v.string()),
         sourceLevel2: v.optional(v.string()),
+        candidateName: v.optional(v.string()),
+        candidateRole: v.optional(v.string()),
+        candidateExp: v.optional(v.number()),
       })
     ),
     status: v.union(v.literal("done"), v.literal("error"), v.literal("running")),
@@ -790,6 +793,9 @@ export const saveReverseMatchResults = internalMutation({
         reason: r.reason,
         sourceLevel1: r.sourceLevel1,
         sourceLevel2: r.sourceLevel2,
+        candidateName: r.candidateName,
+        candidateRole: r.candidateRole,
+        candidateExp: r.candidateExp,
       })),
     });
   },

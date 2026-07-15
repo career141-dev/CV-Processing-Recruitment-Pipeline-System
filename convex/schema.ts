@@ -187,6 +187,9 @@ missingSkills: v.array(v.string()),
 reason: v.string(),
 sourceLevel1: v.optional(v.string()),
 sourceLevel2: v.optional(v.string()),
+candidateName: v.optional(v.string()),
+candidateRole: v.optional(v.string()),
+candidateExp: v.optional(v.number()),
 }))),
 
 
