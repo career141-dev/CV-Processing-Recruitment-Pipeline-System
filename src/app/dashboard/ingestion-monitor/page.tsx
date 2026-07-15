@@ -69,6 +69,7 @@ function StatBox({ label, value, icon: Icon, color }: {
 export default function IngestionMonitorPage() {
   const stats = useQuery(api.stats.stats.getIngestionStats);
   const resumeFailedUploads = useAction(api.cvs.cvExtraction.resumeFailedUploads);
+  const startBatchExtraction = useAction(api.cvs.cvExtraction.startBatchExtraction);
   
   const { user } = useUser();
   const startBulkImport = useAction(api.integrations.workableActions.startBulkImport);
@@ -275,7 +276,7 @@ export default function IngestionMonitorPage() {
           const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
           const { storageId } = await resp.json();
 
-          const cvUploadId = await saveUpload({
+          await saveUpload({
             storageId,
             fileName: file.name,
             fileSize: file.size,
@@ -284,17 +285,9 @@ export default function IngestionMonitorPage() {
             campaignLabel: uploadCampaignLabel || undefined,
             assignToJob: uploadAssignToJob || undefined,
             uploadedBy: user.id,
-          });
-
-          await queueManualExtraction({
-            storageId,
-            fileType: normalizeFileType(file),
-            sourceChannel: uploadSource,
-            uploadedBy: user.id,
-            cvUploadId,
-            fileName: file.name,
             batchId,
           });
+
           successCount++;
         } catch (err) {
           console.error("Upload failed for file:", file.name, err);
@@ -305,8 +298,13 @@ export default function IngestionMonitorPage() {
           });
         }
       }
+
+      if (successCount > 0) {
+        await startBatchExtraction({ batchId });
+      }
+
       if (successCount === filesToUpload.length) {
-        toast.success(`${successCount} CVs uploaded and processing started.`);
+        toast.success(`${successCount} CVs uploaded. Paced batch extraction started.`);
       } else {
         toast.warning(`Uploaded ${successCount} out of ${filesToUpload.length} CVs.`);
       }
@@ -325,7 +323,7 @@ export default function IngestionMonitorPage() {
     );
   }
 
-  const { statsBySource, activeUploads, failedUploads, recentDone } = stats;
+  const { statsBySource, activeUploads, failedUploads, failedRetryUploads, recentDone } = stats as any;
 
   const handleRetryFailed = async () => {
     if (failedUploads.length === 0) return;
@@ -358,6 +356,13 @@ export default function IngestionMonitorPage() {
   };
 
   const failedBySource = failedUploads.reduce((acc: any, curr: any) => {
+    const s = curr.source || 'Manual';
+    if (!acc[s]) acc[s] = [];
+    acc[s].push(curr);
+    return acc;
+  }, {});
+
+  const failedRetryBySource = (failedRetryUploads || []).reduce((acc: any, curr: any) => {
     const s = curr.source || 'Manual';
     if (!acc[s]) acc[s] = [];
     acc[s].push(curr);
@@ -613,6 +618,38 @@ export default function IngestionMonitorPage() {
                       <div key={f._id} className="bg-white p-3 rounded-md border border-[#F9DEDC] shadow-sm flex flex-col">
                         <span className="text-[13px] font-semibold text-[#1D1B20] truncate">{f.fileName}</span>
                         <span className="text-[11px] text-[#49454F] mt-1 truncate">{f.errorMessage || "Unknown extraction error"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {Object.keys(failedRetryBySource).length > 0 && (
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-[#7D5260] flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                Failed CV Extractions (Failed in Retry)
+              </h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {Object.entries(failedRetryBySource).map(([sourceName, uploads]: [string, any]) => (
+                <div key={sourceName} className="bg-[#FAF0F3] border border-[#F2B8B5] p-5 rounded-xl">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="font-bold text-[#1D1B20] text-[15px]">{sourceName} Permanent Failures</span>
+                    <span className="text-[12px] font-bold text-[#7D5260] bg-[#FAF0F3] px-2 py-1 rounded-sm">
+                      {uploads.length} files
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2">
+                    {uploads.map((f: any) => (
+                      <div key={f._id} className="bg-white p-3 rounded-md border border-[#F2B8B5] shadow-sm flex flex-col">
+                        <span className="text-[13px] font-semibold text-[#1D1B20] truncate">{f.fileName}</span>
+                        <span className="text-[11px] text-[#49454F] mt-1 truncate">{f.errorMessage || "Failed repeatedly during retry"}</span>
                       </div>
                     ))}
                   </div>

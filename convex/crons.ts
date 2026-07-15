@@ -466,4 +466,10 @@ crons.daily(
   (api as any).admin.recalculateGlobalStats.run
 );
 
+crons.interval(
+  "update-dashboard-stats-cache",
+  { minutes: 5 },
+  internal.stats.stats.updateDashboardStatsCache
+);
+
 export default crons;

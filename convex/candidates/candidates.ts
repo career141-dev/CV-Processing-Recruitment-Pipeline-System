@@ -51,12 +51,12 @@ export const listCandidatesPaginated = query({
       ...page,
       page: await Promise.all(
         page.page.map(async (c) => {
-          const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
+          const { rawText, embedding, jobHistory, activeApplicationsSummary, ...safeCandidate } = c as any;
 
           // Prefer the pre-computed summary field (O(1)) over the live N+2 query
           let activeApplications: any[] = [];
-          if (Array.isArray((c as any).activeApplicationsSummary)) {
-            activeApplications = (c as any).activeApplicationsSummary;
+          if (Array.isArray(activeApplicationsSummary)) {
+            activeApplications = activeApplicationsSummary;
           } else {
             // Fallback: live query for candidates created before the summary field was added
             const apps = await ctx.db
@@ -79,7 +79,7 @@ export const listCandidatesPaginated = query({
           return {
             ...safeCandidate,
             profileImageUrl: c.profileImageId ? await ctx.storage.getUrl(c.profileImageId) : null,
-            activeApplications,
+            activeApplications: activeApplications,
           };
         })
       ),
@@ -370,6 +370,8 @@ export const createCandidate = mutation({
       }
 
       await checkAndAdvanceFollowUp(ctx, existingCandidateId);
+      await syncCandidateSummaryToApplications(ctx, existingCandidateId);
+      await syncCandidateOverallStatus(ctx, existingCandidateId);
       return existingCandidateId;
     }
 
@@ -412,6 +414,8 @@ export const createCandidate = mutation({
     }
 
     await checkAndAdvanceFollowUp(ctx, newId);
+    await syncCandidateSummaryToApplications(ctx, newId);
+    await syncCandidateOverallStatus(ctx, newId);
     return newId;
   },
 });
@@ -620,6 +624,40 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
   });
 }
 
+export async function syncCandidateSummaryToApplications(ctx: any, candidateId: Id<"candidates">) {
+  const candidate = await ctx.db.get(candidateId);
+  if (!candidate) return;
+
+  const apps = await ctx.db
+    .query("applications")
+    .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+    .collect();
+
+  // Find latest CV upload to get file name
+  let cvFileName = undefined;
+  if (candidate.cvUploadId) {
+    const upload = await ctx.db.get(candidate.cvUploadId);
+    if (upload) {
+      cvFileName = upload.fileName;
+    }
+  }
+
+  for (const app of apps) {
+    await ctx.db.patch(app._id, {
+      candidateName: candidate.fullName,
+      candidateEmail: candidate.email,
+      candidatePhone: candidate.phone,
+      cvFileName,
+      candidateTitle: candidate.currentTitle || candidate.currentJobTitle,
+      candidateExperience: candidate.totalExperienceYears || candidate.yearsOfExperience,
+      candidateCvUploadId: candidate.cvUploadId,
+      candidateCurrentSalary: candidate.currentSalary,
+      candidateExpectedSalary: candidate.expectedSalary,
+      candidateNoticePeriodDays: candidate.noticePeriodDays,
+    });
+  }
+}
+
 export const getCandidateByEmail = query({
   args: { email: v.string() },
   handler: async (ctx, args) => {
@@ -744,5 +782,15 @@ export const isCandidateInFollowUp = query({
       )
       .first();
     return !!activeApp;
+  },
+});
+
+export const getCandidatesByIds = query({
+  args: { ids: v.array(v.id("candidates")) },
+  handler: async (ctx, args) => {
+    const results = await Promise.all(
+      args.ids.map((id) => ctx.db.get(id))
+    );
+    return results.filter((c) => c !== null);
   },
 });

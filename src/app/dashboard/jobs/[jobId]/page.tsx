@@ -1385,7 +1385,7 @@ export default function JobDetailPage() {
                         <td className="p-4"><span className="text-[#0A66C2] font-medium">{(app.candidate as any)?.source || 'LinkedIn'}</span></td>
                         <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} reason={(app as any).aiMatchExplanation} /></td>
                         <td className="p-4 text-[13px]">
-                          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || app.candidate?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || app.candidate?.currentJobTitle || 'Unknown Role'}</div>
+                          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}</div>
                           <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
                         </td>
                         <td className="p-4"><StatusDot status={app.aiCallStatus || 'Not Called'} /></td>
@@ -1447,13 +1447,13 @@ export default function JobDetailPage() {
       candidateId: app.candidateId,
       cvUploadId: app.candidate?.cvUploadId,
       name: app.candidate?.fullName || 'Unknown Candidate',
-      doNotContact: app.candidate?.doNotContact,
+      doNotContact: (app.candidate as any)?.doNotContact,
       score: app.aiMatchScore || 'Pending',
       scoreReason: (app as any).aiMatchExplanation || undefined,
       status: app.taShortlistStatus || 'Pending',
-      currentSalary: app.candidate?.currentSalary ? '$' + app.candidate.currentSalary : '—',
-      expectedSalary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
-      noticePeriod: app.candidate?.noticePeriodDays ? app.candidate.noticePeriodDays + ' days' : '—',
+      currentSalary: (app.candidate as any)?.currentSalary ? '$' + (app.candidate as any).currentSalary : '—',
+      expectedSalary: (app.candidate as any)?.expectedSalary ? '$' + (app.candidate as any).expectedSalary : '—',
+      noticePeriod: (app.candidate as any)?.noticePeriodDays ? (app.candidate as any).noticePeriodDays + ' days' : '—',
       budgetFit: true,
       fit: 'Good',
       salaryFit: 'Good',

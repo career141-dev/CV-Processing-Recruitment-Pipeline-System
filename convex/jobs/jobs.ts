@@ -286,6 +286,10 @@ export const updateJobDetails = mutation({
     updates.updatedAt = new Date().toISOString();
 
     await ctx.db.patch(jobId, updates);
+
+    if (args.title !== undefined) {
+      await syncJobTitleToCandidates(ctx, jobId, args.title);
+    }
   },
 });
 
@@ -814,4 +818,24 @@ export const getActiveJobsBasicInfo = query({
     }));
   }
 });
+
+export async function syncJobTitleToCandidates(ctx: any, jobId: Id<"jobs">, newTitle: string) {
+  const apps = await ctx.db
+    .query("applications")
+    .withIndex("by_job_active", (q: any) => q.eq("jobId", jobId).eq("isActive", true))
+    .collect();
+
+  for (const app of apps) {
+    const candidate = await ctx.db.get(app.candidateId);
+    if (candidate && candidate.activeApplicationsSummary) {
+      const updatedSummary = candidate.activeApplicationsSummary.map((item: any) => {
+        if (item.jobId === jobId) {
+          return { ...item, jobTitle: newTitle };
+        }
+        return item;
+      });
+      await ctx.db.patch(candidate._id, { activeApplicationsSummary: updatedSummary });
+    }
+  }
+}
 

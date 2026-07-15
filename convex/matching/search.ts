@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { action, query } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { logLLMUsage } from "../lib/llm";
 import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
 import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
@@ -87,10 +88,46 @@ export const aiSearch = action({
     args
   ): Promise<{
     interpretation: SearchInterpretation;
-    results: { candidateId: string; score: number; reason: string }[];
+    results: {
+      candidateId: string;
+      score: number;
+      reason: string;
+      breakdown?: {
+        title: string;
+        skills: string;
+        experience: string;
+        location: string;
+        industry: string;
+      };
+    }[];
   }> => {
     const fetchLimit = 100;
-    const parsedReq = await extractSearchRequirements(args.query, "natural_language");
+    const isQueryEmpty = !args.query || !args.query.trim();
+
+    let parsedReq: SearchRequirements;
+    if (isQueryEmpty) {
+      parsedReq = {
+        title: "",
+        alternativeTitles: [],
+        occupationSynonyms: [],
+        requiredSkills: [],
+        preferredSkills: [],
+        minYearsExperience: args.minExperience ?? null,
+        industry: args.industry ?? null,
+        seniority: args.seniority ?? null,
+        location: args.location ?? null,
+        education: null,
+        summary: "Filter-only candidate search",
+        keywords: [],
+        languages: [],
+        clientCompany: null,
+        clientContactEmail: null,
+        salaryRange: null,
+      };
+    } else {
+      parsedReq = await extractSearchRequirements(args.query, "natural_language");
+    }
+
     const effectiveReq: SearchRequirements = {
       ...parsedReq,
       industry: args.industry ?? parsedReq.industry,
@@ -100,7 +137,7 @@ export const aiSearch = action({
     };
 
     const interp: SearchInterpretation = {
-      searchText: [effectiveReq.title, ...effectiveReq.alternativeTitles, ...effectiveReq.requiredSkills.slice(0, 4)].filter(Boolean).join(" "),
+      searchText: isQueryEmpty ? "Filter Search" : [effectiveReq.title, ...effectiveReq.alternativeTitles, ...effectiveReq.requiredSkills.slice(0, 4)].filter(Boolean).join(" "),
       industry: effectiveReq.industry ?? undefined,
       seniority: effectiveReq.seniority ?? undefined,
       minYears: effectiveReq.minYearsExperience ?? undefined,
@@ -110,12 +147,14 @@ export const aiSearch = action({
 
     // 1. Embed query with a fallback
     let queryEmbedding: number[] | null = null;
-    try {
-      const { embedText } = await import("./agent2.js");
-      queryEmbedding = await embedText(args.query, "query");
-    } catch (err) {
-      console.error("NVIDIA embedding call failed, falling back to keyword-only search:", err);
-      queryEmbedding = null;
+    if (!isQueryEmpty) {
+      try {
+        const { embedText } = await import("./agent2.js");
+        queryEmbedding = await embedText(ctx, args.query, "query");
+      } catch (err) {
+        console.error("NVIDIA embedding call failed, falling back to keyword-only search:", err);
+        queryEmbedding = null;
+      }
     }
 
     // 2. Run vector search only if embedding succeeded
@@ -143,17 +182,33 @@ export const aiSearch = action({
       }));
     }
 
+    // Extract query terms for keyword search if query is empty
+    const filterTerms: string[] = [];
+    if (args.location) filterTerms.push(args.location);
+    if (args.seniority) filterTerms.push(args.seniority);
+    if (args.customFilters) filterTerms.push(...args.customFilters);
+    if (args.education) filterTerms.push(...args.education);
+
     // 4. Keyword search batches
-    const searchTerms = buildSearchTerms(effectiveReq, args.query);
-    const searchBatches = await Promise.all([
-      ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
-      ...searchTerms.slice(0, 5).filter((term) => term !== args.query).map((term) =>
-        ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit })
-      ),
-      ...interp.keywords.slice(0, 2).map((kw) =>
-        ctx.runQuery(api.matching.search.searchCandidates, { query: kw, limit: 12 })
-      ),
-    ]);
+    let searchBatches: ScoredCandidateDoc[][] = [];
+    if (!isQueryEmpty) {
+      const searchTerms = buildSearchTerms(effectiveReq, args.query);
+      searchBatches = await Promise.all([
+        ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
+        ...searchTerms.slice(0, 5).filter((term) => term !== args.query).map((term) =>
+          ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit })
+        ),
+        ...interp.keywords.slice(0, 2).map((kw) =>
+          ctx.runQuery(api.matching.search.searchCandidates, { query: kw, limit: 12 })
+        ),
+      ]);
+    } else if (filterTerms.length > 0) {
+      searchBatches = await Promise.all(
+        filterTerms.slice(0, 5).map((term) =>
+          ctx.runQuery(api.matching.search.searchCandidates, { query: term, limit: fetchLimit })
+        )
+      );
+    }
 
     // 5. Merge and deduplicate
     const seen = new Set<Id<"candidates">>();
@@ -173,166 +228,182 @@ export const aiSearch = action({
       }
     }
 
-    if (rawResults.length === 0) {
+    // Fallback: If no results found and query is empty, query recently active candidates
+    let finalRawResults = rawResults;
+    if (finalRawResults.length === 0 && isQueryEmpty) {
+      finalRawResults = await ctx.runQuery(internal.matching.queries.getRecentCandidates, { limit: 100 });
+    }
+
+    if (finalRawResults.length === 0) {
       return { interpretation: interp, results: [] };
     }
 
-    let filteredResults = rawResults;
+    const applyFiltersStrictly = (candidatesList: ScoredCandidateDoc[]) => {
+      let list = candidatesList;
+      if (args.location) {
+        const searchLoc = args.location.toLowerCase().trim();
+        if (searchLoc) {
+          list = list.filter((c) => {
+            const dbLoc = (c.location || "").toLowerCase();
+            if (searchLoc === "remote") {
+              return (
+                dbLoc.includes("remote") ||
+                dbLoc.includes("wfh") ||
+                dbLoc.includes("home") ||
+                dbLoc.includes("work from home")
+              );
+            }
+            return dbLoc.includes(searchLoc);
+          });
+        }
+      }
 
-    if (args.location) {
-      const searchLoc = args.location.toLowerCase().trim();
-      if (searchLoc) {
-        filteredResults = filteredResults.filter((c) => {
-          const dbLoc = (c.location || "").toLowerCase();
-          if (searchLoc === "remote") {
+      if (args.seniority) {
+        const searchSeniority = args.seniority.toLowerCase().trim();
+        list = list.filter((c) => {
+          const dbLevel = (c.seniorityLevel || "").toLowerCase();
+          const currentTitle = (c.currentJobTitle || c.currentTitle || "").toLowerCase();
+          const histTitles = (c.jobHistory || []).map((h) => (h.title || "").toLowerCase());
+          const allTitles = [currentTitle, ...histTitles];
+
+          if (searchSeniority === "senior") {
             return (
-              dbLoc.includes("remote") ||
-              dbLoc.includes("wfh") ||
-              dbLoc.includes("home") ||
-              dbLoc.includes("work from home")
+              dbLevel.includes("senior") ||
+              dbLevel.includes("snr") ||
+              allTitles.some((t) => t.includes("senior") || t.includes("snr") || t.includes("sr "))
             );
           }
-          return dbLoc.includes(searchLoc);
+          if (searchSeniority === "lead") {
+            return (
+              dbLevel.includes("lead") ||
+              dbLevel.includes("principal") ||
+              dbLevel.includes("executive") ||
+              allTitles.some((t) =>
+                t.includes("lead") ||
+                t.includes("principal") ||
+                t.includes("head") ||
+                t.includes("manager") ||
+                t.includes("director") ||
+                t.includes("vp") ||
+                t.includes("chief") ||
+                t.includes("cto") ||
+                t.includes("ceo") ||
+                t.includes("coo")
+              )
+            );
+          }
+          return true;
         });
       }
-    }
 
-    if (args.seniority) {
-      const searchSeniority = args.seniority.toLowerCase().trim();
-      filteredResults = filteredResults.filter((c) => {
-        const dbLevel = (c.seniorityLevel || "").toLowerCase();
-        const currentTitle = (c.currentJobTitle || c.currentTitle || "").toLowerCase();
-        const histTitles = (c.jobHistory || []).map((h) => (h.title || "").toLowerCase());
-        const allTitles = [currentTitle, ...histTitles];
+      if (args.minExperience !== undefined) {
+        list = list.filter((c) => {
+          const exp = c.totalExperienceYears ?? c.yearsOfExperience;
+          if (exp === undefined || exp === null) return true;
+          return exp >= args.minExperience!;
+        });
+      }
 
-        if (searchSeniority === "senior") {
-          return (
-            dbLevel.includes("senior") ||
-            dbLevel.includes("snr") ||
-            allTitles.some((t) => t.includes("senior") || t.includes("snr") || t.includes("sr "))
+      if (args.maxExperience !== undefined) {
+        list = list.filter((c) => {
+          const exp = c.totalExperienceYears ?? c.yearsOfExperience;
+          if (exp === undefined || exp === null) return true;
+          return exp <= args.maxExperience!;
+        });
+      }
+
+      if (args.education && args.education.length > 0) {
+        list = list.filter((c) => {
+          const degrees = [
+            c.educationDegree || "",
+            ...(c.education || []).map((edu: any) => edu.degree || ""),
+          ].map((d) => d.toLowerCase());
+
+          return args.education!.some((edu) => {
+            if (edu === "Bachelor") {
+              return degrees.some(
+                (degree) =>
+                  degree.includes("bachelor") ||
+                  degree.includes("bsc") ||
+                  degree.includes("ba") ||
+                  degree.includes("b.tech") ||
+                  degree.includes("b.e.") ||
+                  degree.includes("b.a.") ||
+                  degree.includes("b.s.")
+              );
+            }
+            if (edu === "Masters") {
+              return degrees.some(
+                (degree) =>
+                  degree.includes("master") ||
+                  degree.includes("msc") ||
+                  degree.includes("ma") ||
+                  degree.includes("mba") ||
+                  degree.includes("m.tech") ||
+                  degree.includes("m.s.") ||
+                  degree.includes("m.phil")
+              );
+            }
+            return degrees.some((degree) => degree.includes(edu.toLowerCase()));
+          });
+        });
+      }
+
+      if (args.sources && args.sources.length > 0) {
+        list = list.filter((c) => {
+          const source = (c.sourceChannel || c.firstSourceChannel || "").toLowerCase();
+          return args.sources!.some((s) => {
+            const filterSrc = s.toLowerCase();
+            if (filterSrc === "whatsapp") {
+              return source === "whatsapp" || source === "meta_campaign";
+            }
+            return source === filterSrc;
+          });
+        });
+      }
+
+      if (args.customFilters && args.customFilters.length > 0) {
+        list = list.filter((c) => {
+          const skills = (c.skills || []).map((s) =>
+            (typeof s === "string" ? s : (s as any).value || "").toLowerCase()
           );
-        }
-        if (searchSeniority === "lead") {
-          return (
-            dbLevel.includes("lead") ||
-            dbLevel.includes("principal") ||
-            dbLevel.includes("executive") ||
-            allTitles.some((t) =>
-              t.includes("lead") ||
-              t.includes("principal") ||
-              t.includes("head") ||
-              t.includes("manager") ||
-              t.includes("director") ||
-              t.includes("vp") ||
-              t.includes("chief") ||
-              t.includes("cto") ||
-              t.includes("ceo") ||
-              t.includes("coo")
-            )
-          );
-        }
-        return true;
-      });
-    }
+          const certs = (c.certifications || []).map((cert) => cert.toLowerCase());
+          const summary = (c.summary || "").toLowerCase();
+          const fullName = (c.fullName || "").toLowerCase();
+          const rawText = (c.rawText || "").toLowerCase();
 
-    if (args.minExperience !== undefined) {
-      filteredResults = filteredResults.filter((c) => {
-        const exp = c.totalExperienceYears ?? c.yearsOfExperience;
-        if (exp === undefined || exp === null) return true; // Keep candidate if experience data is missing
-        return exp >= args.minExperience!;
-      });
-    }
-
-    if (args.maxExperience !== undefined) {
-      filteredResults = filteredResults.filter((c) => {
-        const exp = c.totalExperienceYears ?? c.yearsOfExperience;
-        if (exp === undefined || exp === null) return true; // Keep candidate if experience data is missing
-        return exp <= args.maxExperience!;
-      });
-    }
-
-    if (args.education && args.education.length > 0) {
-      filteredResults = filteredResults.filter((c) => {
-        const degrees = [
-          c.educationDegree || "",
-          ...(c.education || []).map((edu: any) => edu.degree || ""),
-        ].map((d) => d.toLowerCase());
-
-        return args.education!.some((edu) => {
-          if (edu === "Bachelor") {
-            return degrees.some(
-              (degree) =>
-                degree.includes("bachelor") ||
-                degree.includes("bsc") ||
-                degree.includes("ba") ||
-                degree.includes("b.tech") ||
-                degree.includes("b.e.") ||
-                degree.includes("b.a.") ||
-                degree.includes("b.s.")
+          return args.customFilters!.every((filter) => {
+            const search = filter.toLowerCase().trim();
+            if (!search) return true;
+            return (
+              skills.some((s) => s.includes(search)) ||
+              certs.some((cert) => cert.includes(search)) ||
+              summary.includes(search) ||
+              fullName.includes(search) ||
+              rawText.includes(search)
             );
-          }
-          if (edu === "Masters") {
-            return degrees.some(
-              (degree) =>
-                degree.includes("master") ||
-                degree.includes("msc") ||
-                degree.includes("ma") ||
-                degree.includes("mba") ||
-                degree.includes("m.tech") ||
-                degree.includes("m.s.") ||
-                degree.includes("m.phil")
-            );
-          }
-          return degrees.some((degree) => degree.includes(edu.toLowerCase()));
+          });
         });
-      });
-    }
+      }
 
-    if (args.sources && args.sources.length > 0) {
-      filteredResults = filteredResults.filter((c) => {
-        const source = (c.sourceChannel || c.firstSourceChannel || "").toLowerCase();
-        return args.sources!.some((s) => {
-          const filterSrc = s.toLowerCase();
-          if (filterSrc === "whatsapp") {
-            return source === "whatsapp" || source === "meta_campaign";
-          }
-          return source === filterSrc;
-        });
-      });
-    }
+      return list;
+    };
 
-    if (args.customFilters && args.customFilters.length > 0) {
-      filteredResults = filteredResults.filter((c) => {
-        const skills = (c.skills || []).map((s) =>
-          (typeof s === "string" ? s : (s as any).value || "").toLowerCase()
-        );
-        const certs = (c.certifications || []).map((cert) => cert.toLowerCase());
-        const summary = (c.summary || "").toLowerCase();
-        const fullName = (c.fullName || "").toLowerCase();
-        const rawText = (c.rawText || "").toLowerCase();
+    // Apply strict filtering first
+    let filteredResults = applyFiltersStrictly(finalRawResults);
 
-        return args.customFilters!.every((filter) => {
-          const search = filter.toLowerCase().trim();
-          if (!search) return true;
-          return (
-            skills.some((s) => s.includes(search)) ||
-            certs.some((cert) => cert.includes(search)) ||
-            summary.includes(search) ||
-            fullName.includes(search) ||
-            rawText.includes(search)
-          );
-        });
-      });
-    }
-
+    // Progressive Narrowing Fallback:
+    // If strict filtering yields zero candidates, fallback to raw results
+    // and let the heuristic matching engine score and sort them.
     if (filteredResults.length === 0) {
-      return { interpretation: interp, results: [] };
+      console.log("Strict filters returned 0 candidates. Falling back to progressive soft match.");
+      filteredResults = finalRawResults;
     }
 
     const topCandidates = filteredResults.slice(0, 30);
 
     const ranked = topCandidates
-      .map((cv: (typeof rawResults)[0], index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))
+      .map((cv: (typeof finalRawResults)[0], index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))
       .sort((a: ScoredCandidate, b: ScoredCandidate) =>
         (b.titleScore - a.titleScore) ||
         (b.skillScore - a.skillScore) ||
@@ -340,31 +411,64 @@ export const aiSearch = action({
         (b.overallScore - a.overallScore)
       );
 
-    // LLM-based re-scoring for top candidates
-    const llmPool = selectLlmPool(ranked);
-    const llmScored = await Promise.all(
-      llmPool.map(async (cv) => {
-        const llmScore = await scoreWithLLM(cv.cv, effectiveReq);
-        return { ...cv, llmScore };
-      })
-    );
-
-    const finalRanked = llmScored
-      .sort((a, b) =>
-        (Number(b.llmScore ?? 0) - Number(a.llmScore ?? 0)) ||
-        ((b.cv as any).vectorScore ?? 0) - ((a.cv as any).vectorScore ?? 0) || // Tie-breaker 1: Vector score
-        (b.overallScore - a.overallScore) ||                                   // Tie-breaker 2: Heuristics
-        (a.locationStatus === "match" ? 1 : 0) - (b.locationStatus === "match" ? 1 : 0)
+    // LLM-based re-scoring for top candidates (skip if query is empty)
+    let finalRanked: typeof ranked = [];
+    if (!isQueryEmpty) {
+      const llmPool = selectLlmPool(ranked);
+      const llmScored = await Promise.all(
+        llmPool.map(async (cv) => {
+          const llmScore = await scoreWithLLM(cv.cv, effectiveReq);
+          return { ...cv, llmScore };
+        })
       );
+
+      finalRanked = llmScored
+        .sort((a, b) =>
+          (Number(b.llmScore?.score ?? 0) - Number(a.llmScore?.score ?? 0)) ||
+          ((b.cv as any).vectorScore ?? 0) - ((a.cv as any).vectorScore ?? 0) || // Tie-breaker 1: Vector score
+          (b.overallScore - a.overallScore) ||                                   // Tie-breaker 2: Heuristics
+          (a.locationStatus === "match" ? 1 : 0) - (b.locationStatus === "match" ? 1 : 0)
+        );
+    } else {
+      // Filter-only search: skip LLM and sort by overall score
+      finalRanked = ranked.sort((a, b) => b.overallScore - a.overallScore);
+    }
 
     const results = finalRanked
       .slice(0, args.limit ?? 20)
       .filter((item) => item.overallScore >= 20 || item.titleScore >= 40)
-      .map((item) => ({
-        candidateId: item.cv._id,
-        score: item.overallScore,
-        reason: item.reason,
-      }));
+      .map((item) => {
+        // Calculate breakdown categories
+        const titleMatch = item.titleScore >= 90 ? "strong match" : item.titleScore >= 70 ? "partial match" : "loose match";
+        const skillsMatch = item.skillScore >= 80 ? "strong match" : item.skillScore >= 50 ? "partial match" : "loose match";
+        
+        let expMatch = "not specified";
+        if (effectiveReq.minYearsExperience != null) {
+          const exp = (item.cv as any).yearsOfExperience ?? (item.cv as any).totalExperienceYears;
+          if (exp == null) expMatch = "not specified";
+          else if (exp >= effectiveReq.minYearsExperience) expMatch = "meets target";
+          else expMatch = "below range";
+        }
+        
+        const locMatch = item.locationStatus === "match" ? "match" 
+          : item.locationStatus === "different" ? "different" 
+          : "not specified";
+          
+        const indMatch = item.industryScore === 100 ? "match" : "different";
+
+        return {
+          candidateId: item.cv._id,
+          score: item.overallScore,
+          reason: item.reason,
+          breakdown: {
+            title: titleMatch,
+            skills: skillsMatch,
+            experience: expMatch,
+            location: locMatch,
+            industry: indMatch
+          }
+        };
+      });
 
     return { interpretation: interp, results };
   },
@@ -401,9 +505,34 @@ export const parseNLQuery = action({
       })
     });
 
-    if (!response.ok) throw new Error("NVIDIA API failed");
+    if (!response.ok) {
+      const errorText = await response.text();
+      await logLLMUsage(
+        ctx,
+        "jd_matching",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        0,
+        0,
+        false,
+        `NVIDIA API Error: ${response.status} ${errorText}`
+      );
+      throw new Error("NVIDIA API failed");
+    }
     
     const data = await response.json();
+    
+    // Log successful token usage
+    const promptTokens = data.usage?.prompt_tokens ?? 0;
+    const completionTokens = data.usage?.completion_tokens ?? 0;
+    await logLLMUsage(
+      ctx,
+      "jd_matching",
+      "nvidia/llama-3.1-nemotron-70b-instruct",
+      promptTokens,
+      completionTokens,
+      true
+    );
+
     try {
       let content = data.choices[0].message.content;
       // Strip markdown code blocks if any
@@ -424,7 +553,7 @@ export const semanticSearch = action({
   handler: async (ctx, args) => {
     // 1. Embed query
     const { embedText } = await import("./agent2.js");
-    const queryEmbedding = await embedText(args.query);
+    const queryEmbedding = await embedText(ctx, args.query);
 
     // 2. Vector search
     const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {

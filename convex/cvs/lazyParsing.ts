@@ -40,7 +40,7 @@ Phone: ${candidate.phone || 'Unknown'}
     const textToSend = injectedContext + resume.rawText;
 
     // 3. Call LLM with the raw text
-    const extracted = await callNvidiaLLM(textToSend);
+    const extracted = await callNvidiaLLM(ctx, textToSend, candidate.cvUploadId);
     
     if (!extracted) {
       throw new Error("LLM extraction failed or returned empty");

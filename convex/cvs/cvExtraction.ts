@@ -19,7 +19,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -129,6 +129,7 @@ const ExtractionActionArgs = {
   })),
   batchId: v.optional(v.id("ingestionBatches")),
   logId: v.optional(v.id("ingestionLog")),
+  isRetry: v.optional(v.boolean()),
 };
 
 // ──────────────────────────────────────────────────
@@ -389,7 +390,9 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
  * The caller decides whether to treat empty data as an error.
  */
 export async function callNvidiaLLM(
+  ctx: ActionCtx,
   rawText: string,
+  cvUploadId?: Id<"cvUploads">
 ): Promise<CvExtractionResult | null> {
   const MAX_CHARS = 15000;
   const textToSend =
@@ -457,6 +460,20 @@ ${textToSend}`,
       ],
     });
 
+    // Log successful token usage
+    if (response.usage) {
+      await logLLMUsage(
+        ctx,
+        "cv_structuring",
+        "meta/llama-3.1-70b-instruct",
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+        true,
+        undefined,
+        cvUploadId
+      );
+    }
+
     const content = response.choices[0]?.message?.content;
     if (!content) return null;
 
@@ -472,6 +489,18 @@ ${textToSend}`,
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[callNvidiaLLM] LLM call failed:", message);
+    
+    // Log failed call
+    await logLLMUsage(
+      ctx,
+      "cv_structuring",
+      "meta/llama-3.1-70b-instruct",
+      0,
+      0,
+      false,
+      message,
+      cvUploadId
+    );
     if (
       message.includes("403") ||
       message.toLowerCase().includes("insufficient") ||
@@ -625,7 +654,7 @@ export async function runCvExtraction(
           stage: "ai_extraction"
         });
       }
-      extracted = await callNvidiaLLM(cappedRawText);
+      extracted = await callNvidiaLLM(ctx, cappedRawText, cvUploadId);
       if (!extracted) {
         throw new Error("LLM failed to extract candidate data (API timeout or invalid response)");
       }
@@ -664,7 +693,7 @@ export async function runCvExtraction(
       }
       let embedding: number[] | undefined = undefined;
       try {
-        embedding = await generateNvidiaEmbedding(cappedRawText);
+        embedding = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId);
       } catch (embedErr: any) {
         console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", embedErr.message || embedErr);
       }
@@ -743,7 +772,9 @@ export async function runCvExtraction(
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
-      status: isInsufficientBalance ? "processed" : "failed",
+      status: isInsufficientBalance 
+        ? "processed" 
+        : ((args as any).isRetry ? "failed_retry" : "failed"),
       errorMessage: isInsufficientBalance
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : message,
@@ -813,6 +844,7 @@ export const resumeBatch = internalAction({
         sourceChannel: upload.source || "Retry Failed",
         uploadedBy: upload.uploadedBy,
         batchId: args.batchId,
+        isRetry: true,
       });
     }
 
@@ -826,6 +858,84 @@ export const resumeBatch = internalAction({
           batchId: args.batchId,
         },
       );
+    }
+  },
+});
+
+export const startBatchExtraction = action({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    await ctx.runAction(internal.cvs.cvExtraction.processNextBatch, {
+      batchId: args.batchId,
+    });
+  },
+});
+
+export const processNextBatch = internalAction({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    // 1. Get up to 5 uploads in this batch that are still "uploaded"
+    const uploads = await ctx.runQuery(internal.cvs.cvUploads.listUploadedInBatch, {
+      batchId: args.batchId,
+      limit: 5,
+    });
+
+    if (uploads.length === 0) {
+      console.log(`[processNextBatch] No more uploads to process for batch ${args.batchId}`);
+      return;
+    }
+
+    // 2. Queue those 5 uploads
+    const cvUploadIds = [];
+    for (const upload of uploads) {
+      cvUploadIds.push(upload._id);
+      
+      // Update status to "queued" and schedule extraction
+      await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId as Id<"_storage">,
+        fileName: upload.fileName,
+        fileType: upload.fileType,
+        sourceChannel: upload.source || "Manual",
+        uploadedBy: upload.uploadedBy,
+        batchId: args.batchId,
+      });
+    }
+
+    // 3. Start polling progress of these 5 specific uploads
+    await ctx.scheduler.runAfter(2000, internal.cvs.cvExtraction.pollBatchProgress, {
+      batchId: args.batchId,
+      cvUploadIds,
+    });
+  },
+});
+
+export const pollBatchProgress = internalAction({
+  args: {
+    batchId: v.id("ingestionBatches"),
+    cvUploadIds: v.array(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    // Query the status of these 5 uploads
+    const statuses = await ctx.runQuery(internal.cvs.cvUploads.checkUploadsStatus, {
+      cvUploadIds: args.cvUploadIds,
+    });
+
+    // If all are finished (either "processed" or "failed" or "failed_retry")
+    const allFinished = statuses.every((s) => s === "processed" || s === "failed" || s === "failed_retry");
+
+    if (allFinished) {
+      console.log(`[pollBatchProgress] All ${args.cvUploadIds.length} uploads finished. Triggering next 5.`);
+      // Run next batch immediately!
+      await ctx.runAction(internal.cvs.cvExtraction.processNextBatch, {
+        batchId: args.batchId,
+      });
+    } else {
+      // Not all finished yet. Poll again in 2 seconds.
+      await ctx.scheduler.runAfter(2000, internal.cvs.cvExtraction.pollBatchProgress, {
+        batchId: args.batchId,
+        cvUploadIds: args.cvUploadIds,
+      });
     }
   },
 });

@@ -20,6 +20,7 @@ export const jobStatusValidator = v.union(
 export const channelTypeValidator = v.union(
   v.literal("whatsapp"),
   v.literal("meta_campaign"),
+  v.literal("email"),
   v.literal("email_campaign"),
   v.literal("linkedin"),
   v.literal("workable"),

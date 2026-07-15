@@ -396,11 +396,12 @@ generatedAt: v.string(),
     status: v.string(),
     errorMessage: v.optional(v.string()),
     candidateId: v.optional(v.id("candidates")),
-    batchId: v.optional(v.string()),
+    batchId: v.optional(v.id("ingestionBatches")),
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
-    .index("by_fileHash", ["fileHash"]),
+    .index("by_fileHash", ["fileHash"])
+    .index("by_batchId", ["batchId"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
@@ -430,6 +431,16 @@ generatedAt: v.string(),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     phoneClean: v.optional(v.string()),
+    activeApplicationsSummary: v.optional(
+      v.array(
+        v.object({
+          jobId: v.id("jobs"),
+          jobTitle: v.string(),
+          stage: v.string(),
+          isActive: v.boolean(),
+        })
+      )
+    ),
     location: v.optional(v.string()),
     linkedinUrl: v.optional(v.string()),
     currentJobTitle: v.optional(v.string()),
@@ -451,6 +462,7 @@ generatedAt: v.string(),
       v.union(
         v.literal("whatsapp"),
         v.literal("meta_campaign"),
+        v.literal("email"),
         v.literal("email_campaign"),
         v.literal("linkedin"),
         v.literal("workable"),
@@ -528,7 +540,6 @@ generatedAt: v.string(),
     doNotContactReason: v.optional(v.string()),
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
-    activeApplicationsSummary: v.optional(v.any()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -559,6 +570,16 @@ generatedAt: v.string(),
     jobId: v.id("jobs"),
     cvFileId: v.optional(v.id("cvUploads")), // Keeping cvUploads instead of cvFiles to match existing table
     sourceChannel: v.string(), // linkedin | whatsapp | meta_campaign | email_campaign | workable | manual_upload | headhunting
+    candidateName: v.optional(v.string()),
+    candidateEmail: v.optional(v.string()),
+    candidatePhone: v.optional(v.string()),
+    cvFileName: v.optional(v.string()),
+    candidateTitle: v.optional(v.string()),
+    candidateExperience: v.optional(v.number()),
+    candidateCvUploadId: v.optional(v.id("cvUploads")),
+    candidateCurrentSalary: v.optional(v.number()),
+    candidateExpectedSalary: v.optional(v.number()),
+    candidateNoticePeriodDays: v.optional(v.number()),
 
     currentStage: v.union(
       v.literal("new_cvs"),
@@ -853,6 +874,7 @@ errorMessage: v.optional(v.string()),
     sourceChannel: v.union(
       v.literal("whatsapp"),
       v.literal("meta_campaign"),
+      v.literal("email"),
       v.literal("email_campaign"),
       v.literal("linkedin"),
       v.literal("workable"),
@@ -1157,6 +1179,12 @@ errorMessage: v.optional(v.string()),
     .index("by_user", ["userId"])
     .index("by_user_and_read", ["userId", "read"]),
 
+  dashboardStatsCache: defineTable({
+    singletonKey: v.string(), // "global_dashboard_stats"
+    data: v.any(), // cached stats payload
+    updatedAt: v.number(),
+  }).index("by_singletonKey", ["singletonKey"]),
+
   appSettings: defineTable({
     key: v.string(),
     commonWhatsappNumber: v.optional(v.string()),
@@ -1266,5 +1294,21 @@ errorMessage: v.optional(v.string()),
     placements: v.number(),
     cvsBySource: v.record(v.string(), v.number()), // e.g. { "WhatsApp": 5, "Email": 2 }
   }).index("by_dateStr", ["dateStr"]),
+
+  nvidiaTokenLogs: defineTable({
+    taskType: v.string(), // e.g. "cv_structuring", "jd_matching", "embedding"
+    model: v.string(), // e.g. "meta/llama-3.1-70b-instruct"
+    promptTokens: v.number(),
+    completionTokens: v.number(),
+    totalTokens: v.number(),
+    success: v.boolean(),
+    error: v.optional(v.string()),
+    timestamp: v.number(), // Unix timestamp (ms)
+    cvUploadId: v.optional(v.id("cvUploads")), // Link to specific CV for per-CV cost tracking
+  })
+    .index("by_timestamp", ["timestamp"])
+    .index("by_taskType", ["taskType"])
+    .index("by_model", ["model"])
+    .index("by_cvUploadId", ["cvUploadId"]),
 
 });

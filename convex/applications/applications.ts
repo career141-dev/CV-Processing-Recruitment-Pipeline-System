@@ -78,18 +78,23 @@ export const getByJobId = query({
       .withIndex("by_job_active", (q) => q.eq("jobId", actualJobId!).eq("isActive", true))
       .collect();
 
-    // Enrich with candidate and cv details
-    const enriched = await Promise.all(
-      applications.map(async (app) => {
-        const candidate = await ctx.db.get(app.candidateId);
-        const cv = app.cvFileId ? await ctx.db.get(app.cvFileId) : null;
-        return {
-          ...app,
-          candidate,
-          cv,
-        };
-      })
-    );
+    // Return denormalized details to avoid N+1 scans
+    const enriched = applications.map((app) => ({
+      ...app,
+      candidate: {
+        _id: app.candidateId,
+        fullName: app.candidateName,
+        email: app.candidateEmail,
+        phone: app.candidatePhone,
+        currentTitle: app.candidateTitle,
+        totalExperienceYears: app.candidateExperience,
+        cvUploadId: app.candidateCvUploadId,
+        currentSalary: app.candidateCurrentSalary,
+        expectedSalary: app.candidateExpectedSalary,
+        noticePeriodDays: app.candidateNoticePeriodDays,
+      },
+      cv: app.cvFileName ? { fileName: app.cvFileName } : null,
+    }));
 
     return enriched;
   },
