@@ -190,7 +190,7 @@ export default defineSchema({
       candidateName: v.optional(v.string()),
       candidateRole: v.optional(v.string()),
       candidateExp: v.optional(v.number()),
-    }))),
+    })))),
 
 
     // Agent 3 — Follow-up Config
