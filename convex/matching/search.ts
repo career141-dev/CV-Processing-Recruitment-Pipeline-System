@@ -190,22 +190,25 @@ export const aiSearch = action({
     if (args.education) filterTerms.push(...args.education);
 
     // 4. Keyword search batches
+    // Capped at 3 parallel queries (down from 8) — each returns up to 100 candidates docs,
+    // so 3×100 = 300 doc reads max instead of 800+.
     let searchBatches: ScoredCandidateDoc[][] = [];
     if (!isQueryEmpty) {
       const searchTerms = buildSearchTerms(effectiveReq, args.query);
-      searchBatches = await Promise.all([
+      const batchQueries: Promise<ScoredCandidateDoc[]>[] = [
         ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
-        ...searchTerms.slice(0, 5).filter((term) => term !== args.query).map((term) =>
-          ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit })
-        ),
-        ...interp.keywords.slice(0, 2).map((kw) =>
-          ctx.runQuery(api.matching.search.searchCandidates, { query: kw, limit: 12 })
-        ),
-      ]);
+      ];
+      // Add at most 2 additional keyword term queries
+      for (const term of searchTerms.slice(0, 2).filter((t) => t !== args.query)) {
+        batchQueries.push(
+          ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: 40 })
+        );
+      }
+      searchBatches = await Promise.all(batchQueries);
     } else if (filterTerms.length > 0) {
       searchBatches = await Promise.all(
-        filterTerms.slice(0, 5).map((term) =>
-          ctx.runQuery(api.matching.search.searchCandidates, { query: term, limit: fetchLimit })
+        filterTerms.slice(0, 3).map((term) =>
+          ctx.runQuery(api.matching.search.searchCandidates, { query: term, limit: 50 })
         )
       );
     }
@@ -370,7 +373,8 @@ export const aiSearch = action({
           const certs = (c.certifications || []).map((cert) => cert.toLowerCase());
           const summary = (c.summary || "").toLowerCase();
           const fullName = (c.fullName || "").toLowerCase();
-          const rawText = (c.rawText || "").toLowerCase();
+          // Note: rawText has moved to candidateResumes table — do NOT access c.rawText
+          // Skills, certs and summary provide enough signal for custom filters
 
           return args.customFilters!.every((filter) => {
             const search = filter.toLowerCase().trim();
@@ -379,8 +383,7 @@ export const aiSearch = action({
               skills.some((s) => s.includes(search)) ||
               certs.some((cert) => cert.includes(search)) ||
               summary.includes(search) ||
-              fullName.includes(search) ||
-              rawText.includes(search)
+              fullName.includes(search)
             );
           });
         });
