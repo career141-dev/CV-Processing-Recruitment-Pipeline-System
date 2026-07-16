@@ -47,7 +47,6 @@ import type * as cvs_cvScoringActions from "../cvs/cvScoringActions.js";
 import type * as cvs_cvUploads from "../cvs/cvUploads.js";
 import type * as cvs_ingestion from "../cvs/ingestion.js";
 import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
-import type * as getRecentStats from "../getRecentStats.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
@@ -124,7 +123,6 @@ declare const fullApi: ApiFromModules<{
   "cvs/cvUploads": typeof cvs_cvUploads;
   "cvs/ingestion": typeof cvs_ingestion;
   "cvs/lazyParsing": typeof cvs_lazyParsing;
-  getRecentStats: typeof getRecentStats;
   health: typeof health;
   http: typeof http;
   "integrations/elevenlabs": typeof integrations_elevenlabs;

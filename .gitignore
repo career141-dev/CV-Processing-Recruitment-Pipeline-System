@@ -45,3 +45,9 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# Local testing and data exports
+/convex-local-test/
+/backup_unzipped/
+backup.zip
+monitor-log.txt

@@ -358,13 +358,13 @@ crons.interval(
   { inboxEmail: "linkedin@career141.com" }
 );
 
-// Poll general CV inbox every 5 minutes
-crons.interval(
-  "poll-cv-inbox",
-  { minutes: 5 },
-  api.communications.emailAgent.pollEmailInbox,
-  { inboxEmail: "cv@career141.com" }
-);
+// Poll general CV inbox every 5 minutes (Disabled locally for testing)
+// crons.interval(
+//   "poll-cv-inbox",
+//   { minutes: 5 },
+//   api.communications.emailAgent.pollEmailInbox,
+//   { inboxEmail: "cv@career141.com" }
+// );
 
 // Poll jobs website inbox every 5 minutes
 crons.interval(
