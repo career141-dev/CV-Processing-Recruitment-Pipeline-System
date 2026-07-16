@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { Id } from "../_generated/dataModel";
 import { mutation, internalQuery } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { adjustGlobalStat } from "../stats/statsHelper";
@@ -151,10 +152,45 @@ export const checkAndTriggerNextBatch = mutation({
       return;
     }
 
-    // Otherwise, all currently queued/processing uploads are done!
-    console.log(`[checkAndTriggerNextBatch] Current chunk for batch ${args.batchId} finished. Triggering next batch.`);
-    await ctx.scheduler.runAfter(0, internal.cvs.cvExtraction.processNextBatch, {
-      batchId: args.batchId,
-    });
+    // Atomically grab the next up to 5 uploads
+    const nextUploads = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_batchId", (q) => q.eq("batchId", args.batchId))
+      .filter((q) => q.eq(q.field("status"), "uploaded"))
+      .take(5);
+
+    if (nextUploads.length === 0) {
+      console.log(`[checkAndTriggerNextBatch] Batch ${args.batchId} is fully complete.`);
+      return;
+    }
+
+    console.log(`[checkAndTriggerNextBatch] Triggering next ${nextUploads.length} uploads for batch ${args.batchId}`);
+
+    // Mark them as queued atomically and schedule the extractions
+    for (const upload of nextUploads) {
+      await ctx.db.patch(upload._id, { status: "queued" });
+
+      const logId = await ctx.db.insert("ingestionLog", {
+        channelType: "manual_upload",
+        routingStatus: "routed",
+        cvFileId: upload._id,
+        receivedAt: Date.now(),
+        batchId: args.batchId,
+        stage: "queued",
+        candidateName: upload.fileName,
+        rawSender: upload.uploadedBy,
+      });
+
+      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId as Id<"_storage">,
+        fileType: upload.fileType,
+        sourceChannel: upload.source || "Manual",
+        uploadedBy: upload.uploadedBy,
+        cvUploadId: upload._id,
+        batchId: args.batchId,
+        logId: logId,
+        isRetry: false,
+      });
+    }
   },
 });

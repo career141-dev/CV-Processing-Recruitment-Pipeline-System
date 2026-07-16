@@ -147,7 +147,7 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
     disableFontFace: true,
     standardFontDataUrl: "https://unpkg.com/pdfjs-dist@5.7.284/standard_fonts/",
   });
-  
+
   try {
     const pdf = await loadingTask.promise;
     let fullText = "";
@@ -155,13 +155,13 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      
+
       const items = textContent.items.map((item: any) => ({
         str: item.str,
         x: item.transform[4],
         y: item.transform[5],
       }));
-      
+
       items.sort((a, b) => {
         if (Math.abs(a.y - b.y) < 5) {
           return a.x - b.x;
@@ -200,7 +200,7 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
 
 async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
   const result = await tesseract.recognize(Buffer.from(buffer), 'eng', {
-    logger: () => {}
+    logger: () => { }
   });
   return result.data.text;
 }
@@ -260,7 +260,7 @@ export function cleanRawText(text: string): string {
   cleaned = cleaned.replace(/[-_]{3,}/g, " ");
 
   const lines = cleaned.split("\n");
-  
+
   const lineCounts = new Map<string, number>();
   for (const line of lines) {
     const trimmed = line.trim();
@@ -272,11 +272,11 @@ export function cleanRawText(text: string): string {
   const filteredLines: string[] = [];
   for (const line of lines) {
     const trimmed = line.trim();
-    
+
     if (/^page\s*\d+\s*(of\s*\d+)?$/i.test(trimmed)) continue;
     if (/^\d+\s*\/\s*\d+$/.test(trimmed)) continue;
     if (/^\d+$/.test(trimmed)) continue;
-    
+
     if (trimmed.length > 0 && (lineCounts.get(trimmed) || 0) >= 3) {
       continue;
     }
@@ -314,12 +314,12 @@ function createNvidiaClient(): OpenAI {
 function parseJsonRobustly(content: string): Record<string, unknown> | null {
   try {
     return JSON.parse(content) as Record<string, unknown>;
-  } catch {}
+  } catch { }
 
   const stripped = content.replace(/```json/gi, "").replace(/```/g, "").trim();
   try {
     return JSON.parse(stripped) as Record<string, unknown>;
-  } catch {}
+  } catch { }
 
   const firstBrace = content.indexOf("{");
   const lastBrace = content.lastIndexOf("}");
@@ -327,7 +327,7 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
     try {
       const jsonStr = content.substring(firstBrace, lastBrace + 1);
       return JSON.parse(jsonStr) as Record<string, unknown>;
-    } catch {}
+    } catch { }
   }
 
   return null;
@@ -445,7 +445,7 @@ ${textToSend}`,
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[callNvidiaLLM] LLM call failed:", message);
-    
+
     // Log failed call
     await logLLMUsage(
       ctx,
@@ -476,10 +476,10 @@ ${textToSend}`,
 type NullToUndefined<T> = T extends null
   ? undefined
   : T extends (infer U)[]
-    ? NullToUndefined<U>[]
-    : T extends Record<string, unknown>
-      ? { [K in keyof T]: NullToUndefined<T[K]> }
-      : T;
+  ? NullToUndefined<U>[]
+  : T extends Record<string, unknown>
+  ? { [K in keyof T]: NullToUndefined<T[K]> }
+  : T;
 
 function nullToUndefined<T extends Record<string, unknown>>(
   obj: T,
@@ -493,11 +493,11 @@ function nullToUndefined<T extends Record<string, unknown>>(
           v.map((item) =>
             item !== null && typeof item === "object" && !Array.isArray(item)
               ? Object.fromEntries(
-                  Object.entries(item).map(([ik, iv]) => [
-                    ik,
-                    iv === null ? undefined : iv,
-                  ]),
-                )
+                Object.entries(item).map(([ik, iv]) => [
+                  ik,
+                  iv === null ? undefined : iv,
+                ]),
+              )
               : item,
           ),
         ];
@@ -609,7 +609,7 @@ export async function runCvExtraction(
           stage: "ai_extraction"
         });
       }
-      
+
       // Run both LLM extraction and Embedding generation in parallel
       const [extractedData, embeddingResult] = await Promise.all([
         callNvidiaLLM(ctx, cappedRawText, cvUploadId),
@@ -628,7 +628,7 @@ export async function runCvExtraction(
 
     if (extracted) {
       const safeExtracted = nullToUndefined(extracted);
-      
+
       const noticePeriodDays = deriveNoticePeriodDays(extracted.noticePeriod);
       // We pass undefined for yearsOfExperience since we rely on derivation
       const totalExperienceYears = deriveTotalExperienceYears(extracted.jobHistory, undefined);
@@ -738,32 +738,32 @@ export async function runCvExtraction(
     if (isRateLimit && ((args as any).retryCount ?? 0) < 5) {
       const nextRetryCount = ((args as any).retryCount ?? 0) + 1;
       const delayMs = nextRetryCount * 60 * 1000; // 1m, 2m, 3m...
-      console.log(`[CvExtraction] Nvidia Rate Limit hit (429). Retrying in ${delayMs/1000}s (Attempt ${nextRetryCount})`);
-      
+      console.log(`[CvExtraction] Nvidia Rate Limit hit (429). Retrying in ${delayMs / 1000}s (Attempt ${nextRetryCount})`);
+
       await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
         cvUploadId,
         status: "pending_retry",
-        errorMessage: `Nvidia API Rate Limit (429). Retrying automatically in ${delayMs/1000}s...`,
+        errorMessage: `Nvidia API Rate Limit (429). Retrying automatically in ${delayMs / 1000}s...`,
       });
 
       await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
-         ...args,
-         isRetry: true,
-         retryCount: nextRetryCount
+        ...args,
+        isRetry: true,
+        retryCount: nextRetryCount
       });
       return null;
     }
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
-      status: (isInsufficientBalance || isNotACV) 
-        ? "processed" 
+      status: (isInsufficientBalance || isNotACV)
+        ? "processed"
         : ((args as any).isRetry ? "failed_retry" : "failed"),
       errorMessage: isInsufficientBalance
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
-        : isNotACV 
-        ? "Document rejected: Not recognized as a valid CV or Resume."
-        : message,
+        : isNotACV
+          ? "Document rejected: Not recognized as a valid CV or Resume."
+          : message,
     });
 
     if (args.logId) {
@@ -855,45 +855,8 @@ export const resumeBatch = internalAction({
 export const startBatchExtraction = action({
   args: { batchId: v.id("ingestionBatches") },
   handler: async (ctx, args) => {
-    await ctx.runAction(internal.cvs.cvExtraction.processNextBatch, {
+    await ctx.runMutation(api.cvs.cvUploads.checkAndTriggerNextBatch, {
       batchId: args.batchId,
     });
-  },
-});
-
-export const processNextBatch = internalAction({
-  args: { batchId: v.id("ingestionBatches") },
-  handler: async (ctx, args) => {
-    // 1. Get up to 5 uploads in this batch that are still "uploaded"
-    const uploads = await ctx.runQuery(internal.cvs.cvUploads.listUploadedInBatch, {
-      batchId: args.batchId,
-      limit: 5,
-    });
-
-    if (uploads.length === 0) {
-      console.log(`[processNextBatch] No more uploads to process for batch ${args.batchId}`);
-      return;
-    }
-
-    // 2. Queue those 5 uploads
-    const cvUploadIds = [];
-    for (const upload of uploads) {
-      cvUploadIds.push(upload._id);
-      
-      // Update status to "queued" and schedule extraction
-      await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
-        cvUploadId: upload._id,
-        storageId: upload.storageId as Id<"_storage">,
-        fileName: upload.fileName,
-        fileType: upload.fileType,
-        sourceChannel: upload.source || "Manual",
-        uploadedBy: upload.uploadedBy,
-        batchId: args.batchId,
-      });
-    }
-
-    // 3. We no longer poll batch progress here.
-    // The next batch will be triggered by checkAndTriggerNextBatch
-    // when the last CV in this batch finishes extracting.
   },
 });

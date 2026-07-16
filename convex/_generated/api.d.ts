@@ -22,17 +22,14 @@ import type * as admin_removeProfileImages from "../admin/removeProfileImages.js
 import type * as admin_runBackfill from "../admin/runBackfill.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
 import type * as admin_settings from "../admin/settings.js";
-import type * as admin_testIOMigrations from "../admin/testIOMigrations.js";
 import type * as admin_updateJDs from "../admin/updateJDs.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
 import type * as candidates_candidates from "../candidates/candidates.js";
 import type * as candidates_derivations from "../candidates/derivations.js";
 import type * as candidates_profile from "../candidates/profile.js";
-import type * as candidates_testExp from "../candidates/testExp.js";
 import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
 import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
-import type * as checkUnread from "../checkUnread.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
 import type * as communications_graphEmail from "../communications/graphEmail.js";
 import type * as communications_graphEmailMutations from "../communications/graphEmailMutations.js";
@@ -50,6 +47,7 @@ import type * as cvs_cvScoringActions from "../cvs/cvScoringActions.js";
 import type * as cvs_cvUploads from "../cvs/cvUploads.js";
 import type * as cvs_ingestion from "../cvs/ingestion.js";
 import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
+import type * as getRecentStats from "../getRecentStats.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
@@ -78,7 +76,6 @@ import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
-import type * as testDerivation from "../testDerivation.js";
 import type * as users_users from "../users/users.js";
 
 import type {
@@ -102,17 +99,14 @@ declare const fullApi: ApiFromModules<{
   "admin/runBackfill": typeof admin_runBackfill;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
   "admin/settings": typeof admin_settings;
-  "admin/testIOMigrations": typeof admin_testIOMigrations;
   "admin/updateJDs": typeof admin_updateJDs;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
   "candidates/candidates": typeof candidates_candidates;
   "candidates/derivations": typeof candidates_derivations;
   "candidates/profile": typeof candidates_profile;
-  "candidates/testExp": typeof candidates_testExp;
   "candidates/updateAllExp": typeof candidates_updateAllExp;
   "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
-  checkUnread: typeof checkUnread;
   "communications/emailAgent": typeof communications_emailAgent;
   "communications/graphEmail": typeof communications_graphEmail;
   "communications/graphEmailMutations": typeof communications_graphEmailMutations;
@@ -130,6 +124,7 @@ declare const fullApi: ApiFromModules<{
   "cvs/cvUploads": typeof cvs_cvUploads;
   "cvs/ingestion": typeof cvs_ingestion;
   "cvs/lazyParsing": typeof cvs_lazyParsing;
+  getRecentStats: typeof getRecentStats;
   health: typeof health;
   http: typeof http;
   "integrations/elevenlabs": typeof integrations_elevenlabs;
@@ -158,7 +153,6 @@ declare const fullApi: ApiFromModules<{
   "pipeline/stages": typeof pipeline_stages;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
-  testDerivation: typeof testDerivation;
   "users/users": typeof users_users;
 }>;
 
