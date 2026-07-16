@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalQuery, internalMutation } from "../_generated/server";
 
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 
 export const getCandidate = internalQuery({
   args: { candidateId: v.id("candidates") },
@@ -23,7 +23,6 @@ export const getCandidatesBatch = internalQuery({
 export const getCandidatesByResumeIds = internalQuery({
   args: { resumeIds: v.array(v.id("candidateResumes")) },
   handler: async (ctx, args) => {
-    // Parallel batch fetch instead of serial N+1 loop
     const resumes = await Promise.all(args.resumeIds.map((id) => ctx.db.get(id)));
     const candidateIds = resumes
       .filter((r): r is NonNullable<typeof r> => r !== null)
@@ -33,6 +32,20 @@ export const getCandidatesByResumeIds = internalQuery({
     for (let i = 0; i < candidateIds.length; i++) {
       const candidate = candidates[i];
       if (candidate) results.push({ candidate, resumeId: candidateIds[i].resumeId });
+    }
+    return results;
+  },
+});
+
+export const getCandidateIdsByResumeIds = internalQuery({
+  args: { resumeIds: v.array(v.id("candidateResumes")) },
+  handler: async (ctx, args) => {
+    const resumes = await Promise.all(args.resumeIds.map((id) => ctx.db.get(id)));
+    const results: { resumeId: Id<"candidateResumes">; candidateId: Id<"candidates"> }[] = [];
+    for (const resume of resumes) {
+      if (resume) {
+        results.push({ resumeId: resume._id, candidateId: resume.candidateId });
+      }
     }
     return results;
   },
@@ -101,7 +114,6 @@ export const getRecentCandidates = internalQuery({
 export const getCandidateResumesMissingEmbeddings = internalQuery({
   args: { limit: v.number(), cursor: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // Paginate using the hasEmbedding index directly — O(limit) instead of full table scans
     const page = await ctx.db
       .query("candidateResumes")
       .withIndex("by_hasEmbedding", (q) => q.eq("hasEmbedding", false))

@@ -32,32 +32,43 @@ export const searchCandidates = query({
       ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
     ]);
 
-    const textResults = [];
+    const resumeCandidateIds: { candidateId: Id<"candidates">; resumeId: Id<"candidateResumes"> }[] = [];
     for (const res of resumeResults) {
-      const candidate = await ctx.db.get(res.candidateId);
-      if (candidate) textResults.push(candidate);
+      resumeCandidateIds.push({ candidateId: res.candidateId, resumeId: res._id });
     }
 
     // Weighted scoring: title match > text match > summary match
-    const weight = new Map<string, number>();
+    const weight = new Map<Id<"candidates">, number>();
     for (const cv of titleResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 100);
-    for (const cv of textResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 50);
+    for (const r of resumeCandidateIds) weight.set(r.candidateId, (weight.get(r.candidateId) ?? 0) + 50);
     for (const cv of summaryResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 30);
 
-    const seen = new Set<string>();
-    const merged: typeof textResults = [];
-    for (const cv of [...titleResults, ...textResults, ...summaryResults]) {
+    const seen = new Set<Id<"candidates">>();
+    const merged: { candidateId: Id<"candidates"> }[] = [];
+    for (const cv of titleResults) {
       if (!seen.has(cv._id)) {
         seen.add(cv._id);
-        merged.push(cv);
+        merged.push({ candidateId: cv._id });
       }
     }
-    
+    for (const r of resumeCandidateIds) {
+      if (!seen.has(r.candidateId)) {
+        seen.add(r.candidateId);
+        merged.push({ candidateId: r.candidateId });
+      }
+    }
+    for (const cv of summaryResults) {
+      if (!seen.has(cv._id)) {
+        seen.add(cv._id);
+        merged.push({ candidateId: cv._id });
+      }
+    }
+
     // Apply optional simple filters in memory (Removed strict industry and seniority filters as they drop valid candidates due to enum mismatch. Let the LLM handle matching.)
     let filtered = merged;
 
-    filtered.sort((a, b) => (weight.get(b._id) ?? 0) - (weight.get(a._id) ?? 0));
-    return filtered.slice(0, limit);
+    filtered.sort((a, b) => (weight.get(b.candidateId) ?? 0) - (weight.get(a.candidateId) ?? 0));
+    return filtered.slice(0, limit).map(({ candidateId }) => ({ candidateId, score: weight.get(candidateId) ?? 0 }));
   },
 });
 
@@ -191,19 +202,16 @@ export const aiSearch = action({
       });
     }
 
-    // 3. Batched document fetch, with score attached
-    type ScoredCandidateDoc = Doc<"candidates"> & { vectorScore?: number };
-
-    const scoreById = new Map(vectorResults.map((r) => [r._id, r._score]));
-
-    let vectorCandidates: ScoredCandidateDoc[] = [];
+    // 3. Get candidate IDs from vector search results using new lightweight query
+    const scoreByResumeId = new Map(vectorResults.map((r) => [r._id, r._score]));
+    let vectorCandidateIds: { candidateId: Id<"candidates">; vectorScore: number }[] = [];
     if (vectorResults.length) {
-      const mapped = await ctx.runQuery(internal.matching.queries.getCandidatesByResumeIds, {
+      const mapped = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
         resumeIds: vectorResults.map((r) => r._id),
       });
-      vectorCandidates = mapped.map((item: any) => ({
-        ...item.candidate,
-        vectorScore: scoreById.get(item.resumeId)
+      vectorCandidateIds = mapped.map((item) => ({
+        candidateId: item.candidateId as Id<"candidates">,
+        vectorScore: scoreByResumeId.get(item.resumeId as Id<"candidateResumes">) ?? 0,
       }));
     }
 
@@ -214,13 +222,12 @@ export const aiSearch = action({
     if (args.customFilters) filterTerms.push(...args.customFilters);
     if (args.education) filterTerms.push(...args.education);
 
-    // 4. Keyword search batches
-    // Capped at 3 parallel queries (down from 8) — each returns up to 100 candidates docs,
-    // so 3×100 = 300 doc reads max instead of 800+.
-    let searchBatches: ScoredCandidateDoc[][] = [];
+    // 4. Keyword search batches - now return { candidateId, score }[]
+    type KeywordSearchResult = { candidateId: Id<"candidates">; score: number };
+    let searchBatches: KeywordSearchResult[][] = [];
     if (!isQueryEmpty) {
       const searchTerms = buildSearchTerms(effectiveReq, args.query);
-      const batchQueries: Promise<ScoredCandidateDoc[]>[] = [
+      const batchQueries: Promise<KeywordSearchResult[]>[] = [
         ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
       ];
       // Add at most 2 additional keyword term queries
@@ -238,33 +245,50 @@ export const aiSearch = action({
       );
     }
 
-    // 5. Merge and deduplicate
+    // 5. Merge and deduplicate candidate IDs in memory
     const seen = new Set<Id<"candidates">>();
-    const rawResults: ScoredCandidateDoc[] = [];
+    const allCandidateIds: Id<"candidates">[] = [];
+    const vectorScoreByCandidateId = new Map<Id<"candidates">, number>();
 
-    for (const cand of vectorCandidates) {
-      if (!seen.has(cand._id)) {
-        seen.add(cand._id);
-        rawResults.push(cand);
+    for (const vc of vectorCandidateIds) {
+      if (!seen.has(vc.candidateId)) {
+        seen.add(vc.candidateId);
+        allCandidateIds.push(vc.candidateId);
+        vectorScoreByCandidateId.set(vc.candidateId, vc.vectorScore);
       }
     }
 
     for (const batch of searchBatches.flat()) {
-      if (batch && !seen.has(batch._id)) {
-        seen.add(batch._id);
-        rawResults.push(batch);
+      if (batch && !seen.has(batch.candidateId)) {
+        seen.add(batch.candidateId);
+        allCandidateIds.push(batch.candidateId);
+        vectorScoreByCandidateId.set(batch.candidateId, 0); // keyword-only match, no vector score
       }
     }
 
-    // Fallback: If no results found and query is empty, query recently active candidates
-    let finalRawResults = rawResults;
-    if (finalRawResults.length === 0 && isQueryEmpty) {
-      finalRawResults = await ctx.runQuery(internal.matching.queries.getRecentCandidates, { limit: 100 });
+    // 6. Batch fetch full candidate documents in a single query
+    let candidates: Doc<"candidates">[] = [];
+    if (allCandidateIds.length > 0) {
+      candidates = await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
+        candidateIds: allCandidateIds,
+      });
     }
 
-    if (finalRawResults.length === 0) {
+    // Fallback: If no results found and query is empty, query recently active candidates
+    if (candidates.length === 0 && isQueryEmpty) {
+      candidates = await ctx.runQuery(internal.matching.queries.getRecentCandidates, { limit: 100 });
+    }
+
+    if (candidates.length === 0) {
       return { interpretation: interp, results: [] };
     }
+
+    // 7. Reconstruct rawResults with full candidate documents and vector scores
+    type ScoredCandidateDoc = Doc<"candidates"> & { vectorScore?: number };
+    const rawResults: ScoredCandidateDoc[] = candidates.map((c) => ({
+      ...c,
+      vectorScore: vectorScoreByCandidateId.get(c._id),
+    }));
 
     const applyFiltersStrictly = (candidatesList: ScoredCandidateDoc[]) => {
       let list = candidatesList;
@@ -398,8 +422,6 @@ export const aiSearch = action({
           const certs = (c.certifications || []).map((cert) => cert.toLowerCase());
           const summary = (c.summary || "").toLowerCase();
           const fullName = (c.fullName || "").toLowerCase();
-          // Note: rawText has moved to candidateResumes table — do NOT access c.rawText
-          // Skills, certs and summary provide enough signal for custom filters
 
           return args.customFilters!.every((filter) => {
             const search = filter.toLowerCase().trim();
@@ -418,20 +440,20 @@ export const aiSearch = action({
     };
 
     // Apply strict filtering first
-    let filteredResults = applyFiltersStrictly(finalRawResults);
+    let filteredResults = applyFiltersStrictly(rawResults);
 
     // Progressive Narrowing Fallback:
     // If strict filtering yields zero candidates, fallback to raw results
     // and let the heuristic matching engine score and sort them.
     if (filteredResults.length === 0) {
       console.log("Strict filters returned 0 candidates. Falling back to progressive soft match.");
-      filteredResults = finalRawResults;
+      filteredResults = rawResults;
     }
 
     const topCandidates = filteredResults.slice(0, 30);
 
     const ranked = topCandidates
-      .map((cv: (typeof finalRawResults)[0], index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))
+      .map((cv: ScoredCandidateDoc, index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))
       .sort((a: ScoredCandidate, b: ScoredCandidate) =>
         (b.titleScore - a.titleScore) ||
         (b.skillScore - a.skillScore) ||

@@ -64,17 +64,17 @@ export const runReverseMatch = action({
       );
 
       const seen = new Set<string>();
-      const candidates: any[] = [];
+      const candidateIds: Id<"candidates">[] = [];
       for (const batch of batches) {
-        for (const cv of batch) {
-          if (!seen.has(cv._id)) {
-            seen.add(cv._id);
-            candidates.push(cv);
+        for (const result of batch) {
+          if (result && result.candidateId && !seen.has(result.candidateId.toString())) {
+            seen.add(result.candidateId.toString());
+            candidateIds.push(result.candidateId);
           }
         }
       }
 
-      if (candidates.length === 0) {
+      if (candidateIds.length === 0) {
         await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
           jobId: args.jobId,
           results: [],
@@ -83,24 +83,30 @@ export const runReverseMatch = action({
         return;
       }
 
+      // Batch fetch full candidate documents in a single query
+      const allCandidates = await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
+        candidateIds,
+      });
+      const candidateMap = new Map(allCandidates.map(c => [c._id.toString(), c]));
+
       // Compact candidate payload for the scoring model (cap at 40).
-      const pool = candidates.slice(0, 40);
+      const pool = candidateIds.slice(0, 40).map(id => candidateMap.get(id.toString())).filter(Boolean);
       
       const allResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
-        candidateIds: pool.map(c => c._id)
+        candidateIds: pool.map(c => c!._id)
       });
       const resumeMap = new Map(allResumes.map((r: any) => [r.candidateId, r]));
 
       const candidateSummaries = pool.map((cv, i) => ({
         index: i,
-        name: cv.fullName ?? cv.email ?? "Unknown",
-        title: cv.currentJobTitle ?? "",
-        industry: cv.clientIndustry ?? "", 
-        seniority: cv.seniorityLevel ?? "",
-        years: cv.totalExperienceYears ?? null,
-        location: cv.location ?? "",
-        skills: (cv.skills ?? []).slice(0, 8).join(", "),
-        snippet: ((resumeMap.get(cv._id) as any)?.rawText ?? "").slice(0, 400),
+        name: cv!.fullName ?? cv!.email ?? "Unknown",
+        title: cv!.currentJobTitle ?? "",
+        industry: (cv as any).clientIndustry ?? "", 
+        seniority: (cv as any).seniorityLevel ?? "",
+        years: cv!.totalExperienceYears ?? null,
+        location: cv!.location ?? "",
+        skills: (cv!.skills ?? []).slice(0, 8).join(", "),
+        snippet: ((resumeMap.get(cv!._id) as any)?.rawText ?? "").slice(0, 400),
       }));
 
       const jobReq = {

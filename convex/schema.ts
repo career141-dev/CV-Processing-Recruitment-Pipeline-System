@@ -507,7 +507,8 @@ export default defineSchema({
         v.literal("client_review"),
         v.literal("interview"),
         v.literal("offer"),
-        v.literal("rejected")
+        v.literal("rejected"),
+        v.literal("unresponsive")
       )
     ),
 

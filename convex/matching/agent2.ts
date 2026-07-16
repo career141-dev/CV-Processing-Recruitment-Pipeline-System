@@ -245,11 +245,14 @@ export const runReverseMatch = action({
         )
       );
 
-      const dedupedKeywordsMap = new Map<string, any>();
+      const dedupedKeywordsMap = new Map<string, { candidateId: Id<"candidates">; score: number }>();
       for (const batch of batches) {
-        for (const cv of batch) {
-          if (cv && cv._id) {
-            dedupedKeywordsMap.set(cv._id.toString(), cv);
+        for (const result of batch) {
+          if (result && result.candidateId) {
+            const cIdStr = result.candidateId.toString();
+            if (!dedupedKeywordsMap.has(cIdStr)) {
+              dedupedKeywordsMap.set(cIdStr, { candidateId: result.candidateId, score: result.score });
+            }
           }
         }
       }
@@ -262,10 +265,10 @@ export const runReverseMatch = action({
 
       const vectorResultsMap = new Map<string, number>();
       if (results.length > 0) {
-        const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidatesByResumeIds, {
+        const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
           resumeIds: results.map((r) => r._id),
         });
-        const resumeIdToCandidateId = new Map(mappedResumes.map((item: any) => [item.resumeId, item.candidate._id]));
+        const resumeIdToCandidateId = new Map(mappedResumes.map((item) => [item.resumeId, item.candidateId]));
         for (const r of results) {
           const cId = resumeIdToCandidateId.get(r._id);
           if (cId) {
@@ -274,7 +277,25 @@ export const runReverseMatch = action({
         }
       }
 
-      // 4. Generate missing embeddings on the fly for keyword-matched candidates (up to 15)
+      // 4. Deduplicate all candidate IDs in memory
+      const allCandidateIdStrings = new Set<string>([
+        ...Array.from(vectorResultsMap.keys()),
+        ...Array.from(dedupedKeywordsMap.keys()),
+      ]);
+
+      // 5. Batch fetch full candidate documents in a single query
+      const allCandidateIds = Array.from(allCandidateIdStrings) as Id<"candidates">[];
+      let candidatesMap = new Map<string, any>();
+      if (allCandidateIds.length > 0) {
+        const candidates = await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
+          candidateIds: allCandidateIds,
+        });
+        for (const c of candidates) {
+          candidatesMap.set(c._id.toString(), c);
+        }
+      }
+
+      // 6. Generate missing embeddings on the fly for keyword-matched candidates (up to 15)
       // Only check candidates not returned by vector search
       const keywordCandidateIdsMissingEmbeddings = Array.from(dedupedKeywordsMap.keys()).filter(id => !vectorResultsMap.has(id));
       const keywordResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
@@ -283,9 +304,10 @@ export const runReverseMatch = action({
       const keywordResumeMap = new Map(keywordResumes.map((r: any) => [r.candidateId, r]));
 
       const missingEmbeddings = Array.from(dedupedKeywordsMap.values()).filter(
-        cv => {
-          if (vectorResultsMap.has(cv._id.toString())) return false; // Already has embedding from vector search
-          const resume: any = keywordResumeMap.get(cv._id);
+        k => {
+          const cIdStr = k.candidateId.toString();
+          if (vectorResultsMap.has(cIdStr)) return false; // Already has embedding from vector search
+          const resume: any = keywordResumeMap.get(k.candidateId);
           return !resume || !resume.embedding || resume.embedding.length === 0;
         }
       );
@@ -293,29 +315,31 @@ export const runReverseMatch = action({
       if (missingEmbeddings.length > 0) {
         const limitToEmbed = missingEmbeddings.slice(0, 15);
         await Promise.all(
-          limitToEmbed.map(async (cv) => {
+          limitToEmbed.map(async (k) => {
             try {
-              const resume: any = keywordResumeMap.get(cv._id);
+              const resume: any = keywordResumeMap.get(k.candidateId);
               if (resume && resume.rawText) {
                 const textToEmbed = resume.rawText.slice(0, 15000);
                 const embedResult = await embedText(textToEmbed, "passage");
                 const embedding = embedResult.embedding;
                 await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
-                  candidateId: cv._id,
+                  candidateId: k.candidateId,
                   embedding,
                 });
                 resume.embedding = embedding; // Update in-memory reference
+                const cand = candidatesMap.get(k.candidateId.toString());
                 tokenLogs.push({
                   taskType: "embedding",
                   model: embedResult.usage.model,
                   promptTokens: embedResult.usage.promptTokens,
                   completionTokens: 0,
                   success: true,
-                  cvUploadId: cv.cvUploadId ?? undefined,
+                  cvUploadId: cand?.cvUploadId ?? undefined,
                 });
               }
             } catch (err) {
-              console.error(`Failed to generate on-the-fly embedding for candidate ${cv._id}:`, err);
+              console.error(`Failed to generate on-the-fly embedding for candidate ${k.candidateId}:`, err);
+              const cand = candidatesMap.get(k.candidateId.toString());
               tokenLogs.push({
                 taskType: "embedding",
                 model: "nvidia/nv-embedqa-e5-v5",
@@ -323,14 +347,14 @@ export const runReverseMatch = action({
                 completionTokens: 0,
                 success: false,
                 error: err instanceof Error ? err.message : String(err),
-                cvUploadId: cv.cvUploadId ?? undefined,
+                cvUploadId: cand?.cvUploadId ?? undefined,
               });
             }
           })
         );
       }
 
-      // 5. Merge, enrich, and calculate similarity scores
+      // 7. Merge, enrich, and calculate similarity scores
       // Get existing results
       const existingResults = job.reverseMatchResults || [];
 
@@ -344,40 +368,46 @@ export const runReverseMatch = action({
       const existingToKeep = existingResults.filter((r) => appliedCandidateIds.has(r.cvId));
       const existingToKeepIds = existingToKeep.map(r => r.cvId);
 
-      const allCandidateIds = new Set<string>([
-        ...Array.from(vectorResultsMap.keys()),
-        ...Array.from(dedupedKeywordsMap.keys()),
-        ...existingToKeepIds, // Merge previously matched candidates with TA actions
-      ]);
+      // Include existing TA-acted candidates in the final set
+      for (const cId of existingToKeepIds) {
+        if (!candidatesMap.has(cId)) {
+          const cand = await ctx.runQuery(internal.matching.queries.getCandidate, { candidateId: cId as Id<"candidates"> });
+          if (cand) candidatesMap.set(cId, cand);
+        }
+      }
 
       const enrichedCandidates: any[] = [];
 
-      for (const id of allCandidateIds) {
-        const keywordCand = dedupedKeywordsMap.get(id);
+      for (const id of allCandidateIdStrings) {
+        const keywordMatch = dedupedKeywordsMap.get(id);
         const vectorScore = vectorResultsMap.get(id);
+        const cand = candidatesMap.get(id);
+
+        if (!cand) continue;
 
         if (vectorScore !== undefined) {
           // If returned by vector search, use vector search score
-          const cand = await ctx.runQuery(internal.matching.queries.getCandidate, { candidateId: id as Id<"candidates"> });
-          if (cand) {
-            enrichedCandidates.push({
-              candidate: cand,
-              vectorScore,
-            });
-          }
-        } else if (keywordCand) {
+          enrichedCandidates.push({
+            candidate: cand,
+            vectorScore,
+          });
+        } else if (keywordMatch) {
           // If only returned by keyword search, calculate cosine similarity dynamically
           const resume: any = keywordResumeMap.get(id as Id<"candidates">);
           if (resume && resume.embedding && resume.embedding.length > 0) {
             const similarity = cosineSimilarity(jobEmbedding, resume.embedding);
             enrichedCandidates.push({
-              candidate: keywordCand,
+              candidate: cand,
               vectorScore: similarity,
             });
           }
-        } else {
-          // Fallback for previously matched candidates that didn't match current keywords/vector search
-          const cand = await ctx.runQuery(internal.matching.queries.getCandidate, { candidateId: id as Id<"candidates"> });
+        }
+      }
+
+      // Add existing TA-acted candidates not in allCandidateIdStrings with default score
+      for (const cId of existingToKeepIds) {
+        if (!allCandidateIdStrings.has(cId)) {
+          const cand = candidatesMap.get(cId);
           if (cand) {
             enrichedCandidates.push({
               candidate: cand,
