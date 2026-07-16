@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  convex-local-backend:
+    image: ghcr.io/get-convex/convex-backend:latest
+    ports:
+      - "3210:3210"
+    environment:
+      - PORT=3210
+      # Runs locally on an embedded SQLite database
+      - DATABASE_URL=sqlite:///data/convex.db
+    volumes:
+      - convex-db-data:/data
+
+volumes:
+  convex-db-data:

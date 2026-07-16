@@ -325,8 +325,8 @@ export function calculateNvidiaCredits(model: string, promptTokens: number, comp
     if (modelName.includes("pro")) {
       return (promptTokens * 0.435 + completionTokens * 0.87) / 1_000_000;
     }
-    // Default to DeepSeek V4-Flash rates (Standard input: $0.14/M, output: $0.28/M)
-    return (promptTokens * 0.14 + completionTokens * 0.28) / 1_000_000;
+    // Default to DeepSeek V4-Flash rates (Standard input: $0.09/M, output: $0.18/M)
+    return (promptTokens * 0.09 + completionTokens * 0.18) / 1_000_000;
   }
 
   // 3. Chat/Instruction LLMs (8B models): $0.18 / million tokens
@@ -335,7 +335,7 @@ export function calculateNvidiaCredits(model: string, promptTokens: number, comp
   }
 
   // Default to Llama-3.1-70B rate ($2.66 / 1M tokens)
-  return (promptTokens + completionTokens) * (2.66 / 1_000_000);
+  return (promptTokens + completionTokens) * (0.18 / 1_000_000);
 }
 
 /**
