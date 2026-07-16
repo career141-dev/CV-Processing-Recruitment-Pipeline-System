@@ -112,6 +112,8 @@ type ExtractionArgs = {
   };
   batchId?: Id<"ingestionBatches">;
   logId?: Id<"ingestionLog">;
+  isRetry?: boolean;
+  retryCount?: number;
 };
 
 const ExtractionActionArgs = {
@@ -130,6 +132,7 @@ const ExtractionActionArgs = {
   batchId: v.optional(v.id("ingestionBatches")),
   logId: v.optional(v.id("ingestionLog")),
   isRetry: v.optional(v.boolean()),
+  retryCount: v.optional(v.number()),
 };
 
 // ──────────────────────────────────────────────────
@@ -202,51 +205,6 @@ async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
   return result.data.text;
 }
 
-async function extractProfileImage(buffer: ArrayBuffer): Promise<Buffer | null> {
-  try {
-    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer.slice(0)) });
-    const pdf = await loadingTask.promise;
-    
-    if (pdf.numPages === 0) return null;
-    const page = await pdf.getPage(1);
-    const ops = await page.getOperatorList();
-    
-    for (let i = 0; i < ops.fnArray.length; i++) {
-      const fn = ops.fnArray[i];
-      if (fn === pdfjsLib.OPS.paintImageXObject || fn === pdfjsLib.OPS.paintInlineImageXObject) {
-        const objId = ops.argsArray[i][0];
-        try {
-          const img = await page.objs.get(objId);
-          if (img && img.width >= 60 && img.height >= 60) {
-            const aspect = img.width / img.height;
-            if (aspect >= 0.6 && aspect <= 1.5) {
-              let imgData = Buffer.from(img.data);
-              
-              if (imgData.length === img.width * img.height * 3) {
-                const rgba = Buffer.alloc(img.width * img.height * 4);
-                for (let j = 0; j < img.width * img.height; j++) {
-                  rgba[j * 4] = imgData[j * 3];
-                  rgba[j * 4 + 1] = imgData[j * 3 + 1];
-                  rgba[j * 4 + 2] = imgData[j * 3 + 2];
-                  rgba[j * 4 + 3] = 255;
-                }
-                imgData = rgba;
-              }
-
-              const image = new Jimp({ data: imgData, width: img.width, height: img.height });
-              return await image.getBuffer('image/png');
-            }
-          }
-        } catch (e) {
-        }
-      }
-    }
-  } catch (e) {
-    console.error("Image extraction failed:", e);
-  }
-  return null;
-}
-
 export async function extractText(
   buffer: ArrayBuffer,
   fileType: string,
@@ -254,7 +212,14 @@ export async function extractText(
   const type = fileType.toLowerCase();
 
   if (type === "pdf" || type === "application/pdf") {
-    return extractTextFromPdf(buffer);
+    try {
+      const pdfText = await extractTextFromPdf(buffer);
+      if (pdfText.trim().length > 50) return pdfText;
+    } catch (e) {
+      console.warn("Failed to extract text from PDF normally, attempting OCR fallback", e);
+    }
+    // Fall back to OCR for scanned PDFs
+    return extractTextFromImage(buffer);
   }
 
   if (type === "docx" || type === "doc" || type.includes("wordprocessingml")) {
@@ -280,21 +245,6 @@ export async function extractText(
   if (type === "txt") {
     return new TextDecoder("utf-8").decode(buffer);
   }
-
-  try {
-    const pdfText = await extractTextFromPdf(buffer);
-    if (pdfText.trim().length > 50) return pdfText;
-  } catch {}
-
-  try {
-    const docxText = await extractTextFromDocx(buffer);
-    if (docxText.trim().length > 50) return docxText;
-  } catch {}
-
-  try {
-    const imgText = await extractTextFromImage(buffer);
-    if (imgText.trim().length > 50) return imgText;
-  } catch {}
 
   return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
 }
@@ -622,6 +572,8 @@ export async function runCvExtraction(
 
     let finalCandidateId: Id<"candidates"> | null = null;
     let extracted: CvExtractionResult | null = null;
+    let embedding: number[] | undefined = undefined;
+
     if (skipLLM && preExtractedData) {
       extracted = {
         fullName: preExtractedData.fullName ?? null,
@@ -644,6 +596,12 @@ export async function runCvExtraction(
         summary: null,
         jobHistory: null,
       } as unknown as CvExtractionResult;
+
+      try {
+        embedding = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId);
+      } catch (embedErr: any) {
+        console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", embedErr.message || embedErr);
+      }
     } else {
       if (args.logId) {
         await ctx.runMutation(api.cvs.batches.updateLogStage, {
@@ -651,10 +609,21 @@ export async function runCvExtraction(
           stage: "ai_extraction"
         });
       }
-      extracted = await callNvidiaLLM(ctx, cappedRawText, cvUploadId);
+      
+      // Run both LLM extraction and Embedding generation in parallel
+      const [extractedData, embeddingResult] = await Promise.all([
+        callNvidiaLLM(ctx, cappedRawText, cvUploadId),
+        generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
+          console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", err.message || err);
+          return undefined;
+        })
+      ]);
+
+      extracted = extractedData;
       if (!extracted) {
         throw new Error("LLM failed to extract candidate data (API timeout or invalid response)");
       }
+      embedding = embeddingResult;
     }
 
     if (extracted) {
@@ -680,20 +649,6 @@ export async function runCvExtraction(
         endDate: jh.endDate,
         description: jh.description,
       }));
-
-      // Generate embedding using the new NVIDIA embedding function
-      if (args.logId) {
-        await ctx.runMutation(api.cvs.batches.updateLogStage, {
-          logId: args.logId,
-          stage: "indexing"
-        });
-      }
-      let embedding: number[] | undefined = undefined;
-      try {
-        embedding = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId);
-      } catch (embedErr: any) {
-        console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", embedErr.message || embedErr);
-      }
 
       finalCandidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
         ...safeExtracted,
@@ -755,6 +710,10 @@ export async function runCvExtraction(
         batchId: args.batchId,
         status: "completed"
       });
+      // Trigger the next batch automatically if this batch is complete
+      await ctx.runMutation(api.cvs.cvUploads.checkAndTriggerNextBatch, {
+        batchId: args.batchId,
+      });
     }
 
     return candidateId;
@@ -767,12 +726,32 @@ export async function runCvExtraction(
       message.toLowerCase().includes("balance") ||
       message.toLowerCase().includes("credits");
 
+    const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
     const isNotACV = message.includes("NOT_A_CV");
 
     // Clean up the blank candidate stub since extraction failed
     if (candidateId) {
       console.log(`[CvExtraction] Extraction failed, cleaning up blank candidate: ${candidateId}`);
       await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
+    }
+
+    if (isRateLimit && ((args as any).retryCount ?? 0) < 5) {
+      const nextRetryCount = ((args as any).retryCount ?? 0) + 1;
+      const delayMs = nextRetryCount * 60 * 1000; // 1m, 2m, 3m...
+      console.log(`[CvExtraction] Nvidia Rate Limit hit (429). Retrying in ${delayMs/1000}s (Attempt ${nextRetryCount})`);
+      
+      await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+        cvUploadId,
+        status: "pending_retry",
+        errorMessage: `Nvidia API Rate Limit (429). Retrying automatically in ${delayMs/1000}s...`,
+      });
+
+      await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
+         ...args,
+         isRetry: true,
+         retryCount: nextRetryCount
+      });
+      return null;
     }
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
@@ -798,6 +777,10 @@ export async function runCvExtraction(
       await ctx.runMutation(api.cvs.batches.updateBatchProgress, {
         batchId: args.batchId,
         status: isInsufficientBalance ? "completed" : "failed"
+      });
+      // Trigger the next batch automatically if this batch is complete
+      await ctx.runMutation(api.cvs.cvUploads.checkAndTriggerNextBatch, {
+        batchId: args.batchId,
       });
     }
 
@@ -909,40 +892,8 @@ export const processNextBatch = internalAction({
       });
     }
 
-    // 3. Start polling progress of these 5 specific uploads
-    await ctx.scheduler.runAfter(2000, internal.cvs.cvExtraction.pollBatchProgress, {
-      batchId: args.batchId,
-      cvUploadIds,
-    });
-  },
-});
-
-export const pollBatchProgress = internalAction({
-  args: {
-    batchId: v.id("ingestionBatches"),
-    cvUploadIds: v.array(v.id("cvUploads")),
-  },
-  handler: async (ctx, args) => {
-    // Query the status of these 5 uploads
-    const statuses = await ctx.runQuery(internal.cvs.cvUploads.checkUploadsStatus, {
-      cvUploadIds: args.cvUploadIds,
-    });
-
-    // If all are finished (either "processed" or "failed" or "failed_retry")
-    const allFinished = statuses.every((s) => s === "processed" || s === "failed" || s === "failed_retry");
-
-    if (allFinished) {
-      console.log(`[pollBatchProgress] All ${args.cvUploadIds.length} uploads finished. Triggering next 5.`);
-      // Run next batch immediately!
-      await ctx.runAction(internal.cvs.cvExtraction.processNextBatch, {
-        batchId: args.batchId,
-      });
-    } else {
-      // Not all finished yet. Poll again in 2 seconds.
-      await ctx.scheduler.runAfter(2000, internal.cvs.cvExtraction.pollBatchProgress, {
-        batchId: args.batchId,
-        cvUploadIds: args.cvUploadIds,
-      });
-    }
+    // 3. We no longer poll batch progress here.
+    // The next batch will be triggered by checkAndTriggerNextBatch
+    // when the last CV in this batch finishes extracting.
   },
 });

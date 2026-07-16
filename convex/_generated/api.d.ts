@@ -31,6 +31,7 @@ import type * as candidates_profile from "../candidates/profile.js";
 import type * as candidates_testExp from "../candidates/testExp.js";
 import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
 import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
+import type * as checkUnread from "../checkUnread.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
 import type * as communications_graphEmail from "../communications/graphEmail.js";
 import type * as communications_graphEmailMutations from "../communications/graphEmailMutations.js";
@@ -109,6 +110,7 @@ declare const fullApi: ApiFromModules<{
   "candidates/testExp": typeof candidates_testExp;
   "candidates/updateAllExp": typeof candidates_updateAllExp;
   "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
+  checkUnread: typeof checkUnread;
   "communications/emailAgent": typeof communications_emailAgent;
   "communications/graphEmail": typeof communications_graphEmail;
   "communications/graphEmailMutations": typeof communications_graphEmailMutations;

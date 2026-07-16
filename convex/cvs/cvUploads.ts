@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, internalQuery } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { adjustGlobalStat } from "../stats/statsHelper";
 
 export const generateUploadUrl = mutation({
@@ -124,5 +124,37 @@ export const checkUploadsStatus = internalQuery({
       statuses.push(upload ? upload.status : "failed");
     }
     return statuses;
+  },
+});
+
+export const checkAndTriggerNextBatch = mutation({
+  args: {
+    batchId: v.id("ingestionBatches"),
+  },
+  handler: async (ctx, args) => {
+    // Check if there are any cvUploads in this batch that are STILL "processing" or "queued" or "pending_retry"
+    const processingUploads = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_batchId", (q) => q.eq("batchId", args.batchId))
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "processing"),
+          q.eq(q.field("status"), "queued"),
+          q.eq(q.field("status"), "pending_retry")
+        )
+      )
+      .collect();
+
+    // If there are still uploads processing/queued in the CURRENT active chunk of the batch, do nothing.
+    if (processingUploads.length > 0) {
+      console.log(`[checkAndTriggerNextBatch] Batch ${args.batchId} has ${processingUploads.length} uploads still processing. Waiting.`);
+      return;
+    }
+
+    // Otherwise, all currently queued/processing uploads are done!
+    console.log(`[checkAndTriggerNextBatch] Current chunk for batch ${args.batchId} finished. Triggering next batch.`);
+    await ctx.scheduler.runAfter(0, internal.cvs.cvExtraction.processNextBatch, {
+      batchId: args.batchId,
+    });
   },
 });

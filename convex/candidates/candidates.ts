@@ -77,9 +77,15 @@ export const getCandidate = query({
   handler: async (ctx, args) => {
     const candidate = await ctx.db.get(args.id);
     if (!candidate) return null;
+    
+    const resume = await ctx.db.query("candidateResumes")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", args.id))
+      .first();
+
     const { rawText, embedding, jobHistory, ...safeCandidate } = candidate as any;
     return {
       ...safeCandidate,
+      jobHistory: resume?.jobHistory || jobHistory || [],
       profileImageUrl: null,
     };
   },

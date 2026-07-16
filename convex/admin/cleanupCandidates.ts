@@ -45,13 +45,6 @@ export const cleanupAllHeavyFields = mutation({
     for (const c of result.page) {
       const updates: any = {};
       
-      // Temporary patch for tech lead
-      const job = await ctx.db.query("jobs").withIndex("by_keyword", (q) => q.eq("keyword", "TECHLEAD")).first();
-      if (job && !job.muteDefaultWhatsappReply) {
-        await ctx.db.patch(job._id, { muteDefaultWhatsappReply: true });
-        console.log("Muted TECHLEAD job via cleanup!");
-      }
-
       if ((c as any).rawText !== undefined) updates.rawText = undefined;
       if ((c as any).embedding !== undefined) updates.embedding = undefined;
       if ((c as any).jobHistory !== undefined) updates.jobHistory = undefined;

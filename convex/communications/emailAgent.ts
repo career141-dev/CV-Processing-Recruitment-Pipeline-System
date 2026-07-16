@@ -62,7 +62,7 @@ async function fetchMessageAttachments(inboxEmail: string, messageId: string) {
   if (!token) return [];
 
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments`;
+    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments?$select=id,name,contentType,size`;
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -77,6 +77,29 @@ async function fetchMessageAttachments(inboxEmail: string, messageId: string) {
   } catch (error) {
     console.error(`[EmailAgent] Error fetching attachments for message ${messageId}:`, error);
     return [];
+  }
+}
+
+async function fetchAttachmentContent(inboxEmail: string, messageId: string, attachmentId: string) {
+  const token = await getGraphToken();
+  if (!token) return null;
+
+  try {
+    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments/${attachmentId}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      console.error(`[EmailAgent] Failed to fetch attachment content for ${attachmentId}:`, await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return data.contentBytes || null;
+  } catch (error) {
+    console.error(`[EmailAgent] Error fetching attachment content for ${attachmentId}:`, error);
+    return null;
   }
 }
 
@@ -317,7 +340,17 @@ Respond ONLY with a valid JSON object in this exact format:
       for (const attachment of cvAttachments) {
         console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType})`);
 
-        const binaryString = atob(attachment.contentBytes);
+        let contentBytes = attachment.contentBytes;
+        if (!contentBytes) {
+          contentBytes = await fetchAttachmentContent(targetInboxEmail, message.id, attachment.id);
+        }
+        
+        if (!contentBytes) {
+          console.error(`[EmailAgent] Failed to get contentBytes for attachment ${attachment.name}`);
+          continue;
+        }
+
+        const binaryString = atob(contentBytes);
         const fileBuffer = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
           fileBuffer[i] = binaryString.charCodeAt(i);

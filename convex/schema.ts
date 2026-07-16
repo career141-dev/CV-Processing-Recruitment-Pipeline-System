@@ -421,6 +421,7 @@ export default defineSchema({
       description: v.optional(v.string()),
     }))),
     embedding: v.optional(v.array(v.float64())),
+    hasEmbedding: v.optional(v.boolean()),
   })
     .index("by_candidateId", ["candidateId"])
     .searchIndex("search_text", {
@@ -485,7 +486,6 @@ export default defineSchema({
     isDuplicateOf: v.optional(v.id("candidates")),
     mergedInto: v.optional(v.id("candidates")),
     vectorEmbeddingId: v.optional(v.string()),
-    rawText: v.optional(v.string()),
     pastJobTitles: v.optional(v.array(v.string())),
     sector: v.optional(v.string()),
     overallStatus: v.optional(
@@ -505,13 +505,13 @@ export default defineSchema({
         v.literal("client_review"),
         v.literal("interview"),
         v.literal("offer"),
-        v.literal("rejected")
+        v.literal("rejected"),
+        v.literal("unresponsive")
       )
     ),
 
     // Existing legacy fields to prevent breaking changes
     status: v.optional(v.string()),
-    embedding: v.optional(v.array(v.float64())),
     isArchivedLocally: v.optional(v.boolean()),
     currentTitle: v.optional(v.string()),
     seniorityLevel: v.optional(v.string()),
