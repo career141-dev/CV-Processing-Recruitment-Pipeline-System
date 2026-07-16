@@ -1,0 +1,30 @@
+import { query } from "./_generated/server";
+
+export const countCvsFromYesterday = query({
+  handler: async (ctx) => {
+    // Yesterday evening 8 PM in the user's local timezone (+05:30)
+    // 2026-07-15T20:00:00+05:30
+    const startTime = Date.parse("2026-07-15T20:00:00+05:30");
+
+    const logs = await ctx.db
+      .query("ingestionLog")
+      .withIndex("by_receivedAt", (q) => q.gte("receivedAt", startTime))
+      .collect();
+
+    // Filter to logs that have a cvFileId (representing a CV upload)
+    const cvLogs = logs.filter(log => log.cvFileId !== undefined);
+
+    return {
+      startTimeStr: new Date(startTime).toString(),
+      totalLogs: logs.length,
+      cvCount: cvLogs.length,
+      cvs: cvLogs.map(l => ({
+        id: l._id,
+        receivedAtStr: new Date(l.receivedAt).toString(),
+        candidateName: l.candidateName,
+        channelType: l.channelType,
+        routingStatus: l.routingStatus,
+      }))
+    };
+  }
+});

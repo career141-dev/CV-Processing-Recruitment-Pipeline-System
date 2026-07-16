@@ -425,7 +425,7 @@ export const runImportBatch = internalAction({
           userId: args.userId,
         });
 
-        await ctx.scheduler.runAfter(imported * 2000, api.cvs.cvExtraction.processCvExtraction, {
+        await ctx.scheduler.runAfter(imported * 4000, api.cvs.cvExtraction.processCvExtraction, {
           storageId,
           fileType: downloaded.fileType,
           sourceChannel: "Workable",

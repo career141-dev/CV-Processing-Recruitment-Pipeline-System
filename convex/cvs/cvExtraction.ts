@@ -208,6 +208,7 @@ async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
 export async function extractText(
   buffer: ArrayBuffer,
   fileType: string,
+  skipOCR: boolean = false,
 ): Promise<string> {
   const type = fileType.toLowerCase();
 
@@ -216,7 +217,11 @@ export async function extractText(
       const pdfText = await extractTextFromPdf(buffer);
       if (pdfText.trim().length > 50) return pdfText;
     } catch (e) {
-      console.warn("Failed to extract text from PDF normally, attempting OCR fallback", e);
+      console.warn("Failed to extract text from PDF normally", e);
+      if (skipOCR) throw e;
+    }
+    if (skipOCR) {
+      throw new Error("Normal PDF text extraction returned empty and OCR is disabled (skipLLM is true)");
     }
     // Fall back to OCR for scanned PDFs
     return extractTextFromImage(buffer);
@@ -227,6 +232,9 @@ export async function extractText(
   }
 
   if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg") {
+    if (skipOCR) {
+      throw new Error("OCR is disabled for images (skipLLM is true)");
+    }
     return extractTextFromImage(buffer);
   }
 
@@ -292,7 +300,7 @@ export function cleanRawText(text: string): string {
   return cleaned;
 }
 
-const MAX_RAW_TEXT_LENGTH = 500_000;
+const MAX_RAW_TEXT_LENGTH = 150_000;
 
 function computeSha256(buffer: ArrayBuffer): string {
   return crypto.createHash("sha256").update(Buffer.from(buffer)).digest("hex");
@@ -355,7 +363,7 @@ export async function callNvidiaLLM(
     const response = await openai.chat.completions.create({
       model: "meta/llama-3.1-70b-instruct",
       temperature: 0,
-      max_tokens: 4096,
+      max_tokens: 2500,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -544,7 +552,7 @@ export async function runCvExtraction(
     }
     const fileHash = computeSha256(buffer);
 
-    const rawText = await extractText(buffer, fileType);
+    const rawText = await extractText(buffer, fileType, !!skipLLM);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
     if (trimmed.length < 20) {
@@ -650,7 +658,8 @@ export async function runCvExtraction(
         description: jh.description,
       }));
 
-      finalCandidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
+      await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
+        candidateId,
         ...safeExtracted,
         cvUploadId,
         currentEmployer: derivedEmployer,
@@ -667,15 +676,10 @@ export async function runCvExtraction(
         parsingConfidence,
         isParsed: true,
         embedding,
-      }) as Id<"candidates">;
+      });
     }
 
-    const resolvedCandidateId = finalCandidateId || candidateId;
-
-    if (finalCandidateId && finalCandidateId !== candidateId) {
-      console.log(`[cvExtraction] Merged into existing candidate: ${finalCandidateId}. Deleting duplicate candidate record: ${candidateId}`);
-      await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
-    }
+    const resolvedCandidateId = candidateId;
 
     const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
@@ -692,10 +696,12 @@ export async function runCvExtraction(
         sourceChannel: sourceChannel ?? "manual_upload",
       });
 
-      await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
-        candidateId: resolvedCandidateId,
-        jobId: jobId as any,
-      });
+      if (!skipLLM) {
+        await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+          candidateId: resolvedCandidateId,
+          jobId: jobId as any,
+        });
+      }
     }
 
     if (args.logId) {
@@ -864,10 +870,10 @@ export const startBatchExtraction = action({
 export const processNextBatch = internalAction({
   args: { batchId: v.id("ingestionBatches") },
   handler: async (ctx, args) => {
-    // 1. Get up to 5 uploads in this batch that are still "uploaded"
+    // 1. Get up to 3 uploads in this batch that are still "uploaded"
     const uploads = await ctx.runQuery(internal.cvs.cvUploads.listUploadedInBatch, {
       batchId: args.batchId,
-      limit: 5,
+      limit: 3,
     });
 
     if (uploads.length === 0) {
