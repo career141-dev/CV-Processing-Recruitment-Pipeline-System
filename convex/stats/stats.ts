@@ -320,7 +320,16 @@ export function calculateNvidiaCredits(model: string, promptTokens: number, comp
     return (promptTokens + completionTokens) * (0.07 / 1_000_000);
   }
 
-  // 2. Chat/Instruction LLMs (8B models): $0.18 / million tokens
+  // 2. DeepSeek Models (V4-Pro & V4-Flash)
+  if (modelName.includes("deepseek")) {
+    if (modelName.includes("pro")) {
+      return (promptTokens * 0.435 + completionTokens * 0.87) / 1_000_000;
+    }
+    // Default to DeepSeek V4-Flash rates (Standard input: $0.14/M, output: $0.28/M)
+    return (promptTokens * 0.14 + completionTokens * 0.28) / 1_000_000;
+  }
+
+  // 3. Chat/Instruction LLMs (8B models): $0.18 / million tokens
   if (modelName.includes("8b")) {
     return (promptTokens + completionTokens) * (0.18 / 1_000_000);
   }
