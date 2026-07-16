@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getOpenAI, getModelForTask, logLLMUsage } from "../lib/llm";
+import { getOpenAI, getModelForTask } from "../lib/llm";
 import type { SearchRequirements } from "../lib/jdParser";
 
 function normalizeText(value: string): string {
@@ -415,7 +415,13 @@ export function scoreCandidateAgainstRequirements(
   };
 }
 
-export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<{score: number, reason: string}> {
+export async function scoreWithLLM(
+  cv: any,
+  req: SearchRequirements
+): Promise<{
+  result: { score: number; reason: string };
+  usage: { promptTokens: number; completionTokens: number; model: string };
+}> {
   const model = getModelForTask("jd_matching");
   const openai = getOpenAI("jd_matching");
 
@@ -437,46 +443,39 @@ export async function scoreWithLLM(cv: any, req: SearchRequirements): Promise<{s
     const content = response.choices[0]?.message?.content ?? '{"score":0}';
     const inputTokens = response.usage?.prompt_tokens || 0;
     const outputTokens = response.usage?.completion_tokens || 0;
-    const success = !!content && content !== '{"score":0}';
 
     try {
       const parsed = JSON.parse(content) as { score?: number, reason?: string };
-      await logLLMUsage(
-        {} as any,
-        "jd_matching",
-        model,
-        inputTokens,
-        outputTokens,
-        success,
-        !success ? "JSON parsing failed" : undefined
-      );
-      return { 
-        score: Math.min(100, Math.max(0, parsed.score ?? 0)),
-        reason: parsed.reason || "The candidate's profile was evaluated against the job requirements."
+      return {
+        result: {
+          score: Math.min(100, Math.max(0, parsed.score ?? 0)),
+          reason: parsed.reason || "The candidate's profile was evaluated against the job requirements."
+        },
+        usage: {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
+          model,
+        },
       };
     } catch {
-      await logLLMUsage(
-        {} as any,
-        "jd_matching",
-        model,
-        inputTokens,
-        outputTokens,
-        false,
-        "JSON parsing failed"
-      );
-      return { score: 0, reason: "Error parsing AI evaluation." };
+      return {
+        result: { score: 0, reason: "Error parsing AI evaluation." },
+        usage: {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
+          model,
+        },
+      };
     }
   } catch (error) {
-    await logLLMUsage(
-      {} as any,
-      "jd_matching",
-      model,
-      0,
-      0,
-      false,
-      error instanceof Error ? error.message : "API call failed"
-    );
-    return { score: 0, reason: "Failed to connect to the scoring service." };
+    return {
+      result: { score: 0, reason: "Failed to connect to the scoring service." },
+      usage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        model,
+      },
+    };
   }
 }
 

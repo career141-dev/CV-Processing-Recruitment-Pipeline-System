@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import React, { useState, useEffect } from "react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 import {
@@ -31,26 +31,48 @@ export default function TokenMonitorPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [limit, setLimit] = useState(20);
 
-  // Queries
-  const metrics = useQuery(api.stats.stats.getTokenMetrics);
-  const logs = useQuery(api.stats.stats.getRecentTokenLogs, { limit });
+  // Actions
+  const fetchTokenMetrics = useAction(api.stats.stats.getTokenMetricsAction);
+  const fetchRecentTokenLogs = useAction(api.stats.stats.getRecentTokenLogsAction);
+
+  // Local state
+  const [metrics, setMetrics] = useState<any>(null);
+  const [logs, setLogs] = useState<any[] | null>(null);
+
+  // Fetch logic helper
+  const loadData = React.useCallback(async () => {
+    try {
+      const [fetchedMetrics, fetchedLogs] = await Promise.all([
+        fetchTokenMetrics(),
+        fetchRecentTokenLogs({ limit }),
+      ]);
+      setMetrics(fetchedMetrics);
+      setLogs(fetchedLogs);
+    } catch (err: any) {
+      console.error("Failed to load token monitor stats", err);
+    }
+  }, [fetchTokenMetrics, fetchRecentTokenLogs, limit]);
+
+  // Load data on mount or limit change
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Mutations
   const clearLogs = useMutation(api.stats.stats.clearAllTokenLogs);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    // Convex queries are reactive, but triggering a state update will force recalculations if needed
-    setTimeout(() => {
-      setIsRefreshing(false);
-      toast.success("Usage metrics refreshed successfully.");
-    }, 600);
+    await loadData();
+    setIsRefreshing(false);
+    toast.success("Usage metrics refreshed successfully.");
   };
 
   const handleResetLogs = async () => {
     try {
       const res = await clearLogs();
       setIsResetModalOpen(false);
+      await loadData();
       toast.success(`Purged ${res.count} token logs from the system.`);
     } catch (e: any) {
       toast.error(e.message || "Failed to clear token logs.");
@@ -75,7 +97,7 @@ export default function TokenMonitorPage() {
   const chartWidth = 500;
   const barPadding = 12;
 
-  const maxCostInChart = metrics?.dailyChartData?.reduce((max, d) => {
+  const maxCostInChart = metrics?.dailyChartData?.reduce((max: number, d: any) => {
     const val = chartMode === "all" ? d.totalCost : d.cvExtractionCost;
     return val > max ? val : max;
   }, 0.001) || 0.001;
@@ -290,7 +312,7 @@ export default function TokenMonitorPage() {
                   })}
 
                   {/* Bars & Labels */}
-                  {metrics.dailyChartData.map((d, index) => {
+                  {metrics.dailyChartData.map((d: any, index: number) => {
                     const barCount = metrics.dailyChartData.length;
                     const blockWidth = (chartWidth - 50) / barCount;
                     const x = 50 + index * blockWidth;
@@ -379,7 +401,7 @@ export default function TokenMonitorPage() {
 
             <div className="flex flex-col gap-4 justify-center flex-1">
               {metrics && Object.keys(metrics.taskBreakdown).length > 0 ? (
-                Object.entries(metrics.taskBreakdown).map(([task, details]) => {
+                Object.entries(metrics.taskBreakdown).map(([task, details]: [string, any]) => {
                   const share = (details.credits / (metrics.overall.totalCredits || 1)) * 100;
                   
                   // Simple color selector

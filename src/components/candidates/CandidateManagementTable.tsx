@@ -82,35 +82,14 @@ export function CandidateManagementTable({
     status,
     loadMore,
   } = usePaginatedQuery(api.candidates.candidates.listCandidatesPaginated, {
-    searchQuery: nameSearch || undefined
+    searchQuery: nameSearch || undefined,
+    overallStatus: statusFilter || undefined,
+    sourceChannel: sourceFilter || undefined,
   }, { initialNumItems: 10 });
 
-  // Filter candidates locally in memory
+  // Filter candidates locally in memory for secondary filters
   const filteredResults = React.useMemo(() => {
     let list = rawResults;
-
-    if (nameSearch.trim()) {
-      const q = nameSearch.toLowerCase();
-      list = list.filter(c =>
-        c.fullName?.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        (c as any).phone?.toLowerCase().includes(q)
-      );
-    }
-
-    if (sourceFilter !== 'all') {
-      list = list.filter(c => {
-        const src = ((c as any).firstSourceChannel || (c as any).sourceChannel || "manual_upload").toLowerCase();
-        return src === sourceFilter;
-      });
-    }
-
-    if (statusFilter !== 'all') {
-      list = list.filter(c => {
-        const statusKey = c.overallStatus || c.status || "new_cvs";
-        return statusKey === statusFilter;
-      });
-    }
 
     if (locationFilter.trim()) {
       const loc = locationFilter.toLowerCase();

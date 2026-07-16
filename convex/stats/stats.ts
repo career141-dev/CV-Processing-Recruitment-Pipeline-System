@@ -1,6 +1,7 @@
-import { query, mutation, internalMutation } from "../_generated/server";
+import { query, mutation, action, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "../lib/permissions";
+import { api } from "../_generated/api";
 
 export const getSystemStats = query({
   args: {},
@@ -547,6 +548,153 @@ export const clearAllTokenLogs = mutation({
   },
 });
 
+export const logNvidiaCallsBatchMutation = internalMutation({
+  args: {
+    logs: v.array(
+      v.object({
+        taskType: v.string(),
+        model: v.string(),
+        promptTokens: v.number(),
+        completionTokens: v.number(),
+        success: v.boolean(),
+        error: v.optional(v.string()),
+        cvUploadId: v.optional(v.id("cvUploads")),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (args.logs.length === 0) return;
+
+    const now = Date.now();
+    const dateStr = new Date(now).toISOString().split("T")[0];
+
+    // --- 1. Load rolling cache singletons to update them in one go ---
+    const SINGLETON_KEY = "global_token_stats";
+    const existingCache = await ctx.db
+      .query("tokenStatsCache")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", SINGLETON_KEY))
+      .first();
+
+    const dailyRow = await ctx.db
+      .query("dailyTokenStats")
+      .withIndex("by_dateStr", (q) => q.eq("dateStr", dateStr))
+      .first();
+
+    // Accumulators for this batch
+    let batchTotalTokens = 0;
+    let batchPromptTokens = 0;
+    let batchCompletionTokens = 0;
+    let batchCredits = 0;
+    let batchSuccessfulCalls = 0;
+    let batchCvExtractionsCount = 0;
+    let batchCvExtractionCredits = 0;
+    const batchTaskBreakdown: Record<string, { tokens: number; credits: number; count: number }> = {};
+
+    for (const log of args.logs) {
+      const cost = calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens);
+      const totalTokens = log.promptTokens + log.completionTokens;
+
+      // Point read the CV file name at write-time if cvUploadId is provided
+      let fileName: string | undefined = undefined;
+      if (log.cvUploadId) {
+        const cv = await ctx.db.get(log.cvUploadId);
+        if (cv) fileName = cv.fileName;
+      }
+
+      // Insert log row
+      await ctx.db.insert("nvidiaTokenLogs", {
+        taskType: log.taskType,
+        model: log.model,
+        promptTokens: log.promptTokens,
+        completionTokens: log.completionTokens,
+        totalTokens,
+        success: log.success,
+        error: log.error,
+        cvUploadId: log.cvUploadId,
+        timestamp: now,
+        fileName,
+      });
+
+      // Accumulate
+      batchTotalTokens += totalTokens;
+      batchPromptTokens += log.promptTokens;
+      batchCompletionTokens += log.completionTokens;
+      batchCredits += cost;
+      if (log.success) {
+        batchSuccessfulCalls++;
+        if (log.taskType === "cv_structuring") {
+          batchCvExtractionsCount++;
+          batchCvExtractionCredits += cost;
+        }
+      }
+
+      if (!batchTaskBreakdown[log.taskType]) {
+        batchTaskBreakdown[log.taskType] = { tokens: 0, credits: 0, count: 0 };
+      }
+      batchTaskBreakdown[log.taskType].tokens += totalTokens;
+      batchTaskBreakdown[log.taskType].credits += cost;
+      batchTaskBreakdown[log.taskType].count += 1;
+    }
+
+    // --- 2. Update all-time rolling singleton cache ---
+    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number }> =
+      (existingCache?.taskBreakdown as any) ?? {};
+    for (const [taskType, delta] of Object.entries(batchTaskBreakdown)) {
+      if (!taskBreakdown[taskType]) {
+        taskBreakdown[taskType] = { tokens: 0, credits: 0, count: 0 };
+      }
+      taskBreakdown[taskType].tokens += delta.tokens;
+      taskBreakdown[taskType].credits += delta.credits;
+      taskBreakdown[taskType].count += delta.count;
+    }
+
+    if (existingCache) {
+      await ctx.db.patch(existingCache._id, {
+        totalTokens: existingCache.totalTokens + batchTotalTokens,
+        totalPromptTokens: existingCache.totalPromptTokens + batchPromptTokens,
+        totalCompletionTokens: existingCache.totalCompletionTokens + batchCompletionTokens,
+        totalCredits: existingCache.totalCredits + batchCredits,
+        successfulCalls: existingCache.successfulCalls + batchSuccessfulCalls,
+        totalRequests: existingCache.totalRequests + args.logs.length,
+        totalCvExtractionsCount: existingCache.totalCvExtractionsCount + batchCvExtractionsCount,
+        cvExtractionCredits: existingCache.cvExtractionCredits + batchCvExtractionCredits,
+        taskBreakdown,
+      });
+    } else {
+      await ctx.db.insert("tokenStatsCache", {
+        singletonKey: SINGLETON_KEY,
+        totalTokens: batchTotalTokens,
+        totalPromptTokens: batchPromptTokens,
+        totalCompletionTokens: batchCompletionTokens,
+        totalCredits: batchCredits,
+        successfulCalls: batchSuccessfulCalls,
+        totalRequests: args.logs.length,
+        totalCvExtractionsCount: batchCvExtractionsCount,
+        cvExtractionCredits: batchCvExtractionCredits,
+        taskBreakdown,
+      });
+    }
+
+    // --- 3. Update daily cost row ---
+    const batchCvExtractionCreditsAll = args.logs
+      .filter((l) => l.taskType === "cv_structuring" && l.success)
+      .reduce((sum, l) => sum + calculateNvidiaCredits(l.model, l.promptTokens, l.completionTokens), 0);
+
+    if (dailyRow) {
+      await ctx.db.patch(dailyRow._id, {
+        totalCost: dailyRow.totalCost + batchCredits,
+        cvExtractionCost: dailyRow.cvExtractionCost + batchCvExtractionCreditsAll,
+      });
+    } else {
+      await ctx.db.insert("dailyTokenStats", {
+        dateStr,
+        totalCost: batchCredits,
+        cvExtractionCost: batchCvExtractionCreditsAll,
+      });
+    }
+  },
+});
+
 export const logNvidiaCallMutationPublic = mutation({
   args: {
     taskType: v.string(),
@@ -561,5 +709,19 @@ export const logNvidiaCallMutationPublic = mutation({
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin"]);
     return "Use the internal mutation instead";
+  },
+});
+
+export const getTokenMetricsAction = action({
+  args: {},
+  handler: async (ctx): Promise<any> => {
+    return await ctx.runQuery(api.stats.stats.getTokenMetrics);
+  },
+});
+
+export const getRecentTokenLogsAction = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<any> => {
+    return await ctx.runQuery(api.stats.stats.getRecentTokenLogs, { limit: args.limit });
   },
 });

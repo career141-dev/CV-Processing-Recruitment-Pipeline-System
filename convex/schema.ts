@@ -424,6 +424,7 @@ export default defineSchema({
     hasEmbedding: v.optional(v.boolean()),
   })
     .index("by_candidateId", ["candidateId"])
+    .index("by_hasEmbedding", ["hasEmbedding"])
     .searchIndex("search_text", {
       searchField: "rawText",
     })

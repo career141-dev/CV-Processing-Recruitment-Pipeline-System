@@ -64,17 +64,17 @@ export const runReverseMatch = action({
       );
 
       const seen = new Set<string>();
-      const candidates: any[] = [];
+      const candidateIds: Id<"candidates">[] = [];
       for (const batch of batches) {
-        for (const cv of batch) {
-          if (!seen.has(cv._id)) {
-            seen.add(cv._id);
-            candidates.push(cv);
+        for (const result of batch) {
+          if (result && result.candidateId && !seen.has(result.candidateId.toString())) {
+            seen.add(result.candidateId.toString());
+            candidateIds.push(result.candidateId);
           }
         }
       }
 
-      if (candidates.length === 0) {
+      if (candidateIds.length === 0) {
         await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
           jobId: args.jobId,
           results: [],
@@ -83,24 +83,30 @@ export const runReverseMatch = action({
         return;
       }
 
+      // Batch fetch full candidate documents in a single query
+      const allCandidates = await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
+        candidateIds,
+      });
+      const candidateMap = new Map(allCandidates.map(c => [c._id.toString(), c]));
+
       // Compact candidate payload for the scoring model (cap at 40).
-      const pool = candidates.slice(0, 40);
+      const pool = candidateIds.slice(0, 40).map(id => candidateMap.get(id.toString())).filter(Boolean);
       
       const allResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
-        candidateIds: pool.map(c => c._id)
+        candidateIds: pool.map(c => c!._id)
       });
       const resumeMap = new Map(allResumes.map((r: any) => [r.candidateId, r]));
 
       const candidateSummaries = pool.map((cv, i) => ({
         index: i,
-        name: cv.fullName ?? cv.email ?? "Unknown",
-        title: cv.currentJobTitle ?? "",
-        industry: cv.clientIndustry ?? "", 
-        seniority: cv.seniorityLevel ?? "",
-        years: cv.totalExperienceYears ?? null,
-        location: cv.location ?? "",
-        skills: (cv.skills ?? []).slice(0, 8).join(", "),
-        snippet: ((resumeMap.get(cv._id) as any)?.rawText ?? "").slice(0, 400),
+        name: cv!.fullName ?? cv!.email ?? "Unknown",
+        title: cv!.currentJobTitle ?? "",
+        industry: (cv as any).clientIndustry ?? "", 
+        seniority: (cv as any).seniorityLevel ?? "",
+        years: cv!.totalExperienceYears ?? null,
+        location: cv!.location ?? "",
+        skills: (cv!.skills ?? []).slice(0, 8).join(", "),
+        snippet: ((resumeMap.get(cv!._id) as any)?.rawText ?? "").slice(0, 400),
       }));
 
       const jobReq = {
@@ -117,12 +123,26 @@ export const runReverseMatch = action({
       const model = getModelForTask("jd_matching");
       const openai = getOpenAI("jd_matching");
 
-      const scoreResponse = await openai.chat.completions.create({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: `You are a talent matching expert. Score each candidate against a job's requirements.
+      type ScoreItem = {
+        index: number;
+        overallScore: number;
+        breakdown: Breakdown;
+        matchedSkills: string[];
+        missingSkills: string[];
+        reason: string;
+      };
+
+      let scored: ScoreItem[] = [];
+      let inputTokens = 0;
+      let outputTokens = 0;
+
+      try {
+        const scoreResponse = await openai.chat.completions.create({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: `You are a talent matching expert. Score each candidate against a job's requirements.
 For each candidate return a breakdown score (0-100) across 5 dimensions, plus which required skills they have/lack.
 Return JSON:
 {
@@ -138,32 +158,46 @@ Return JSON:
   ]
 }
 Only include candidates with overallScore >= ${minScore}. Sort by overallScore descending. Max 30 results.`,
-          },
-          {
-            role: "user",
-            content: `Job Requirements:\n${JSON.stringify(jobReq, null, 2)}\n\nCandidates:\n${JSON.stringify(candidateSummaries, null, 2)}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
+            },
+            {
+              role: "user",
+              content: `Job Requirements:\n${JSON.stringify(jobReq, null, 2)}\n\nCandidates:\n${JSON.stringify(candidateSummaries, null, 2)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
 
-      type ScoreItem = {
-        index: number;
-        overallScore: number;
-        breakdown: Breakdown;
-        matchedSkills: string[];
-        missingSkills: string[];
-        reason: string;
-      };
-
-      let scored: ScoreItem[] = [];
-      try {
-        const parsed = JSON.parse(
-          scoreResponse.choices[0]?.message?.content ?? "{}"
-        ) as { matches?: ScoreItem[] };
+        inputTokens = scoreResponse.usage?.prompt_tokens || 0;
+        outputTokens = scoreResponse.usage?.completion_tokens || 0;
+        const content = scoreResponse.choices[0]?.message?.content ?? "{}";
+        const parsed = JSON.parse(content) as { matches?: ScoreItem[] };
         scored = parsed.matches ?? [];
-      } catch {
+
+        await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+          logs: [
+            {
+              taskType: "jd_matching",
+              model,
+              promptTokens: inputTokens,
+              completionTokens: outputTokens,
+              success: true,
+            }
+          ]
+        });
+      } catch (err) {
         scored = [];
+        await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+          logs: [
+            {
+              taskType: "jd_matching",
+              model,
+              promptTokens: inputTokens,
+              completionTokens: outputTokens,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            }
+          ]
+        });
       }
 
       const results: ReverseMatchResult[] = scored

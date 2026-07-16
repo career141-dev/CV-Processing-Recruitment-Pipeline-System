@@ -9,6 +9,7 @@
  */
 
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
+import type * as admin_backfillEmbeddingFlags from "../admin/backfillEmbeddingFlags.js";
 import type * as admin_backfillTokenCache from "../admin/backfillTokenCache.js";
 import type * as admin_checkData from "../admin/checkData.js";
 import type * as admin_cleanupCandidates from "../admin/cleanupCandidates.js";
@@ -88,6 +89,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "admin/activateReactDev": typeof admin_activateReactDev;
+  "admin/backfillEmbeddingFlags": typeof admin_backfillEmbeddingFlags;
   "admin/backfillTokenCache": typeof admin_backfillTokenCache;
   "admin/checkData": typeof admin_checkData;
   "admin/cleanupCandidates": typeof admin_cleanupCandidates;
