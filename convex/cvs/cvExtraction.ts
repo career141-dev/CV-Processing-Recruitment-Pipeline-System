@@ -308,6 +308,8 @@ function createNvidiaClient(): OpenAI {
   return new OpenAI({
     baseURL: "https://integrate.api.nvidia.com/v1",
     apiKey,
+    timeout: 120000, // 2 minutes
+    maxRetries: 3,
   });
 }
 
@@ -350,17 +352,21 @@ export async function callNvidiaLLM(
       ? rawText.slice(0, MAX_CHARS).replace(/\s+\S*$/, "")
       : rawText;
 
-  try {
-    const openai = createNvidiaClient();
-    const response = await openai.chat.completions.create({
-      model: "meta/llama-3.1-70b-instruct",
-      temperature: 0,
-      max_tokens: 4096,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "user",
-          content: `Extract candidate information from the CV text below and return it as a JSON object.
+  const maxAttempts = 3;
+  let lastMessage = "";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const openai = createNvidiaClient();
+      const response = await openai.chat.completions.create({
+        model: "meta/llama-3.1-70b-instruct",
+        temperature: 0,
+        max_tokens: 4096,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "user",
+            content: `Extract candidate information from the CV text below and return it as a JSON object.
 CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile (e.g., if it is an email signature, company brochure, invoice, cover letter without a CV, or random text), you MUST return an empty JSON object: {}
 1. Return only valid JSON. No markdown, no backticks, no explanation.
 2. If a field is not found, return null. Never invent or guess.
@@ -407,66 +413,85 @@ CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile 
 }
 CV TEXT:
 ${textToSend}`,
-        },
-      ],
-    });
+          },
+        ],
+      });
 
-    // Log successful token usage
-    if (response.usage) {
-      await logLLMUsage(
-        ctx,
-        "cv_structuring",
-        "meta/llama-3.1-70b-instruct",
-        response.usage.prompt_tokens,
-        response.usage.completion_tokens,
-        true,
-        undefined,
-        cvUploadId
-      );
+      // Log successful token usage
+      if (response.usage) {
+        await logLLMUsage(
+          ctx,
+          "cv_structuring",
+          "meta/llama-3.1-70b-instruct",
+          response.usage.prompt_tokens,
+          response.usage.completion_tokens,
+          true,
+          undefined,
+          cvUploadId
+        );
+      }
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) return null;
+
+      const parsed = parseJsonRobustly(content);
+      if (!parsed) return null;
+
+      // Check if the AI determined this is NOT a CV
+      if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
+        throw new Error("NOT_A_CV");
+      }
+
+      try {
+        return cvExtractionSchema.parse(parsed);
+      } catch (e) {
+        console.error("Zod parse error:", e);
+        return null;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[callNvidiaLLM] LLM call failed (attempt ${attempt}):`, message);
+      lastMessage = message;
+
+      if (
+        message.includes("403") ||
+        message.toLowerCase().includes("insufficient") ||
+        message.toLowerCase().includes("balance") ||
+        message.toLowerCase().includes("credits") ||
+        message.includes("NOT_A_CV")
+      ) {
+        throw error;
+      }
+
+      const isTransientError = 
+        message.toLowerCase().includes("timed out") ||
+        message.toLowerCase().includes("timeout") ||
+        message.includes("502") ||
+        message.includes("503") ||
+        message.includes("504");
+
+      if (isTransientError && attempt < maxAttempts) {
+        const waitMs = Math.pow(2, attempt) * 1000;
+        console.log(`[callNvidiaLLM] Retrying in ${waitMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        continue;
+      }
+      break;
     }
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) return null;
-
-    const parsed = parseJsonRobustly(content);
-    if (!parsed) return null;
-
-    // Check if the AI determined this is NOT a CV
-    if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
-      throw new Error("NOT_A_CV");
-    }
-
-    try {
-      return cvExtractionSchema.parse(parsed);
-    } catch (e) {
-      console.error("Zod parse error:", e);
-      return null;
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("[callNvidiaLLM] LLM call failed:", message);
-
-    // Log failed call
-    await logLLMUsage(
-      ctx,
-      "cv_structuring",
-      "meta/llama-3.1-70b-instruct",
-      0,
-      0,
-      false,
-      message,
-      cvUploadId
-    );
-    if (
-      message.includes("403") ||
-      message.toLowerCase().includes("insufficient") ||
-      message.toLowerCase().includes("balance") ||
-      message.toLowerCase().includes("credits")
-    ) {
-      throw error;
-    }
-    return null;
   }
+
+  // Log failed call after all attempts
+  await logLLMUsage(
+    ctx,
+    "cv_structuring",
+    "meta/llama-3.1-70b-instruct",
+    0,
+    0,
+    false,
+    lastMessage,
+    cvUploadId
+  );
+  return null;
 }
 
 // ──────────────────────────────────────────────────
