@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "convex-dev": "npx convex dev --env-file .env.local",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

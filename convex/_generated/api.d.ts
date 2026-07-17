@@ -73,6 +73,7 @@ import type * as pipeline_headhunt from "../pipeline/headhunt.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
+import type * as scratchQuery from "../scratchQuery.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
 import type * as users_users from "../users/users.js";
@@ -149,6 +150,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/ingestion": typeof pipeline_ingestion;
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
+  scratchQuery: typeof scratchQuery;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
   "users/users": typeof users_users;
