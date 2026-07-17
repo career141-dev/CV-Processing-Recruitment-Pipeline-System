@@ -905,12 +905,13 @@ export const processNextBatch = internalAction({
       return;
     }
 
-    // 2. Queue those 5 uploads
+    // 2. Queue those uploads with stagger
+    let index = 0;
     const cvUploadIds = [];
     for (const upload of uploads) {
       cvUploadIds.push(upload._id);
       
-      // Update status to "queued" and schedule extraction
+      // Update status to "queued" and schedule extraction with a 2-second stagger
       await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
         cvUploadId: upload._id,
         storageId: upload.storageId as Id<"_storage">,
@@ -919,7 +920,9 @@ export const processNextBatch = internalAction({
         sourceChannel: upload.source || "Manual",
         uploadedBy: upload.uploadedBy,
         batchId: args.batchId,
+        delayMs: index * 2000,
       });
+      index++;
     }
 
     // 3. We no longer poll batch progress here.

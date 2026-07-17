@@ -91,3 +91,17 @@ export const updateLogStage = mutation({
     await ctx.db.patch(args.logId, updates);
   },
 });
+
+export const getLatestActiveBatch = query({
+  args: {},
+  handler: async (ctx) => {
+    // Find the most recent batch that is in_progress
+    const activeBatch = await ctx.db
+      .query("ingestionBatches")
+      .withIndex("by_status", (q) => q.eq("status", "in_progress"))
+      .order("desc")
+      .first();
+
+    return activeBatch ? activeBatch._id : null;
+  },
+});

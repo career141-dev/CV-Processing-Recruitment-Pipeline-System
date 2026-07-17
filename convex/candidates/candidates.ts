@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "../_generated/server";
+import { query, mutation, action } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
@@ -690,25 +690,136 @@ export const getCvUploadUrl = query({
   },
 });
 
-export const clearEverything = mutation({
+export const listAllUploadsForStorageClean = query({
+  args: {},
   handler: async (ctx) => {
-    // 1. Collect all storage IDs and delete files
     const uploads = await ctx.db.query("cvUploads").collect();
-    const storageIds = uploads
+    return uploads
       .map((u) => u.storageId)
       .filter((id): id is Id<"_storage"> => !!id);
-    for (const sid of storageIds) {
-      try { await ctx.storage.delete(sid); } catch { }
+  },
+});
+
+export const fetchBatchForDeletion = query({
+  args: {
+    table: v.string(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query(args.table as any)
+      .paginate({ cursor: args.cursor ?? null, numItems: 500 });
+    return {
+      ids: result.page.map((doc: any) => doc._id),
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+export const deleteBatch = mutation({
+  args: {
+    table: v.string(),
+    ids: v.array(v.any()),
+  },
+  handler: async (ctx, args) => {
+    for (const id of args.ids) {
+      await ctx.db.delete(id);
     }
-    // 2. Delete all documents
-    const docs = await ctx.db.query("documents").collect();
-    for (const d of docs) await ctx.db.delete(d._id);
-    // 3. Delete all candidates
-    const cands = await ctx.db.query("candidates").collect();
-    for (const c of cands) await ctx.db.delete(c._id);
-    // 4. Delete all cvUploads
-    for (const u of uploads) await ctx.db.delete(u._id);
-    return { storageDeleted: storageIds.length, documentsDeleted: docs.length, candidatesDeleted: cands.length, uploadsDeleted: uploads.length };
+  },
+});
+
+export const resetSystemStatsMutation = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const statsRow = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
+      .first();
+    if (statsRow) {
+      await ctx.db.patch(statsRow._id, {
+        totalCandidates: 0,
+        totalCvUploads: 0,
+        totalApplications: 0,
+      });
+    }
+  },
+});
+
+export const clearEverything = action({
+  args: {},
+  handler: async (ctx) => {
+    // 1. Get storage IDs and delete files from storage
+    const uploads = await ctx.runQuery("candidates/candidates:listAllUploadsForStorageClean" as any);
+    for (const sid of uploads) {
+      try {
+        await ctx.storage.delete(sid);
+      } catch {}
+    }
+
+    // 2. Clear out candidate, upload, application, token logs, and metrics tables
+    const tablesToWipe = [
+      "candidates",
+      "candidateResumes",
+      "cvUploads",
+      "applications",
+      "communications",
+      "aiCalls",
+      "pipelineEvents",
+      "ingestionBatches",
+      "ingestionLog",
+      "nvidiaTokenLogs",
+      "dailyTokenStats",
+      "tokenStatsCache",
+      "whatsappSessions",
+      "interviews",
+      "offers",
+      "placements",
+      "directorReviews",
+      "clientReviews",
+      "match_scores",
+      "notifications",
+      "searchHistory",
+      "dailyStats",
+      "dashboardStatsCache",
+      "pipeline_health_reports",
+    ] as const;
+
+    const deletedCounts: Record<string, number> = {};
+
+    for (const table of tablesToWipe) {
+      let count = 0;
+      let hasMore = true;
+      let cursor: string | undefined = undefined;
+
+      while (hasMore) {
+        const batch: any = await ctx.runQuery("candidates/candidates:fetchBatchForDeletion" as any, {
+          table,
+          cursor,
+        });
+
+        if (batch.ids.length > 0) {
+          await ctx.runMutation("candidates/candidates:deleteBatch" as any, {
+            table,
+            ids: batch.ids,
+          });
+          count += batch.ids.length;
+        }
+
+        hasMore = !batch.isDone && batch.continueCursor;
+        cursor = batch.continueCursor;
+      }
+      deletedCounts[table] = count;
+    }
+
+    // 3. Reset systemStats singleton totals (excluding activeJobsCount to preserve jobs)
+    await ctx.runMutation("candidates/candidates:resetSystemStatsMutation" as any);
+
+    return {
+      success: true,
+      storageDeleted: uploads.length,
+      ...deletedCounts,
+    };
   },
 });
 

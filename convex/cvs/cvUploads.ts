@@ -52,6 +52,7 @@ export const queueManualExtraction = mutation({
     uploadedBy: v.string(),
     batchId: v.optional(v.id("ingestionBatches")),
     isRetry: v.optional(v.boolean()),
+    delayMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const logId = await ctx.db.insert("ingestionLog", {
@@ -59,13 +60,14 @@ export const queueManualExtraction = mutation({
       routingStatus: "routed",
       cvFileId: args.cvUploadId,
       receivedAt: Date.now(),
+      receivedAtMs: Date.now(),
       batchId: args.batchId,
       stage: "queued",
       candidateName: args.fileName,
       rawSender: args.uploadedBy,
     } as any);
 
-    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+    await ctx.scheduler.runAfter(args.delayMs ?? 0, api.cvs.cvExtraction.processCvExtraction, {
       storageId: args.storageId,
       fileType: args.fileType,
       sourceChannel: args.sourceChannel,
@@ -166,7 +168,8 @@ export const checkAndTriggerNextBatch = mutation({
 
     console.log(`[checkAndTriggerNextBatch] Triggering next ${nextUploads.length} uploads for batch ${args.batchId}`);
 
-    // Mark them as queued atomically and schedule the extractions
+    // Mark them as queued atomically and schedule the extractions with a 2-second stagger
+    let index = 0;
     for (const upload of nextUploads) {
       await ctx.db.patch(upload._id, { status: "queued" });
 
@@ -181,7 +184,8 @@ export const checkAndTriggerNextBatch = mutation({
         rawSender: upload.uploadedBy,
       });
 
-      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      const staggerDelayMs = index * 2000;
+      await ctx.scheduler.runAfter(staggerDelayMs, api.cvs.cvExtraction.processCvExtraction, {
         storageId: upload.storageId as Id<"_storage">,
         fileType: upload.fileType,
         sourceChannel: upload.source || "Manual",
@@ -191,6 +195,7 @@ export const checkAndTriggerNextBatch = mutation({
         logId: logId,
         isRetry: false,
       });
+      index++;
     }
   },
 });

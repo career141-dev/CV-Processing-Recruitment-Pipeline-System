@@ -79,7 +79,7 @@ export default function RealTimeBatchLog({ batchId }: { batchId: Id<"ingestionBa
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {logs.map((log) => (
+            {logs.map((log: any) => (
               <tr key={log._id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-6 py-3 font-medium text-gray-900 truncate max-w-[200px]">
                   {log.candidateName || log.rawSender || "Unknown"}
