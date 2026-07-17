@@ -1336,6 +1336,10 @@ export default defineSchema({
     dateStr: v.string(), // "YYYY-MM-DD"
     totalCost: v.number(),
     cvExtractionCost: v.number(),
+    promptTokens: v.optional(v.number()),
+    completionTokens: v.optional(v.number()),
+    cvPromptTokens: v.optional(v.number()),
+    cvCompletionTokens: v.optional(v.number()),
   }).index("by_dateStr", ["dateStr"]),
 
 });
