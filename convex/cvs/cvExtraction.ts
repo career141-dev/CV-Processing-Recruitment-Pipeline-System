@@ -754,13 +754,15 @@ export async function runCvExtraction(
     const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
     const isNotACV = message.includes("NOT_A_CV");
 
+    const shouldRetry = isRateLimit && ((args as any).retryCount ?? 0) < 5;
+
     // Clean up the blank candidate stub since extraction failed
-    if (candidateId) {
+    if (candidateId && !shouldRetry) {
       console.log(`[CvExtraction] Extraction failed, cleaning up blank candidate: ${candidateId}`);
       await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
     }
 
-    if (isRateLimit && ((args as any).retryCount ?? 0) < 5) {
+    if (shouldRetry) {
       const nextRetryCount = ((args as any).retryCount ?? 0) + 1;
       const delayMs = nextRetryCount * 60 * 1000; // 1m, 2m, 3m...
       console.log(`[CvExtraction] Nvidia Rate Limit hit (429). Retrying in ${delayMs / 1000}s (Attempt ${nextRetryCount})`);

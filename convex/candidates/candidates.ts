@@ -536,6 +536,7 @@ export const getCvUploadUrl = query({
       fileName: upload.fileName,
       fileType: upload.fileType,
       fileSize: upload.fileSize,
+      status: upload.status,
     };
   },
 });

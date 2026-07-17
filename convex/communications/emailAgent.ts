@@ -103,13 +103,20 @@ async function fetchAttachmentContent(inboxEmail: string, messageId: string, att
   }
 }
 
-async function fetchUnreadEmails(inboxEmail: string) {
+async function fetchUnreadEmails(inboxEmail: string, lastFetch: string | null) {
   const token = await getGraphToken();
   if (!token) return [];
 
   console.log(`[EmailAgent] Fetching unread emails for ${inboxEmail}`);
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false&$select=id,subject,body,from,hasAttachments`;
+    let cutoffDate = lastFetch;
+    if (!cutoffDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      cutoffDate = today.toISOString();
+    }
+
+    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false and receivedDateTime ge ${cutoffDate}&$select=id,subject,body,from,hasAttachments`;
     
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -169,8 +176,15 @@ export const pollEmailInbox = action({
     const targetInboxEmail = inboxEmail;
     console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail}`);
     
+    // Fetch last check timestamp from memory
+    const lastFetch = await ctx.runQuery(internal.communications.emailAgent.getLastEmailFetchTimestamp);
+    
+    // Save current time as the new check time for next run
+    const currentFetchTime = new Date().toISOString();
+    await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime });
+
     // 1. Fetch unread emails
-    const messages = await fetchUnreadEmails(targetInboxEmail);
+    const messages = await fetchUnreadEmails(targetInboxEmail, lastFetch);
     if ((messages as any[]).length > 0) {
       console.log(`[EmailAgent] Found ${(messages as any[]).length} unread messages.`);
     } else {
@@ -690,4 +704,24 @@ export const extractAndApplyEmailBodyDetails = internalAction({
       textBody: args.emailBody,
     });
   },
+});
+
+export const getLastEmailFetchTimestamp = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
+    return configRow?.lastEmailFetchTimestamp ?? null;
+  }
+});
+
+export const updateLastEmailFetchTimestamp = internalMutation({
+  args: { timestamp: v.string() },
+  handler: async (ctx, { timestamp }) => {
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
+    if (configRow) {
+      await ctx.db.patch(configRow._id, { lastEmailFetchTimestamp: timestamp });
+    } else {
+      await ctx.db.insert("appSettings", { key: "system", lastEmailFetchTimestamp: timestamp });
+    }
+  }
 });
