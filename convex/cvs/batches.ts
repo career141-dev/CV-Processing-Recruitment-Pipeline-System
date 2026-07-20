@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import { api } from "../_generated/api";
 
 export const createBatch = mutation({
   args: {
@@ -103,5 +104,50 @@ export const getLatestActiveBatch = query({
       .first();
 
     return activeBatch ? activeBatch._id : null;
+  },
+});
+
+export const pauseBatch = mutation({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.batchId, { paused: true });
+  },
+});
+
+export const resumeBatchIngestion = mutation({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.batchId, { paused: false });
+    // Immediately check and trigger next chunk
+    await ctx.scheduler.runAfter(0, api.cvs.cvUploads.checkAndTriggerNextBatch, {
+      batchId: args.batchId,
+    });
+  },
+});
+
+export const cancelBatch = mutation({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.batchId, {
+      status: "failed",
+      completedAt: Date.now(),
+    });
+
+    const uploads = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_batchId", (q) => q.eq("batchId", args.batchId))
+      .collect();
+
+    let cancelledCount = 0;
+    for (const upload of uploads) {
+      if (upload.status === "queued" || upload.status === "processing" || upload.status === "pending_retry") {
+        await ctx.db.patch(upload._id, {
+          status: "failed",
+          errorMessage: "Cancelled by user",
+        });
+        cancelledCount++;
+      }
+    }
+    return { success: true, cancelledCount };
   },
 });

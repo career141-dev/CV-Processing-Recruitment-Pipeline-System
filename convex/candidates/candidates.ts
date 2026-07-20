@@ -649,6 +649,24 @@ export const updateCvUpload = mutation({
   },
 });
 
+export const getCvUploadStatus = query({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    const upload = await ctx.db.get(args.cvUploadId);
+    return upload ? upload.status : null;
+  },
+});
+
+export const findCandidateByHash = query({
+  args: { fileHash: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidates")
+      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
+      .first();
+  },
+});
+
 // Paginated query used by resumeBatch to retry paused/failed uploads
 export const listFailedUploads = query({
   args: {

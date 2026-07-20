@@ -918,6 +918,7 @@ export default defineSchema({
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
     jobId: v.optional(v.id("jobs")),
+    paused: v.optional(v.boolean()),
   })
     .index("by_status", ["status"])
     .index("by_startedAt", ["startedAt"]),

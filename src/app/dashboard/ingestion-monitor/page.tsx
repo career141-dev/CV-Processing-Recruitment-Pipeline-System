@@ -242,7 +242,10 @@ export default function IngestionMonitorPage() {
 
       for (const file of filesToUpload) {
         try {
-          const uploadUrl = await generateUploadUrl();
+          let uploadUrl = await generateUploadUrl();
+          if (!uploadUrl.startsWith("http://") && !uploadUrl.startsWith("https://")) {
+            uploadUrl = "http://" + uploadUrl;
+          }
           const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
           const { storageId } = await resp.json();
 

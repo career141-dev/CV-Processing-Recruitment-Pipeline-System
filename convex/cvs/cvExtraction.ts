@@ -227,7 +227,10 @@ export async function extractText(
     return extractTextFromImage(buffer);
   }
 
-  if (type === "docx" || type === "doc" || type.includes("wordprocessingml")) {
+  const magic = new Uint8Array(buffer.slice(0, 4));
+  const isZipHeader = magic[0] === 0x50 && magic[1] === 0x4b && magic[2] === 0x03 && magic[3] === 0x04;
+
+  if (type === "docx" || type === "doc" || type.includes("wordprocessingml") || isZipHeader) {
     return extractTextFromDocx(buffer);
   }
 
@@ -471,7 +474,9 @@ ${textToSend}`,
         throw error;
       }
 
+      const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
       const isTransientError = 
+        isRateLimit ||
         message.toLowerCase().includes("timed out") ||
         message.toLowerCase().includes("timeout") ||
         message.includes("502") ||
@@ -479,10 +484,14 @@ ${textToSend}`,
         message.includes("504");
 
       if (isTransientError && attempt < maxAttempts) {
-        const waitMs = Math.pow(2, attempt) * 1000;
-        console.log(`[callNvidiaLLM] Retrying in ${waitMs}ms...`);
+        const waitMs = isRateLimit ? attempt * 5000 : Math.pow(2, attempt) * 1000;
+        console.log(`[callNvidiaLLM] Nvidia API Rate Limit or Transient error. Retrying in ${waitMs / 1000}s... (attempt ${attempt}/${maxAttempts})`);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue;
+      }
+
+      if (isRateLimit) {
+        throw new Error(`429: Nvidia API Rate Limit exceeded after ${maxAttempts} attempts. Details: ${message}`);
       }
       break;
     }
@@ -550,6 +559,13 @@ export async function runCvExtraction(
 ): Promise<string | null> {
   const { storageId, fileType, sourceChannel, cvUploadId, workableCandidateId, skipLLM, preExtractedData } = args;
 
+  // Check if upload is still valid/running, abort if already marked failed or cancelled
+  const uploadStatus = await ctx.runQuery(api.candidates.candidates.getCvUploadStatus, { cvUploadId });
+  if (!uploadStatus || uploadStatus === "failed" || uploadStatus === "failed_retry" || uploadStatus === "cancelled") {
+    console.log(`[CvExtraction] Aborting extraction for upload ${cvUploadId} because status is: ${uploadStatus}`);
+    return null;
+  }
+
   await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
     cvUploadId,
     status: "processing",
@@ -576,6 +592,39 @@ export async function runCvExtraction(
       throw new Error("The file retrieved from storage is empty (zero bytes).");
     }
     const fileHash = computeSha256(buffer);
+
+    // Skip extraction if file is duplicate of an already extracted candidate (Agent 6 factor)
+    const existingCandidate = await ctx.runQuery(api.candidates.candidates.findCandidateByHash, { fileHash });
+    if (existingCandidate) {
+      console.log(`[CvExtraction] Duplicate CV detected (hash: ${fileHash}). Candidate ID: ${existingCandidate._id}. Skipping extraction.`);
+      
+      await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+        cvUploadId,
+        status: "processed",
+        fileHash,
+        candidateId: existingCandidate._id,
+      });
+
+      if (args.logId) {
+        await ctx.runMutation(api.cvs.batches.updateLogStage, {
+          logId: args.logId,
+          stage: "completed",
+          candidateName: existingCandidate.fullName || "Duplicate Candidate",
+        });
+      }
+
+      if (args.batchId) {
+        await ctx.runMutation(api.cvs.batches.updateBatchProgress, {
+          batchId: args.batchId,
+          status: "completed",
+        });
+        await ctx.runMutation(api.cvs.cvUploads.checkAndTriggerNextBatch, {
+          batchId: args.batchId,
+        });
+      }
+
+      return existingCandidate._id;
+    }
 
     const rawText = await extractText(buffer, fileType, !!skipLLM);
     const cleanedText = cleanRawText(rawText);
@@ -764,25 +813,6 @@ export async function runCvExtraction(
     if (candidateId) {
       console.log(`[CvExtraction] Extraction failed, cleaning up blank candidate: ${candidateId}`);
       await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
-    }
-
-    if (isRateLimit && ((args as any).retryCount ?? 0) < 5) {
-      const nextRetryCount = ((args as any).retryCount ?? 0) + 1;
-      const delayMs = nextRetryCount * 60 * 1000; // 1m, 2m, 3m...
-      console.log(`[CvExtraction] Nvidia Rate Limit hit (429). Retrying in ${delayMs / 1000}s (Attempt ${nextRetryCount})`);
-
-      await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
-        cvUploadId,
-        status: "pending_retry",
-        errorMessage: `Nvidia API Rate Limit (429). Retrying automatically in ${delayMs / 1000}s...`,
-      });
-
-      await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
-        ...args,
-        isRetry: true,
-        retryCount: nextRetryCount
-      });
-      return null;
     }
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {

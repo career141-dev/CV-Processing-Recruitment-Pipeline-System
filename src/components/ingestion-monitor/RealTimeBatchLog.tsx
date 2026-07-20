@@ -1,14 +1,58 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
+import { Pause, Play, XOctagon, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 export default function RealTimeBatchLog({ batchId }: { batchId: Id<"ingestionBatches"> }) {
   const batch = useQuery(api.cvs.batches.getBatch, { batchId });
   const logs = useQuery(api.cvs.batches.getBatchLogs, { batchId });
   const [elapsed, setElapsed] = useState(0);
+
+  const pauseMutation = useMutation(api.cvs.batches.pauseBatch);
+  const resumeMutation = useMutation(api.cvs.batches.resumeBatchIngestion);
+  const cancelMutation = useMutation(api.cvs.batches.cancelBatch);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const handlePause = async () => {
+    setActionLoading(true);
+    try {
+      await pauseMutation({ batchId });
+      toast.info("Ingestion batch paused.");
+    } catch {
+      toast.error("Failed to pause batch");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setActionLoading(true);
+    try {
+      await resumeMutation({ batchId });
+      toast.success("Ingestion batch resumed.");
+    } catch {
+      toast.error("Failed to resume batch");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!confirm("Are you sure you want to stop this ingestion batch? Remaining queued CVs will be marked as failed.")) return;
+    setActionLoading(true);
+    try {
+      const res = await cancelMutation({ batchId });
+      toast.success(`Ingestion stopped. Cancelled ${res.cancelledCount} pending uploads.`);
+    } catch {
+      toast.error("Failed to stop batch");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!batch) return;
@@ -34,13 +78,51 @@ export default function RealTimeBatchLog({ batchId }: { batchId: Id<"ingestionBa
     <div className="p-6 border border-gray-200 rounded-xl shadow-sm bg-white mt-4">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-xl font-semibold">Real-Time Ingestion ({batch.sourceChannel})</h3>
-        <span className={`px-3 py-1 text-sm font-medium rounded-full ${
-          batch.status === "completed" ? "bg-green-100 text-green-700" :
-          batch.status === "failed" ? "bg-red-100 text-red-700" :
-          "bg-blue-100 text-blue-700"
-        }`}>
-          {batch.status === "in_progress" ? "Processing..." : batch.status.toUpperCase()}
-        </span>
+        <div className="flex items-center gap-3">
+          {batch.status === "in_progress" && (
+            <div className="flex items-center gap-2">
+              {batch.paused ? (
+                <button
+                  disabled={actionLoading}
+                  onClick={handleResume}
+                  className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg border border-green-200 transition-all disabled:opacity-50"
+                >
+                  {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 font-bold fill-current" />}
+                  Resume
+                </button>
+              ) : (
+                <button
+                  disabled={actionLoading}
+                  onClick={handlePause}
+                  className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg border border-amber-200 transition-all disabled:opacity-50"
+                >
+                  {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pause className="w-3.5 h-3.5 font-bold fill-current" />}
+                  Pause
+                </button>
+              )}
+              <button
+                disabled={actionLoading}
+                onClick={handleCancel}
+                className="flex items-center gap-1 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-200 transition-all disabled:opacity-50"
+              >
+                {actionLoading && !batch.paused ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XOctagon className="w-3.5 h-3.5" />}
+                Stop
+              </button>
+            </div>
+          )}
+          <span className={`px-3 py-1 text-sm font-medium rounded-full ${
+            batch.status === "completed" ? "bg-green-100 text-green-700" :
+            batch.status === "failed" ? "bg-red-100 text-red-700" :
+            batch.paused ? "bg-amber-100 text-amber-700 border border-amber-200" :
+            "bg-blue-100 text-blue-700"
+          }`}>
+            {batch.status === "in_progress"
+              ? batch.paused
+                ? "PAUSED"
+                : "Processing..."
+              : batch.status.toUpperCase()}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6 text-center">
