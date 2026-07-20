@@ -918,6 +918,7 @@ export default defineSchema({
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
     jobId: v.optional(v.id("jobs")),
+    paused: v.optional(v.boolean()),
   })
     .index("by_status", ["status"])
     .index("by_startedAt", ["startedAt"]),
@@ -1337,6 +1338,10 @@ export default defineSchema({
     dateStr: v.string(), // "YYYY-MM-DD"
     totalCost: v.number(),
     cvExtractionCost: v.number(),
+    promptTokens: v.optional(v.number()),
+    completionTokens: v.optional(v.number()),
+    cvPromptTokens: v.optional(v.number()),
+    cvCompletionTokens: v.optional(v.number()),
   }).index("by_dateStr", ["dateStr"]),
 
 });

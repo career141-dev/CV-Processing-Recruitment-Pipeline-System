@@ -320,13 +320,22 @@ export function calculateNvidiaCredits(model: string, promptTokens: number, comp
     return (promptTokens + completionTokens) * (0.07 / 1_000_000);
   }
 
-  // 2. Chat/Instruction LLMs (8B models): $0.18 / million tokens
+  // 2. DeepSeek Models (V4-Pro & V4-Flash)
+  if (modelName.includes("deepseek")) {
+    if (modelName.includes("pro")) {
+      return (promptTokens * 0.435 + completionTokens * 0.87) / 1_000_000;
+    }
+    // Default to DeepSeek V4-Flash rates (Standard input: $0.09/M, output: $0.18/M)
+    return (promptTokens * 0.09 + completionTokens * 0.18) / 1_000_000;
+  }
+
+  // 3. Chat/Instruction LLMs (8B models): $0.18 / million tokens
   if (modelName.includes("8b")) {
     return (promptTokens + completionTokens) * (0.18 / 1_000_000);
   }
 
-  // Default to Llama-3.1-70B rate ($2.66 / 1M tokens)
-  return (promptTokens + completionTokens) * (2.66 / 1_000_000);
+  // Default to Llama-3.1-70B rate ($0.40 / 1M tokens)
+  return (promptTokens + completionTokens) * (0.40 / 1_000_000);
 }
 
 /**
@@ -372,14 +381,16 @@ export const logNvidiaCallMutation = internalMutation({
       .first();
 
     const isCvExtraction = args.taskType === "cv_structuring" && args.success;
-    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number }> =
+    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens?: number; completionTokens?: number }> =
       (existing?.taskBreakdown as any) ?? {};
     if (!taskBreakdown[args.taskType]) {
-      taskBreakdown[args.taskType] = { tokens: 0, credits: 0, count: 0 };
+      taskBreakdown[args.taskType] = { tokens: 0, credits: 0, count: 0, promptTokens: 0, completionTokens: 0 };
     }
     taskBreakdown[args.taskType].tokens += args.totalTokens;
     taskBreakdown[args.taskType].credits += cost;
     taskBreakdown[args.taskType].count += 1;
+    taskBreakdown[args.taskType].promptTokens = (taskBreakdown[args.taskType].promptTokens ?? 0) + args.promptTokens;
+    taskBreakdown[args.taskType].completionTokens = (taskBreakdown[args.taskType].completionTokens ?? 0) + args.completionTokens;
 
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -419,12 +430,20 @@ export const logNvidiaCallMutation = internalMutation({
       await ctx.db.patch(dailyRow._id, {
         totalCost: dailyRow.totalCost + cost,
         cvExtractionCost: dailyRow.cvExtractionCost + (args.taskType === "cv_structuring" ? cost : 0),
+        promptTokens: (dailyRow.promptTokens ?? 0) + args.promptTokens,
+        completionTokens: (dailyRow.completionTokens ?? 0) + args.completionTokens,
+        cvPromptTokens: (dailyRow.cvPromptTokens ?? 0) + (args.taskType === "cv_structuring" ? args.promptTokens : 0),
+        cvCompletionTokens: (dailyRow.cvCompletionTokens ?? 0) + (args.taskType === "cv_structuring" ? args.completionTokens : 0),
       });
     } else {
       await ctx.db.insert("dailyTokenStats", {
         dateStr,
         totalCost: cost,
         cvExtractionCost: args.taskType === "cv_structuring" ? cost : 0,
+        promptTokens: args.promptTokens,
+        completionTokens: args.completionTokens,
+        cvPromptTokens: args.taskType === "cv_structuring" ? args.promptTokens : 0,
+        cvCompletionTokens: args.taskType === "cv_structuring" ? args.completionTokens : 0,
       });
     }
   },
@@ -461,12 +480,31 @@ export const getTokenMetrics = query({
     // --- 2. Read the last 7 days of daily rows (7 document reads max) ---
     const now = Date.now();
     const oneDayMs = 24 * 60 * 60 * 1000;
-    const dailyDataMap = new Map<string, { date: string; totalCost: number; cvExtractionCost: number }>();
+    const dailyDataMap = new Map<
+      string,
+      {
+        date: string;
+        totalCost: number;
+        cvExtractionCost: number;
+        promptTokens: number;
+        completionTokens: number;
+        cvPromptTokens: number;
+        cvCompletionTokens: number;
+      }
+    >();
 
     // Seed map with 7 days so days with zero activity still appear in the chart
     for (let i = 6; i >= 0; i--) {
       const dateStr = new Date(now - i * oneDayMs).toISOString().split("T")[0];
-      dailyDataMap.set(dateStr, { date: dateStr, totalCost: 0, cvExtractionCost: 0 });
+      dailyDataMap.set(dateStr, {
+        date: dateStr,
+        totalCost: 0,
+        cvExtractionCost: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cvPromptTokens: 0,
+        cvCompletionTokens: 0,
+      });
     }
 
     // Overwrite with actual stored rows
@@ -481,6 +519,10 @@ export const getTokenMetrics = query({
           date: row.dateStr,
           totalCost: row.totalCost,
           cvExtractionCost: row.cvExtractionCost,
+          promptTokens: row.promptTokens ?? 0,
+          completionTokens: row.completionTokens ?? 0,
+          cvPromptTokens: row.cvPromptTokens ?? 0,
+          cvCompletionTokens: row.cvCompletionTokens ?? 0,
         });
       }
     }
@@ -588,7 +630,9 @@ export const logNvidiaCallsBatchMutation = internalMutation({
     let batchSuccessfulCalls = 0;
     let batchCvExtractionsCount = 0;
     let batchCvExtractionCredits = 0;
-    const batchTaskBreakdown: Record<string, { tokens: number; credits: number; count: number }> = {};
+    let batchCvPromptTokens = 0;
+    let batchCvCompletionTokens = 0;
+    const batchTaskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens: number; completionTokens: number }> = {};
 
     for (const log of args.logs) {
       const cost = calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens);
@@ -625,27 +669,33 @@ export const logNvidiaCallsBatchMutation = internalMutation({
         if (log.taskType === "cv_structuring") {
           batchCvExtractionsCount++;
           batchCvExtractionCredits += cost;
+          batchCvPromptTokens += log.promptTokens;
+          batchCvCompletionTokens += log.completionTokens;
         }
       }
 
       if (!batchTaskBreakdown[log.taskType]) {
-        batchTaskBreakdown[log.taskType] = { tokens: 0, credits: 0, count: 0 };
+        batchTaskBreakdown[log.taskType] = { tokens: 0, credits: 0, count: 0, promptTokens: 0, completionTokens: 0 };
       }
       batchTaskBreakdown[log.taskType].tokens += totalTokens;
       batchTaskBreakdown[log.taskType].credits += cost;
       batchTaskBreakdown[log.taskType].count += 1;
+      batchTaskBreakdown[log.taskType].promptTokens += log.promptTokens;
+      batchTaskBreakdown[log.taskType].completionTokens += log.completionTokens;
     }
 
     // --- 2. Update all-time rolling singleton cache ---
-    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number }> =
+    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens?: number; completionTokens?: number }> =
       (existingCache?.taskBreakdown as any) ?? {};
     for (const [taskType, delta] of Object.entries(batchTaskBreakdown)) {
       if (!taskBreakdown[taskType]) {
-        taskBreakdown[taskType] = { tokens: 0, credits: 0, count: 0 };
+        taskBreakdown[taskType] = { tokens: 0, credits: 0, count: 0, promptTokens: 0, completionTokens: 0 };
       }
       taskBreakdown[taskType].tokens += delta.tokens;
       taskBreakdown[taskType].credits += delta.credits;
       taskBreakdown[taskType].count += delta.count;
+      taskBreakdown[taskType].promptTokens = (taskBreakdown[taskType].promptTokens ?? 0) + delta.promptTokens;
+      taskBreakdown[taskType].completionTokens = (taskBreakdown[taskType].completionTokens ?? 0) + delta.completionTokens;
     }
 
     if (existingCache) {
@@ -684,12 +734,20 @@ export const logNvidiaCallsBatchMutation = internalMutation({
       await ctx.db.patch(dailyRow._id, {
         totalCost: dailyRow.totalCost + batchCredits,
         cvExtractionCost: dailyRow.cvExtractionCost + batchCvExtractionCreditsAll,
+        promptTokens: (dailyRow.promptTokens ?? 0) + batchPromptTokens,
+        completionTokens: (dailyRow.completionTokens ?? 0) + batchCompletionTokens,
+        cvPromptTokens: (dailyRow.cvPromptTokens ?? 0) + batchCvPromptTokens,
+        cvCompletionTokens: (dailyRow.cvCompletionTokens ?? 0) + batchCvCompletionTokens,
       });
     } else {
       await ctx.db.insert("dailyTokenStats", {
         dateStr,
         totalCost: batchCredits,
         cvExtractionCost: batchCvExtractionCreditsAll,
+        promptTokens: batchPromptTokens,
+        completionTokens: batchCompletionTokens,
+        cvPromptTokens: batchCvPromptTokens,
+        cvCompletionTokens: batchCvCompletionTokens,
       });
     }
   },
@@ -723,5 +781,144 @@ export const getRecentTokenLogsAction = action({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args): Promise<any> => {
     return await ctx.runQuery(api.stats.stats.getRecentTokenLogs, { limit: args.limit });
+  },
+});
+
+export const backfillTokenStats = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Reconstruct all-time tokenStatsCache and dailyTokenStats tables based on the full raw nvidiaTokenLogs
+    const logs = await ctx.db.query("nvidiaTokenLogs").collect();
+
+    let totalTokens = 0;
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalCredits = 0;
+    let successfulCalls = 0;
+    let totalCvExtractionsCount = 0;
+    let cvExtractionCredits = 0;
+
+    const taskBreakdown: Record<
+      string,
+      { tokens: number; credits: number; count: number; promptTokens: number; completionTokens: number }
+    > = {};
+
+    const dailyMap = new Map<
+      string,
+      {
+        totalCost: number;
+        cvExtractionCost: number;
+        promptTokens: number;
+        completionTokens: number;
+        cvPromptTokens: number;
+        cvCompletionTokens: number;
+      }
+    >();
+
+    for (const log of logs) {
+      const cost = calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens);
+      const total = log.promptTokens + log.completionTokens;
+
+      totalTokens += total;
+      totalPromptTokens += log.promptTokens;
+      totalCompletionTokens += log.completionTokens;
+      totalCredits += cost;
+
+      if (log.success) {
+        successfulCalls++;
+        if (log.taskType === "cv_structuring") {
+          totalCvExtractionsCount++;
+          cvExtractionCredits += cost;
+        }
+      }
+
+      // Task breakdown aggregation
+      if (!taskBreakdown[log.taskType]) {
+        taskBreakdown[log.taskType] = { tokens: 0, credits: 0, count: 0, promptTokens: 0, completionTokens: 0 };
+      }
+      taskBreakdown[log.taskType].tokens += total;
+      taskBreakdown[log.taskType].credits += cost;
+      taskBreakdown[log.taskType].count += 1;
+      taskBreakdown[log.taskType].promptTokens += log.promptTokens;
+      taskBreakdown[log.taskType].completionTokens += log.completionTokens;
+
+      // Daily Stats aggregation
+      const dateStr = new Date(log.timestamp).toISOString().split("T")[0];
+      if (!dailyMap.has(dateStr)) {
+        dailyMap.set(dateStr, {
+          totalCost: 0,
+          cvExtractionCost: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cvPromptTokens: 0,
+          cvCompletionTokens: 0,
+        });
+      }
+      const day = dailyMap.get(dateStr)!;
+      day.totalCost += cost;
+      day.promptTokens += log.promptTokens;
+      day.completionTokens += log.completionTokens;
+
+      if (log.taskType === "cv_structuring") {
+        day.cvExtractionCost += cost;
+        day.cvPromptTokens += log.promptTokens;
+        day.cvCompletionTokens += log.completionTokens;
+      }
+    }
+
+    // Save/Update tokenStatsCache
+    const SINGLETON_KEY = "global_token_stats";
+    const cacheRow = await ctx.db
+      .query("tokenStatsCache")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", SINGLETON_KEY))
+      .first();
+
+    if (cacheRow) {
+      await ctx.db.patch(cacheRow._id, {
+        totalTokens,
+        totalPromptTokens,
+        totalCompletionTokens,
+        totalCredits,
+        successfulCalls,
+        totalRequests: logs.length,
+        totalCvExtractionsCount,
+        cvExtractionCredits,
+        taskBreakdown,
+      });
+    } else {
+      await ctx.db.insert("tokenStatsCache", {
+        singletonKey: SINGLETON_KEY,
+        totalTokens,
+        totalPromptTokens,
+        totalCompletionTokens,
+        totalCredits,
+        successfulCalls,
+        totalRequests: logs.length,
+        totalCvExtractionsCount,
+        cvExtractionCredits,
+        taskBreakdown,
+      });
+    }
+
+    // Replace dailyTokenStats
+    const oldDailies = await ctx.db.query("dailyTokenStats").collect();
+    for (const d of oldDailies) {
+      await ctx.db.delete(d._id);
+    }
+
+    for (const [dateStr, data] of dailyMap.entries()) {
+      await ctx.db.insert("dailyTokenStats", {
+        dateStr,
+        totalCost: data.totalCost,
+        cvExtractionCost: data.cvExtractionCost,
+        promptTokens: data.promptTokens,
+        completionTokens: data.completionTokens,
+        cvPromptTokens: data.cvPromptTokens,
+        cvCompletionTokens: data.cvCompletionTokens,
+      });
+    }
+
+    console.log(`Successfully backfilled stats from ${logs.length} token logs.`);
+    return { success: true, logCount: logs.length };
   },
 });

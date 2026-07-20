@@ -70,15 +70,20 @@ export default function IngestionMonitorPage() {
   const stats = useQuery(api.stats.stats.getIngestionStats);
   const resumeFailedUploads = useAction(api.cvs.cvExtraction.resumeFailedUploads);
   const startBatchExtraction = useAction(api.cvs.cvExtraction.startBatchExtraction);
+  const activeBatchId = useQuery(api.cvs.batches.getLatestActiveBatch);
   
   const { user } = useUser();
   const startBulkImport = useAction(api.integrations.workableActions.startBulkImport);
-  const getLatestImportStatus = useAction(api.integrations.workableActions.getLatestImportStatus);
-  const getImportStatus = useAction(api.integrations.workableActions.getImportStatus);
   const retryImport = useAction(api.integrations.workableActions.retryImport);
   const retrySkippedAction = useAction(api.integrations.workableActions.retrySkipped);
   const stopImport = useAction(api.integrations.workableActions.stopImport);
   const clearImportHistory = useMutation(api.integrations.workable.clearImportHistory);
+
+  // Reactive query for Workable import status (eliminates polling)
+  const importStatus = useQuery(
+    api.integrations.workable.getLatestImportStatus,
+    user?.id ? { userId: user.id } : "skip"
+  );
 
   const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
@@ -95,8 +100,6 @@ export default function IngestionMonitorPage() {
   const [subdomain, setSubdomain] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [isWorkableImporting, setIsWorkableImporting] = useState(false);
-  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Manual Upload State
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -111,36 +114,20 @@ export default function IngestionMonitorPage() {
   const [assignToJob, setAssignToJob] = useState("");
   const [showSourceDropdown, setShowSourceDropdown] = useState(false);
 
-  // --- Workable Polling & Effects ---
+  // --- Workable Effects ---
+  // Sync subdomain when job is fetched
   useEffect(() => {
-    if (!user?.id) return;
-    getLatestImportStatus({ userId: user.id }).then((status) => {
-      if (status) {
-        setImportStatus(status as ImportStatus);
-        if (status.subdomain) setSubdomain(status.subdomain);
-        if (status.status === "running") startPolling(status._id);
-      }
-    });
-  }, [user?.id]);
+    if (importStatus?.subdomain) {
+      setSubdomain(importStatus.subdomain);
+    }
+  }, [importStatus?.subdomain]);
 
-  const startPolling = (id: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      const status = await getImportStatus({ importId: id as any });
-      if (status) {
-        setImportStatus(status as ImportStatus);
-        if (status.status !== "running") {
-          clearInterval(pollRef.current!);
-          pollRef.current = null;
-          setIsWorkableImporting(false);
-        }
-      }
-    }, 3000);
-  };
-
+  // Sync active batch ID from database on mount or when a background batch is active
   useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+    if (activeBatchId && !importBatchId) {
+      setImportBatchId(activeBatchId);
+    }
+  }, [activeBatchId, importBatchId]);
 
   const handleWorkableImport = async () => {
     if (!subdomain || !apiKey || !user?.id) {
@@ -149,23 +136,12 @@ export default function IngestionMonitorPage() {
     }
     setIsWorkableImporting(true);
     try {
-      const { importId: newId } = await startBulkImport({ subdomain, apiKey, userId: user.id });
-      setImportStatus({
-        _id: newId,
-        status: "running",
-        totalCandidates: 0,
-        imported: 0,
-        skipped: 0,
-        deduplicated: 0,
-        failed: 0,
-        startedAt: new Date().toISOString(),
-        subdomain,
-      });
-      startPolling(newId);
+      await startBulkImport({ subdomain, apiKey, userId: user.id });
       toast.success("Workable import started!");
       // Removed setIsWorkableModalOpen(false) to keep the modal open and show progress
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start import");
+    } finally {
       setIsWorkableImporting(false);
     }
   };
@@ -175,11 +151,10 @@ export default function IngestionMonitorPage() {
     setIsWorkableImporting(true);
     try {
       await retryImport({ importId: importStatus._id as any, subdomain: subdomain || undefined, apiKey: apiKey || undefined });
-      setImportStatus((prev) => prev ? { ...prev, status: "running", errorMessage: "" } : prev);
-      startPolling(importStatus._id);
       toast.info("Import retrying from where it left off.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to retry");
+    } finally {
       setIsWorkableImporting(false);
     }
   };
@@ -189,11 +164,10 @@ export default function IngestionMonitorPage() {
     setIsWorkableImporting(true);
     try {
       await retrySkippedAction({ importId: importStatus._id as any, subdomain: subdomain || undefined, apiKey: apiKey || undefined });
-      setImportStatus((prev) => prev ? { ...prev, status: "running", errorMessage: "", skipped: 0, failed: 0 } : prev);
-      startPolling(importStatus._id);
       toast.info("Retrying skipped candidates from the beginning.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to retry skipped");
+    } finally {
       setIsWorkableImporting(false);
     }
   };
@@ -202,9 +176,6 @@ export default function IngestionMonitorPage() {
     if (!importStatus) return;
     try {
       await stopImport({ importId: importStatus._id as any });
-      setImportStatus((prev) => prev ? { ...prev, status: "stopped" } : prev);
-      setIsWorkableImporting(false);
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       toast.info("Import stopped.");
     } catch (err) {
       toast.error("Failed to stop import");
@@ -216,7 +187,6 @@ export default function IngestionMonitorPage() {
     try {
       await clearImportHistory();
       toast.success("Import history cleared");
-      setImportStatus(null);
     } catch (err) {
       toast.error("Cleanup failed");
     }
@@ -272,7 +242,10 @@ export default function IngestionMonitorPage() {
 
       for (const file of filesToUpload) {
         try {
-          const uploadUrl = await generateUploadUrl();
+          let uploadUrl = await generateUploadUrl();
+          if (!uploadUrl.startsWith("http://") && !uploadUrl.startsWith("https://")) {
+            uploadUrl = "http://" + uploadUrl;
+          }
           const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
           const { storageId } = await resp.json();
 
@@ -459,7 +432,12 @@ export default function IngestionMonitorPage() {
                   )}
                   {importStatus.status === "done" && (
                     <button 
-                      onClick={(e) => { e.stopPropagation(); setImportStatus(null); }}
+                      onClick={async (e) => { 
+                        e.stopPropagation(); 
+                        try {
+                          await clearImportHistory(); 
+                        } catch {}
+                      }}
                       className="text-[11px] font-bold text-[#1B5E20] flex items-center gap-1 hover:underline"
                     >
                       <CheckCircle2 className="w-3 h-3" /> Clear
@@ -582,8 +560,14 @@ export default function IngestionMonitorPage() {
         </div>
         
         {importBatchId && (
-          <div className="mb-8">
+          <div className="mb-8 relative group/batchcard">
             <RealTimeBatchLog batchId={importBatchId} />
+            <button
+              onClick={() => setImportBatchId(null)}
+              className="absolute top-10 right-6 text-xs font-semibold text-text-secondary hover:text-text-primary bg-surface border border-border px-3 py-1.5 rounded-lg shadow-sm transition-all hover:bg-surface-container-high"
+            >
+              Dismiss Log
+            </button>
           </div>
         )}
 
@@ -814,7 +798,7 @@ export default function IngestionMonitorPage() {
                 <div className="pt-2 space-y-3">
                   <div className="flex justify-between items-center">
                     <p className="text-[14px] font-bold text-text-primary">Import complete!</p>
-                    <button onClick={() => setImportStatus(null)} className="bg-surface-container-high py-1.5 px-3 rounded-lg text-[12px] font-bold">
+                    <button onClick={handleClearHistory} className="bg-surface-container-high py-1.5 px-3 rounded-lg text-[12px] font-bold">
                       Start New Import
                     </button>
                   </div>

@@ -35,7 +35,7 @@ export const saveUpload = mutation({
       batchId: args.batchId,
       status: "uploaded",
     });
-    
+
     // @ts-ignore
     await adjustGlobalStat(ctx, "new_cv_upload", 1, { sourceChannel: args.source || "Manual" });
     return cvId;
@@ -52,6 +52,7 @@ export const queueManualExtraction = mutation({
     uploadedBy: v.string(),
     batchId: v.optional(v.id("ingestionBatches")),
     isRetry: v.optional(v.boolean()),
+    delayMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const logId = await ctx.db.insert("ingestionLog", {
@@ -65,7 +66,7 @@ export const queueManualExtraction = mutation({
       rawSender: args.uploadedBy,
     } as any);
 
-    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+    await ctx.scheduler.runAfter(args.delayMs ?? 0, api.cvs.cvExtraction.processCvExtraction, {
       storageId: args.storageId,
       fileType: args.fileType,
       sourceChannel: args.sourceChannel,
@@ -133,6 +134,13 @@ export const checkAndTriggerNextBatch = mutation({
     batchId: v.id("ingestionBatches"),
   },
   handler: async (ctx, args) => {
+    // Abort if batch is paused
+    const batch = await ctx.db.get(args.batchId);
+    if (batch?.paused) {
+      console.log(`[checkAndTriggerNextBatch] Batch ${args.batchId} is paused. Aborting next trigger.`);
+      return;
+    }
+
     // Check if there are any cvUploads in this batch that are STILL "processing" or "queued" or "pending_retry"
     const processingUploads = await ctx.db
       .query("cvUploads")
@@ -152,12 +160,12 @@ export const checkAndTriggerNextBatch = mutation({
       return;
     }
 
-    // Atomically grab the next up to 5 uploads
+    // Atomically grab the next up to 10 uploads
     const nextUploads = await ctx.db
       .query("cvUploads")
       .withIndex("by_batchId", (q) => q.eq("batchId", args.batchId))
       .filter((q) => q.eq(q.field("status"), "uploaded"))
-      .take(5);
+      .take(10);
 
     if (nextUploads.length === 0) {
       console.log(`[checkAndTriggerNextBatch] Batch ${args.batchId} is fully complete.`);
@@ -167,6 +175,8 @@ export const checkAndTriggerNextBatch = mutation({
     console.log(`[checkAndTriggerNextBatch] Triggering next ${nextUploads.length} uploads for batch ${args.batchId}`);
 
     // Mark them as queued atomically and schedule the extractions
+    // For a batch of 10: run first 5 with 2s stagger, and next 5 with a 20s offset delay
+    let index = 0;
     for (const upload of nextUploads) {
       await ctx.db.patch(upload._id, { status: "queued" });
 
@@ -181,7 +191,12 @@ export const checkAndTriggerNextBatch = mutation({
         rawSender: upload.uploadedBy,
       });
 
-      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      let staggerDelayMs = index * 2000;
+      if (index >= 5) {
+        staggerDelayMs = 20000 + (index - 5) * 2000; // starts 20 seconds later
+      }
+
+      await ctx.scheduler.runAfter(staggerDelayMs, api.cvs.cvExtraction.processCvExtraction, {
         storageId: upload.storageId as Id<"_storage">,
         fileType: upload.fileType,
         sourceChannel: upload.source || "Manual",
@@ -191,6 +206,42 @@ export const checkAndTriggerNextBatch = mutation({
         logId: logId,
         isRetry: false,
       });
+      index++;
     }
+  },
+});
+
+export const cancelAllRunningExtractions = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // 1. Get all uploads in queued/processing/pending_retry
+    const activeUploads = await ctx.db
+      .query("cvUploads")
+      .collect();
+
+    let cancelledCount = 0;
+    for (const upload of activeUploads) {
+      if (upload.status === "queued" || upload.status === "processing" || upload.status === "pending_retry") {
+        await ctx.db.patch(upload._id, {
+          status: "failed",
+          errorMessage: "Cancelled by user",
+        });
+        cancelledCount++;
+      }
+    }
+
+    // 2. Mark any active ingestion batches as failed/stopped
+    const activeBatches = await ctx.db
+      .query("ingestionBatches")
+      .withIndex("by_status", (q) => q.eq("status", "in_progress"))
+      .collect();
+    for (const batch of activeBatches) {
+      await ctx.db.patch(batch._id, {
+        status: "failed",
+        completedAt: Date.now(),
+      });
+    }
+
+    return { success: true, cancelledCount, batchesCancelled: activeBatches.length };
   },
 });

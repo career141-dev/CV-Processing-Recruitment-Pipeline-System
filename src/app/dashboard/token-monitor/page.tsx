@@ -31,6 +31,10 @@ export default function TokenMonitorPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [limit, setLimit] = useState(20);
 
+  // Model pricing selection
+  type ModelKey = "llama" | "gpt4o" | "deepseek";
+  const [selectedModel, setSelectedModel] = useState<ModelKey>("llama");
+
   // Actions
   const fetchTokenMetrics = useAction(api.stats.stats.getTokenMetricsAction);
   const fetchRecentTokenLogs = useAction(api.stats.stats.getRecentTokenLogsAction);
@@ -92,13 +96,83 @@ export default function TokenMonitorPage() {
     return matchesType && matchesStatus;
   });
 
+  const getPricingForModel = (model: ModelKey) => {
+    switch (model) {
+      case "llama":
+        return { name: "Llama 3.1 70B Instruct", input: 0.40, output: 0.40 };
+      case "gpt4o":
+        return { name: "ChatGPT-4o-mini", input: 0.15, output: 0.60 };
+      case "deepseek":
+        return { name: "DeepSeek V4 Flash", input: 0.09, output: 0.18 };
+    }
+  };
+
+  const calculateCost = (model: ModelKey, prompt: number, completion: number, isEmbedding = false) => {
+    if (isEmbedding) {
+      return (prompt + completion) * (0.07 / 1_000_000);
+    }
+    const pricing = getPricingForModel(model);
+    return (prompt * pricing.input + completion * pricing.output) / 1_000_000;
+  };
+
+  // Recompute cost metrics dynamically based on selectedModel and the actual token counts
+  let totalCredits = 0;
+  let cvExtractionCredits = 0;
+  if (metrics) {
+    Object.entries(metrics.taskBreakdown).forEach(([task, details]: [string, any]) => {
+      const prompt = details.promptTokens ?? (details.tokens * 0.7);
+      const comp = details.completionTokens ?? (details.tokens * 0.3);
+      const isEmbedding = task === "embedding";
+      const cost = calculateCost(selectedModel, prompt, comp, isEmbedding);
+      totalCredits += cost;
+      if (task === "cv_structuring") {
+        cvExtractionCredits = cost;
+      }
+    });
+  }
+  const avgCostPerCv = metrics?.cvExtraction.totalCvExtractionsCount > 0
+    ? cvExtractionCredits / metrics.cvExtraction.totalCvExtractionsCount
+    : 0;
+
+  const getDailyCosts = (d: any) => {
+    const hasTokens = d.promptTokens !== undefined && d.completionTokens !== undefined;
+    
+    let prompt = d.promptTokens ?? 0;
+    let comp = d.completionTokens ?? 0;
+    let cvPrompt = d.cvPromptTokens ?? 0;
+    let cvComp = d.cvCompletionTokens ?? 0;
+    
+    if (!hasTokens) {
+      // Estimate from legacy cost using $0.40/M Llama rate
+      const estimatedTotalTokens = d.totalCost / (0.40 / 1_000_000);
+      prompt = estimatedTotalTokens * 0.7;
+      comp = estimatedTotalTokens * 0.3;
+      
+      const estimatedCvTokens = d.cvExtractionCost / (0.40 / 1_000_000);
+      cvPrompt = estimatedCvTokens * 0.7;
+      cvComp = estimatedCvTokens * 0.3;
+    }
+
+    const totalCost = calculateCost(selectedModel, prompt, comp, false);
+    const cvExtractionCost = calculateCost(selectedModel, cvPrompt, cvComp, false);
+    
+    return { totalCost, cvExtractionCost };
+  };
+
+  const getLogCost = (log: any) => {
+    if (!log.success) return 0;
+    const isEmbedding = log.taskType === "embedding" || log.model.toLowerCase().includes("embed") || log.model.toLowerCase().includes("bge");
+    return calculateCost(selectedModel, log.promptTokens, log.completionTokens, isEmbedding);
+  };
+
   // SVG Chart Dimensions
   const chartHeight = 160;
   const chartWidth = 500;
   const barPadding = 12;
 
   const maxCostInChart = metrics?.dailyChartData?.reduce((max: number, d: any) => {
-    const val = chartMode === "all" ? d.totalCost : d.cvExtractionCost;
+    const dailyCosts = getDailyCosts(d);
+    const val = chartMode === "all" ? dailyCosts.totalCost : dailyCosts.cvExtractionCost;
     return val > max ? val : max;
   }, 0.001) || 0.001;
 
@@ -147,7 +221,7 @@ export default function TokenMonitorPage() {
       <div className="px-6 flex flex-col gap-6 w-full max-w-7xl mx-auto">
         
         {/* Controls Bar */}
-        <div className="flex justify-between items-center bg-surface border border-border p-4 rounded-2xl shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center bg-surface border border-border p-4 rounded-2xl shadow-sm">
           <div>
             <h1 className="text-xl font-bold text-text-primary">Observability Console</h1>
             <p className="text-xs text-text-secondary">
@@ -175,6 +249,28 @@ export default function TokenMonitorPage() {
           </div>
         </div>
 
+        {/* Model Pricing Comparison Tabs */}
+        <div className="flex flex-wrap bg-surface-container-high rounded-xl p-1 border border-border self-start gap-1">
+          {[
+            { key: "llama", label: "Llama 3.1 70B Instruct", price: "In/Out: $0.40/M" },
+            { key: "gpt4o", label: "GPT-4o-mini", price: "In: $0.15 / Out: $0.60/M" },
+            { key: "deepseek", label: "DeepSeek V4 Flash", price: "In: $0.09 / Out: $0.18/M" },
+          ].map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setSelectedModel(m.key as any)}
+              className={`flex flex-col items-center gap-0.5 px-6 py-2 rounded-lg text-xs font-bold transition-all ${
+                selectedModel === m.key
+                  ? "bg-surface text-text-primary shadow-sm border border-border/10"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              <span>{m.label}</span>
+              <span className="text-[10px] opacity-70 font-medium font-mono">{m.price}</span>
+            </button>
+          ))}
+        </div>
+
         {/* Dashboard KPI Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           
@@ -183,13 +279,13 @@ export default function TokenMonitorPage() {
             <div className="flex flex-col gap-1 z-10">
               <span className="text-xs font-medium text-text-secondary">Estimated Total Spent</span>
               <span className="text-2xl font-black text-text-primary tabular-nums">
-                {metrics ? formatCost(metrics.overall.totalCredits) : "$0.000"}
+                {metrics ? formatCost(totalCredits) : "$0.000"}
               </span>
               <span className="text-[10px] text-text-disabled">
                 Across {metrics ? formatTokens(metrics.overall.totalTokens) : 0} tokens
               </span>
             </div>
-            <div className="w-12 h-12 bg-amber-50 dark:bg-amber-900/10 rounded-2xl flex items-center justify-center text-amber-500 group-hover:scale-110 transition-all">
+            <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950 rounded-2xl flex items-center justify-center text-amber-500 group-hover:scale-110 transition-all">
               <Coins className="w-6 h-6" />
             </div>
           </div>
@@ -199,7 +295,7 @@ export default function TokenMonitorPage() {
             <div className="flex flex-col gap-1 z-10">
               <span className="text-xs font-medium text-text-secondary">Avg. Cost / CV Extraction</span>
               <span className="text-2xl font-black text-text-primary tabular-nums text-primary-container">
-                {metrics ? formatCost(metrics.cvExtraction.avgCostPerCv) : "$0.000"}
+                {metrics ? formatCost(avgCostPerCv) : "$0.000"}
               </span>
               <span className="text-[10px] text-text-disabled">
                 Successful extractions: {metrics?.cvExtraction.totalCvExtractionsCount || 0}
@@ -215,10 +311,10 @@ export default function TokenMonitorPage() {
             <div className="flex flex-col gap-1 z-10">
               <span className="text-xs font-medium text-text-secondary">CV Ingestion Cost</span>
               <span className="text-2xl font-black text-text-primary tabular-nums">
-                {metrics ? formatCost(metrics.cvExtraction.cvExtractionCredits) : "$0.000"}
+                {metrics ? formatCost(cvExtractionCredits) : "$0.000"}
               </span>
               <span className="text-[10px] text-text-disabled">
-                {((metrics?.cvExtraction.cvExtractionCredits || 0) / (metrics?.overall.totalCredits || 1) * 100).toFixed(0)}% of total credit usage
+                {totalCredits > 0 ? ((cvExtractionCredits / totalCredits) * 100).toFixed(0) : "0"}% of total credit usage
               </span>
             </div>
             <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 rounded-2xl flex items-center justify-center text-purple-500 group-hover:scale-110 transition-all">
@@ -317,7 +413,8 @@ export default function TokenMonitorPage() {
                     const blockWidth = (chartWidth - 50) / barCount;
                     const x = 50 + index * blockWidth;
                     
-                    const costVal = chartMode === "all" ? d.totalCost : d.cvExtractionCost;
+                    const dailyCosts = getDailyCosts(d);
+                    const costVal = chartMode === "all" ? dailyCosts.totalCost : dailyCosts.cvExtractionCost;
                     const normalizedHeight = (costVal / maxCostInChart) * chartHeight;
                     const y = chartHeight - normalizedHeight;
                     const barW = blockWidth - barPadding;
@@ -402,7 +499,11 @@ export default function TokenMonitorPage() {
             <div className="flex flex-col gap-4 justify-center flex-1">
               {metrics && Object.keys(metrics.taskBreakdown).length > 0 ? (
                 Object.entries(metrics.taskBreakdown).map(([task, details]: [string, any]) => {
-                  const share = (details.credits / (metrics.overall.totalCredits || 1)) * 100;
+                  const prompt = details.promptTokens ?? (details.tokens * 0.7);
+                  const comp = details.completionTokens ?? (details.tokens * 0.3);
+                  const isEmbedding = task === "embedding";
+                  const taskCost = calculateCost(selectedModel, prompt, comp, isEmbedding);
+                  const share = (taskCost / (totalCredits || 1)) * 100;
                   
                   // Simple color selector
                   const getTaskBarColor = (t: string) => {
@@ -416,7 +517,7 @@ export default function TokenMonitorPage() {
                       <div className="flex justify-between text-xs font-semibold">
                         <span className="text-text-primary">{getTaskLabel(task)}</span>
                         <span className="text-text-secondary tabular-nums">
-                          {formatCost(details.credits)} ({share.toFixed(0)}%)
+                          {formatCost(taskCost)} ({share.toFixed(0)}%)
                         </span>
                       </div>
                       <div className="w-full bg-border h-2 rounded-full overflow-hidden">
@@ -578,7 +679,7 @@ export default function TokenMonitorPage() {
 
                         {/* Cost */}
                         <td className="py-3 px-4 text-right font-bold text-text-primary font-mono tabular-nums">
-                          {formatCost(log.estimatedCost)}
+                          {formatCost(getLogCost(log))}
                         </td>
                       </tr>
                     );

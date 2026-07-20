@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { query, mutation } from "../_generated/server";
+import { query, mutation, action } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
 
 
@@ -218,6 +219,155 @@ export const updateCandidateAfterLazyParse = mutation({
       } else {
         await ctx.db.insert("candidateResumes", { candidateId, rawText: "", jobHistory, hasEmbedding: false });
       }
+    }
+
+    // Sync candidate details across applications and compute/update overall status
+    await syncCandidateSummaryToApplications(ctx, candidateId);
+    await syncCandidateOverallStatus(ctx, candidateId);
+
+    // Schedule AI match scoring for all active applications of the candidate
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+      .collect();
+
+    for (const app of apps) {
+      if (app.isActive) {
+        await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+          candidateId,
+          jobId: app.jobId,
+        });
+      }
+    }
+  },
+});
+
+export const updateCandidateFields = mutation({
+  args: {
+    candidateId: v.id("candidates"),
+    fullName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    location: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
+    currentTitle: v.optional(v.string()),
+    currentEmployer: v.optional(v.string()),
+    seniorityLevel: v.optional(v.string()),
+    yearsOfExperience: v.optional(v.float64()),
+    industries: v.optional(v.array(v.string())),
+    expectedSalary: v.optional(v.number()),
+    noticePeriod: v.optional(v.string()),
+    employmentStatus: v.optional(v.string()),
+    skills: v.optional(v.array(v.string())),
+    education: v.optional(
+      v.array(
+        v.object({
+          degree: v.optional(v.string()),
+          institution: v.optional(v.string()),
+          year: v.optional(v.float64()),
+          field: v.optional(v.string()),
+        })
+      )
+    ),
+    certifications: v.optional(v.array(v.string())),
+    languages: v.optional(v.array(v.string())),
+    sourceChannel: v.optional(v.string()),
+    fileHash: v.optional(v.string()),
+    workableCandidateId: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    cvUploadId: v.optional(v.id("cvUploads")),
+    rawText: v.optional(v.string()),
+    sector: v.optional(v.string()),
+    jobHistory: v.optional(
+      v.array(
+        v.object({
+          company: v.string(),
+          title: v.string(),
+          startDate: v.optional(v.string()),
+          endDate: v.optional(v.string()),
+          description: v.optional(v.string()),
+        })
+      )
+    ),
+    noticePeriodDays: v.optional(v.number()),
+    educationDegree: v.optional(v.string()),
+    educationInstitution: v.optional(v.string()),
+    educationYear: v.optional(v.number()),
+    totalExperienceYears: v.optional(v.number()),
+    isParsed: v.optional(v.boolean()),
+    parsingConfidence: v.optional(v.any()),
+    embedding: v.optional(v.array(v.float64())),
+  },
+  handler: async (ctx, args) => {
+    const { candidateId, rawText, jobHistory, embedding, ...candidateArgs } = args;
+
+    let pastJobTitles: string[] | undefined = undefined;
+    if (jobHistory && jobHistory.length > 0) {
+      pastJobTitles = jobHistory.map((j: any) => j.title).filter((t: any) => !!t);
+    }
+    
+    let phoneClean: string | undefined = undefined;
+    if (args.phone) {
+      phoneClean = args.phone.replace(/[^0-9]/g, "");
+    }
+
+    const patches: Record<string, any> = {
+      ...candidateArgs,
+      status: "new",
+    };
+    if (pastJobTitles !== undefined) patches.pastJobTitles = pastJobTitles;
+    if (phoneClean !== undefined) patches.phoneClean = phoneClean;
+    if (candidateArgs.currentTitle !== undefined) patches.currentJobTitle = candidateArgs.currentTitle;
+
+    // Filter out undefined values to only update provided fields
+    const definedPatches = Object.fromEntries(
+      Object.entries(patches).filter(([_, v]) => v !== undefined)
+    );
+
+    await ctx.db.patch(candidateId, definedPatches);
+
+    // Sync to candidateResumes table
+    if (rawText || jobHistory || embedding) {
+      const existingResume = await ctx.db
+        .query("candidateResumes")
+        .withIndex("by_candidateId", (q) => q.eq("candidateId", candidateId))
+        .first();
+
+      if (existingResume) {
+        const updatedEmbedding = embedding ?? existingResume.embedding;
+        const resumeUpdates: Record<string, any> = {};
+        if (rawText !== undefined) resumeUpdates.rawText = rawText;
+        if (jobHistory !== undefined) resumeUpdates.jobHistory = jobHistory;
+        if (updatedEmbedding !== undefined) {
+          resumeUpdates.embedding = updatedEmbedding;
+          resumeUpdates.hasEmbedding = !!(updatedEmbedding && updatedEmbedding.length > 0);
+        }
+        await ctx.db.patch(existingResume._id, resumeUpdates);
+      } else {
+        await ctx.db.insert("candidateResumes", {
+          candidateId,
+          rawText: rawText ?? "",
+          jobHistory,
+          embedding,
+          hasEmbedding: !!(embedding && embedding.length > 0),
+        });
+      }
+    }
+
+    // Sync follow-up flags on all candidate applications
+    const candidate = await ctx.db.get(candidateId);
+    if (candidate) {
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+        .collect();
+      for (const app of apps) {
+        await updateFollowUpFlags(ctx, app._id, candidate);
+      }
+
+      await checkAndAdvanceFollowUp(ctx, candidateId);
+      await syncCandidateSummaryToApplications(ctx, candidateId);
+      await syncCandidateOverallStatus(ctx, candidateId);
     }
   },
 });
@@ -499,6 +649,24 @@ export const updateCvUpload = mutation({
   },
 });
 
+export const getCvUploadStatus = query({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    const upload = await ctx.db.get(args.cvUploadId);
+    return upload ? upload.status : null;
+  },
+});
+
+export const findCandidateByHash = query({
+  args: { fileHash: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidates")
+      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
+      .first();
+  },
+});
+
 // Paginated query used by resumeBatch to retry paused/failed uploads
 export const listFailedUploads = query({
   args: {
@@ -541,25 +709,136 @@ export const getCvUploadUrl = query({
   },
 });
 
-export const clearEverything = mutation({
+export const listAllUploadsForStorageClean = query({
+  args: {},
   handler: async (ctx) => {
-    // 1. Collect all storage IDs and delete files
     const uploads = await ctx.db.query("cvUploads").collect();
-    const storageIds = uploads
+    return uploads
       .map((u) => u.storageId)
       .filter((id): id is Id<"_storage"> => !!id);
-    for (const sid of storageIds) {
-      try { await ctx.storage.delete(sid); } catch { }
+  },
+});
+
+export const fetchBatchForDeletion = query({
+  args: {
+    table: v.string(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query(args.table as any)
+      .paginate({ cursor: args.cursor ?? null, numItems: 500 });
+    return {
+      ids: result.page.map((doc: any) => doc._id),
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+export const deleteBatch = mutation({
+  args: {
+    table: v.string(),
+    ids: v.array(v.any()),
+  },
+  handler: async (ctx, args) => {
+    for (const id of args.ids) {
+      await ctx.db.delete(id);
     }
-    // 2. Delete all documents
-    const docs = await ctx.db.query("documents").collect();
-    for (const d of docs) await ctx.db.delete(d._id);
-    // 3. Delete all candidates
-    const cands = await ctx.db.query("candidates").collect();
-    for (const c of cands) await ctx.db.delete(c._id);
-    // 4. Delete all cvUploads
-    for (const u of uploads) await ctx.db.delete(u._id);
-    return { storageDeleted: storageIds.length, documentsDeleted: docs.length, candidatesDeleted: cands.length, uploadsDeleted: uploads.length };
+  },
+});
+
+export const resetSystemStatsMutation = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const statsRow = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
+      .first();
+    if (statsRow) {
+      await ctx.db.patch(statsRow._id, {
+        totalCandidates: 0,
+        totalCvUploads: 0,
+        totalApplications: 0,
+      });
+    }
+  },
+});
+
+export const clearEverything = action({
+  args: {},
+  handler: async (ctx) => {
+    // 1. Get storage IDs and delete files from storage
+    const uploads = await ctx.runQuery("candidates/candidates:listAllUploadsForStorageClean" as any);
+    for (const sid of uploads) {
+      try {
+        await ctx.storage.delete(sid);
+      } catch {}
+    }
+
+    // 2. Clear out candidate, upload, application, token logs, and metrics tables
+    const tablesToWipe = [
+      "candidates",
+      "candidateResumes",
+      "cvUploads",
+      "applications",
+      "communications",
+      "aiCalls",
+      "pipelineEvents",
+      "ingestionBatches",
+      "ingestionLog",
+      "nvidiaTokenLogs",
+      "dailyTokenStats",
+      "tokenStatsCache",
+      "whatsappSessions",
+      "interviews",
+      "offers",
+      "placements",
+      "directorReviews",
+      "clientReviews",
+      "match_scores",
+      "notifications",
+      "searchHistory",
+      "dailyStats",
+      "dashboardStatsCache",
+      "pipeline_health_reports",
+    ] as const;
+
+    const deletedCounts: Record<string, number> = {};
+
+    for (const table of tablesToWipe) {
+      let count = 0;
+      let hasMore = true;
+      let cursor: string | undefined = undefined;
+
+      while (hasMore) {
+        const batch: any = await ctx.runQuery("candidates/candidates:fetchBatchForDeletion" as any, {
+          table,
+          cursor,
+        });
+
+        if (batch.ids.length > 0) {
+          await ctx.runMutation("candidates/candidates:deleteBatch" as any, {
+            table,
+            ids: batch.ids,
+          });
+          count += batch.ids.length;
+        }
+
+        hasMore = !batch.isDone && batch.continueCursor;
+        cursor = batch.continueCursor;
+      }
+      deletedCounts[table] = count;
+    }
+
+    // 3. Reset systemStats singleton totals (excluding activeJobsCount to preserve jobs)
+    await ctx.runMutation("candidates/candidates:resetSystemStatsMutation" as any);
+
+    return {
+      success: true,
+      storageDeleted: uploads.length,
+      ...deletedCounts,
+    };
   },
 });
 

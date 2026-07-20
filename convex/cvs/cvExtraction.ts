@@ -208,6 +208,7 @@ async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
 export async function extractText(
   buffer: ArrayBuffer,
   fileType: string,
+  skipOCR: boolean = false,
 ): Promise<string> {
   const type = fileType.toLowerCase();
 
@@ -216,17 +217,27 @@ export async function extractText(
       const pdfText = await extractTextFromPdf(buffer);
       if (pdfText.trim().length > 50) return pdfText;
     } catch (e) {
-      console.warn("Failed to extract text from PDF normally, attempting OCR fallback", e);
+      console.warn("Failed to extract text from PDF normally", e);
+      if (skipOCR) throw e;
+    }
+    if (skipOCR) {
+      throw new Error("Normal PDF text extraction returned empty and OCR is disabled (skipLLM is true)");
     }
     // Fall back to OCR for scanned PDFs
     return extractTextFromImage(buffer);
   }
 
-  if (type === "docx" || type === "doc" || type.includes("wordprocessingml")) {
+  const magic = new Uint8Array(buffer.slice(0, 4));
+  const isZipHeader = magic[0] === 0x50 && magic[1] === 0x4b && magic[2] === 0x03 && magic[3] === 0x04;
+
+  if (type === "docx" || type === "doc" || type.includes("wordprocessingml") || isZipHeader) {
     return extractTextFromDocx(buffer);
   }
 
   if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg") {
+    if (skipOCR) {
+      throw new Error("OCR is disabled for images (skipLLM is true)");
+    }
     return extractTextFromImage(buffer);
   }
 
@@ -292,7 +303,7 @@ export function cleanRawText(text: string): string {
   return cleaned;
 }
 
-const MAX_RAW_TEXT_LENGTH = 500_000;
+const MAX_RAW_TEXT_LENGTH = 150_000;
 
 function computeSha256(buffer: ArrayBuffer): string {
   return crypto.createHash("sha256").update(Buffer.from(buffer)).digest("hex");
@@ -463,7 +474,9 @@ ${textToSend}`,
         throw error;
       }
 
+      const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
       const isTransientError = 
+        isRateLimit ||
         message.toLowerCase().includes("timed out") ||
         message.toLowerCase().includes("timeout") ||
         message.includes("502") ||
@@ -471,10 +484,14 @@ ${textToSend}`,
         message.includes("504");
 
       if (isTransientError && attempt < maxAttempts) {
-        const waitMs = Math.pow(2, attempt) * 1000;
-        console.log(`[callNvidiaLLM] Retrying in ${waitMs}ms...`);
+        const waitMs = isRateLimit ? attempt * 5000 : Math.pow(2, attempt) * 1000;
+        console.log(`[callNvidiaLLM] Nvidia API Rate Limit or Transient error. Retrying in ${waitMs / 1000}s... (attempt ${attempt}/${maxAttempts})`);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue;
+      }
+
+      if (isRateLimit) {
+        throw new Error(`429: Nvidia API Rate Limit exceeded after ${maxAttempts} attempts. Details: ${message}`);
       }
       break;
     }
@@ -542,6 +559,13 @@ export async function runCvExtraction(
 ): Promise<string | null> {
   const { storageId, fileType, sourceChannel, cvUploadId, workableCandidateId, skipLLM, preExtractedData } = args;
 
+  // Check if upload is still valid/running, abort if already marked failed or cancelled
+  const uploadStatus = await ctx.runQuery(api.candidates.candidates.getCvUploadStatus, { cvUploadId });
+  if (!uploadStatus || uploadStatus === "failed" || uploadStatus === "failed_retry" || uploadStatus === "cancelled") {
+    console.log(`[CvExtraction] Aborting extraction for upload ${cvUploadId} because status is: ${uploadStatus}`);
+    return null;
+  }
+
   await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
     cvUploadId,
     status: "processing",
@@ -569,7 +593,40 @@ export async function runCvExtraction(
     }
     const fileHash = computeSha256(buffer);
 
-    const rawText = await extractText(buffer, fileType);
+    // Skip extraction if file is duplicate of an already extracted candidate (Agent 6 factor)
+    const existingCandidate = await ctx.runQuery(api.candidates.candidates.findCandidateByHash, { fileHash });
+    if (existingCandidate) {
+      console.log(`[CvExtraction] Duplicate CV detected (hash: ${fileHash}). Candidate ID: ${existingCandidate._id}. Skipping extraction.`);
+      
+      await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+        cvUploadId,
+        status: "processed",
+        fileHash,
+        candidateId: existingCandidate._id,
+      });
+
+      if (args.logId) {
+        await ctx.runMutation(api.cvs.batches.updateLogStage, {
+          logId: args.logId,
+          stage: "completed",
+          candidateName: existingCandidate.fullName || "Duplicate Candidate",
+        });
+      }
+
+      if (args.batchId) {
+        await ctx.runMutation(api.cvs.batches.updateBatchProgress, {
+          batchId: args.batchId,
+          status: "completed",
+        });
+        await ctx.runMutation(api.cvs.cvUploads.checkAndTriggerNextBatch, {
+          batchId: args.batchId,
+        });
+      }
+
+      return existingCandidate._id;
+    }
+
+    const rawText = await extractText(buffer, fileType, !!skipLLM);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
     if (trimmed.length < 20) {
@@ -675,7 +732,8 @@ export async function runCvExtraction(
         description: jh.description,
       }));
 
-      finalCandidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
+      await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
+        candidateId,
         ...safeExtracted,
         cvUploadId,
         currentEmployer: derivedEmployer,
@@ -692,15 +750,10 @@ export async function runCvExtraction(
         parsingConfidence,
         isParsed: true,
         embedding,
-      }) as Id<"candidates">;
+      });
     }
 
-    const resolvedCandidateId = finalCandidateId || candidateId;
-
-    if (finalCandidateId && finalCandidateId !== candidateId) {
-      console.log(`[cvExtraction] Merged into existing candidate: ${finalCandidateId}. Deleting duplicate candidate record: ${candidateId}`);
-      await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
-    }
+    const resolvedCandidateId = candidateId;
 
     const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
@@ -717,10 +770,12 @@ export async function runCvExtraction(
         sourceChannel: sourceChannel ?? "manual_upload",
       });
 
-      await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
-        candidateId: resolvedCandidateId,
-        jobId: jobId as any,
-      });
+      if (!skipLLM) {
+        await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+          candidateId: resolvedCandidateId,
+          jobId: jobId as any,
+        });
+      }
     }
 
     if (args.logId) {
@@ -780,7 +835,6 @@ export async function runCvExtraction(
       });
       return null;
     }
-
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
       status: (isInsufficientBalance || isNotACV)
@@ -885,5 +939,44 @@ export const startBatchExtraction = action({
     await ctx.runMutation(api.cvs.cvUploads.checkAndTriggerNextBatch, {
       batchId: args.batchId,
     });
+  },
+});
+export const processNextBatch = internalAction({
+  args: { batchId: v.id("ingestionBatches") },
+  handler: async (ctx, args) => {
+    // 1. Get up to 3 uploads in this batch that are still "uploaded"
+    const uploads = await ctx.runQuery(internal.cvs.cvUploads.listUploadedInBatch, {
+      batchId: args.batchId,
+      limit: 3,
+    });
+
+    if (uploads.length === 0) {
+      console.log(`[processNextBatch] No more uploads to process for batch ${args.batchId}`);
+      return;
+    }
+
+    // 2. Queue those uploads with stagger
+    let index = 0;
+    const cvUploadIds = [];
+    for (const upload of uploads) {
+      cvUploadIds.push(upload._id);
+      
+      // Update status to "queued" and schedule extraction with a 2-second stagger
+      await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId as Id<"_storage">,
+        fileName: upload.fileName,
+        fileType: upload.fileType,
+        sourceChannel: upload.source || "Manual",
+        uploadedBy: upload.uploadedBy,
+        batchId: args.batchId,
+        delayMs: index * 2000,
+      });
+      index++;
+    }
+
+    // 3. We no longer poll batch progress here.
+    // The next batch will be triggered by checkAndTriggerNextBatch
+    // when the last CV in this batch finishes extracting.
   },
 });
