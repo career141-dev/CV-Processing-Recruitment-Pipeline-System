@@ -403,22 +403,18 @@ export const runImportBatch = internalAction({
           continue;
         }
 
-        const uploadUrl = await ctx.storage.generateUploadUrl();
-        const uploadRes = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": downloaded.contentType },
-          body: downloaded.buffer,
-        });
-        if (!uploadRes.ok) {
-          failed++;
-          continue;
-        }
-
-        const { storageId } = (await uploadRes.json()) as { storageId: Id<"_storage"> };
         const fileName = `${detail.name || candidate.id}.${downloaded.fileType}`;
+        const base64Data = Buffer.from(downloaded.buffer).toString("base64");
+        
+        const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+          fileName,
+          contentType: downloaded.contentType,
+          base64Data,
+        });
 
         const cvUploadId = await ctx.runMutation(internal.integrations.workable.insertCvUpload, {
-          storageId,
+          s3Key,
+          storageProvider: "r2",
           fileName,
           fileType: downloaded.fileType,
           fileSize: downloaded.buffer.byteLength,
@@ -426,7 +422,8 @@ export const runImportBatch = internalAction({
         });
 
         await ctx.scheduler.runAfter(imported * 4000, api.cvs.cvExtraction.processCvExtraction, {
-          storageId,
+          s3Key,
+          storageProvider: "r2",
           fileType: downloaded.fileType,
           sourceChannel: "Workable",
           uploadedBy: args.userId,

@@ -27,15 +27,13 @@ export const processInboundCV = internalAction({
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    // 3. Store in Convex Native Storage securely (Actions can generate upload URLs and POST to them, or we can use the fetch approach)
-    // Actually, in an Action in Convex v1, to store a blob we can fetch the upload URL.
-    const uploadUrl = await ctx.runMutation(internal.cvs.ingestion.generateUploadUrl);
-    const uploadResult = await fetch(uploadUrl, {
-      method: "POST",
-      headers: { "Content-Type": fileBlob.type },
-      body: fileBlob,
+    // 3. Store in Cloudflare R2
+    const base64Data = Buffer.from(fileBuffer).toString("base64");
+    const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+      fileName: args.fileName || `whatsapp_${args.originalSenderPhone}.pdf`,
+      contentType: fileBlob.type,
+      base64Data,
     });
-    const { storageId } = await uploadResult.json();
 
     // 4. Update Database
     await ctx.runMutation(internal.cvs.ingestion.insertCvRecord, {
@@ -43,7 +41,8 @@ export const processInboundCV = internalAction({
       fromNumber: args.fromNumber,
       originalSenderPhone: args.originalSenderPhone,
       fileName: args.fileName,
-      storageId,
+      s3Key,
+      storageProvider: "r2",
       fileHash,
       fileSize: fileBlob.size,
     });
@@ -62,7 +61,9 @@ export const insertCvRecord = internalMutation({
     fromNumber: v.string(),
     originalSenderPhone: v.string(),
     fileName: v.union(v.string(), v.null()),
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()),
+    storageProvider: v.optional(v.string()),
     fileHash: v.string(),
     fileSize: v.number(),
   },
@@ -169,6 +170,8 @@ export const insertCvRecord = internalMutation({
     const cvUploadId = await ctx.db.insert("cvUploads", {
       candidateId: candidate!._id,
       storageId: args.storageId,
+      s3Key: args.s3Key,
+      storageProvider: args.storageProvider,
       fileName: args.fileName || `cv_whatsapp_${Date.now()}.pdf`,
       fileSize: args.fileSize,
       fileType: "application/pdf",
@@ -206,6 +209,8 @@ export const insertCvRecord = internalMutation({
       await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
         cvUploadId,
         storageId: args.storageId,
+        s3Key: args.s3Key,
+        storageProvider: args.storageProvider,
         fileType: "application/pdf",
         uploadedBy: taUser ? taUser._id : "system",
         sourceChannel: "whatsapp",
@@ -242,6 +247,8 @@ export const resumePausedUploads = internalMutation({
       await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
         cvUploadId: upload._id,
         storageId: upload.storageId,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider,
         fileType: upload.fileType || "application/pdf",
         uploadedBy: upload.uploadedBy || "system",
         sourceChannel: upload.source || "unknown",

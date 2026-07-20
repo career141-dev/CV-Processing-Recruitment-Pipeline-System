@@ -1,5 +1,32 @@
+"use client";
+
 import React from 'react';
-import { Card } from '@/components/ui/Card';
+
+interface ToggleProps {
+  enabled: boolean;
+  onChange: (val: boolean) => void;
+  disabled?: boolean;
+}
+
+function Toggle({ enabled, onChange, disabled }: ToggleProps) {
+  return (
+    <button
+      role="switch"
+      aria-checked={enabled}
+      disabled={disabled}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onChange(!enabled); }}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+        disabled ? 'opacity-40 cursor-not-allowed' : ''
+      } ${enabled ? 'bg-green-500' : 'bg-border'}`}
+    >
+      <span
+        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+          enabled ? 'translate-x-4' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  );
+}
 
 interface ChannelStatusCardProps {
   title: string;
@@ -13,6 +40,13 @@ interface ChannelStatusCardProps {
   children?: React.ReactNode;
   onClick?: () => void;
   isSelected?: boolean;
+  toggle?: {
+    enabled: boolean;
+    onChange: (val: boolean) => void;
+    disabled?: boolean;
+    label?: string;
+  };
+  errorCount?: number;
 }
 
 export function ChannelStatusCard({
@@ -26,34 +60,84 @@ export function ChannelStatusCard({
   actionButton,
   children,
   onClick,
-  isSelected = false
+  isSelected = false,
+  toggle,
+  errorCount = 0,
 }: ChannelStatusCardProps) {
-  const isCustomBorder = borderClass !== 'border-border';
+  const isPaused = status === 'Paused';
 
   return (
-    <Card 
+    <div
       onClick={onClick}
-      className={`relative overflow-hidden transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md' : ''} ${isSelected ? 'ring-2 ring-primary shadow-md' : ''} ${isCustomBorder && !isSelected ? borderClass : ''}`}
+      className={`relative bg-surface border rounded-xl p-4 flex flex-col gap-3 transition-all duration-200 overflow-hidden ${
+        onClick ? 'cursor-pointer hover:shadow-md' : ''
+      } ${isSelected ? 'ring-2 ring-primary shadow-md border-primary/20' : borderClass} ${
+        isPaused ? 'opacity-75' : ''
+      }`}
     >
-      {isCustomBorder && !isSelected && (
-        <div className={`absolute top-0 left-0 w-full h-1 ${statusColor.replace('text-', 'bg-')}`}></div>
-      )}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${statusColor.replace('text-', 'bg-')} ${pulse ? 'animate-pulse' : ''}`}></div>
-          <span className={`text-[14px] font-semibold ${statusColor}`}>{status}</span>
+      {/* Top row: icon + status + toggle */}
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2.5">
+          {/* Status dot + icon */}
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+            isPaused ? 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500' :
+            status === 'Active' ? 'bg-green-500/10 dark:bg-green-500/20 text-green-600 dark:text-green-500' :
+            status === 'Error' ? 'bg-red-500/10 dark:bg-red-500/20 text-red-500 dark:text-red-400' :
+            'bg-surface-container text-text-secondary'
+          }`}>
+            {icon}
+          </div>
+          <div>
+            <h3 className="text-[13px] font-semibold text-text-primary leading-tight">{title}</h3>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                isPaused ? 'bg-amber-500' :
+                status === 'Active' ? 'bg-green-500' :
+                status === 'Error' ? 'bg-red-500' :
+                'bg-text-secondary/40'
+              } ${pulse && !isPaused ? 'animate-pulse' : ''}`} />
+              <span className={`text-[11px] font-medium ${
+                isPaused ? 'text-amber-600 dark:text-amber-500' :
+                status === 'Active' ? 'text-green-600 dark:text-green-500' :
+                status === 'Error' ? 'text-red-500 dark:text-red-400' :
+                'text-text-secondary'
+              }`}>{status}</span>
+            </div>
+          </div>
         </div>
-        <div className="text-text-secondary opacity-40">
-          {icon}
+
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Error badge */}
+          {errorCount > 0 && (
+            <span className="text-[10px] font-bold bg-red-500/10 dark:bg-red-500/20 text-red-500 dark:text-red-400 border border-red-200 dark:border-red-500/30 px-1.5 py-0.5 rounded-full">
+              {errorCount} error{errorCount !== 1 ? 's' : ''}
+            </span>
+          )}
+          {/* Toggle */}
+          {toggle && (
+            <div className="flex items-center gap-1.5">
+              {toggle.disabled && (
+                <span className="text-[10px] text-text-secondary/60 font-medium hidden sm:block">
+                  Always on
+                </span>
+              )}
+              <Toggle
+                enabled={toggle.enabled}
+                onChange={toggle.onChange}
+                disabled={toggle.disabled}
+              />
+            </div>
+          )}
         </div>
       </div>
-      <h3 className="text-[14px] font-semibold text-text-primary mb-3">{title}</h3>
-      <div className={`space-y-2 pt-2 border-t border-border ${actionButton ? 'mb-3' : ''}`}>
+
+      {/* Stats */}
+      <div className="border-t border-border pt-3 space-y-1.5">
         {stats.map((stat, i) => (
-          <div key={i} className={`flex justify-between items-center ${typeof stat.value === 'string' && stat.value.includes('@') ? 'overflow-hidden' : ''}`}>
-            <span className="text-[13px] text-text-secondary whitespace-nowrap">{stat.label}</span>
+          <div key={i} className="flex justify-between items-center">
+            <span className="text-[12px] text-text-secondary">{stat.label}</span>
             {typeof stat.value === 'string' ? (
-              <span className={`text-[14px] font-semibold ${stat.value.includes('@') ? 'text-[11px] truncate ml-2' : ''}`}>
+              <span className="text-[13px] font-semibold text-text-primary tabular-nums">
                 {stat.value}
               </span>
             ) : (
@@ -62,8 +146,9 @@ export function ChannelStatusCard({
           </div>
         ))}
       </div>
-      {children && <div className="mb-3">{children}</div>}
+
+      {children && <div>{children}</div>}
       {actionButton}
-    </Card>
+    </div>
   );
 }

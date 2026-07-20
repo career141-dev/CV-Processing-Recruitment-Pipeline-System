@@ -66,7 +66,9 @@ export const getLatestImportJob = internalQuery({
 
 export const insertCvUpload = internalMutation({
   args: {
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()),
+    storageProvider: v.optional(v.string()),
     fileName: v.string(),
     fileType: v.string(),
     fileSize: v.number(),
@@ -75,6 +77,8 @@ export const insertCvUpload = internalMutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert("cvUploads", {
       storageId: args.storageId,
+      s3Key: args.s3Key,
+      storageProvider: args.storageProvider,
       fileName: args.fileName,
       fileType: args.fileType,
       fileSize: args.fileSize,

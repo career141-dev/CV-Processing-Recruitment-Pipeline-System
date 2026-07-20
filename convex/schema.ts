@@ -391,6 +391,8 @@ export default defineSchema({
 
   cvUploads: defineTable({
     storageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()), // Added for Cloudflare R2
+    storageProvider: v.optional(v.string()), // 'convex' | 'r2'
     fileName: v.string(),
     fileSize: v.float64(),
     fileType: v.string(),
@@ -408,7 +410,8 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_fileHash", ["fileHash"])
     .index("by_batchId", ["batchId"])
-    .index("by_storageId", ["storageId"]),
+    .index("by_storageId", ["storageId"])
+    .index("by_s3Key", ["s3Key"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),

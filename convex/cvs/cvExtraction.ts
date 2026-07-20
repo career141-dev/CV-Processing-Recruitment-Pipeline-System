@@ -9,9 +9,8 @@ import { api, internal } from "../_generated/api";
 import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import mammoth from "mammoth";
-import tesseract from "tesseract.js";
+// Tesseract OCR removed due to Convex V8 runtime worker thread incompatibility
 import {
   deriveNoticePeriodDays,
   deriveSeniorityLevel,
@@ -98,7 +97,7 @@ export const cvExtractionSchema = z.object({
 export type CvExtractionResult = z.infer<typeof cvExtractionSchema>;
 
 type ExtractionArgs = {
-  storageId: Id<"_storage">;
+  storageId?: Id<"_storage">;
   fileType: string;
   sourceChannel?: string;
   uploadedBy: string;
@@ -114,10 +113,14 @@ type ExtractionArgs = {
   logId?: Id<"ingestionLog">;
   isRetry?: boolean;
   retryCount?: number;
+  s3Key?: string;
+  storageProvider?: string;
 };
 
 const ExtractionActionArgs = {
-  storageId: v.id("_storage"),
+  storageId: v.optional(v.id("_storage")),
+  s3Key: v.optional(v.string()),
+  storageProvider: v.optional(v.string()),
   fileType: v.string(),
   sourceChannel: v.optional(v.string()),
   uploadedBy: v.string(),
@@ -140,52 +143,20 @@ const ExtractionActionArgs = {
 // ──────────────────────────────────────────────────
 
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
-  const data = new Uint8Array(buffer.slice(0));
-  const loadingTask = pdfjsLib.getDocument({
-    data,
-    useSystemFonts: true,
-    disableFontFace: true,
-    standardFontDataUrl: "https://unpkg.com/pdfjs-dist@5.7.284/standard_fonts/",
-  });
-
-  try {
-    const pdf = await loadingTask.promise;
-    let fullText = "";
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-
-      const items = textContent.items.map((item: any) => ({
-        str: item.str,
-        x: item.transform[4],
-        y: item.transform[5],
-      }));
-
-      items.sort((a, b) => {
-        if (Math.abs(a.y - b.y) < 5) {
-          return a.x - b.x;
-        }
-        return b.y - a.y; // Y goes up in PDF
+  return new Promise((resolve, reject) => {
+    try {
+      const PDFParser = require("pdf2json");
+      const pdfParser = new PDFParser(null, 1);
+      pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
+      pdfParser.on("pdfParser_dataReady", () => {
+        resolve(pdfParser.getRawTextContent());
       });
-
-      let lastY = null;
-      for (const item of items) {
-        if (lastY !== null && Math.abs(lastY - item.y) > 5) {
-          fullText += "\n";
-        } else if (lastY !== null) {
-          fullText += "  ";
-        }
-        fullText += item.str;
-        lastY = item.y;
-      }
-      fullText += "\n\n";
+      pdfParser.parseBuffer(Buffer.from(buffer));
+    } catch (error) {
+      console.error("PDF extraction failed:", error);
+      reject(error);
     }
-    return fullText;
-  } catch (error) {
-    console.error("PDF extraction failed:", error);
-    throw error;
-  }
+  });
 }
 
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
@@ -199,10 +170,7 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
 }
 
 async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
-  const result = await tesseract.recognize(Buffer.from(buffer), 'eng', {
-    logger: () => { }
-  });
-  return result.data.text;
+  throw new Error("Image CV extraction requires OCR, which is currently disabled due to serverless runtime constraints.");
 }
 
 export async function extractText(
@@ -216,15 +184,11 @@ export async function extractText(
     try {
       const pdfText = await extractTextFromPdf(buffer);
       if (pdfText.trim().length > 50) return pdfText;
+      throw new Error("PDF text extraction returned less than 50 characters (possibly a scanned PDF which requires OCR).");
     } catch (e) {
-      console.warn("Failed to extract text from PDF normally", e);
-      if (skipOCR) throw e;
+      console.warn("Failed to extract text from PDF", e);
+      throw e;
     }
-    if (skipOCR) {
-      throw new Error("Normal PDF text extraction returned empty and OCR is disabled (skipLLM is true)");
-    }
-    // Fall back to OCR for scanned PDFs
-    return extractTextFromImage(buffer);
   }
 
   const magic = new Uint8Array(buffer.slice(0, 4));
@@ -235,10 +199,7 @@ export async function extractText(
   }
 
   if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg") {
-    if (skipOCR) {
-      throw new Error("OCR is disabled for images (skipLLM is true)");
-    }
-    return extractTextFromImage(buffer);
+    throw new Error("Image CV extraction requires OCR, which is currently disabled.");
   }
 
   if (type === "rtf") {
@@ -581,8 +542,15 @@ export async function runCvExtraction(
   let candidateId: any = null;
 
   try {
-    const url = await ctx.storage.getUrl(storageId);
-    if (!url) throw new Error("File URL not found in Convex storage");
+    let url: string | null = null;
+
+    if (args.s3Key && args.storageProvider === "r2") {
+      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: args.s3Key });
+    } else if (args.storageId) {
+      url = await ctx.storage.getUrl(args.storageId);
+    }
+
+    if (!url) throw new Error("File URL not found (neither R2 nor Convex storage)");
 
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to download file from Convex storage. Status: ${response.status}`);
@@ -807,9 +775,10 @@ export async function runCvExtraction(
       message.toLowerCase().includes("credits");
 
     const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
+    const isTransientLLMError = message.includes("timeout") || message.includes("invalid response") || message.toLowerCase().includes("timed out");
     const isNotACV = message.includes("NOT_A_CV");
 
-    const shouldRetry = isRateLimit && ((args as any).retryCount ?? 0) < 5;
+    const shouldRetry = (isRateLimit || isTransientLLMError) && ((args as any).retryCount ?? 0) < 5;
 
     // Clean up the blank candidate stub since extraction failed
     if (candidateId && !shouldRetry) {
@@ -820,12 +789,13 @@ export async function runCvExtraction(
     if (shouldRetry) {
       const nextRetryCount = ((args as any).retryCount ?? 0) + 1;
       const delayMs = nextRetryCount * 60 * 1000; // 1m, 2m, 3m...
-      console.log(`[CvExtraction] Nvidia Rate Limit hit (429). Retrying in ${delayMs / 1000}s (Attempt ${nextRetryCount})`);
+      const reason = isRateLimit ? "Nvidia API Rate Limit (429)" : "LLM API Timeout/Invalid Response";
+      console.log(`[CvExtraction] ${reason}. Retrying in ${delayMs / 1000}s (Attempt ${nextRetryCount})`);
 
       await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
         cvUploadId,
         status: "pending_retry",
-        errorMessage: `Nvidia API Rate Limit (429). Retrying automatically in ${delayMs / 1000}s...`,
+        errorMessage: `${reason}. Retrying automatically in ${delayMs / 1000}s...`,
       });
 
       await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
@@ -909,7 +879,9 @@ export const resumeBatch = internalAction({
       const upload = result.page[i];
       await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
         cvUploadId: upload._id,
-        storageId: upload.storageId as Id<"_storage">,
+        storageId: upload.storageId as Id<"_storage"> | undefined,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider,
         fileName: upload.fileName,
         fileType: upload.fileType,
         sourceChannel: upload.source || "Retry Failed",
@@ -964,7 +936,9 @@ export const processNextBatch = internalAction({
       // Update status to "queued" and schedule extraction with a 2-second stagger
       await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
         cvUploadId: upload._id,
-        storageId: upload.storageId as Id<"_storage">,
+        storageId: upload.storageId as Id<"_storage"> | undefined,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider,
         fileName: upload.fileName,
         fileType: upload.fileType,
         sourceChannel: upload.source || "Manual",

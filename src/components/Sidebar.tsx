@@ -91,14 +91,14 @@ export default function Sidebar() {
               <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0" style={{color: isActive('/dashboard/token-monitor') ? 'var(--primary-container)' : 'var(--text-secondary)'}}>bar_chart</span>
               <span className={`${isActive('/dashboard/token-monitor') ? 'text-primary-container' : 'text-text-secondary'} text-[13px]`}>Token Monitor</span>
             </Link>
-
-
-            <Link href="/dashboard/settings" className={`flex items-center py-2 mb-4 rounded-md w-full cursor-pointer ${isActive('/dashboard/settings') ? 'bg-surface-container-high' : 'hover:bg-surface-container-high transition-colors'}`}>
-              <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0" style={{color: isActive('/dashboard/settings') ? 'var(--primary-container)' : 'var(--text-secondary)'}}>settings</span>
-              <span className={`${isActive('/dashboard/settings') ? 'text-primary-container' : 'text-text-secondary'} text-[13px]`}>Settings</span>
-            </Link>
           </>
         )}
+
+        <div className={showAdminSettings ? "" : "mt-auto"}></div>
+        <Link href="/dashboard/settings" className={`flex items-center py-2 mb-4 rounded-md w-full cursor-pointer ${isActive('/dashboard/settings') ? 'bg-surface-container-high' : 'hover:bg-surface-container-high transition-colors'}`}>
+          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0" style={{color: isActive('/dashboard/settings') ? 'var(--primary-container)' : 'var(--text-secondary)'}}>settings</span>
+          <span className={`${isActive('/dashboard/settings') ? 'text-primary-container' : 'text-text-secondary'} text-[13px]`}>Settings</span>
+        </Link>
         
         <ThemeToggle />
         <Link href="/dashboard/help" className={`flex items-center py-1.5 mb-1 rounded-md w-full cursor-pointer ${isActive('/dashboard/help') ? 'bg-surface-container-high' : 'hover:bg-surface-container-high transition-colors'}`}>

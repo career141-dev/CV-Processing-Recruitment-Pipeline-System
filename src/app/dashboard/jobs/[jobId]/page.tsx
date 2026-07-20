@@ -377,7 +377,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   
   const logManualCall = useMutation(api.applications.applications.logManualCall);
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
-  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
 
   const isCallLogged = item.manualCallOutcome === "Interested";
@@ -392,15 +392,12 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
 
       let cvUploadId: Id<"cvUploads"> | undefined = undefined;
       if (cvFile && user?.id) {
-        let uploadUrl = await generateUploadUrl();
-        if (!uploadUrl.startsWith("http://") && !uploadUrl.startsWith("https://")) {
-          uploadUrl = "http://" + uploadUrl;
-        }
-        const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": cvFile.type }, body: cvFile });
-        const { storageId } = await resp.json();
+        let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: cvFile.name, contentType: cvFile.type });
+        const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
         
-        cvUploadId = await saveUpload({
-          storageId,
+        let cvUploadId = await saveUpload({
+          s3Key,
+          storageProvider: "r2",
           fileName: cvFile.name,
           fileSize: cvFile.size,
           fileType: cvFile.type,
@@ -572,7 +569,7 @@ const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
   const [isSaving, setIsSaving] = useState(false);
 
   const logManualCall = useMutation(api.applications.applications.logManualCall);
-  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
 
   const handleSaveLog = async () => {
@@ -584,15 +581,12 @@ const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
 
       let cvUploadId: Id<"cvUploads"> | undefined = undefined;
       if (cvFile && user?.id) {
-        let uploadUrl = await generateUploadUrl();
-        if (!uploadUrl.startsWith("http://") && !uploadUrl.startsWith("https://")) {
-          uploadUrl = "http://" + uploadUrl;
-        }
-        const resp = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": cvFile.type }, body: cvFile });
-        const { storageId } = await resp.json();
+        let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: cvFile.name, contentType: cvFile.type });
+        const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
         
-        cvUploadId = await saveUpload({
-          storageId,
+        let cvUploadId = await saveUpload({
+          s3Key,
+          storageProvider: "r2",
           fileName: cvFile.name,
           fileSize: cvFile.size,
           fileType: cvFile.type,
@@ -843,7 +837,7 @@ const HeadhuntModal = ({
   isOpen: boolean; onClose: () => void; jobId: Id<"jobs">;
 }) => {
   const createHeadhunt = useMutation(api.applications.applications.createHeadhuntApplication);
-  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
   const { user } = useUser();
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', currentSalary: '', expectedSalary: '', noticePeriodDays: '' });
@@ -888,15 +882,13 @@ const HeadhuntModal = ({
     setError('');
     try {
       // Upload CV first
-      let uploadUrl = await generateUploadUrl();
-      if (!uploadUrl.startsWith("http://") && !uploadUrl.startsWith("https://")) {
-        uploadUrl = "http://" + uploadUrl;
-      }
-      const resp = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': cvFile.type }, body: cvFile });
-      const { storageId } = await resp.json();
-      const cvUploadId = await saveUpload({
-        storageId,
-        fileName: cvFile.name,
+      let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: cvFile.name, contentType: cvFile.type });
+        const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
+        
+        let cvUploadId = await saveUpload({
+          s3Key,
+          storageProvider: "r2",
+          fileName: cvFile.name,
         fileSize: cvFile.size,
         fileType: cvFile.type,
         source: 'Headhunting',
@@ -1122,7 +1114,7 @@ export default function JobDetailPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const generateUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
+  const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const processCvIngestion = useMutation(api.pipeline.ingestion.processCvIngestion);
 
   const handleScanDatabase = async () => {
@@ -1152,27 +1144,15 @@ export default function JobDetailPage() {
       const fileHash = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
       // 2. Generate Convex upload URL
-      let uploadUrl = await generateUploadUrl();
-      if (!uploadUrl.startsWith("http://") && !uploadUrl.startsWith("https://")) {
-        uploadUrl = "http://" + uploadUrl;
-      }
-
-      // 3. Upload binary to Convex Storage
-      const resp = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-
-      if (!resp.ok) throw new Error("Storage upload failed");
-      const { storageId } = await resp.json();
-
-      // 4. Trigger processCvIngestion
+      let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: file.name, contentType: file.type || "application/pdf" });
+      const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/pdf" }, body: file });
+      
       const result = await processCvIngestion({
+        s3Key,
+        storageProvider: "r2",
         jobId: jobId as any,
         sourceChannel: "headhunting",
         rawSender: user?.fullName || user?.primaryEmailAddress?.emailAddress || "recruiter",
-        storageId,
         fileHash,
         fileName: file.name,
         fileType: file.type || "application/pdf",
