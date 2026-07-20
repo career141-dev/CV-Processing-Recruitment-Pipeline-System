@@ -29,3 +29,26 @@ export const countCvsFromYesterday = query({
     };
   }
 });
+
+export const getLatestIngestionLogs = query({
+  handler: async (ctx) => {
+    const logs = await ctx.db
+      .query("ingestionLog")
+      .order("desc")
+      .take(10);
+
+    const results = [];
+    for (const log of logs) {
+      let upload = null;
+      if (log.cvFileId) {
+        upload = await ctx.db.get(log.cvFileId);
+      }
+      results.push({
+        log,
+        upload,
+      });
+    }
+    return results;
+  }
+});
+
