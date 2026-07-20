@@ -783,11 +783,11 @@ export default function CandidatesSearch() {
                     <CandidateCard
                       key={c._id}
                       id={c._id}
-                      name={c.fullName || "Unknown"}
-                      initials={getInitials(c.fullName)}
+                      name={c.fullName || (c.email ? c.email.split("@")[0] : "Candidate Profile")}
+                      initials={getInitials(c.fullName || c.email || "Candidate")}
                       sourceText={(c.sourceChannel || "Manual").toUpperCase()}
                       sourceVariant={getSourceVariant(c.sourceChannel)}
-                      role={formatRole(c.currentTitle, c.currentEmployer)}
+                      role={formatRole(c.currentTitle || c.currentJobTitle, c.currentEmployer)}
                       location={c.location || "Unknown"}
                       skills={formatSkills(c.skills)}
                       score={c.score}

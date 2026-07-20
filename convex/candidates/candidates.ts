@@ -15,8 +15,26 @@ export const listCandidatesByIds = query({
     for (const c of results) {
       if (!c) continue;
       const { rawText, embedding, jobHistory, ...safeCandidate } = c as any;
+      
+      let name = safeCandidate.fullName;
+      if (!name || name.trim() === "" || name.toLowerCase().includes("unknown")) {
+        if (safeCandidate.email) {
+          const handle = safeCandidate.email.split("@")[0].replace(/[._-]/g, " ");
+          name = handle.replace(/\b\w/g, (char: string) => char.toUpperCase());
+        } else if (safeCandidate.phone) {
+          name = `Candidate (${safeCandidate.phone})`;
+        } else {
+          name = "Candidate Profile";
+        }
+      }
+
+      const title = safeCandidate.currentTitle || safeCandidate.currentJobTitle || (jobHistory && jobHistory[0] ? jobHistory[0].title : undefined);
+
       candidates.push({
         ...safeCandidate,
+        fullName: name,
+        currentTitle: title,
+        currentJobTitle: safeCandidate.currentJobTitle || title,
         profileImageUrl: null,
         activeApplications: [],
       });

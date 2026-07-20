@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "convex-dev": "npx convex dev --env-file .env.local",
+    "convex-dev": "npx convex dev --url https://api.career141.com --admin-key \"convex-self-hosted|01790f183ed16a1df37bb60a04248db8fc152e1c5c2b8952ea531da0026628ffe31b46e2fd\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

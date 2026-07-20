@@ -1195,6 +1195,7 @@ export default defineSchema({
     autopilotEnabled: v.optional(v.boolean()),
     updatedBy: v.optional(v.id("users")),
     updatedAt: v.optional(v.string()),
+    lastEmailFetchTimestamp: v.optional(v.string()),
     channel_toggles: v.optional(v.object({
       whatsappIngestion: v.boolean(),
       emailIngestion: v.boolean(),
