@@ -2,17 +2,18 @@ import { query } from "./_generated/server";
 
 export const countCvsFromYesterday = query({
   handler: async (ctx) => {
-    // Yesterday evening 8 PM in the user's local timezone (+05:30)
-    // 2026-07-15T20:00:00+05:30
-    const startTime = Date.parse("2026-07-15T20:00:00+05:30");
+    // Saturday morning in local time
+    const startTime = Date.parse("2026-07-18T00:00:00+05:30");
+    // Sunday night in local time
+    const endTime = Date.parse("2026-07-19T23:59:59+05:30");
 
     const logs = await ctx.db
       .query("ingestionLog")
       .withIndex("by_receivedAt", (q) => q.gte("receivedAt", startTime))
       .collect();
 
-    // Filter to logs that have a cvFileId (representing a CV upload)
-    const cvLogs = logs.filter(log => log.cvFileId !== undefined);
+    // Filter to logs that have a cvFileId (representing a CV upload) and were received before endTime
+    const cvLogs = logs.filter(log => log.cvFileId !== undefined && log.receivedAt <= endTime);
 
     return {
       startTimeStr: new Date(startTime).toString(),
@@ -28,3 +29,26 @@ export const countCvsFromYesterday = query({
     };
   }
 });
+
+export const getLatestIngestionLogs = query({
+  handler: async (ctx) => {
+    const logs = await ctx.db
+      .query("ingestionLog")
+      .order("desc")
+      .take(10);
+
+    const results = [];
+    for (const log of logs) {
+      let upload = null;
+      if (log.cvFileId) {
+        upload = await ctx.db.get(log.cvFileId);
+      }
+      results.push({
+        log,
+        upload,
+      });
+    }
+    return results;
+  }
+});
+

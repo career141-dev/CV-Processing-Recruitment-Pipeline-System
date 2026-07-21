@@ -103,25 +103,46 @@ async function fetchAttachmentContent(inboxEmail: string, messageId: string, att
   }
 }
 
-async function fetchUnreadEmails(inboxEmail: string) {
+async function fetchUnreadEmails(inboxEmail: string, lastFetch: string | null) {
   const token = await getGraphToken();
   if (!token) return [];
 
-  console.log(`[EmailAgent] Fetching unread emails for ${inboxEmail}`);
+  console.log(`[EmailAgent] Fetching emails for ${inboxEmail} since ${lastFetch || '14 days ago'}`);
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false&$select=id,subject,body,from,hasAttachments`;
-    
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) {
-      console.error("[EmailAgent] Failed to fetch emails:", await response.text());
-      return [];
+    // If lastFetch is available, use it (with a 5 min overlap buffer to ensure nothing is missed).
+    // Otherwise fallback to 14-day safety window.
+    let cutoffDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    if (lastFetch) {
+      const lastFetchTime = new Date(lastFetch).getTime();
+      // subtract 5 minutes to prevent race conditions at the boundary
+      cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 14 * 24 * 60 * 60 * 1000)).toISOString();
     }
 
-    const data = await response.json();
-    return data.value || [];
+    // We no longer filter by `isRead eq false` to ensure we don't miss manually read emails
+    // We paginate to ensure we get all emails if there are many.
+    let url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=receivedDateTime ge ${cutoffDate}&$select=id,subject,body,from,hasAttachments&$top=100`;
+    
+    const allMessages: any[] = [];
+
+    while (url) {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        console.error("[EmailAgent] Failed to fetch emails:", await response.text());
+        break;
+      }
+
+      const data = await response.json();
+      const messages = data.value || [];
+      allMessages.push(...messages);
+      
+      // Handle pagination if more emails exist
+      url = data["@odata.nextLink"];
+    }
+
+    return allMessages;
   } catch (error) {
     console.error("[EmailAgent] Error fetching emails:", error);
     return [];
@@ -169,8 +190,15 @@ export const pollEmailInbox = action({
     const targetInboxEmail = inboxEmail;
     console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail}`);
     
+    // Fetch last check timestamp from memory
+    const lastFetch = await ctx.runQuery(internal.communications.emailAgent.getLastEmailFetchTimestamp);
+    
+    // Save current time as the new check time for next run
+    const currentFetchTime = new Date().toISOString();
+    await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime });
+
     // 1. Fetch unread emails
-    const messages = await fetchUnreadEmails(targetInboxEmail);
+    const messages = await fetchUnreadEmails(targetInboxEmail, lastFetch);
     if ((messages as any[]).length > 0) {
       console.log(`[EmailAgent] Found ${(messages as any[]).length} unread messages.`);
     } else {
@@ -199,17 +227,6 @@ export const pollEmailInbox = action({
         ? (message.body.content || "") 
         : (message.body || "")) || message.subject || "";
 
-      // 2. Find CV attachment (including .doc, .docx, .pdf)
-      const attachment = attachments.find(
-        (a: any) =>
-          a.contentType?.includes("pdf") ||
-          a.contentType?.includes("msword") ||
-          a.contentType?.includes("officedocument.wordprocessingml") ||
-          a.name?.endsWith(".docx") ||
-          a.name?.endsWith(".doc") ||
-          a.name?.endsWith(".pdf")
-      );
-      
       let isReplyProcessed = false;
       let isCandidateMatched = false;
 
@@ -239,12 +256,15 @@ export const pollEmailInbox = action({
         }
       }
 
-         // 2. Find CV attachments (including .doc, .docx, .pdf)
+      // 2. Find CV attachments (checking both content type and file extension)
       const cvAttachments = attachments.filter(
         (a: any) =>
           a.contentType?.includes("pdf") ||
           a.contentType?.includes("msword") ||
-          a.contentType?.includes("officedocument.wordprocessingml")
+          a.contentType?.includes("officedocument.wordprocessingml") ||
+          a.name?.toLowerCase().endsWith(".pdf") ||
+          a.name?.toLowerCase().endsWith(".doc") ||
+          a.name?.toLowerCase().endsWith(".docx")
       );
 
       if (cvAttachments.length === 0) {
@@ -260,23 +280,17 @@ export const pollEmailInbox = action({
       // Intelligent Email Routing via LLMia LLM
       let resolvedJobId = jobId;
       
-      const isCommonInbox = targetInboxEmail.toLowerCase() === "cv@career141.com" || inboxEmail.toLowerCase() === "cv@career141.com";
-
-      if (isCommonInbox) {
-        console.log("[EmailAgent] Processing common inbox cv@career141.com. Bypassing job matching.");
-        resolvedJobId = undefined;
-      } else {
-        // Fetch active jobs for LLM to evaluate
-        const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
-        
-        if (!resolvedJobId && activeJobs.length > 0) {
-          try {
-            const openai = getOpenAI("email_routing");
-            const model = getModelForTask("email_routing");
-            
-            const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\n");
-            
-            const prompt = `You are an intelligent recruitment email router.
+      // Fetch active jobs for LLM to evaluate
+      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      
+      if (!resolvedJobId && activeJobs.length > 0) {
+        try {
+          const openai = getOpenAI("email_routing");
+          const model = getModelForTask("email_routing");
+          
+          const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\n");
+          
+          const prompt = `You are an intelligent recruitment email router.
 Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
 
 ACTIVE JOBS:
@@ -290,50 +304,39 @@ Respond ONLY with a valid JSON object in this exact format:
   "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined"
 }`;
 
-            const completion = await openai.chat.completions.create({
-              model: model,
-              messages: [{ role: "user", content: prompt }],
-              response_format: { type: "json_object" },
-              temperature: 0.1,
-            });
-            
-            const resultStr = completion.choices[0]?.message?.content;
-            if (resultStr) {
-              const resultObj = JSON.parse(resultStr);
-              if (resultObj.matchedJobId) {
-                // Verify the ID actually exists in our active jobs
-                const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
-                if (matchedJob) {
-                  const channel = (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : "email";
-                  if (matchedJob.pausedChannels?.includes(channel)) {
-                    console.log(`[EmailAgent] Job ${resultObj.matchedJobId} has ${channel} paused. Routing to general pool.`);
-                    resolvedJobId = undefined;
-                  } else {
-                    resolvedJobId = resultObj.matchedJobId;
-                    console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
-                  }
+          const completion = await openai.chat.completions.create({
+            model: model,
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+            temperature: 0.1,
+          });
+          
+          const resultStr = completion.choices[0]?.message?.content;
+          if (resultStr) {
+            const resultObj = JSON.parse(resultStr);
+            if (resultObj.matchedJobId) {
+              // Verify the ID actually exists in our active jobs
+              const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
+              if (matchedJob) {
+                const channel = "email";
+                if (matchedJob.pausedChannels?.includes(channel)) {
+                  console.log(`[EmailAgent] Job ${resultObj.matchedJobId} has ${channel} paused. Routing to general pool.`);
+                  resolvedJobId = undefined;
+                } else {
+                  resolvedJobId = resultObj.matchedJobId;
+                  console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
                 }
               }
             }
-          } catch (error) {
-            console.error("[EmailAgent] LLM routing failed", error);
           }
+        } catch (error) {
+          console.error("[EmailAgent] LLM routing failed", error);
         }
-        
-        // If AI couldn't match a job, skip this CV unless it's the jobs@/job@ inbox
-        if (!resolvedJobId) {
-          const targetLower = targetInboxEmail.toLowerCase();
-          const inboxLower = inboxEmail.toLowerCase();
-          const isJobsInbox = targetLower === "jobs@career141.com" || targetLower === "job@career141.com" || inboxLower === "jobs@career141.com" || inboxLower === "job@career141.com";
-          
-          if (isJobsInbox) {
-            console.log(`[EmailAgent] No job match found for "${subject}", but routing to general DB pool since inbox is ${targetInboxEmail}.`);
-          } else {
-            console.log(`[EmailAgent] Skipping CVs — no matching active job found for: "${subject}"`);
-            await markEmailAsRead(targetInboxEmail, message.id);
-            continue;
-          }
-        }
+      }
+      
+      // If AI couldn't match a job, do NOT skip the CV. Send to general DB pool.
+      if (!resolvedJobId) {
+        console.log(`[EmailAgent] No job match found for "${subject}". Routing to general DB pool.`);
       }
 
       // Loop over all CV attachments and process them
@@ -691,3 +694,190 @@ export const extractAndApplyEmailBodyDetails = internalAction({
     });
   },
 });
+
+export const getLastEmailFetchTimestamp = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
+    return configRow?.lastEmailFetchTimestamp ?? null;
+  }
+});
+
+export const updateLastEmailFetchTimestamp = internalMutation({
+  args: { timestamp: v.string() },
+  handler: async (ctx, { timestamp }) => {
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
+    if (configRow) {
+      await ctx.db.patch(configRow._id, { lastEmailFetchTimestamp: timestamp });
+    } else {
+      await ctx.db.insert("appSettings", { key: "system", lastEmailFetchTimestamp: timestamp });
+    }
+  }
+});
+
+export const processSingleWeekendEmail = action({
+  args: {
+    targetInboxEmail: v.string(),
+    messageId: v.string(),
+    subject: v.string(),
+    emailBody: v.string(),
+    rawSender: v.optional(v.string()),
+    cvAttachments: v.any(), // Array of simplified attachment metadata
+    extractionDelayMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // 1. AI Routing logic
+    let resolvedJobId = undefined;
+    const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+    
+    if (activeJobs.length > 0) {
+      try {
+        const openai = getOpenAI("email_routing");
+        const model = getModelForTask("email_routing");
+        const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\n");
+        const prompt = `You are an intelligent recruitment email router.
+Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
+
+ACTIVE JOBS:
+${jobsListContext}
+
+EMAIL SUBJECT: ${args.subject}
+EMAIL BODY: ${args.emailBody.substring(0, 2000)}
+
+Respond ONLY with a valid JSON object in this exact format:
+{ "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined" }`;
+
+        const completion = await openai.chat.completions.create({
+          model: model,
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" },
+          temperature: 0.1,
+        });
+        const resultStr = completion.choices[0]?.message?.content;
+        if (resultStr) {
+          const resultObj = JSON.parse(resultStr);
+          if (resultObj.matchedJobId) {
+            const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
+            if (matchedJob && !matchedJob.pausedChannels?.includes("email")) {
+              resolvedJobId = resultObj.matchedJobId;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[Weekend Recovery] AI Routing Error in background action", e);
+      }
+    }
+
+    // 2. Fetch attachments and store them
+    let delayMsOffset = 0;
+    for (const attachMeta of args.cvAttachments) {
+      let contentBytes = attachMeta.contentBytes;
+      if (!contentBytes) contentBytes = await fetchAttachmentContent(args.targetInboxEmail, args.messageId, attachMeta.id);
+      if (!contentBytes) continue;
+
+      const binaryString = atob(contentBytes);
+      const fileBuffer = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        fileBuffer[i] = binaryString.charCodeAt(i);
+      }
+      
+      const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
+      const fileHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+
+      const fileBlob = new Blob([fileBuffer], { type: attachMeta.contentType || "application/pdf" });
+      const storageId = await ctx.storage.store(fileBlob);
+
+      const sourceChannel = (args.targetInboxEmail.toLowerCase() === "linkedin@career141.com" || args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX) ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
+
+      await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
+        jobId: resolvedJobId || undefined,
+        sourceChannel: sourceChannel,
+        rawSender: args.rawSender,
+        storageId: storageId,
+        fileHash: fileHash,
+        fileName: attachMeta.name ?? "cv.pdf",
+        fileType: attachMeta.contentType || "application/pdf",
+        fileSizeBytes: fileBuffer.length,
+        extractionDelayMs: args.extractionDelayMs + delayMsOffset,
+      });
+
+      delayMsOffset += 10000; // Add 10s delay between extractions of multiple attachments in same email
+    }
+  }
+});
+
+export const recoverWeekendCVs = action({
+  args: {},
+  handler: async (ctx) => {
+    const token = await getGraphToken();
+    if (!token) throw new Error("No Graph token");
+
+    const inboxes = ["cv@career141.com", "job@career141.com", "linkedin@career141.com"];
+    // Weekend dates: July 18 and 19 2026.
+    const startWindow = "2026-07-18T00:00:00Z";
+    const endWindow = "2026-07-20T00:00:00Z";
+
+    let totalRecoveredEmails = 0;
+    let scheduleDelaySecs = 0; // Stagger jobs by 15 seconds
+
+    for (const targetInboxEmail of inboxes) {
+      console.log(`[Weekend Recovery] Checking ${targetInboxEmail}...`);
+      let url = `https://graph.microsoft.com/v1.0/users/${targetInboxEmail}/mailFolders/inbox/messages?$filter=receivedDateTime ge ${startWindow} and receivedDateTime lt ${endWindow}&$select=id,subject,body,from,hasAttachments&$top=100`;
+      
+      const allMessages: any[] = [];
+      while (url) {
+        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) break;
+        const data = await response.json();
+        allMessages.push(...(data.value || []));
+        url = data["@odata.nextLink"];
+      }
+
+      console.log(`[Weekend Recovery] Found ${allMessages.length} messages in ${targetInboxEmail}. Queueing...`);
+
+      for (const message of allMessages) {
+        let attachments = message.attachments || [];
+        if (message.hasAttachments && attachments.length === 0) {
+          attachments = await fetchMessageAttachments(targetInboxEmail, message.id);
+        }
+
+        const cvAttachments = attachments.filter((a: any) =>
+          a.contentType?.includes("pdf") || a.contentType?.includes("msword") ||
+          a.contentType?.includes("officedocument.wordprocessingml") ||
+          a.name?.toLowerCase().endsWith(".pdf") || a.name?.toLowerCase().endsWith(".doc") ||
+          a.name?.toLowerCase().endsWith(".docx")
+        );
+
+        if (cvAttachments.length === 0) continue;
+
+        const subject = message.subject ?? "";
+        const emailBody = ((typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "")) || message.subject || "";
+        
+        // Pass essential metadata to the background task instead of full attachment content (it will fetch bytes later if needed)
+        const attachMeta = cvAttachments.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          contentType: a.contentType,
+          contentBytes: a.contentBytes
+        }));
+
+        await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleWeekendEmail, {
+          targetInboxEmail,
+          messageId: message.id,
+          subject,
+          emailBody,
+          rawSender: message.from?.emailAddress?.address,
+          cvAttachments: attachMeta,
+          extractionDelayMs: 0,
+        });
+
+        scheduleDelaySecs += 15; // Queue one email every 15 seconds to avoid 429 Too Many Requests on AI Job Router
+        totalRecoveredEmails++;
+      }
+    }
+
+    console.log(`[Weekend Recovery] Completed Queueing. Scheduled ${totalRecoveredEmails} emails for delayed processing.`);
+    return { success: true, queued: totalRecoveredEmails };
+  }
+});
+

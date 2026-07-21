@@ -96,7 +96,7 @@ export default function CandidateProfile() {
   return (
     <div className="flex flex-col bg-surface w-full pr-6 pt-6">
       <div className="flex-1 mt-2 min-w-0">
-        {candidate.isParsed === false && (
+        {(candidate.isParsed === false || cvUpload?.status === 'processing' || cvUpload?.status === 'pending_retry') && (
           <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-md mb-4 flex items-center text-sm font-medium shadow-sm">
             <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

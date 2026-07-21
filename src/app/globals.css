@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
 :root {
   --on-primary-fixed-variant: #0c5216;
   --inverse-on-surface: #f1f1ec;

@@ -12,7 +12,9 @@ export const generateUploadUrl = mutation({
 
 export const saveUpload = mutation({
   args: {
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()),
+    storageProvider: v.optional(v.string()),
     fileName: v.string(),
     fileSize: v.float64(),
     fileType: v.string(),
@@ -25,6 +27,8 @@ export const saveUpload = mutation({
   handler: async (ctx, args) => {
     const cvId = await ctx.db.insert("cvUploads", {
       storageId: args.storageId,
+      s3Key: args.s3Key,
+      storageProvider: args.storageProvider || (args.s3Key ? "r2" : "convex"),
       fileName: args.fileName,
       fileSize: args.fileSize,
       fileType: args.fileType,
@@ -45,7 +49,9 @@ export const saveUpload = mutation({
 export const queueManualExtraction = mutation({
   args: {
     cvUploadId: v.id("cvUploads"),
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()),
+    storageProvider: v.optional(v.string()),
     fileName: v.string(),
     fileType: v.string(),
     sourceChannel: v.string(),
@@ -68,6 +74,8 @@ export const queueManualExtraction = mutation({
 
     await ctx.scheduler.runAfter(args.delayMs ?? 0, api.cvs.cvExtraction.processCvExtraction, {
       storageId: args.storageId,
+      s3Key: args.s3Key,
+      storageProvider: args.storageProvider,
       fileType: args.fileType,
       sourceChannel: args.sourceChannel,
       uploadedBy: args.uploadedBy,
@@ -197,7 +205,9 @@ export const checkAndTriggerNextBatch = mutation({
       }
 
       await ctx.scheduler.runAfter(staggerDelayMs, api.cvs.cvExtraction.processCvExtraction, {
-        storageId: upload.storageId as Id<"_storage">,
+        storageId: upload.storageId as Id<"_storage"> | undefined,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider,
         fileType: upload.fileType,
         sourceChannel: upload.source || "Manual",
         uploadedBy: upload.uploadedBy,

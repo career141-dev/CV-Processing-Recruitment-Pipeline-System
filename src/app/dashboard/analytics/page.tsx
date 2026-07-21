@@ -94,7 +94,7 @@ export default function AnalyticsPage() {
               value={metrics.totalCVs} 
               trendText="Live Data" 
               trendType="neutral" 
-              bgColorClass="bg-[#E8F5E9] dark:bg-[#1B5E20]/20" 
+              bgColorClass="bg-[#E8F5E9] dark:bg-green-900/40" 
               icon={<FileText size={20} />} 
             />
             <StatCard 
@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
               value={metrics.activeJobs} 
               trendText="Live Data" 
               trendType="neutral" 
-              bgColorClass="bg-[#E3F2FD] dark:bg-blue-900/20" 
+              bgColorClass="bg-[#E3F2FD] dark:bg-blue-900/40" 
               icon={<Briefcase size={20} />} 
             />
             <StatCard 
@@ -110,7 +110,7 @@ export default function AnalyticsPage() {
               value={metrics.shortlisted} 
               trendText={metrics.totalCVs ? `${Math.round((metrics.shortlisted/metrics.totalCVs)*100)}% Conversion` : '0% Conversion'} 
               trendType="neutral" 
-              bgColorClass="bg-[#FFF3E0] dark:bg-orange-900/20" 
+              bgColorClass="bg-[#FFF3E0] dark:bg-orange-900/40" 
               icon={<UserCheck size={20} />} 
             />
             <StatCard 
@@ -118,7 +118,7 @@ export default function AnalyticsPage() {
               value={metrics.interviews} 
               trendText="Live Data" 
               trendType="neutral" 
-              bgColorClass="bg-[#F3E5F5] dark:bg-purple-900/20" 
+              bgColorClass="bg-[#F3E5F5] dark:bg-purple-900/40" 
               icon={<MessageSquare size={20} />} 
             />
             <StatCard 
@@ -126,7 +126,7 @@ export default function AnalyticsPage() {
               value={metrics.placements} 
               trendText="Live Data" 
               trendType="neutral" 
-              bgColorClass="bg-[#E0F2F1] dark:bg-teal-900/20" 
+              bgColorClass="bg-[#E0F2F1] dark:bg-teal-900/40" 
               icon={<Trophy size={20} />} 
             />
           </div>

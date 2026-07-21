@@ -8,7 +8,9 @@ export const processCvIngestion = mutation({
     jobId: v.optional(v.id("jobs")),
     sourceChannel: v.string(),
     rawSender: v.optional(v.string()),
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()),
+    storageProvider: v.optional(v.string()),
     fileHash: v.string(),
     fileName: v.string(),
     fileType: v.string(),
@@ -69,6 +71,8 @@ export const processCvIngestion = mutation({
     // 4. Store file metadata in cvUploads
     const cvUploadId = await ctx.db.insert("cvUploads", {
       storageId: args.storageId,
+      s3Key: args.s3Key,
+      storageProvider: args.storageProvider,
       fileName: args.fileName,
       fileType: args.fileType,
       fileSize: args.fileSizeBytes,
@@ -129,6 +133,8 @@ export const processCvIngestion = mutation({
       const delayMs = args.extractionDelayMs || 0;
       await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
         storageId: args.storageId,
+        s3Key: args.s3Key,
+        storageProvider: args.storageProvider,
         fileType: args.fileType,
         sourceChannel: args.sourceChannel,
         uploadedBy: "system",

@@ -13,6 +13,7 @@ import type * as admin_backfillEmbeddingFlags from "../admin/backfillEmbeddingFl
 import type * as admin_backfillTokenCache from "../admin/backfillTokenCache.js";
 import type * as admin_checkData from "../admin/checkData.js";
 import type * as admin_cleanupCandidates from "../admin/cleanupCandidates.js";
+import type * as admin_debugWhatsApp from "../admin/debugWhatsApp.js";
 import type * as admin_ioPerformanceMigrations from "../admin/ioPerformanceMigrations.js";
 import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
 import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
@@ -76,6 +77,7 @@ import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as scratchQuery from "../scratchQuery.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
+import type * as storage_r2 from "../storage/r2.js";
 import type * as users_users from "../users/users.js";
 
 import type {
@@ -90,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   "admin/backfillTokenCache": typeof admin_backfillTokenCache;
   "admin/checkData": typeof admin_checkData;
   "admin/cleanupCandidates": typeof admin_cleanupCandidates;
+  "admin/debugWhatsApp": typeof admin_debugWhatsApp;
   "admin/ioPerformanceMigrations": typeof admin_ioPerformanceMigrations;
   "admin/migrateCandidates": typeof admin_migrateCandidates;
   "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
@@ -153,6 +156,7 @@ declare const fullApi: ApiFromModules<{
   scratchQuery: typeof scratchQuery;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
+  "storage/r2": typeof storage_r2;
   "users/users": typeof users_users;
 }>;
 

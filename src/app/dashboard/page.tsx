@@ -90,10 +90,10 @@ export default function Dashboard() {
 
       {/* Stats Cards */}
       <div className="flex items-center self-stretch mb-[25px] ml-5 mr-12 gap-4">
-        <StatCard title="CANDIDATES IN DATABASE" value={stats?.candidates.total ?? 0} trendText={stats?.candidates.trendText ?? '...'} trendType={stats?.candidates.trendType as any ?? 'neutral'} bgColorClass="bg-[#E8F5E9] dark:bg-[#1B5E20]/20" href="/dashboard/candidates" icon={<UserCheck size={20} />} />
-        <StatCard title="CVS TODAY" value={stats?.cvsToday.total ?? 0} trendText={stats?.cvsToday.trendText ?? '...'} trendType={stats?.cvsToday.trendType as any ?? 'neutral'} bgColorClass="bg-[#E3F2FD] dark:bg-blue-900/20" href="/dashboard/candidates?filter=today" icon={<FileText size={20} />} />
-        <StatCard title="ACTIVE JOBS" value={stats?.activeJobs.total ?? 0} trendText={stats?.activeJobs.trendText ?? '...'} trendType={stats?.activeJobs.trendType as any ?? 'neutral'} bgColorClass="bg-[#FFF3E0] dark:bg-orange-900/20" href="/dashboard/jobs?status=active" icon={<Briefcase size={20} />} />
-        <StatCard title="PLACED THIS MONTH" value={stats?.placedThisMonth.total ?? 0} trendText={stats?.placedThisMonth.trendText ?? '...'} trendType={stats?.placedThisMonth.trendType as any ?? 'neutral'} bgColorClass="bg-[#F3E5F5] dark:bg-purple-900/20" href="/dashboard/jobs?status=placed" icon={<Trophy size={20} />} />
+        <StatCard title="CANDIDATES IN DATABASE" value={stats?.candidates.total ?? 0} trendText={stats?.candidates.trendText ?? '...'} trendType={stats?.candidates.trendType as any ?? 'neutral'} bgColorClass="bg-[#E8F5E9] dark:bg-green-900/40" href="/dashboard/candidates" icon={<UserCheck size={20} />} />
+        <StatCard title="CVS TODAY" value={stats?.cvsToday.total ?? 0} trendText={stats?.cvsToday.trendText ?? '...'} trendType={stats?.cvsToday.trendType as any ?? 'neutral'} bgColorClass="bg-[#E3F2FD] dark:bg-blue-900/40" href="/dashboard/candidates?filter=today" icon={<FileText size={20} />} />
+        <StatCard title="ACTIVE JOBS" value={stats?.activeJobs.total ?? 0} trendText={stats?.activeJobs.trendText ?? '...'} trendType={stats?.activeJobs.trendType as any ?? 'neutral'} bgColorClass="bg-[#FFF3E0] dark:bg-orange-900/40" href="/dashboard/jobs?status=active" icon={<Briefcase size={20} />} />
+        <StatCard title="PLACED THIS MONTH" value={stats?.placedThisMonth.total ?? 0} trendText={stats?.placedThisMonth.trendText ?? '...'} trendType={stats?.placedThisMonth.trendType as any ?? 'neutral'} bgColorClass="bg-[#F3E5F5] dark:bg-purple-900/40" href="/dashboard/jobs?status=placed" icon={<Trophy size={20} />} />
       </div>
 
       {/* Main Content Area */}
