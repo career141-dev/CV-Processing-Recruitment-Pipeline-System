@@ -32,6 +32,7 @@ export function getModelForTask(taskType: TaskType): string {
 
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { embedText } from "../matching/agent2";
 
 export async function logLLMUsage(
   ctx: ActionCtx,
@@ -67,54 +68,48 @@ export async function generateNvidiaEmbedding(
   const trimmed = text.trim();
   if (!trimmed) return undefined;
 
-  // Safety truncate to avoid token limits (bge-m3 has an 8192 token limit)
-  const safeText = trimmed.slice(0, 25000);
+  // Safety truncate to avoid token limits
+  const safeText = trimmed.slice(0, 15000);
 
   const maxRetries = 3;
   let lastError: any;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const openai = getOpenAI("cv_structuring");
-      const response = await openai.embeddings.create({
-        input: [safeText],
-        model: "baai/bge-m3",
-      });
+      const { embedding, usage } = await embedText(safeText, "passage");
 
       // Log successful call
-      const promptTokens = response.usage?.prompt_tokens ?? 0;
       await logLLMUsage(
         ctx,
         "embedding",
-        "baai/bge-m3",
-        promptTokens,
+        usage.model,
+        usage.promptTokens,
         0,
         true,
         undefined,
         cvUploadId
       );
 
-      return response.data[0]?.embedding;
+      return embedding;
     } catch (error: any) {
       lastError = error;
-      const status = error?.status ?? 0;
+      const errorMessage = error?.message || String(error);
       
       // Log failed call attempt
       await logLLMUsage(
         ctx,
         "embedding",
-        "baai/bge-m3",
+        "nvidia/nv-embedqa-e5-v5",
         0,
         0,
         false,
-        error?.message || "Unknown error",
+        errorMessage,
         cvUploadId
       );
 
-      // Only retry on transient server errors (5xx)
-      if (status >= 500 && attempt < maxRetries) {
-        const waitMs = Math.pow(2, attempt) * 1000; // 2s, 4s
-        console.warn(`[Embedding] NVIDIA API error (attempt ${attempt}/${maxRetries}), retrying in ${waitMs}ms...`, error?.message);
+      if (attempt < maxRetries) {
+        const waitMs = Math.pow(2, attempt) * 1000;
+        console.warn(`[Embedding] NVIDIA API error (attempt ${attempt}/${maxRetries}), retrying in ${waitMs}ms...`, errorMessage);
         await new Promise(resolve => setTimeout(resolve, waitMs));
       } else {
         break;

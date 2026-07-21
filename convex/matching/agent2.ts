@@ -16,6 +16,15 @@ export async function embedText(
     throw new Error("NVIDIA_API_KEY environment variable not set.");
   }
 
+  const sanitized = text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!sanitized) {
+    throw new Error("Text is empty after sanitization");
+  }
+
   const response = await fetch("https://integrate.api.nvidia.com/v1/embeddings", {
     method: "POST",
     headers: {
@@ -24,7 +33,7 @@ export async function embedText(
       "Accept": "application/json",
     },
     body: JSON.stringify({
-      input: [text],
+      input: [sanitized],
       model: "nvidia/nv-embedqa-e5-v5",
       input_type: inputType,
       encoding_format: "float",

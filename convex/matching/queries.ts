@@ -77,13 +77,18 @@ export const updateCandidateEmbedding = internalMutation({
     const existing = await ctx.db.query("candidateResumes")
       .withIndex("by_candidateId", (q: any) => q.eq("candidateId", args.candidateId))
       .first();
+    const hasEmbedding = !!(args.embedding && args.embedding.length > 0);
     if (existing) {
-      await ctx.db.patch(existing._id, { embedding: args.embedding });
+      await ctx.db.patch(existing._id, { 
+        embedding: args.embedding,
+        hasEmbedding,
+      });
     } else {
       await ctx.db.insert("candidateResumes", {
         candidateId: args.candidateId,
         rawText: "",
         embedding: args.embedding,
+        hasEmbedding,
       });
     }
   },
