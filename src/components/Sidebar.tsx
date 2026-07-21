@@ -1,7 +1,8 @@
 "use client";
 
 import React from 'react';
-import { useUser } from '@clerk/nextjs';
+import { useUser, useAuth } from '@clerk/nextjs';
+import { toast } from 'sonner';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from './ThemeToggle';
@@ -101,10 +102,10 @@ export default function Sidebar() {
         </Link>
         
         <ThemeToggle />
-        <Link href="/dashboard/help" className={`flex items-center py-1.5 mb-1 rounded-md w-full cursor-pointer ${isActive('/dashboard/help') ? 'bg-surface-container-high' : 'hover:bg-surface-container-high transition-colors'}`}>
-          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0" style={{color: isActive('/dashboard/help') ? 'var(--primary-container)' : 'var(--text-disabled)'}}>help</span>
-          <span className={`${isActive('/dashboard/help') ? 'text-primary-container' : 'text-text-disabled'} text-xs`}>Help & Docs</span>
-        </Link>
+        <div onClick={() => toast.info("Help docs coming soon")} className={`flex items-center py-1.5 mb-1 rounded-md w-full cursor-pointer hover:bg-surface-container-high transition-colors`}>
+          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0" style={{color: 'var(--text-disabled)'}}>help</span>
+          <span className="text-text-disabled text-xs">Help & Docs</span>
+        </div>
         <div className="flex items-center py-1.5 rounded-md w-full hover:bg-surface-container-high transition-colors cursor-pointer" onClick={() => alert('Sign out clicked')}>
           <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0" style={{color: 'var(--text-disabled)'}}>logout</span>
           <span className="text-text-disabled text-xs">Log out</span>

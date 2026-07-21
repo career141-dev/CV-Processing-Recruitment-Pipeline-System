@@ -332,7 +332,7 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={cvUpload.url}
+                  href={cvUpload.url.replace("http://127.0.0.1:3210", process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-primary transition-colors px-3 py-1.5 rounded-[6px] border border-border hover:bg-surface-container"
@@ -351,7 +351,7 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
             {/* CV iframe */}
             <div className="flex-1 overflow-hidden">
               <iframe
-                src={`${cvUpload.url}#toolbar=1&view=FitH`}
+                src={`${cvUpload.url.replace("http://127.0.0.1:3210", process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}#toolbar=1&view=FitH`}
                 className="w-full h-full border-0"
                 title="CV Preview"
               />
