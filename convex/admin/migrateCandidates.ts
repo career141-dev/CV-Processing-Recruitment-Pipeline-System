@@ -25,10 +25,14 @@ export const migrateCandidates = mutation({
             rawText: c.rawText ?? "",
             jobHistory: c.jobHistory,
             embedding: c.embedding,
+            hasEmbedding: !!(c.embedding && c.embedding.length > 0),
           });
         } else if (c.embedding && !existingResume.embedding) {
           // If resume exists but lacks embedding, patch it
-          await ctx.db.patch(existingResume._id, { embedding: c.embedding });
+          await ctx.db.patch(existingResume._id, { 
+            embedding: c.embedding,
+            hasEmbedding: true,
+          });
         }
 
         // Compute pastJobTitles

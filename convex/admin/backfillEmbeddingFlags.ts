@@ -1,4 +1,5 @@
-import { mutation } from "../_generated/server";
+import { mutation, action } from "../_generated/server";
+import { api } from "../_generated/api";
 import { v } from "convex/values";
 
 export const backfillEmbeddingFlags = mutation({
@@ -25,4 +26,30 @@ export const backfillEmbeddingFlags = mutation({
       isDone: page.isDone,
     };
   }
+});
+
+export const runAllBackfillFlags = action({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined = undefined;
+    let isDone = false;
+    let totalProcessed = 0;
+    let totalBackfilled = 0;
+
+    while (!isDone) {
+      const result: { processed: number; backfilled: number; continueCursor: string; isDone: boolean } = await ctx.runMutation(api.admin.backfillEmbeddingFlags.backfillEmbeddingFlags, {
+        cursor,
+      });
+      totalProcessed += result.processed;
+      totalBackfilled += result.backfilled;
+      cursor = result.continueCursor;
+      isDone = result.isDone;
+    }
+
+    return {
+      totalProcessed,
+      totalBackfilled,
+      complete: true,
+    };
+  },
 });

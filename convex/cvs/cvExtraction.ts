@@ -702,6 +702,7 @@ export async function runCvExtraction(
 
       await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
+        rawText: cappedRawText,
         ...safeExtracted,
         cvUploadId,
         currentEmployer: derivedEmployer,
@@ -719,6 +720,13 @@ export async function runCvExtraction(
         isParsed: true,
         embedding,
       });
+
+      if (!embedding) {
+        console.log(`[CvExtraction] Embedding was not generated during parsing for candidate ${candidateId}. Scheduling fallback background embedding task...`);
+        await ctx.scheduler.runAfter(1000, internal.matching.agent2.generateAndStoreEmbedding, {
+          candidateId,
+        });
+      }
     }
 
     const resolvedCandidateId = candidateId;
