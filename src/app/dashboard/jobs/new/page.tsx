@@ -22,7 +22,7 @@ export default function CreateJobWizard() {
   }, [isLoaded, canCreateJob, router]);
 
 
-  const availableRecruiters = useQuery(api.users.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta"] });
+  const availableRecruiters = useQuery(api.users.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta", "test_ta"] });
   const availableDirectors = useQuery(api.users.users.listByRoles, { roles: ["director", "admin", "ta_manager"] });
   const createJob = useMutation(api.jobs.jobs.createJob);
   const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
