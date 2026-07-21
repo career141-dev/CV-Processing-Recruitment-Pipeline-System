@@ -110,7 +110,7 @@ export const getDashboardStats = query({
 
     const identity = await ctx.auth.getUserIdentity();
 
-    let allJobs = await ctx.db.query('jobs').collect();
+    let allJobs = await ctx.db.query('jobs').order('desc').take(500);
     if (args.jobFilter === "Active Jobs") {
       allJobs = allJobs.filter(j => j.status === 'active');
     } else if (args.jobFilter === "My Jobs" && identity) {
@@ -122,17 +122,17 @@ export const getDashboardStats = query({
 
     const filteredJobIds = new Set(allJobs.map(j => j._id));
 
-    let allCandidates = await ctx.db.query('candidates').collect();
+    let allCandidates = await ctx.db.query('candidates').order('desc').take(1000);
     if (rangeCutoff > 0) {
       allCandidates = allCandidates.filter(c => c._creationTime >= rangeCutoff);
     }
 
-    let allUploads = await ctx.db.query('cvUploads').collect();
+    let allUploads = await ctx.db.query('cvUploads').order('desc').take(1000);
     if (rangeCutoff > 0) {
       allUploads = allUploads.filter(u => u._creationTime >= rangeCutoff);
     }
 
-    let allApps = await ctx.db.query('applications').collect();
+    let allApps = await ctx.db.query('applications').order('desc').take(1000);
     if (args.jobFilter && args.jobFilter !== "All Jobs") {
       allApps = allApps.filter(a => filteredJobIds.has(a.jobId));
     }
