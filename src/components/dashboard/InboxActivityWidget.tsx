@@ -52,17 +52,12 @@ export function InboxActivityWidget() {
       </CardHeader>
       
       <div className="p-5 flex-1 flex flex-col justify-center gap-4">
-        {data.total === 0 ? (
-          <div className="text-center text-text-secondary text-sm py-4">No CVs arrived today yet.</div>
-        ) : (
-          <div className="space-y-4">
-            {sources.map((source) => {
+        <div className="space-y-4">
+          {sources.map((source) => {
               const count = data.counts[source.key] || 0;
               const percentage = data.total > 0 ? Math.round((count / data.total) * 100) : 0;
               const Icon = source.icon;
               
-              if (count === 0 && data.total > 0) return null; // Hide empty sources if there's data
-
               return (
                 <div key={source.key} className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
@@ -85,7 +80,6 @@ export function InboxActivityWidget() {
               );
             })}
           </div>
-        )}
       </div>
     </Card>
   );
