@@ -722,7 +722,9 @@ export const getCvUploadUrl = query({
     let url: string | null = null;
     
     if (upload.storageProvider === "r2" && upload.s3Key) {
-       const siteUrl = process.env.CONVEX_SITE_URL || "https://clever-spider-112.convex.site";
+       // On self-hosted Convex, HTTP actions (/api/r2-file) are served at the
+       // same domain as the API. CONVEX_SITE_URL is unreliable on self-hosted setups.
+       const siteUrl = "https://api.career141.com";
        url = `${siteUrl}/api/r2-file?key=${encodeURIComponent(upload.s3Key)}`;
     } else if (upload.storageId) {
       url = await ctx.storage.getUrl(upload.storageId);
