@@ -19,11 +19,11 @@ export function usePermissions() {
   // Define RBAC Matrix based on guide
   const permissions = {
     // Job Management
-    canCreateJob: ["admin", "ta_manager", "senior_ta"].includes(role),
+    canCreateJob: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role),
     canEditJobAny: ["admin", "ta_manager"].includes(role),
-    canConfigureChannels: ["admin", "ta_manager", "senior_ta"].includes(role),
-    canConfigureAiAgents: ["admin", "ta_manager", "senior_ta"].includes(role),
-    canPublishJob: ["admin", "ta_manager", "senior_ta"].includes(role),
+    canConfigureChannels: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role),
+    canConfigureAiAgents: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role),
+    canPublishJob: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role),
     canDeleteJob: ["admin"].includes(role),
     canAssignRecruiters: ["admin", "ta_manager", "senior_ta"].includes(role),
     canAssignDirector: ["admin", "ta_manager", "senior_ta"].includes(role),
