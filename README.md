@@ -6,7 +6,7 @@ An AI-driven multi-channel recruitment pipeline, candidate deduplication, matchi
 
 ## Development Workflows: Hosted vs Local Machine
 
-To maintain stability and prevent server crashes from concurrent developer updates, developers can choose to run against the shared **Hosted VPS (`api.career141.com`)** or an isolated **Local Machine (`127.0.0.1`)** backend.
+To maintain stability and prevent server crashes from concurrent developer updates, developers can choose to run against the shared **Hosted VPS (`api.career141.com`)** or an isolated **Local Machine (`http://127.0.0.1:3210`)** backend.
 
 ---
 
@@ -16,26 +16,29 @@ To maintain stability and prevent server crashes from concurrent developer updat
 | :--- | :--- | :--- |
 | `npm run dev` | Frontend | Starts Next.js development server (`http://localhost:3000`). |
 | `npm run dev:hosted` | Hosted VPS | Switches `.env.local` to hosted mode and connects Convex to `https://api.career141.com`. |
-| `npm run dev:local` | Local Machine | Switches `.env.local` to local mode and starts local Convex backend (`http://127.0.0.1:3210`). |
+| `npm run dev:local` | Local Machine | Switches `.env.local` to local mode and connects Convex to local Docker (`http://127.0.0.1:3210`). |
 | `npm run switch:hosted` | Hosted VPS | Switches `.env.local` variables to Hosted VPS without launching Convex CLI. |
 | `npm run switch:local` | Local Machine | Switches `.env.local` variables to Local Machine without launching Convex CLI. |
 | `npm run db:sync-from-hosted` | Local Machine | Exports database from Hosted VPS and imports it into your Local Machine database with `--replace`. |
 
 ---
 
-## 1. Working on Local Machine (Recommended for Daily Dev)
+## 1. Working on Local Machine (`127.0.0.1:3210`)
 
-Running locally isolates your development, prevents database lock contention, and provides instantaneous hot-reloading.
+Your local self-hosted backend runs via Docker (`convex-local-test-backend-1`).
 
 ```bash
-# 1. Start Next.js frontend
+# 1. Ensure local Docker backend is running
+docker start convex-local-test-backend-1
+
+# 2. Start Next.js frontend
 npm run dev
 
-# 2. In a second terminal, start Local Convex backend
+# 3. In a second terminal, connect Convex CLI to local Docker backend
 npm run dev:local
 ```
 
-Your local frontend connects to `http://127.0.0.1:3210`.
+Your local frontend connects directly to `http://127.0.0.1:3210` using explicit `--url` and `--admin-key` flags (completely bypassing Convex Cloud spending limits).
 
 ---
 
@@ -61,7 +64,7 @@ To populate your local database with real-time jobs, candidates, CVs, and applic
 ```bash
 npm run db:sync-from-hosted
 ```
-*Exports `https://api.career141.com` data to `hosted_export.zip` and imports it into your local backend (`127.0.0.1`).*
+*Exports `https://api.career141.com` data to `hosted_export.zip` and imports it into your local backend (`127.0.0.1:3210`).*
 
 ### Option B: Manual Dashboard Export/Import
 1. Open the hosted Convex Dashboard (`https://api.career141.com` or port `:6791`).
@@ -71,11 +74,3 @@ npm run db:sync-from-hosted
    npm run switch:local
    npx convex import --path export.zip --replace
    ```
-
----
-
-## Recommended Team Workflow
-
-1. **Feature Building**: Use `npm run dev:local` for daily coding and testing.
-2. **Fresh Production Snapshot**: Run `npm run db:sync-from-hosted` whenever you need fresh candidate or job data on your machine.
-3. **Staging / Hosted Integration**: Run `npm run dev:hosted` to test live integration flows before pushing code to production.
