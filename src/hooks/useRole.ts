@@ -25,7 +25,9 @@ export function useRole() {
     isDirector: role === "director",
     isClient: role === "client",
     isViewer: role === "viewer",
-    canCreateJob: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    isTestTA: role === "test_ta",
+    hasFullAccess: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    canCreateJob: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
     canManageUsers: role === "admin",
     canViewAnalytics: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
   };

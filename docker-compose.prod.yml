@@ -12,8 +12,8 @@ services:
     restart: unless-stopped
     # We use "expose" instead of "ports" because Caddy will route traffic to it internally.
     # This prevents the app from being accessed directly via the server's IP address.
-    expose:
-      - "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
     # Load all server-side secrets at runtime
     env_file:
       - .env.production

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { StatCard } from '@/components/dashboard/StatCard';
+import { InboxActivityWidget } from '@/components/dashboard/InboxActivityWidget';
 import { FileText, Briefcase, UserCheck, MessageSquare, Trophy } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
@@ -75,7 +76,7 @@ export default function AnalyticsPage() {
             onClick={() => setActiveTab(tab)}
             className={`font-nav-item text-nav-item pb-2 px-1 whitespace-nowrap transition-colors ${
               activeTab === tab
-                ? 'text-primary-container border-b-2 border-primary-container'
+                ? 'text-emerald-500 font-bold border-b-2 border-emerald-500'
                 : 'text-text-secondary hover:text-text-primary border-b-2 border-transparent hover:border-border'
             }`}
           >
@@ -129,6 +130,11 @@ export default function AnalyticsPage() {
               bgColorClass="bg-[#E0F2F1] dark:bg-teal-900/40" 
               icon={<Trophy size={20} />} 
             />
+          </div>
+
+          {/* ROW 1.5: Today's Inbox Activity */}
+          <div className="h-[280px]">
+            <InboxActivityWidget />
           </div>
 
           {/* ROW 2: Main Charts */}

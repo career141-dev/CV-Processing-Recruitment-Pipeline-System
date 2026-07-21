@@ -3,6 +3,7 @@ import { query, mutation, action } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
+import { requireFullAccess } from "../lib/permissions";
 
 
 
@@ -10,6 +11,7 @@ import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/follow
 export const listCandidatesByIds = query({
   args: { ids: v.array(v.id("candidates")) },
   handler: async (ctx, args) => {
+    await requireFullAccess(ctx);
     const results = await Promise.all(args.ids.map(id => ctx.db.get(id)));
     const candidates = [];
     for (const c of results) {
@@ -51,6 +53,7 @@ export const listCandidatesPaginated = query({
     sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireFullAccess(ctx);
     let q;
     
     const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;
@@ -714,8 +717,23 @@ export const getCvUploadUrl = query({
   args: { cvUploadId: v.id("cvUploads") },
   handler: async (ctx, args) => {
     const upload = await ctx.db.get(args.cvUploadId);
-    if (!upload || !upload.storageId) return null;
-    const url = await ctx.storage.getUrl(upload.storageId);
+    if (!upload) return null;
+
+    let url: string | null = null;
+    
+    if (upload.storageProvider === "r2" && upload.s3Key) {
+       const siteUrl = (process.env.CONVEX_SITE_URL && !process.env.CONVEX_SITE_URL.includes("127.0.0.1") && !process.env.CONVEX_SITE_URL.includes("localhost") && !process.env.CONVEX_SITE_URL.includes("convex")) ? process.env.CONVEX_SITE_URL : "https://api.career141.com";
+       url = `${siteUrl}/api/r2-file?key=${encodeURIComponent(upload.s3Key)}`;
+    } else if (upload.storageId) {
+      url = await ctx.storage.getUrl(upload.storageId);
+      if (url) {
+        url = url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex|0\.0\.0\.0)(:\d+)?/, "https://api.career141.com");
+        if (!url.startsWith("http")) {
+          url = `https://api.career141.com/api/storage/${upload.storageId}`;
+        }
+      }
+    }
+
     if (!url) return null;
     return {
       url,

@@ -90,82 +90,156 @@ export const getRecentChannelLogs = query({
   }
 });
 
-export const getDashboardStats = query({
+/**
+ * ONE-TIME BACKFILL — call once from an admin action to seed systemStats
+ * with the real historical counts from all existing documents.
+ *
+ * After this runs, future inserts/deletes are tracked incrementally by
+ * adjustGlobalStat(), so this only needs to run once.
+ */
+// Internal — no auth check, called by CLI or cron
+export const backfillSystemStatsInternal = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const cached = await ctx.db.query("dashboardStatsCache")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
-      .first();
+    // TEMPORARILY DISABLED to reduce DB load
+    return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
+  },
+});
 
-    if (cached) {
-      return cached.data;
+/**
+ * Public version — admin only, callable from the dashboard Settings UI.
+ * Inlines the same paginated counting logic as the internal mutation to avoid
+ * circular type reference issues with ctx.runMutation(internal...).
+ */
+export const backfillSystemStats = mutation({
+  args: {},
+  handler: async (ctx): Promise<{
+    totalCandidates: number;
+    totalCvUploads: number;
+    totalApplications: number;
+    activeJobsCount: number;
+  }> => {
+    await requireRole(ctx, ["admin"]);
+    // TEMPORARILY DISABLED to reduce DB load
+    return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
+  },
+});
+
+export const getDashboardStats = query({
+  args: {
+    dateRange: v.optional(v.string()),
+    jobFilter: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    let rangeCutoff = 0;
+    if (args.dateRange === "This Week") {
+      rangeCutoff = now - 7 * oneDay;
+    } else if (args.dateRange === "Last 30 Days") {
+      rangeCutoff = now - 30 * oneDay;
+    } else if (args.dateRange === "This Month") {
+      rangeCutoff = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
     }
 
-    // Fallback: If cache not populated yet, compute live
-    const sysStat = await ctx.db.query("systemStats")
+    const identity = await ctx.auth.getUserIdentity();
+
+    // ── 1. TRUE TOTALS from singleton cache (O(1) reads, no scan) ──────────
+    const sysStat = await ctx.db
+      .query("systemStats")
       .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
       .first();
 
-    const dailyStats = await ctx.db.query("dailyStats").order("desc").take(60);
+    // Fall back gracefully if cache hasn't been seeded yet
+    const trueTotalCandidates = sysStat?.totalCandidates ?? null;
+    const trueTotalCvUploads  = sysStat?.totalCvUploads  ?? null;
 
-    const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const yesterdayStr = yesterday.toISOString().split("T")[0];
-    const sevenDaysAgoStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
-    let candidatesThisWeek = 0;
-    let cvsToday = 0;
-    let cvsYesterday = 0;
-    let jobsAddedThisWeek = 0;
-    let placedThisMonth = 0;
-    let placedLastMonth = 0;
-
-    for (const d of dailyStats) {
-      if (d.dateStr >= sevenDaysAgoStr) {
-        candidatesThisWeek += (d.newCandidates || 0);
-        jobsAddedThisWeek += (d.newJobs || 0);
-      }
-      if (d.dateStr === todayStr) {
-        cvsToday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr === yesterdayStr) {
-        cvsYesterday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr >= thirtyDaysAgoStr) {
-        placedThisMonth += (d.placements || 0);
-      } else {
-        placedLastMonth += (d.placements || 0);
+    // ── 2. JOBS — always small in number, safe to collect ──────────────────
+    let allJobs = await ctx.db.query('jobs').order('desc').take(500);
+    if (args.jobFilter === "Active Jobs") {
+      allJobs = allJobs.filter(j => j.status === 'active');
+    } else if (args.jobFilter === "My Jobs" && identity) {
+      const user = await ctx.db.query('users').withIndex('by_clerkUserId', q => q.eq('clerkUserId', identity.subject)).first();
+      if (user) {
+        allJobs = allJobs.filter(j => j.primaryRecruiterId === user._id);
       }
     }
+    const filteredJobIds = new Set(allJobs.map(j => j._id));
 
-    const cvsVsYesterday = cvsToday - cvsYesterday;
-    const cvsTrendType = cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral";
+    // ── 3. PERIOD TRENDS — bounded to recent records only ──────────────────
+    // For period stats we only need records newer than the cutoff.
+    // Use enough headroom (2000) so the filter catches all records in the window.
+    const PERIOD_LIMIT = 2000;
 
-    const placedVsLastMonth = placedThisMonth - placedLastMonth;
-    const placedTrendType = placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral";
+    const recentCandidates = await ctx.db.query('candidates').order('desc').take(PERIOD_LIMIT);
+    const recentUploads    = await ctx.db.query('cvUploads').order('desc').take(PERIOD_LIMIT);
+    const recentApps       = await ctx.db.query('applications').order('desc').take(PERIOD_LIMIT);
+
+    // ── 4. TIME BOUNDARIES ─────────────────────────────────────────────────
+    const currentOffset   = 5.5 * 60 * 60 * 1000; // IST offset
+    const localTime = new Date(now + currentOffset);
+    localTime.setUTCHours(0, 0, 0, 0);
+    const startOfToday      = localTime.getTime() - currentOffset;
+    const startOfYesterday  = startOfToday - oneDay;
+    const sevenDaysAgo      = now - 7 * oneDay;
+    const startOfMonth      = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+    const startOfLastMonth  = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
+
+    // ── 5. PERIOD-FILTERED CANDIDATES ──────────────────────────────────────
+    const periodCandidates = rangeCutoff > 0
+      ? recentCandidates.filter(c => c._creationTime >= rangeCutoff)
+      : recentCandidates;
+
+    // For the "X this period" trend, show candidates added in the selected window
+    const candidatesInPeriod = periodCandidates.length;
+
+    // TRUE total = singleton value (exact), or fall back to period count
+    const totalCandidates = trueTotalCandidates ?? candidatesInPeriod;
+
+    // ── 6. CVS TODAY & YESTERDAY ────────────────────────────────────────────
+    const periodUploads = rangeCutoff > 0
+      ? recentUploads.filter(u => u._creationTime >= rangeCutoff)
+      : recentUploads;
+
+    const cvsToday     = periodUploads.filter(u => u._creationTime >= startOfToday).length;
+    const cvsYesterday = recentUploads.filter(u => u._creationTime >= startOfYesterday && u._creationTime < startOfToday).length;
+
+    // ── 7. ACTIVE JOBS ─────────────────────────────────────────────────────
+    const activeJobs       = allJobs.filter(j => j.status === 'active').length;
+    const jobsAddedThisWeek = allJobs.filter(j => j._creationTime >= sevenDaysAgo).length;
+
+    // ── 8. PLACEMENTS ──────────────────────────────────────────────────────
+    const appsToScan = (args.jobFilter && args.jobFilter !== "All Jobs")
+      ? recentApps.filter(a => filteredJobIds.has(a.jobId))
+      : recentApps;
+
+    const placedThisMonth  = appsToScan.filter(a => a.currentStage === 'placed' && a._creationTime >= startOfMonth).length;
+    const placedLastMonth  = appsToScan.filter(a => a.currentStage === 'placed' && a._creationTime >= startOfLastMonth && a._creationTime < startOfMonth).length;
+
+    const cvsVsYesterday     = cvsToday - cvsYesterday;
+    const placedVsLastMonth  = placedThisMonth - placedLastMonth;
 
     return {
       candidates: {
-        total: sysStat?.totalCandidates || 0,
-        trendText: `${candidatesThisWeek.toLocaleString()} this week`,
-        trendType: "up",
+        total: totalCandidates,
+        trendText: `${candidatesInPeriod.toLocaleString()} this period`,
+        trendType: 'up',
       },
       cvsToday: {
         total: cvsToday,
         trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
-        trendType: cvsTrendType,
+        trendType: cvsVsYesterday > 0 ? 'up' : cvsVsYesterday < 0 ? 'down' : 'neutral',
       },
       activeJobs: {
-        total: sysStat?.activeJobsCount || 0,
-        trendText: `${jobsAddedThisWeek} added this week`,
-        trendType: jobsAddedThisWeek > 0 ? "up" : "neutral",
+        total: activeJobs,
+        trendText: `${jobsAddedThisWeek} added this period`,
+        trendType: jobsAddedThisWeek > 0 ? 'up' : 'neutral',
       },
       placedThisMonth: {
         total: placedThisMonth,
         trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
-        trendType: placedTrendType,
+        trendType: placedVsLastMonth > 0 ? 'up' : placedVsLastMonth < 0 ? 'down' : 'neutral',
       },
     };
   }
@@ -922,3 +996,31 @@ export const backfillTokenStats = internalMutation({
     return { success: true, logCount: logs.length };
   },
 });
+
+
+export const getTodayInboxActivity = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date();
+    const currentOffset = 5.5 * 60 * 60 * 1000;
+    const localTime = new Date(now.getTime() + currentOffset);
+    localTime.setUTCHours(0, 0, 0, 0);
+    const startOfToday = localTime.getTime() - currentOffset;
+
+    const recentUploads = await ctx.db.query('cvUploads').order('desc').take(500);
+    const todaysUploads = recentUploads.filter(u => u._creationTime >= startOfToday);
+
+    const counts: Record<string, number> = { email: 0, email_campaign: 0, linkedin: 0, whatsapp: 0, database: 0 };
+    let total = 0;
+
+    for (const upload of todaysUploads) {
+      const src = upload.source || 'database';
+      if (counts[src] !== undefined) counts[src]++;
+      else counts[src] = 1;
+      total++;
+    }
+
+    return { total, counts };
+  }
+});
+

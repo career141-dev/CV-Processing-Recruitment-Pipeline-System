@@ -18,7 +18,8 @@ export default defineSchema({
       v.literal("client"),
       v.literal("viewer"),
       v.literal("ta"), // Legacy, kept temporarily if needed
-      v.literal("ops") // Legacy
+      v.literal("ops"), // Legacy
+      v.literal("test_ta") // Temporary testing role with limited access
     ),
     phone: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),

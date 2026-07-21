@@ -1,6 +1,13 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
+/**
+ * Roles that have unrestricted, global access to all data and pages.
+ * test_ta and other limited roles are intentionally excluded.
+ * Add new roles here as the system evolves.
+ */
+export const FULL_ACCESS_ROLES = ["admin", "ta_manager", "senior_ta"] as const;
+
 // Fetch the current authenticated user and validate they are active
 export async function requireUser(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -26,6 +33,22 @@ export async function requireRole(
   const user = await requireUser(ctx);
   if (!allowedRoles.includes(user.role)) {
     throw new Error(`Access denied. Required: ${allowedRoles.join(" | ")}`);
+  }
+  return user;
+}
+
+/**
+ * Require full-access role (admin, ta_manager, senior_ta).
+ * Call this at the top of any query that touches global data
+ * (all candidates, all CVs, analytics, etc.).
+ * test_ta users receive a 403-equivalent error.
+ */
+export async function requireFullAccess(ctx: QueryCtx | MutationCtx) {
+  const user = await requireUser(ctx);
+  if (!(FULL_ACCESS_ROLES as readonly string[]).includes(user.role)) {
+    throw new Error(
+      `[403] Access denied. Your role (${user.role}) does not have permission to access global data. Contact your administrator.`
+    );
   }
   return user;
 }

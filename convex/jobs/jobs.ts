@@ -16,7 +16,7 @@ function generateKeyword(title: string): string {
 export const createJobKeyword = mutation({
   args: { title: v.string() },
   handler: async (ctx, { title }) => {
-    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
     let keyword: string = "";
     let attempts = 0;
     do {
@@ -58,7 +58,7 @@ export const createJob = mutation({
     muteDefaultWhatsappReply: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
 
     let keyword = generateKeyword(args.title);
     const existing = await ctx.db.query("jobs")

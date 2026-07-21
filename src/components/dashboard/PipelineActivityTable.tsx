@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 
 export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: string }) {
   const [activeTab, setActiveTab] = useState('All Jobs');
@@ -35,7 +35,6 @@ export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: 
       stage: "Active",
       assigned: recruiter ? recruiter.fullName.split(' ')[0] : 'Unassigned',
       status: statusFormatted,
-      arrowIcon: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/4bcb42b0-c2ac-4b8f-98da-45b3b425c9f4"
     };
   }) : [];
   
@@ -94,7 +93,7 @@ export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: 
                 </td>
                 <td className="py-4 px-5 text-center">
                   {job.newCvs === 'snippet' ? (
-                    <img src="https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/6f202aa5-05d4-4816-b136-62145e63e63f" className="w-12 h-auto object-cover mx-auto" alt="CV Snippet" />
+                    <FileText className="w-4 h-4 text-emerald-800 dark:text-emerald-400 mx-auto" />
                   ) : (
                     <span className="text-text-primary text-[13px] font-medium">{job.newCvs}</span>
                   )}
@@ -104,7 +103,7 @@ export function PipelineActivityTable({ jobFilter = 'All Jobs' }: { jobFilter?: 
                 <td className="py-4 px-5 text-center">
                   <Link href={`/dashboard/jobs/${job.id}`} className="flex items-center justify-center text-primary-container text-[13px] hover:underline mx-auto no-underline cursor-pointer">
                     View
-                    <img src={job.arrowIcon} className="w-[9px] h-[9px] ml-1 object-fill" alt="Arrow" />
+                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
                   </Link>
                 </td>
               </tr>

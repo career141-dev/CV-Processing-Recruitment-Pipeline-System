@@ -633,4 +633,29 @@ http.route({
   }),
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// R2 File Proxy (GET)
+// ─────────────────────────────────────────────────────────────────────────────
+http.route({
+  path: "/api/r2-file",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const key = url.searchParams.get("key");
+    if (!key) {
+      return new Response("Missing key", { status: 400 });
+    }
+
+    try {
+      const signedUrl = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key });
+      return new Response(null, {
+        status: 302,
+        headers: { Location: signedUrl },
+      });
+    } catch (e: any) {
+      return new Response(e.message, { status: 500 });
+    }
+  }),
+});
+
 export default http;

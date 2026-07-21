@@ -229,9 +229,13 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
-      // 3. Store in Convex Native Storage
-      const storageBlob = new Blob([fileBuffer], { type: mimeType || "application/pdf" });
-      const storageId = await ctx.storage.store(storageBlob);
+      // 3. Store in Cloudflare R2
+      const base64Data = Buffer.from(fileBuffer).toString("base64");
+      const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+        fileName: fileName ?? "cv.pdf",
+        contentType: mimeType || "application/pdf",
+        base64Data,
+      });
 
       // 4. Extract keyword if message text is present
       let resolvedJobId: string | null | undefined = null;
@@ -281,7 +285,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         jobId: resolvedJobId as any,
         sourceChannel: "whatsapp",
         rawSender: cleanFrom,
-        storageId,
+        s3Key: s3Key,
+        storageProvider: "r2",
         fileHash,
         fileName,
         fileType: mimeType || "application/pdf",
