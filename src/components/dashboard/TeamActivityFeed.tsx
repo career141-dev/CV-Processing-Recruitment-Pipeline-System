@@ -2,41 +2,13 @@
 
 import React from 'react';
 import { Card, CardHeader } from '@/components/ui/Card';
-import { UserCheck, Send, FileText, Loader2, Inbox } from 'lucide-react';
+import { Loader2, Inbox } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-
-/** Returns a human-readable relative time string (e.g. "2 mins ago") */
-function timeAgo(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days} day${days > 1 ? 's' : ''} ago`;
-}
-
-type ActivityType = 'stage_move' | 'cv_received' | 'follow_up';
-
-const CONFIG: Record<ActivityType, { iconBg: string; Icon: React.ElementType }> = {
-  stage_move: {
-    iconBg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-    Icon: UserCheck,
-  },
-  cv_received: {
-    iconBg: 'bg-purple-500/10 text-purple-700 dark:text-purple-400',
-    Icon: FileText,
-  },
-  follow_up: {
-    iconBg: 'bg-teal-500/10 text-teal-700 dark:text-teal-400',
-    Icon: Send,
-  },
-};
+import Image from 'next/image';
 
 export function TeamActivityFeed() {
-  const activities = useQuery(api.stats.stats.getRecentActivity);
+  const activities = useQuery(api.stats.stats.getTeamActivity);
 
   return (
     <Card noPadding className="p-[1px]">
@@ -71,18 +43,16 @@ export function TeamActivityFeed() {
 
         {/* Activity list */}
         {activities && activities.map((activity) => {
-          const type = activity.type as ActivityType;
-          const { iconBg, Icon } = CONFIG[type] ?? CONFIG.cv_received;
           return (
             <div key={activity.id} className="flex items-start gap-3 w-full">
-              <div className={`flex shrink-0 items-center justify-center ${iconBg} rounded-full w-8 h-8`}>
-                <Icon className="w-4 h-4" />
+              <div className={`flex shrink-0 items-center justify-center ${activity.iconBg} rounded-full w-8 h-8`}>
+                <img src={activity.iconUrl} alt="icon" className="w-4 h-4" />
               </div>
               <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-text-primary text-[13px] leading-tight mb-1 font-medium truncate">
+                <span className={`text-text-primary text-[13px] leading-tight mb-1 truncate ${activity.isBold ? 'font-medium' : 'font-normal'}`}>
                   {activity.text}
                 </span>
-                <span className="text-text-disabled text-xs">{timeAgo(activity.timestamp)}</span>
+                <span className="text-text-disabled text-xs">{activity.time}</span>
               </div>
             </div>
           );
