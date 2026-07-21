@@ -78,9 +78,14 @@ export const handleWhatsappWebhook = httpAction(async (ctx, request) => {
     .map(b => b.toString(16).padStart(2, "0"))
     .join("");
 
-  // 3. Store in Convex Native Storage securely
-  const storageId = await ctx.storage.store(fileBlob);
+  // 3. Store in Cloudflare R2
+  const base64Data = Buffer.from(fileBuffer).toString("base64");
   const fileName = `cv_whatsapp_${Date.now()}.pdf`;
+  const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+    fileName,
+    contentType: mediaType || "application/pdf",
+    base64Data,
+  });
 
   // 4. Check if this is Meta Campaign
   const referralData = body.get("ReferralNumMedia") ?? body.get("ButtonPayload");
@@ -91,7 +96,8 @@ export const handleWhatsappWebhook = httpAction(async (ctx, request) => {
     jobId: job._id,
     sourceChannel: metaCampaignId ? "meta_campaign" : "whatsapp",
     rawSender: from,
-    storageId: storageId,
+    s3Key: s3Key,
+    storageProvider: "r2",
     fileHash: fileHash,
     fileName,
     fileType: mediaType || "application/pdf",

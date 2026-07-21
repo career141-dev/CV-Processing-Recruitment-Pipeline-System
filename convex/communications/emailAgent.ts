@@ -365,16 +365,21 @@ Respond ONLY with a valid JSON object in this exact format:
           .map(b => b.toString(16).padStart(2, "0"))
           .join("");
 
-        // Store in Convex Storage natively
-        const fileBlob = new Blob([fileBuffer], { type: attachment.contentType || "application/pdf" });
-        const storageId = await ctx.storage.store(fileBlob);
+        // Store in Cloudflare R2
+        const base64Data = Buffer.from(fileBuffer).toString("base64");
+        const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+          fileName: attachment.name ?? "cv.pdf",
+          contentType: attachment.contentType || "application/pdf",
+          base64Data,
+        });
 
         // Process CV ingestion
         await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
           jobId: resolvedJobId || undefined,
           sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign"),
           rawSender: message.from?.emailAddress?.address,
-          storageId: storageId,
+          s3Key: s3Key,
+          storageProvider: "r2",
           fileHash: fileHash,
           fileName: attachment.name ?? "cv.pdf",
           fileType: attachment.contentType || "application/pdf",
@@ -784,8 +789,13 @@ Respond ONLY with a valid JSON object in this exact format:
       const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
       const fileHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
 
-      const fileBlob = new Blob([fileBuffer], { type: attachMeta.contentType || "application/pdf" });
-      const storageId = await ctx.storage.store(fileBlob);
+      // Store in Cloudflare R2
+      const base64Data = Buffer.from(fileBuffer).toString("base64");
+      const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+        fileName: attachMeta.name ?? "cv.pdf",
+        contentType: attachMeta.contentType || "application/pdf",
+        base64Data,
+      });
 
       const sourceChannel = (args.targetInboxEmail.toLowerCase() === "linkedin@career141.com" || args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX) ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
 
@@ -793,7 +803,8 @@ Respond ONLY with a valid JSON object in this exact format:
         jobId: resolvedJobId || undefined,
         sourceChannel: sourceChannel,
         rawSender: args.rawSender,
-        storageId: storageId,
+        s3Key: s3Key,
+        storageProvider: "r2",
         fileHash: fileHash,
         fileName: attachMeta.name ?? "cv.pdf",
         fileType: attachMeta.contentType || "application/pdf",

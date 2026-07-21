@@ -696,8 +696,17 @@ export const getCvUploadUrl = query({
   args: { cvUploadId: v.id("cvUploads") },
   handler: async (ctx, args) => {
     const upload = await ctx.db.get(args.cvUploadId);
-    if (!upload || !upload.storageId) return null;
-    const url = await ctx.storage.getUrl(upload.storageId);
+    if (!upload) return null;
+
+    let url: string | null = null;
+    
+    if (upload.storageProvider === "r2" && upload.s3Key) {
+       const siteUrl = process.env.CONVEX_SITE_URL || "https://api.career141.com";
+       url = `${siteUrl}/api/r2-file?key=${encodeURIComponent(upload.s3Key)}`;
+    } else if (upload.storageId) {
+      url = await ctx.storage.getUrl(upload.storageId);
+    }
+
     if (!url) return null;
     return {
       url,
