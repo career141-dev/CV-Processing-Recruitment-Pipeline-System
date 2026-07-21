@@ -44,8 +44,21 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     job?._id ? { jobId: job._id } : 'skip'
   );
 
-  // Local toggle state: channelId -> isEnabled
-  const [channelToggles, setChannelToggles] = useState<Record<string, boolean>>({});
+  // All possible channels — always shown in the Edit modal
+  // Channels that were never configured appear as OFF; toggling ON creates them on save
+  const ALL_CHANNELS = [
+    { id: 'whatsapp',       label: 'WhatsApp' },
+    { id: 'email_campaign', label: 'Email Campaign' },
+    { id: 'linkedin',       label: 'LinkedIn Inbox' },
+    { id: 'headhunting',    label: 'Headhunting' },
+    { id: 'workable',       label: 'Workable API' },
+    { id: 'meta_campaign',  label: 'Meta / Facebook Ads' },
+  ] as const;
+
+  // Local toggle state: channelType -> isEnabled (all default OFF)
+  const [channelToggles, setChannelToggles] = useState<Record<string, boolean>>(
+    Object.fromEntries((['whatsapp','email_campaign','linkedin','headhunting','workable','meta_campaign'] as const).map(c => [c, false]))
+  );
 
   const [formData, setFormData] = useState({
     title: '',
@@ -84,12 +97,17 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
   }, [job, isOpen]);
 
   // Sync channel toggles when jobChannels data arrives
+  // Start all OFF, then set ON for channels that exist and are enabled
   useEffect(() => {
+    const defaults: Record<string, boolean> = Object.fromEntries(ALL_CHANNELS.map(c => [c.id, false]));
     if (jobChannels) {
-      const toggles: Record<string, boolean> = {};
-      jobChannels.forEach(ch => { toggles[ch._id] = ch.isEnabled; });
-      setChannelToggles(toggles);
+      jobChannels.forEach(ch => {
+        // Map whatsapp_campaign -> whatsapp for display purposes
+        const key = ch.channelType === 'whatsapp_campaign' ? 'whatsapp' : ch.channelType;
+        defaults[key] = ch.isEnabled;
+      });
     }
+    setChannelToggles(defaults);
   }, [jobChannels, isOpen]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -131,18 +149,23 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
       });
 
-      // Save channel enabled/disabled states if any channels are configured
-      if (jobChannels && jobChannels.length > 0) {
-        const channelsPayload = jobChannels.map(ch => ({
-          channelType: ch.channelType,
-          isEnabled: channelToggles[ch._id] ?? ch.isEnabled,
-          whatsappNumber: ch.whatsappNumber,
-          emailInbox: ch.emailInbox,
-          workableJobId: ch.workableJobId,
-          metaCampaignId: ch.metaCampaignId,
-        }));
-        await updateJobChannels({ jobId: job._id, channels: channelsPayload });
-      }
+      // Save ALL channel states — creates new channels if toggled ON for the first time,
+      // updates existing channels, disables ones toggled OFF
+      const existingByType: Record<string, any> = {};
+      (jobChannels || []).forEach(ch => {
+        const key = ch.channelType === 'whatsapp_campaign' ? 'whatsapp' : ch.channelType;
+        existingByType[key] = ch;
+      });
+
+      const channelsPayload = ALL_CHANNELS.map(ch => ({
+        channelType: ch.id,
+        isEnabled: channelToggles[ch.id] ?? false,
+        whatsappNumber: existingByType[ch.id]?.whatsappNumber,
+        emailInbox: existingByType[ch.id]?.emailInbox,
+        workableJobId: existingByType[ch.id]?.workableJobId,
+        metaCampaignId: existingByType[ch.id]?.metaCampaignId,
+      }));
+      await updateJobChannels({ jobId: job._id, channels: channelsPayload });
 
       toast.success('Job details updated successfully!');
       if (onSuccess) onSuccess();
@@ -328,43 +351,29 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
           <div className="flex flex-col gap-3 col-span-2 p-3 bg-surface border border-border rounded-lg mt-2">
             <div>
               <p className="text-sm font-medium text-text-primary">Active Ingestion Sources</p>
-              <p className="text-xs text-text-secondary mt-0.5">Toggle off a source to pause CV collection from that channel for this job.</p>
+              <p className="text-xs text-text-secondary mt-0.5">Toggle a source ON to start collecting CVs from that channel. Toggle OFF to pause it. New channels toggled ON here will be added to the job.</p>
             </div>
-            {!jobChannels || jobChannels.length === 0 ? (
-              <p className="text-xs text-text-secondary italic">No channels were configured for this job during creation.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-4 mt-1">
-                {jobChannels.map(ch => {
-                  const CHANNEL_LABELS: Record<string, string> = {
-                    whatsapp: 'WhatsApp',
-                    whatsapp_campaign: 'WhatsApp Campaign',
-                    linkedin: 'LinkedIn Inbox',
-                    email_campaign: 'Email Campaign',
-                    meta_campaign: 'Meta Campaign',
-                    workable: 'Workable API',
-                    headhunting: 'Headhunting',
-                  };
-                  const label = CHANNEL_LABELS[ch.channelType] || ch.channelType;
-                  const isActive = channelToggles[ch._id] ?? ch.isEnabled;
-                  return (
-                    <div key={ch._id} className="flex items-center justify-between">
-                      <span className="text-sm text-text-primary">{label}</span>
-                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input
-                          type="checkbox"
-                          className="sr-only peer"
-                          checked={isActive}
-                          onChange={() => {
-                            setChannelToggles(prev => ({ ...prev, [ch._id]: !isActive }));
-                          }}
-                        />
-                        <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-4 mt-1">
+              {ALL_CHANNELS.map(channel => {
+                const isActive = channelToggles[channel.id] ?? false;
+                return (
+                  <div key={channel.id} className="flex items-center justify-between">
+                    <span className="text-sm text-text-primary">{channel.label}</span>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={isActive}
+                        onChange={() => {
+                          setChannelToggles(prev => ({ ...prev, [channel.id]: !isActive }));
+                        }}
+                      />
+                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </form>
