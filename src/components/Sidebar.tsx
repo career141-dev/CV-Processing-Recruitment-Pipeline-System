@@ -56,23 +56,23 @@ export default function Sidebar() {
       
       <div className="flex flex-col w-full px-3 flex-1">
         <Link href="/dashboard" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>dashboard</span>
+          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>dashboard</span>
           <span className={`${isActive('/dashboard') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Dashboard</span>
         </Link>
         <Link href="/dashboard/candidates" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard/candidates') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/candidates') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>person_search</span>
+          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/candidates') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>person_search</span>
           <span className={`${isActive('/dashboard/candidates') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Candidates Search</span>
         </Link>
         <Link href="/dashboard/outreach" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard/outreach') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/outreach') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>campaign</span>
+          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/outreach') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>campaign</span>
           <span className={`${isActive('/dashboard/outreach') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Outreach</span>
         </Link>
         <Link href="/dashboard/jobs" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard/jobs') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/jobs') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>work</span>
+          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/jobs') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>work</span>
           <span className={`${isActive('/dashboard/jobs') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Jobs</span>
         </Link>
         <Link href="/dashboard/analytics" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard/analytics') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/analytics') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>analytics</span>
+          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/analytics') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>analytics</span>
           <span className={`${isActive('/dashboard/analytics') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Analytics</span>
         </Link>
 
@@ -84,12 +84,12 @@ export default function Sidebar() {
             </div>
             
             <Link href="/dashboard/ingestion-monitor" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard/ingestion-monitor') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-              <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/ingestion-monitor') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>monitor_heart</span>
+              <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/ingestion-monitor') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>monitor_heart</span>
               <span className={`${isActive('/dashboard/ingestion-monitor') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Ingestion Monitor</span>
             </Link>
 
             <Link href="/dashboard/token-monitor" className={`flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard/token-monitor') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-              <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/token-monitor') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>bar_chart</span>
+              <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/token-monitor') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>bar_chart</span>
               <span className={`${isActive('/dashboard/token-monitor') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Token Monitor</span>
             </Link>
           </>
@@ -97,17 +97,17 @@ export default function Sidebar() {
 
         <div className={showAdminSettings ? "" : "mt-auto"}></div>
         <Link href="/dashboard/settings" className={`flex items-center py-2 mb-4 rounded-md w-full cursor-pointer transition-all ${isActive('/dashboard/settings') ? 'bg-emerald-800/10 dark:bg-emerald-500/10 border-l-2 border-emerald-800 dark:border-emerald-500' : 'hover:bg-surface-container-high transition-colors'}`}>
-          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/settings') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'}`}>settings</span>
+          <span className={`material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${isActive('/dashboard/settings') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-emerald-900/90 dark:text-text-secondary'}`}>settings</span>
           <span className={`${isActive('/dashboard/settings') ? 'text-emerald-800 dark:text-emerald-400 font-bold' : 'text-text-secondary'} text-[13px]`}>Settings</span>
         </Link>
         
         <ThemeToggle />
         <div onClick={() => toast.info("Help docs coming soon")} className={`flex items-center py-1.5 mb-1 rounded-md w-full cursor-pointer hover:bg-surface-container-high transition-colors`}>
-          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-text-disabled">help</span>
+          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-emerald-900/80 dark:text-text-disabled">help</span>
           <span className="text-text-disabled text-xs">Help & Docs</span>
         </div>
         <div className="flex items-center py-1.5 rounded-md w-full hover:bg-surface-container-high transition-colors cursor-pointer" onClick={() => alert('Sign out clicked')}>
-          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-text-disabled">logout</span>
+          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-emerald-900/80 dark:text-text-disabled">logout</span>
           <span className="text-text-disabled text-xs">Log out</span>
         </div>
       </div>
