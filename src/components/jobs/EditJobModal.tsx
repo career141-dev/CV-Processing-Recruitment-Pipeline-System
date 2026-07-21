@@ -47,18 +47,21 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
   // All possible channels — always shown in the Edit modal
   // Channels that were never configured appear as OFF; toggling ON creates them on save
   const ALL_CHANNELS = [
-    { id: 'whatsapp',       label: 'WhatsApp' },
-    { id: 'email_campaign', label: 'Email Campaign' },
-    { id: 'linkedin',       label: 'LinkedIn Inbox' },
-    { id: 'headhunting',    label: 'Headhunting' },
-    { id: 'workable',       label: 'Workable API' },
-    { id: 'meta_campaign',  label: 'Meta / Facebook Ads' },
+    { id: 'whatsapp',       label: 'WhatsApp',            configField: 'whatsappNumber',  configLabel: 'WhatsApp Number (e.g. +94771234567)',  configPlaceholder: '+94771234567' },
+    { id: 'email_campaign', label: 'Email Campaign',       configField: 'emailInbox',      configLabel: 'Email Inbox Address',                  configPlaceholder: 'cvs@career141.com' },
+    { id: 'linkedin',       label: 'LinkedIn Inbox',       configField: 'emailInbox',      configLabel: 'LinkedIn Email Inbox',                 configPlaceholder: 'linkedin@career141.com' },
+    { id: 'headhunting',    label: 'Headhunting',          configField: null,              configLabel: null,                                   configPlaceholder: null },
+    { id: 'workable',       label: 'Workable API',         configField: 'workableJobId',   configLabel: 'Workable Job ID',                      configPlaceholder: 'e.g. ABC-123' },
+    { id: 'meta_campaign',  label: 'Meta / Facebook Ads',  configField: 'whatsappNumber',  configLabel: 'Campaign WhatsApp Number',             configPlaceholder: '+94771234567' },
   ] as const;
 
   // Local toggle state: channelType -> isEnabled (all default OFF)
   const [channelToggles, setChannelToggles] = useState<Record<string, boolean>>(
     Object.fromEntries((['whatsapp','email_campaign','linkedin','headhunting','workable','meta_campaign'] as const).map(c => [c, false]))
   );
+
+  // Inline config values for each channel (populated from existing jobChannels or typed in)
+  const [channelConfig, setChannelConfig] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState({
     title: '',
@@ -96,19 +99,26 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     }
   }, [job, isOpen]);
 
-  // Sync channel toggles when jobChannels data arrives
+  // Sync channel toggles AND config when jobChannels data arrives
   // Start all OFF, then set ON for channels that exist and are enabled
   useEffect(() => {
     const defaults: Record<string, boolean> = Object.fromEntries(ALL_CHANNELS.map(c => [c.id, false]));
+    const configs: Record<string, string> = {};
     if (jobChannels) {
       jobChannels.forEach(ch => {
         // Map whatsapp_campaign -> whatsapp for display purposes
         const key = ch.channelType === 'whatsapp_campaign' ? 'whatsapp' : ch.channelType;
         defaults[key] = ch.isEnabled;
+        // Populate existing config values
+        if (ch.whatsappNumber) configs[`${key}_whatsappNumber`] = ch.whatsappNumber;
+        if (ch.emailInbox) configs[`${key}_emailInbox`] = ch.emailInbox;
+        if (ch.workableJobId) configs[`${key}_workableJobId`] = ch.workableJobId;
       });
     }
     setChannelToggles(defaults);
+    setChannelConfig(configs);
   }, [jobChannels, isOpen]);
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -157,14 +167,18 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         existingByType[key] = ch;
       });
 
-      const channelsPayload = ALL_CHANNELS.map(ch => ({
-        channelType: ch.id,
-        isEnabled: channelToggles[ch.id] ?? false,
-        whatsappNumber: existingByType[ch.id]?.whatsappNumber,
-        emailInbox: existingByType[ch.id]?.emailInbox,
-        workableJobId: existingByType[ch.id]?.workableJobId,
-        metaCampaignId: existingByType[ch.id]?.metaCampaignId,
-      }));
+      const channelsPayload = ALL_CHANNELS.map(ch => {
+        const cfgKey = (field: string) => `${ch.id}_${field}`;
+        return {
+          channelType: ch.id,
+          isEnabled: channelToggles[ch.id] ?? false,
+          // Prefer newly typed config, fall back to existing saved config
+          whatsappNumber: channelConfig[cfgKey('whatsappNumber')] || existingByType[ch.id]?.whatsappNumber,
+          emailInbox:     channelConfig[cfgKey('emailInbox')]     || existingByType[ch.id]?.emailInbox,
+          workableJobId:  channelConfig[cfgKey('workableJobId')]  || existingByType[ch.id]?.workableJobId,
+          metaCampaignId: existingByType[ch.id]?.metaCampaignId,
+        };
+      });
       await updateJobChannels({ jobId: job._id, channels: channelsPayload });
 
       toast.success('Job details updated successfully!');
@@ -351,25 +365,51 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
           <div className="flex flex-col gap-3 col-span-2 p-3 bg-surface border border-border rounded-lg mt-2">
             <div>
               <p className="text-sm font-medium text-text-primary">Active Ingestion Sources</p>
-              <p className="text-xs text-text-secondary mt-0.5">Toggle a source ON to start collecting CVs from that channel. Toggle OFF to pause it. New channels toggled ON here will be added to the job.</p>
+              <p className="text-xs text-text-secondary mt-0.5">Toggle a source ON to activate it. Channels requiring configuration will ask for details when enabled.</p>
             </div>
-            <div className="grid grid-cols-2 gap-4 mt-1">
+            <div className="flex flex-col gap-3 mt-1">
               {ALL_CHANNELS.map(channel => {
                 const isActive = channelToggles[channel.id] ?? false;
+                const cfgField = channel.configField;
+                const cfgKey = cfgField ? `${channel.id}_${cfgField}` : null;
+                const existingCfg = cfgKey ? channelConfig[cfgKey] : null;
+                // Show inline config input when: toggled ON AND has a required config field AND no existing config yet
+                const needsConfig = isActive && cfgField && !existingCfg;
+
                 return (
-                  <div key={channel.id} className="flex items-center justify-between">
-                    <span className="text-sm text-text-primary">{channel.label}</span>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input
-                        type="checkbox"
-                        className="sr-only peer"
-                        checked={isActive}
-                        onChange={() => {
-                          setChannelToggles(prev => ({ ...prev, [channel.id]: !isActive }));
-                        }}
-                      />
-                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
-                    </label>
+                  <div key={channel.id} className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-sm text-text-primary font-medium">{channel.label}</span>
+                        {isActive && existingCfg && (
+                          <span className="text-[11px] text-green-600 font-medium">✅ Configured: {existingCfg}</span>
+                        )}
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={isActive}
+                          onChange={() => {
+                            setChannelToggles(prev => ({ ...prev, [channel.id]: !isActive }));
+                          }}
+                        />
+                        <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
+                      </label>
+                    </div>
+                    {/* Inline config input — appears when toggled ON and no existing config */}
+                    {needsConfig && channel.configLabel && channel.configPlaceholder && cfgKey && (
+                      <div className="ml-1 pl-3 border-l-2 border-primary/30 animate-in slide-in-from-top-1 duration-200">
+                        <label className="block text-[11px] font-semibold text-primary mb-1">{channel.configLabel} *</label>
+                        <input
+                          type="text"
+                          value={channelConfig[cfgKey] || ''}
+                          onChange={e => setChannelConfig(prev => ({ ...prev, [cfgKey]: e.target.value }))}
+                          placeholder={channel.configPlaceholder}
+                          className="w-full px-2.5 py-1.5 border border-primary/30 rounded-lg text-[12px] bg-surface text-text-primary focus:outline-none focus:border-primary placeholder:text-text-secondary/50"
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}
