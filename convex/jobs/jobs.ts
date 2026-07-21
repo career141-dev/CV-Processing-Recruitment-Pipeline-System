@@ -55,15 +55,21 @@ export const createJob = mutation({
     directorId: v.optional(v.id("users")),
     clientContactName: v.optional(v.string()),
     clientContactEmail: v.optional(v.string()),
+    keyword: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
 
-    let keyword = generateKeyword(args.title);
+    let keyword = args.keyword || generateKeyword(args.title);
     const existing = await ctx.db.query("jobs")
       .withIndex("by_keyword", (q) => q.eq("keyword", keyword))
       .unique();
-    if (existing) keyword = generateKeyword(args.title); 
+    if (existing) {
+      if (args.keyword) {
+        throw new Error(`The keyword "${args.keyword}" is already in use. Please choose another one.`);
+      }
+      keyword = generateKeyword(args.title); 
+    }
 
     const jobId = await ctx.db.insert("jobs", {
       ...args,
@@ -150,7 +156,7 @@ export const createDraftJob = mutation({
     pausedChannels: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
 
     let keyword = generateKeyword(args.title);
     let attempts = 0;
@@ -302,7 +308,7 @@ export const assignTeamToJob = mutation({
     clientContactId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
 
     const primary = await ctx.db.get(args.primaryRecruiterId);
     if (!primary || !["admin", "ta_manager", "senior_ta", "recruiter"].includes(primary.role)) {
@@ -369,7 +375,7 @@ export const updateJobChannels = mutation({
     })),
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
 
     const existing = await ctx.db
       .query("jobChannels")
@@ -497,7 +503,7 @@ export const updateJobAiConfig = mutation({
     slaOfferDays: v.number(),
   },
   handler: async (ctx, { jobId, ...config }) => {
-    await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
 
     const total = config.scoreWeightSkills + config.scoreWeightExperience + config.scoreWeightJobTitle + config.scoreWeightIndustry + config.scoreWeightLocation;
     if (total !== 100) throw new Error(`Score weights must total 100. Got ${total}.`);
@@ -522,7 +528,7 @@ export const updateJobAiConfig = mutation({
 export const publishJob = mutation({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, { jobId }) => {
-    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
     const job = await ctx.db.get(jobId);
     if (!job) throw new Error("Job not found");
 
@@ -603,7 +609,7 @@ export const updateJobStatus = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
+    const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
     const oldJob = await ctx.db.get(args.jobId);
     
     const updates: any = { status: args.status, updatedAt: new Date().toISOString() };
