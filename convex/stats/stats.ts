@@ -1052,3 +1052,105 @@ export const getTodayInboxActivity = query({
     return { total, counts };
   }
 });
+
+/**
+ * Pulls real-time team activity from three live tables:
+ *   - pipelineEvents  → stage moves by users
+ *   - ingestionLog    → CV ingestion from all channels
+ *   - communications  → follow-ups sent by system/agent
+ * Returns the 15 most recent events merged and sorted by time.
+ */
+export const getRecentActivity = query({
+  args: {},
+  handler: async (ctx) => {
+    const LIMIT = 10;
+
+    // ── 1. Pipeline stage moves (user actions) ─────────────────────────────
+    const pipelineEvents = await ctx.db
+      .query("pipelineEvents")
+      .order("desc")
+      .take(LIMIT);
+
+    const pipelineItems = await Promise.all(
+      pipelineEvents
+        .filter(e => e.toStage && (e.actorType === "user" || e.actorName))
+        .map(async (e) => {
+          let actorLabel = e.actorName ?? "A team member";
+          if (e.actorId) {
+            const user = await ctx.db.get(e.actorId);
+            if (user) actorLabel = user.fullName;
+          }
+          let candidateLabel = "";
+          if (e.candidateId) {
+            const cand = await ctx.db.get(e.candidateId);
+            if (cand) candidateLabel = cand.fullName || "a candidate";
+          }
+          const stageName = (e.toStage ?? "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+          return {
+            id: e._id as string,
+            type: "stage_move" as const,
+            text: candidateLabel
+              ? `${actorLabel} moved ${candidateLabel} → ${stageName}`
+              : `${actorLabel} updated pipeline → ${stageName}`,
+            timestamp: e.createdAt,
+          };
+        })
+    );
+
+    // ── 2. CV ingestion events ──────────────────────────────────────────────
+    const ingestionLogs = await ctx.db
+      .query("ingestionLog")
+      .order("desc")
+      .take(LIMIT);
+
+    // Group consecutive ingestion events within 5-min windows to avoid noise
+    const ingestionItems = ingestionLogs
+      .filter(l => l.routingStatus === "routed")
+      .map(l => {
+        const channelLabel: Record<string, string> = {
+          whatsapp: "WhatsApp",
+          email: "Email",
+          linkedin: "LinkedIn",
+          workable: "Workable",
+          manual_upload: "Manual Upload",
+          meta_campaign: "Meta Campaign",
+          email_campaign: "Email Campaign",
+          headhunting: "Headhunting",
+        };
+        const ch = channelLabel[l.channelType] ?? l.channelType;
+        const name = l.candidateName ? ` (${l.candidateName})` : "";
+        return {
+          id: l._id as string,
+          type: "cv_received" as const,
+          text: `New CV received via ${ch}${name}`,
+          timestamp: l.receivedAt,
+        };
+      });
+
+    // ── 3. Outbound follow-up communications ───────────────────────────────
+    const comms = await ctx.db
+      .query("communications")
+      .order("desc")
+      .take(LIMIT);
+
+    const commItems = comms
+      .filter(c => c.direction === "outbound" && (c.senderAgent || c.senderType === "agent"))
+      .map(c => {
+        const channelLabel = c.channel === "whatsapp" ? "WhatsApp" : c.channel === "email" ? "Email" : c.channel;
+        const ts = typeof c.sentAt === "number" ? c.sentAt : new Date(c.sentAt as string).getTime();
+        return {
+          id: c._id as string,
+          type: "follow_up" as const,
+          text: `Auto follow-up sent via ${channelLabel} (Day ${c.sequenceDay ?? 1})`,
+          timestamp: ts,
+        };
+      });
+
+    // ── 4. Merge, sort, dedupe ──────────────────────────────────────────────
+    const all = [...pipelineItems, ...ingestionItems, ...commItems]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 15);
+
+    return all;
+  },
+});
