@@ -42,7 +42,7 @@ export function TeamActivityFeed() {
         )}
 
         {/* Activity list */}
-        {activities && activities.map((activity) => {
+        {activities && activities.map((activity: any) => {
           return (
             <div key={activity.id} className="flex items-start gap-3 w-full">
               <div className={`flex shrink-0 items-center justify-center ${activity.iconBg} rounded-full w-8 h-8`}>
