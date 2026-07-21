@@ -196,7 +196,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
       isOpen={isOpen}
       onClose={onClose}
       title="Edit Job Details"
-      maxWidth="max-w-2xl"
+      maxWidth="max-w-3xl"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
