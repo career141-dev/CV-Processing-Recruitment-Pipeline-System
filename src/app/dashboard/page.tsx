@@ -24,7 +24,7 @@ export default function Dashboard() {
   const [dateRange, setDateRange] = React.useState('This Week');
   const [jobFilter, setJobFilter] = React.useState('All Jobs');
 
-  const stats = useQuery(api.stats.stats.getDashboardStats);
+  const stats = useQuery((api.stats.stats as any).getDashboardStats);
 
   return (
     <div className="self-stretch bg-background pb-[133px] min-h-screen w-full">

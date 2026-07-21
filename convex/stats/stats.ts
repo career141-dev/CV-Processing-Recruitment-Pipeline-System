@@ -1031,7 +1031,7 @@ export const getTodayInboxActivity = query({
  *   - communications  → follow-ups sent by system/agent
  * Returns the 15 most recent events merged and sorted by time.
  */
-export const getRecentActivity = query({
+export const getTeamActivity = query({
   args: {},
   handler: async (ctx) => {
     // TEMPORARILY DISABLED to reduce DB load

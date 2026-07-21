@@ -8,7 +8,7 @@ import { api } from '../../../convex/_generated/api';
 import Image from 'next/image';
 
 export function TeamActivityFeed() {
-  const activities = useQuery(api.stats.stats.getTeamActivity);
+  const activities = useQuery((api.stats.stats as any).getTeamActivity);
 
   return (
     <Card noPadding className="p-[1px]">
