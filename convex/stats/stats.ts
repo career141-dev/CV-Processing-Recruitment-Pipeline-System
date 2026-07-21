@@ -1024,17 +1024,3 @@ export const getTodayInboxActivity = query({
   }
 });
 
-/**
- * Pulls real-time team activity from three live tables:
- *   - pipelineEvents  → stage moves by users
- *   - ingestionLog    → CV ingestion from all channels
- *   - communications  → follow-ups sent by system/agent
- * Returns the 15 most recent events merged and sorted by time.
- */
-export const getTeamActivity = query({
-  args: {},
-  handler: async (ctx) => {
-    // TEMPORARILY DISABLED to reduce DB load
-    return [];
-  },
-});
