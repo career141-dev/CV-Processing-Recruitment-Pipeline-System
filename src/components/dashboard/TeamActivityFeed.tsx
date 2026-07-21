@@ -1,30 +1,29 @@
 import React from 'react';
 import { Card, CardHeader } from '@/components/ui/Card';
-import { useQuery } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { UserCheck, Send, FileText } from 'lucide-react';
 
 export function TeamActivityFeed() {
   const activities = [
     {
       id: 1,
-      iconBg: "bg-primary-container/15",
-      iconUrl: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/4d093c8c-cdbb-4660-939f-6f3503eaac6e",
+      iconBg: "bg-emerald-500/10 text-emerald-800 dark:text-emerald-400",
+      icon: <UserCheck className="w-4 h-4" />,
       text: "Sarah K. moved James Chen → Interviewed",
       time: "2 mins ago",
       isBold: true
     },
     {
       id: 2,
-      iconBg: "bg-[#00676326]",
-      iconUrl: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/8c36ba61-0587-4268-b880-dce9a3287bdb",
+      iconBg: "bg-teal-500/10 text-teal-800 dark:text-teal-400",
+      icon: <Send className="w-4 h-4" />,
       text: "Auto follow-up sent to Priya Nair",
       time: "15 mins ago",
       isBold: false
     },
     {
       id: 3,
-      iconBg: "bg-[#6B1D3D26]",
-      iconUrl: "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/de0b9f00-82f3-40d7-9da7-6d8ddad2c10e",
+      iconBg: "bg-purple-500/10 text-purple-800 dark:text-purple-400",
+      icon: <FileText className="w-4 h-4" />,
       text: "System parsed 12 new CVs from LinkedIn",
       time: "45 mins ago",
       isBold: true
@@ -40,16 +39,11 @@ export function TeamActivityFeed() {
         {activities.length > 0 ? (
           activities.map(activity => (
             <div key={activity.id} className="flex items-start gap-3 w-full">
-              <button
-                className={`flex flex-col shrink-0 items-center justify-center ${activity.iconBg} p-2 rounded-full border-0 w-8 h-8`}
-                onClick={() => alert('Activity Clicked!')}
+              <div
+                className={`flex shrink-0 items-center justify-center ${activity.iconBg} rounded-full w-8 h-8`}
               >
-                <img
-                  src={activity.iconUrl}
-                  className="w-3 h-3 object-fill"
-                  alt="Icon"
-                />
-              </button>
+                {activity.icon}
+              </div>
               <div className="flex flex-col flex-1">
                 <span className={`text-text-primary text-[13px] leading-tight mb-1 ${activity.isBold ? 'font-bold' : ''}`}>
                   {activity.text}
