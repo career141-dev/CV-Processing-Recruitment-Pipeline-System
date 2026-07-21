@@ -88,7 +88,10 @@ export const getCandidateCvs = query({
 
     return await Promise.all(
       cvs.map(async (cv) => {
-        const url = await ctx.storage.getUrl(cv.storageId);
+        let url = await ctx.storage.getUrl(cv.storageId);
+        if (url) {
+          url = url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex|0\.0\.0\.0)(:\d+)?/, "https://api.career141.com");
+        }
         return { ...cv, fileUrl: url };
       })
     );

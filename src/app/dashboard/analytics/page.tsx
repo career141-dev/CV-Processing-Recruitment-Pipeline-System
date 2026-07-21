@@ -76,7 +76,7 @@ export default function AnalyticsPage() {
             onClick={() => setActiveTab(tab)}
             className={`font-nav-item text-nav-item pb-2 px-1 whitespace-nowrap transition-colors ${
               activeTab === tab
-                ? 'text-primary-container border-b-2 border-primary-container'
+                ? 'text-emerald-500 font-bold border-b-2 border-emerald-500'
                 : 'text-text-secondary hover:text-text-primary border-b-2 border-transparent hover:border-border'
             }`}
           >

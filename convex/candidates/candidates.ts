@@ -719,16 +719,15 @@ export const getCvUploadUrl = query({
     let url: string | null = null;
     
     if (upload.storageProvider === "r2" && upload.s3Key) {
-       const siteUrl = process.env.CONVEX_SITE_URL || "https://api.career141.com";
+       const siteUrl = (process.env.CONVEX_SITE_URL && !process.env.CONVEX_SITE_URL.includes("127.0.0.1") && !process.env.CONVEX_SITE_URL.includes("localhost") && !process.env.CONVEX_SITE_URL.includes("convex")) ? process.env.CONVEX_SITE_URL : "https://api.career141.com";
        url = `${siteUrl}/api/r2-file?key=${encodeURIComponent(upload.s3Key)}`;
     } else if (upload.storageId) {
       url = await ctx.storage.getUrl(upload.storageId);
-      if (url && !url.startsWith("http")) {
-        const siteUrl = process.env.CONVEX_SITE_URL || "https://api.career141.com";
-        url = `${siteUrl}/api/storage/${upload.storageId}`;
-      } else if (url && url.startsWith("http://127.0.0.1")) {
-        const siteUrl = process.env.CONVEX_SITE_URL || "https://api.career141.com";
-        url = url.replace("http://127.0.0.1:3210", siteUrl);
+      if (url) {
+        url = url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex|0\.0\.0\.0)(:\d+)?/, "https://api.career141.com");
+        if (!url.startsWith("http")) {
+          url = `https://api.career141.com/api/storage/${upload.storageId}`;
+        }
       }
     }
 
