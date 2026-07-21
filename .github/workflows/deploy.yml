@@ -9,6 +9,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Convex Database
+        run: npx convex deploy --url https://api.career141.com --admin-key "convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
+
       - name: Execute deployment commands via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
