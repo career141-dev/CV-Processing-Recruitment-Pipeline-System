@@ -367,7 +367,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               <p className="text-sm font-medium text-text-primary">Active Ingestion Sources</p>
               <p className="text-xs text-text-secondary mt-0.5">Toggle a source ON to activate it. Channels requiring configuration will ask for details when enabled.</p>
             </div>
-            <div className="flex flex-col gap-3 mt-1">
+            <div className="grid grid-cols-3 gap-6 mt-2">
               {ALL_CHANNELS.map(channel => {
                 const isActive = channelToggles[channel.id] ?? false;
                 const cfgField = channel.configField;
