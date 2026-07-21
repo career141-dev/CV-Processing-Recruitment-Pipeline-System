@@ -3,29 +3,21 @@ import { query } from "./_generated/server";
 /**
  * Overview metrics for the Analytics dashboard.
  * 
- * OPTIMIZED: Reads pre-computed counters instead of scanning full tables.
- * - Pipeline stage counts: aggregated from each job's `stageCounts` field
- * - Source distribution: read from `systemStats` singleton
- * - Basic counts: read from `systemStats` singleton
- * 
- * Total I/O: O(activeJobs) instead of O(allApplications + allJobs)
+ * UPDATED: Now calculates stats live from the DB instead of relying on cached systemStats.
  */
 export const getOverviewMetrics = query({
   args: {},
   handler: async (ctx) => {
-    // 1. Read pre-computed global stats (O(1) — singleton lookup)
-    const sysStat = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
+    // 1. Calculate live Total CVs
+    const allUploads = await ctx.db.query("cvUploads").collect();
+    const totalCVs = allUploads.length;
 
-    const totalCVs = sysStat?.totalApplications || 0;
-
-    // 2. Read only active jobs (bounded, typically 30-50 jobs)
+    // 2. Read only active jobs
     const activeJobs = await ctx.db.query("jobs")
       .withIndex("by_status", q => q.eq("status", "active"))
       .collect();
 
-    // 3. Aggregate pipeline stage counts from per-job stageCounts (already maintained by adjustJobStageStat)
+    // 3. Aggregate pipeline stage counts from per-job stageCounts (which are updated transactionally in real-time)
     const globalStageCounts: Record<string, number> = {};
     for (const job of activeJobs) {
       const sc = job.stageCounts || {};
@@ -40,20 +32,16 @@ export const getOverviewMetrics = query({
     const interviews = globalStageCounts["interview"] || 0;
     const placements = globalStageCounts["placed"] || 0;
 
-    // 5. Source distribution from daily stats (last 30 days)
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const dailyStats = await ctx.db.query("dailyStats")
-      .withIndex("by_dateStr", q => q.gte("dateStr", thirtyDaysAgo))
-      .collect();
-
+    // 5. Live Source distribution (Last 30 Days)
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const sourceTotals: Record<string, number> = {};
     let totalFromSources = 0;
-    for (const d of dailyStats) {
-      if (d.cvsBySource) {
-        for (const [source, count] of Object.entries(d.cvsBySource)) {
-          sourceTotals[source] = (sourceTotals[source] || 0) + count;
-          totalFromSources += count;
-        }
+    
+    for (const upload of allUploads) {
+      if (upload._creationTime >= thirtyDaysAgo) {
+        const source = upload.source || "database";
+        sourceTotals[source] = (sourceTotals[source] || 0) + 1;
+        totalFromSources++;
       }
     }
 

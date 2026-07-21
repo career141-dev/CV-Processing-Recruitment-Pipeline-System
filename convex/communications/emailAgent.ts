@@ -366,7 +366,7 @@ Respond ONLY with a valid JSON object in this exact format:
           .join("");
 
         // Store in Cloudflare R2
-        const base64Data = Buffer.from(fileBuffer).toString("base64");
+        console.log("USING R2 NOW - UPLOADING TO CLOUDFLARE!"); const base64Data = Buffer.from(fileBuffer).toString("base64");
         const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
           fileName: attachment.name ?? "cv.pdf",
           contentType: attachment.contentType || "application/pdf",
@@ -790,7 +790,7 @@ Respond ONLY with a valid JSON object in this exact format:
       const fileHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
 
       // Store in Cloudflare R2
-      const base64Data = Buffer.from(fileBuffer).toString("base64");
+      console.log("USING R2 NOW - UPLOADING TO CLOUDFLARE!"); const base64Data = Buffer.from(fileBuffer).toString("base64");
       const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
         fileName: attachMeta.name ?? "cv.pdf",
         contentType: attachMeta.contentType || "application/pdf",

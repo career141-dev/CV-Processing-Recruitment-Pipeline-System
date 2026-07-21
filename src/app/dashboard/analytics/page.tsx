@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { StatCard } from '@/components/dashboard/StatCard';
+import { InboxActivityWidget } from '@/components/dashboard/InboxActivityWidget';
 import { FileText, Briefcase, UserCheck, MessageSquare, Trophy } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
@@ -129,6 +130,11 @@ export default function AnalyticsPage() {
               bgColorClass="bg-[#E0F2F1] dark:bg-teal-900/40" 
               icon={<Trophy size={20} />} 
             />
+          </div>
+
+          {/* ROW 1.5: Today's Inbox Activity */}
+          <div className="h-[280px]">
+            <InboxActivityWidget />
           </div>
 
           {/* ROW 2: Main Charts */}

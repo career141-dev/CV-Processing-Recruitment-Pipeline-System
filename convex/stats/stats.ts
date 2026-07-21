@@ -93,79 +93,61 @@ export const getRecentChannelLogs = query({
 export const getDashboardStats = query({
   args: {},
   handler: async (ctx) => {
-    const cached = await ctx.db.query("dashboardStatsCache")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
-      .first();
+    // Live database calculations instead of caching
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    
+    // Calculate start of current day and yesterday
+    const currentOffset = 5.5 * 60 * 60 * 1000;
+    const localTime = new Date(now + currentOffset);
+    localTime.setUTCHours(0, 0, 0, 0);
+    const startOfToday = localTime.getTime() - currentOffset;
+    const startOfYesterday = startOfToday - oneDay;
+    
+    const sevenDaysAgo = now - 7 * oneDay;
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+    const startOfLastMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
 
-    if (cached) {
-      return cached.data;
-    }
+    const allCandidates = await ctx.db.query('candidates').collect();
+    const allUploads = await ctx.db.query('cvUploads').collect();
+    const allJobs = await ctx.db.query('jobs').collect();
+    const allApps = await ctx.db.query('applications').collect();
 
-    // Fallback: If cache not populated yet, compute live
-    const sysStat = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
+    const totalCandidates = allCandidates.length;
+    const candidatesThisWeek = allCandidates.filter(c => c._creationTime >= sevenDaysAgo).length;
 
-    const dailyStats = await ctx.db.query("dailyStats").order("desc").take(60);
+    const cvsToday = allUploads.filter(u => u._creationTime >= startOfToday).length;
+    const cvsYesterday = allUploads.filter(u => u._creationTime >= startOfYesterday && u._creationTime < startOfToday).length;
 
-    const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const yesterdayStr = yesterday.toISOString().split("T")[0];
-    const sevenDaysAgoStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const activeJobs = allJobs.filter(j => j.status === 'active').length;
+    const jobsAddedThisWeek = allJobs.filter(j => j._creationTime >= sevenDaysAgo).length;
 
-    let candidatesThisWeek = 0;
-    let cvsToday = 0;
-    let cvsYesterday = 0;
-    let jobsAddedThisWeek = 0;
-    let placedThisMonth = 0;
-    let placedLastMonth = 0;
-
-    for (const d of dailyStats) {
-      if (d.dateStr >= sevenDaysAgoStr) {
-        candidatesThisWeek += (d.newCandidates || 0);
-        jobsAddedThisWeek += (d.newJobs || 0);
-      }
-      if (d.dateStr === todayStr) {
-        cvsToday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr === yesterdayStr) {
-        cvsYesterday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr >= thirtyDaysAgoStr) {
-        placedThisMonth += (d.placements || 0);
-      } else {
-        placedLastMonth += (d.placements || 0);
-      }
-    }
+    const placedThisMonth = allApps.filter(a => a.currentStage === 'placed' && a._creationTime >= startOfMonth).length;
+    const placedLastMonth = allApps.filter(a => a.currentStage === 'placed' && a._creationTime >= startOfLastMonth && a._creationTime < startOfMonth).length;
 
     const cvsVsYesterday = cvsToday - cvsYesterday;
-    const cvsTrendType = cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral";
-
     const placedVsLastMonth = placedThisMonth - placedLastMonth;
-    const placedTrendType = placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral";
 
     return {
       candidates: {
-        total: sysStat?.totalCandidates || 0,
+        total: totalCandidates,
         trendText: `${candidatesThisWeek.toLocaleString()} this week`,
-        trendType: "up",
+        trendType: 'up',
       },
       cvsToday: {
         total: cvsToday,
         trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
-        trendType: cvsTrendType,
+        trendType: cvsVsYesterday > 0 ? 'up' : cvsVsYesterday < 0 ? 'down' : 'neutral',
       },
       activeJobs: {
-        total: sysStat?.activeJobsCount || 0,
+        total: activeJobs,
         trendText: `${jobsAddedThisWeek} added this week`,
-        trendType: jobsAddedThisWeek > 0 ? "up" : "neutral",
+        trendType: jobsAddedThisWeek > 0 ? 'up' : 'neutral',
       },
       placedThisMonth: {
         total: placedThisMonth,
         trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
-        trendType: placedTrendType,
+        trendType: placedVsLastMonth > 0 ? 'up' : placedVsLastMonth < 0 ? 'down' : 'neutral',
       },
     };
   }
@@ -921,4 +903,31 @@ export const backfillTokenStats = internalMutation({
     console.log(`Successfully backfilled stats from ${logs.length} token logs.`);
     return { success: true, logCount: logs.length };
   },
+});
+
+
+export const getTodayInboxActivity = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date();
+    const currentOffset = 5.5 * 60 * 60 * 1000;
+    const localTime = new Date(now.getTime() + currentOffset);
+    localTime.setUTCHours(0, 0, 0, 0);
+    const startOfToday = localTime.getTime() - currentOffset;
+
+    const recentUploads = await ctx.db.query('cvUploads').order('desc').take(500);
+    const todaysUploads = recentUploads.filter(u => u._creationTime >= startOfToday);
+
+    const counts: Record<string, number> = { email: 0, email_campaign: 0, linkedin: 0, whatsapp: 0, database: 0 };
+    let total = 0;
+
+    for (const upload of todaysUploads) {
+      const src = upload.source || 'database';
+      if (counts[src] !== undefined) counts[src]++;
+      else counts[src] = 1;
+      total++;
+    }
+
+    return { total, counts };
+  }
 });
