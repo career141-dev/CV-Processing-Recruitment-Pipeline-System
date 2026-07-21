@@ -112,9 +112,9 @@ export const getDashboardStats = query({
 
     let allJobs = await ctx.db.query('jobs').collect();
     if (args.jobFilter === "Active Jobs") {
-      allJobs = allJobs.filter(j => j.status === 'active' || j.status === 'open');
+      allJobs = allJobs.filter(j => j.status === 'active');
     } else if (args.jobFilter === "My Jobs" && identity) {
-      const user = await ctx.db.query('users').withIndex('by_clerkId', q => q.eq('clerkId', identity.subject)).first();
+      const user = await ctx.db.query('users').withIndex('by_clerkUserId', q => q.eq('clerkUserId', identity.subject)).first();
       if (user) {
         allJobs = allJobs.filter(j => j.primaryRecruiterId === user._id);
       }
@@ -156,7 +156,7 @@ export const getDashboardStats = query({
     const cvsToday = allUploads.filter(u => u._creationTime >= startOfToday).length;
     const cvsYesterday = allUploads.filter(u => u._creationTime >= startOfYesterday && u._creationTime < startOfToday).length;
 
-    const activeJobs = allJobs.filter(j => j.status === 'active' || j.status === 'open').length;
+    const activeJobs = allJobs.filter(j => j.status === 'active').length;
     const jobsAddedThisWeek = allJobs.filter(j => j._creationTime >= sevenDaysAgo).length;
 
     const placedThisMonth = allApps.filter(a => a.currentStage === 'placed' && a._creationTime >= startOfMonth).length;
