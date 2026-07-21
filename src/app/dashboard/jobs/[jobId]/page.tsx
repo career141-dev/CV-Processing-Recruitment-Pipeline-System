@@ -2255,7 +2255,9 @@ export default function JobDetailPage() {
               <div className="flex items-center gap-1"><Building2 className="w-4 h-4" /> {job.clientName || 'Atlas Holdings'}</div>
               <div className="flex items-center gap-1"><Tag className="w-4 h-4" /> Keyword: {job.keyword}</div>
               <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Created: {format(new Date(job._creationTime), 'dd MMM yyyy')}</div>
-              <div className="flex items-center gap-1"><User className="w-4 h-4" /> TA: {recruiter?.fullName || 'Loading...'}</div>
+              {job.isAssignedTAExplicit !== false && (
+                <div className="flex items-center gap-1"><User className="w-4 h-4" /> TA: {recruiter?.fullName || 'Loading...'}</div>
+              )}
             </div>
             <div className="flex gap-2">
               <span className="bg-primary-container/15 text-primary-container px-3 py-1 rounded-full text-[12px] font-medium border border-primary-container/20">

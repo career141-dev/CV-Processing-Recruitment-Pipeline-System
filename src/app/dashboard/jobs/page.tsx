@@ -22,7 +22,7 @@ type Job = {
   newCvs: number;
   newCvsBadge?: { text: string, bgClass: string, textClass: string };
   stage: { label: string, bgClass: string, textClass: string, borderClass: string };
-  taAssigned: string;
+  taAssigned: string | null;
   status: string; // 'Active', 'On Hold', 'Fins', 'Lost', 'Placed'
   statusBadge: { label: string, bgClass: string, textClass: string, borderClass: string };
   created: string;
@@ -114,7 +114,7 @@ export default function JobsPage() {
       newCvs: j.newCvsCount ?? 0,
       newCvsBadge: (j.newCvsCount ?? 0) > 0 ? { text: "new", bgClass: "bg-blue-100", textClass: "text-blue-700" } : undefined,
       stage: stageInfo,
-      taAssigned: recruiter ? recruiter.fullName.split(' ')[0] : 'Unassigned',
+      taAssigned: (j.isAssignedTAExplicit !== false && recruiter) ? recruiter.fullName.split(' ')[0] : null,
       status: statusFormatted,
       statusBadge: statusBadge,
       created: new Date(j._creationTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -344,7 +344,7 @@ export default function JobsPage() {
                       )}
                     </td>
                     <td className="px-5 py-3 whitespace-nowrap"><span className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-medium border ${job.stage.bgClass} ${job.stage.textClass} ${job.stage.borderClass}`}>{job.stage.label}</span></td>
-                    <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{job.taAssigned}</td>
+                    <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{job.taAssigned || '-'}</td>
                     <td className="px-5 py-3 whitespace-nowrap"><span className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-medium border ${job.statusBadge.bgClass} ${job.statusBadge.textClass} ${job.statusBadge.borderClass}`}>{job.statusBadge.label}</span></td>
                     <td className="px-5 py-3 text-center relative" onClick={(e) => e.stopPropagation()}>
                       <button 
@@ -541,9 +541,13 @@ export default function JobsPage() {
                     )}
                   </div>
                   
-                  <div className="flex items-center gap-1.5 bg-surface-container-low px-2 py-1 rounded-md">
-                    <span className="material-symbols-outlined text-[14px] text-text-disabled">person</span>
-                    <span className="text-[11px] text-text-secondary font-semibold truncate max-w-[70px]">{job.taAssigned}</span>
+                  <div className="flex items-center gap-1.5 min-w-[70px]">
+                    {job.taAssigned && (
+                      <div className="flex items-center gap-1.5 bg-surface-container-low px-2 py-1 rounded-md">
+                        <span className="material-symbols-outlined text-[14px] text-text-disabled">person</span>
+                        <span className="text-[11px] text-text-secondary font-semibold truncate max-w-[70px]">{job.taAssigned}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

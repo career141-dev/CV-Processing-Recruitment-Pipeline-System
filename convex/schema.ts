@@ -147,6 +147,7 @@ export default defineSchema({
 
     // Team Assignment
     primaryRecruiterId: v.id("users"),
+    isAssignedTAExplicit: v.optional(v.boolean()), // True if manually assigned, false if defaulted to creator
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
     directorId: v.optional(v.id("users")),
     clientContactName: v.optional(v.string()),

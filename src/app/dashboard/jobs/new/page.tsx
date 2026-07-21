@@ -214,7 +214,7 @@ export default function CreateJobWizard() {
   const isNextDisabled = () => {
     if (isPublishing) return true;
     if (currentStep === 1) {
-      if (!formData.jobTitle.trim() || !formData.jobDescription.trim() || !formData.primaryRecruiter.trim() || formData.requiredSkills.length === 0) {
+      if (!formData.jobTitle.trim() || !formData.jobDescription.trim() || formData.requiredSkills.length === 0) {
         return true;
       }
     }
@@ -267,8 +267,9 @@ export default function CreateJobWizard() {
         ? [currentUser]
         : [];
 
-      const primaryRecruiterObj = recruiterPool.find(m => m.fullName === formData.primaryRecruiter) || recruiterPool[0];
-      const primaryRecruiterId = primaryRecruiterObj?._id;
+      const primaryRecruiterObj = recruiterPool.find(m => m.fullName === formData.primaryRecruiter);
+      const isAssignedTAExplicit = !!primaryRecruiterObj;
+      const primaryRecruiterId = primaryRecruiterObj?._id || recruiterPool[0]?._id;
       
       if (!primaryRecruiterId) {
          throw new Error("No team members found in database to assign as Primary Recruiter.");
@@ -302,7 +303,8 @@ export default function CreateJobWizard() {
         educationLevel: formData.educationLevel ? formData.educationLevel.toLowerCase().replace(/ /g, "_") : undefined,
         languagesRequired: formData.languages ? formData.languages.split(",").map(s => s.trim()).filter(Boolean) : undefined,
         keyword: formData.jobKeyword || undefined,
-          primaryRecruiterId: primaryRecruiterId as any,
+        primaryRecruiterId: primaryRecruiterId as any,
+        isAssignedTAExplicit,
         supportingRecruiterIds: supportingRecruiterIds as any,
         directorId: directorId as any,
         clientContactName: formData.clientContactName || undefined,
@@ -630,7 +632,7 @@ export default function CreateJobWizard() {
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Primary Recruiter *</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1.5">Primary Recruiter (Optional)</label>
             <select 
               className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface disabled:opacity-50" 
               value={formData.primaryRecruiter} 
