@@ -584,6 +584,9 @@ const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
       if (cvFile && user?.id) {
         let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: cvFile.name, contentType: cvFile.type });
         const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
+        if (!resp.ok) {
+          throw new Error(`Failed to upload to R2: ${resp.status} ${resp.statusText}`);
+        }
         
         let cvUploadId = await saveUpload({
           s3Key,
@@ -1149,6 +1152,9 @@ export default function JobDetailPage() {
       // 2. Generate Convex upload URL
       let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: file.name, contentType: file.type || "application/pdf" });
       const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/pdf" }, body: file });
+      if (!resp.ok) {
+        throw new Error(`Failed to upload to R2: ${resp.status} ${resp.statusText}`);
+      }
       
       const result = await processCvIngestion({
         s3Key,
