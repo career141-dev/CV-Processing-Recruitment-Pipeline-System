@@ -14,9 +14,9 @@ let _cachedToken: string | null = null;
 let _tokenExpiresAt = 0;
 
 export async function getGraphToken(): Promise<string | null> {
-  const tenantId = process.env.MS_GRAPH_TENANT_ID;
-  const clientId = process.env.MS_GRAPH_CLIENT_ID;
-  const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET;
+  const tenantId = process.env.MICROSOFT_TENANT_ID || process.env.MS_GRAPH_TENANT_ID;
+  const clientId = process.env.MICROSOFT_CLIENT_ID || process.env.MS_GRAPH_CLIENT_ID;
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET || process.env.MS_GRAPH_CLIENT_SECRET;
 
   if (!tenantId || !clientId || !clientSecret) {
     console.log("[EmailAgent] Missing Microsoft Graph API credentials in environment variables.");
