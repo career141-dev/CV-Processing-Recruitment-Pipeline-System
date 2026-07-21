@@ -91,13 +91,55 @@ export const getRecentChannelLogs = query({
 });
 
 export const getDashboardStats = query({
-  args: {},
-  handler: async (ctx) => {
-    // Live database calculations instead of caching
+  args: {
+    dateRange: v.optional(v.string()),
+    jobFilter: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
     const now = Date.now();
     const oneDay = 24 * 60 * 60 * 1000;
     
-    // Calculate start of current day and yesterday
+    let rangeCutoff = 0;
+    if (args.dateRange === "This Week") {
+      rangeCutoff = now - 7 * oneDay;
+    } else if (args.dateRange === "Last 30 Days") {
+      rangeCutoff = now - 30 * oneDay;
+    } else if (args.dateRange === "This Month") {
+      rangeCutoff = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+    }
+
+    const identity = await ctx.auth.getUserIdentity();
+
+    let allJobs = await ctx.db.query('jobs').collect();
+    if (args.jobFilter === "Active Jobs") {
+      allJobs = allJobs.filter(j => j.status === 'active' || j.status === 'open');
+    } else if (args.jobFilter === "My Jobs" && identity) {
+      const user = await ctx.db.query('users').withIndex('by_clerkId', q => q.eq('clerkId', identity.subject)).first();
+      if (user) {
+        allJobs = allJobs.filter(j => j.primaryRecruiterId === user._id);
+      }
+    }
+
+    const filteredJobIds = new Set(allJobs.map(j => j._id));
+
+    let allCandidates = await ctx.db.query('candidates').collect();
+    if (rangeCutoff > 0) {
+      allCandidates = allCandidates.filter(c => c._creationTime >= rangeCutoff);
+    }
+
+    let allUploads = await ctx.db.query('cvUploads').collect();
+    if (rangeCutoff > 0) {
+      allUploads = allUploads.filter(u => u._creationTime >= rangeCutoff);
+    }
+
+    let allApps = await ctx.db.query('applications').collect();
+    if (args.jobFilter && args.jobFilter !== "All Jobs") {
+      allApps = allApps.filter(a => filteredJobIds.has(a.jobId));
+    }
+    if (rangeCutoff > 0) {
+      allApps = allApps.filter(a => a._creationTime >= rangeCutoff);
+    }
+
     const currentOffset = 5.5 * 60 * 60 * 1000;
     const localTime = new Date(now + currentOffset);
     localTime.setUTCHours(0, 0, 0, 0);
@@ -108,18 +150,13 @@ export const getDashboardStats = query({
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
     const startOfLastMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
 
-    const allCandidates = await ctx.db.query('candidates').collect();
-    const allUploads = await ctx.db.query('cvUploads').collect();
-    const allJobs = await ctx.db.query('jobs').collect();
-    const allApps = await ctx.db.query('applications').collect();
-
     const totalCandidates = allCandidates.length;
     const candidatesThisWeek = allCandidates.filter(c => c._creationTime >= sevenDaysAgo).length;
 
     const cvsToday = allUploads.filter(u => u._creationTime >= startOfToday).length;
     const cvsYesterday = allUploads.filter(u => u._creationTime >= startOfYesterday && u._creationTime < startOfToday).length;
 
-    const activeJobs = allJobs.filter(j => j.status === 'active').length;
+    const activeJobs = allJobs.filter(j => j.status === 'active' || j.status === 'open').length;
     const jobsAddedThisWeek = allJobs.filter(j => j._creationTime >= sevenDaysAgo).length;
 
     const placedThisMonth = allApps.filter(a => a.currentStage === 'placed' && a._creationTime >= startOfMonth).length;
@@ -131,7 +168,7 @@ export const getDashboardStats = query({
     return {
       candidates: {
         total: totalCandidates,
-        trendText: `${candidatesThisWeek.toLocaleString()} this week`,
+        trendText: `${candidatesThisWeek.toLocaleString()} this period`,
         trendType: 'up',
       },
       cvsToday: {
@@ -141,7 +178,7 @@ export const getDashboardStats = query({
       },
       activeJobs: {
         total: activeJobs,
-        trendText: `${jobsAddedThisWeek} added this week`,
+        trendText: `${jobsAddedThisWeek} added this period`,
         trendType: jobsAddedThisWeek > 0 ? 'up' : 'neutral',
       },
       placedThisMonth: {
