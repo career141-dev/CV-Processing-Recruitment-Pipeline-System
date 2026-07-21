@@ -1,7 +1,7 @@
 export default {
   providers: [
     {
-      domain: "https://clerk.career141.com",
+      domain: "https://upward-squid-19.clerk.accounts.dev",
       applicationID: "convex",
     },
     {
@@ -10,3 +10,9 @@ export default {
     },
   ],
 };
+
+
+
+
+
+
