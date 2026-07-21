@@ -101,58 +101,29 @@ export const getRecentChannelLogs = query({
 export const backfillSystemStatsInternal = internalMutation({
   args: {},
   handler: async (ctx) => {
-    let totalCandidates = 0;
-    let cursorC: string | null = null;
-    while (true) {
-      const page = await ctx.db.query("candidates").order("asc").paginate({ cursor: cursorC, numItems: 1000 });
-      totalCandidates += page.page.length;
-      if (page.isDone) break;
-      cursorC = page.continueCursor;
-    }
-
-    let totalCvUploads = 0;
-    let cursorU: string | null = null;
-    while (true) {
-      const page = await ctx.db.query("cvUploads").order("asc").paginate({ cursor: cursorU, numItems: 1000 });
-      totalCvUploads += page.page.length;
-      if (page.isDone) break;
-      cursorU = page.continueCursor;
-    }
-
-    let totalApplications = 0;
-    let cursorA: string | null = null;
-    while (true) {
-      const page = await ctx.db.query("applications").order("asc").paginate({ cursor: cursorA, numItems: 1000 });
-      totalApplications += page.page.length;
-      if (page.isDone) break;
-      cursorA = page.continueCursor;
-    }
-
-    const activeJobsArr = await ctx.db.query("jobs")
-      .withIndex("by_status", q => q.eq("status", "active"))
-      .collect();
-    const activeJobsCount = activeJobsArr.length;
-
-    const existing = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, { totalCandidates, totalCvUploads, totalApplications, activeJobsCount });
-    } else {
-      await ctx.db.insert("systemStats", {
-        singletonKey: "global_stats",
-        totalCandidates,
-        totalCvUploads,
-        totalApplications,
-        activeJobsCount,
-      });
-    }
-
-    return { totalCandidates, totalCvUploads, totalApplications, activeJobsCount };
+    // TEMPORARILY DISABLED to reduce DB load
+    return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
   },
 });
 
+/**
+ * Public version — admin only, callable from the dashboard Settings UI.
+ * Inlines the same paginated counting logic as the internal mutation to avoid
+ * circular type reference issues with ctx.runMutation(internal...).
+ */
+export const backfillSystemStats = mutation({
+  args: {},
+  handler: async (ctx): Promise<{
+    totalCandidates: number;
+    totalCvUploads: number;
+    totalApplications: number;
+    activeJobsCount: number;
+  }> => {
+    await requireRole(ctx, ["admin"]);
+    // TEMPORARILY DISABLED to reduce DB load
+    return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
+  },
+});
 
 export const getDashboardStats = query({
   args: {
@@ -1063,94 +1034,7 @@ export const getTodayInboxActivity = query({
 export const getRecentActivity = query({
   args: {},
   handler: async (ctx) => {
-    const LIMIT = 10;
-
-    // ── 1. Pipeline stage moves (user actions) ─────────────────────────────
-    const pipelineEvents = await ctx.db
-      .query("pipelineEvents")
-      .order("desc")
-      .take(LIMIT);
-
-    const pipelineItems = await Promise.all(
-      pipelineEvents
-        .filter(e => e.toStage && (e.actorType === "user" || e.actorName))
-        .map(async (e) => {
-          let actorLabel = e.actorName ?? "A team member";
-          if (e.actorId) {
-            const user = await ctx.db.get(e.actorId);
-            if (user) actorLabel = user.fullName;
-          }
-          let candidateLabel = "";
-          if (e.candidateId) {
-            const cand = await ctx.db.get(e.candidateId);
-            if (cand) candidateLabel = cand.fullName || "a candidate";
-          }
-          const stageName = (e.toStage ?? "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-          return {
-            id: e._id as string,
-            type: "stage_move" as const,
-            text: candidateLabel
-              ? `${actorLabel} moved ${candidateLabel} → ${stageName}`
-              : `${actorLabel} updated pipeline → ${stageName}`,
-            timestamp: e.createdAt,
-          };
-        })
-    );
-
-    // ── 2. CV ingestion events ──────────────────────────────────────────────
-    const ingestionLogs = await ctx.db
-      .query("ingestionLog")
-      .order("desc")
-      .take(LIMIT);
-
-    // Group consecutive ingestion events within 5-min windows to avoid noise
-    const ingestionItems = ingestionLogs
-      .filter(l => l.routingStatus === "routed")
-      .map(l => {
-        const channelLabel: Record<string, string> = {
-          whatsapp: "WhatsApp",
-          email: "Email",
-          linkedin: "LinkedIn",
-          workable: "Workable",
-          manual_upload: "Manual Upload",
-          meta_campaign: "Meta Campaign",
-          email_campaign: "Email Campaign",
-          headhunting: "Headhunting",
-        };
-        const ch = channelLabel[l.channelType] ?? l.channelType;
-        const name = l.candidateName ? ` (${l.candidateName})` : "";
-        return {
-          id: l._id as string,
-          type: "cv_received" as const,
-          text: `New CV received via ${ch}${name}`,
-          timestamp: l.receivedAt,
-        };
-      });
-
-    // ── 3. Outbound follow-up communications ───────────────────────────────
-    const comms = await ctx.db
-      .query("communications")
-      .order("desc")
-      .take(LIMIT);
-
-    const commItems = comms
-      .filter(c => c.direction === "outbound" && (c.senderAgent || c.senderType === "agent"))
-      .map(c => {
-        const channelLabel = c.channel === "whatsapp" ? "WhatsApp" : c.channel === "email" ? "Email" : c.channel;
-        const ts = typeof c.sentAt === "number" ? c.sentAt : new Date(c.sentAt as string).getTime();
-        return {
-          id: c._id as string,
-          type: "follow_up" as const,
-          text: `Auto follow-up sent via ${channelLabel} (Day ${c.sequenceDay ?? 1})`,
-          timestamp: ts,
-        };
-      });
-
-    // ── 4. Merge, sort, dedupe ──────────────────────────────────────────────
-    const all = [...pipelineItems, ...ingestionItems, ...commItems]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 15);
-
-    return all;
+    // TEMPORARILY DISABLED to reduce DB load
+    return [];
   },
 });
