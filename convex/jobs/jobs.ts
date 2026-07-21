@@ -51,6 +51,7 @@ export const createJob = mutation({
     educationLevel: v.optional(v.string()),
     languagesRequired: v.optional(v.array(v.string())),
     primaryRecruiterId: v.id("users"),
+    isAssignedTAExplicit: v.optional(v.boolean()),
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
     directorId: v.optional(v.id("users")),
     clientContactName: v.optional(v.string()),
