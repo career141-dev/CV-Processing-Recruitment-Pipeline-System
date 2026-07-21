@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { toast } from 'sonner';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 
 interface EditJobModalProps {
@@ -36,6 +36,16 @@ const RECRUITMENT_TYPES = [
 
 export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalProps) {
   const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
+  const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
+
+  // Fetch actual configured channels from the database
+  const jobChannels = useQuery(
+    api.jobs.jobs.getJobChannels,
+    job?._id ? { jobId: job._id } : 'skip'
+  );
+
+  // Local toggle state: channelId -> isEnabled
+  const [channelToggles, setChannelToggles] = useState<Record<string, boolean>>({});
 
   const [formData, setFormData] = useState({
     title: '',
@@ -72,6 +82,15 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
       });
     }
   }, [job, isOpen]);
+
+  // Sync channel toggles when jobChannels data arrives
+  useEffect(() => {
+    if (jobChannels) {
+      const toggles: Record<string, boolean> = {};
+      jobChannels.forEach(ch => { toggles[ch._id] = ch.isEnabled; });
+      setChannelToggles(toggles);
+    }
+  }, [jobChannels, isOpen]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -110,8 +129,20 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         experienceMinYears: formData.experienceMinYears,
         description: formData.jobDescription,
         muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
-        pausedChannels: formData.pausedChannels,
       });
+
+      // Save channel enabled/disabled states if any channels are configured
+      if (jobChannels && jobChannels.length > 0) {
+        const channelsPayload = jobChannels.map(ch => ({
+          channelType: ch.channelType,
+          isEnabled: channelToggles[ch._id] ?? ch.isEnabled,
+          whatsappNumber: ch.whatsappNumber,
+          emailInbox: ch.emailInbox,
+          workableJobId: ch.workableJobId,
+          metaCampaignId: ch.metaCampaignId,
+        }));
+        await updateJobChannels({ jobId: job._id, channels: channelsPayload });
+      }
 
       toast.success('Job details updated successfully!');
       if (onSuccess) onSuccess();
@@ -297,41 +328,43 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
           <div className="flex flex-col gap-3 col-span-2 p-3 bg-surface border border-border rounded-lg mt-2">
             <div>
               <p className="text-sm font-medium text-text-primary">Active Ingestion Sources</p>
-              <p className="text-xs text-text-secondary mt-0.5">Toggle off a source to pause CV collection from that channel for this job. Paused CVs will be routed to the general database pool.</p>
+              <p className="text-xs text-text-secondary mt-0.5">Toggle off a source to pause CV collection from that channel for this job.</p>
             </div>
-            <div className="grid grid-cols-2 gap-4 mt-1">
-              {[
-                { id: 'whatsapp', label: 'WhatsApp' },
-                { id: 'email', label: 'Email' },
-                { id: 'linkedin', label: 'LinkedIn Inbox' },
-                { id: 'headhunting', label: 'Headhunting' },
-                { id: 'workable', label: 'Workable API' },
-                { id: 'portal', label: 'Career Portal' }
-              ].map(channel => {
-                const isActive = !formData.pausedChannels.includes(channel.id);
-                return (
-                  <div key={channel.id} className="flex items-center justify-between">
-                    <span className="text-sm text-text-primary">{channel.label}</span>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer" 
-                        checked={isActive} 
-                        onChange={() => {
-                          setFormData(prev => ({
-                            ...prev,
-                            pausedChannels: isActive 
-                              ? [...prev.pausedChannels, channel.id]
-                              : prev.pausedChannels.filter(c => c !== channel.id)
-                          }));
-                        }} 
-                      />
-                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
-                    </label>
-                  </div>
-                );
-              })}
-            </div>
+            {!jobChannels || jobChannels.length === 0 ? (
+              <p className="text-xs text-text-secondary italic">No channels were configured for this job during creation.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 mt-1">
+                {jobChannels.map(ch => {
+                  const CHANNEL_LABELS: Record<string, string> = {
+                    whatsapp: 'WhatsApp',
+                    whatsapp_campaign: 'WhatsApp Campaign',
+                    linkedin: 'LinkedIn Inbox',
+                    email_campaign: 'Email Campaign',
+                    meta_campaign: 'Meta Campaign',
+                    workable: 'Workable API',
+                    headhunting: 'Headhunting',
+                  };
+                  const label = CHANNEL_LABELS[ch.channelType] || ch.channelType;
+                  const isActive = channelToggles[ch._id] ?? ch.isEnabled;
+                  return (
+                    <div key={ch._id} className="flex items-center justify-between">
+                      <span className="text-sm text-text-primary">{label}</span>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={isActive}
+                          onChange={() => {
+                            setChannelToggles(prev => ({ ...prev, [ch._id]: !isActive }));
+                          }}
+                        />
+                        <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </form>

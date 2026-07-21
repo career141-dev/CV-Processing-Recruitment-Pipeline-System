@@ -276,7 +276,7 @@ export const updateJobDetails = mutation({
     pausedChannels: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter"]);
+    await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter", "test_ta"]);
     const { jobId, description, salaryRangeMin, salaryRangeMax, ...fields } = args;
     
     const updates: Record<string, unknown> = {};

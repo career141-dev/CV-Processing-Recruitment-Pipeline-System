@@ -1088,6 +1088,7 @@ export default function JobDetailPage() {
 
   // Fetch job details
   const job = useQuery(api.jobs.jobs.getJob, { jobId });
+  const jobChannels = useQuery(api.jobs.jobs.getJobChannels, { jobId });
   
   // Fetch candidates via applications
   const applications = useQuery(api.applications.applications.getByJobId, { jobId });
@@ -2269,31 +2270,30 @@ export default function JobDetailPage() {
             <div className="flex items-center gap-2 mt-4">
               <span className="text-[11px] uppercase tracking-wider font-bold text-text-secondary">Active Sources:</span>
               <div className="flex items-center gap-2">
-                {!job.pausedChannels?.includes('whatsapp') && (
-                  <span className="flex items-center gap-1 bg-[#25D366] text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="WhatsApp Ingestion Active">
-                    WhatsApp
-                  </span>
-                )}
-                {!job.pausedChannels?.includes('linkedin') && (
-                  <span className="flex items-center gap-1 bg-[#0A66C2] text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="LinkedIn Ingestion Active">
-                    LinkedIn
-                  </span>
-                )}
-                {!job.pausedChannels?.includes('email') && (
-                  <span className="flex items-center gap-1 bg-orange-400 text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="Email Ingestion Active">
-                    Email
-                  </span>
-                )}
-                {!job.pausedChannels?.includes('headhunting') && (
-                  <span className="flex items-center gap-1 bg-purple-500 text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="Headhunting Ingestion Active">
-                    Headhunt
-                  </span>
-                )}
-                {!job.pausedChannels?.includes('workable') && (
-                  <span className="flex items-center gap-1 bg-sky-500 text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" title="Workable API Active">
-                    Workable
-                  </span>
-                )}
+                {/* Manual Upload is always available for every job */}
+                <span className="flex items-center gap-1 bg-surface-container text-text-secondary px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm border border-border" title="Manual Upload Always Available">
+                  📤 Manual
+                </span>
+                {/* Only show channels that were actually configured during job creation */}
+                {(jobChannels || []).map(ch => {
+                  if (!ch.isEnabled) return null;
+                  const channelConfig: Record<string, { label: string; color: string; title: string }> = {
+                    whatsapp:       { label: 'WhatsApp',   color: 'bg-[#25D366]',  title: 'WhatsApp Ingestion Active' },
+                    whatsapp_campaign: { label: 'WhatsApp', color: 'bg-[#25D366]', title: 'WhatsApp Campaign Active' },
+                    linkedin:       { label: 'LinkedIn',   color: 'bg-[#0A66C2]',  title: 'LinkedIn Ingestion Active' },
+                    email_campaign: { label: 'Email',      color: 'bg-orange-400', title: 'Email Campaign Active' },
+                    meta_campaign:  { label: 'Meta Ads',   color: 'bg-blue-600',   title: 'Meta Campaign Active' },
+                    workable:       { label: 'Workable',   color: 'bg-sky-500',    title: 'Workable API Active' },
+                    headhunting:    { label: 'Headhunt',   color: 'bg-purple-500', title: 'Headhunting Active' },
+                  };
+                  const cfg = channelConfig[ch.channelType];
+                  if (!cfg) return null;
+                  return (
+                    <span key={ch._id} className={`flex items-center gap-1 ${cfg.color} text-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm`} title={cfg.title}>
+                      {cfg.label}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           </div>
