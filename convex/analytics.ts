@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import { requireFullAccess } from "./lib/permissions";
 
 /**
  * Overview metrics for the Analytics dashboard.
@@ -8,6 +9,7 @@ import { query } from "./_generated/server";
 export const getOverviewMetrics = query({
   args: {},
   handler: async (ctx) => {
+    await requireFullAccess(ctx);
     // 1. Calculate live Total CVs
     const allUploads = await ctx.db.query("cvUploads").collect();
     const totalCVs = allUploads.length;

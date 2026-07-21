@@ -3,6 +3,7 @@ import { query, mutation, action } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
+import { requireFullAccess } from "../lib/permissions";
 
 
 
@@ -10,6 +11,7 @@ import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/follow
 export const listCandidatesByIds = query({
   args: { ids: v.array(v.id("candidates")) },
   handler: async (ctx, args) => {
+    await requireFullAccess(ctx);
     const results = await Promise.all(args.ids.map(id => ctx.db.get(id)));
     const candidates = [];
     for (const c of results) {
@@ -51,6 +53,7 @@ export const listCandidatesPaginated = query({
     sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireFullAccess(ctx);
     let q;
     
     const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;

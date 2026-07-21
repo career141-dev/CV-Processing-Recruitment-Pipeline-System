@@ -3,6 +3,7 @@
 import React from 'react';
 import Sidebar from '@/components/Sidebar';
 import { AccessGate } from '@/components/AccessGate';
+import { RouteGuard } from '@/components/RouteGuard';
 
 export default function DashboardLayout({
   children,
@@ -16,7 +17,7 @@ export default function DashboardLayout({
           <div className="flex items-start self-stretch gap-[21px]">
             <Sidebar />
             <div className="flex flex-1 flex-col items-start relative pb-10 min-w-0">
-              {children}
+              <RouteGuard>{children}</RouteGuard>
             </div>
           </div>
         </div>
