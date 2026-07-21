@@ -19,3 +19,4 @@ jobs:
             cd ~/career141
             git pull origin main
             docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --force-recreate
+            npx convex deploy --env-file .env.local --typecheck disable
