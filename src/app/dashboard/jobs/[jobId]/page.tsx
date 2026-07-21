@@ -1092,7 +1092,7 @@ export default function JobDetailPage() {
   // Fetch candidates via applications
   const applications = useQuery(api.applications.applications.getByJobId, { jobId });
   const filteredMatches = (job?.reverseMatchResults || []).filter((match: any) => !applications?.some(app => app.candidateId === match.cvId));
-  const unresponsiveCandidates = useQuery(api.applications.applications.getUnresponsiveForJob, { jobId });
+  const unresponsiveCandidates = useQuery(api.applications.applications.getUnresponsiveForJob, { jobId: job?._id || jobId });
   const allUsers = useQuery(api.users.users.getAllUsers);
   const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);

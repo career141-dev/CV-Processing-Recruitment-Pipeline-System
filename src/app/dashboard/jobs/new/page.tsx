@@ -7,6 +7,7 @@ import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { usePermissions } from '@/hooks/usePermissions';
+import { toast } from 'sonner';
 
 export default function CreateJobWizard() {
   const router = useRouter();
@@ -24,7 +25,10 @@ export default function CreateJobWizard() {
 
   const availableRecruiters = useQuery(api.users.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta"] });
   const availableDirectors = useQuery(api.users.users.listByRoles, { roles: ["director", "admin", "ta_manager"] });
+  const allUsers = useQuery(api.users.users.getAllUsers);
+  const currentUser = useQuery(api.users.users.getCurrentUser);
   const createJob = useMutation(api.jobs.jobs.createJob);
+  const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
   const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
   const updateJobAiConfig = useMutation(api.jobs.jobs.updateJobAiConfig);
   const publishJob = useMutation(api.jobs.jobs.publishJob);
@@ -35,6 +39,8 @@ export default function CreateJobWizard() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
   const [showRecruiterDropdown, setShowRecruiterDropdown] = useState(false);
+  const [lastSavedKeyword, setLastSavedKeyword] = useState<string>('');
+  const [createdJobId, setCreatedJobId] = useState<string>('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -151,7 +157,21 @@ export default function CreateJobWizard() {
     }
   });
 
+  useEffect(() => {
+    if (formData.jobKeyword && !lastSavedKeyword) {
+      setLastSavedKeyword(formData.jobKeyword);
+    }
+  }, [formData.jobKeyword, lastSavedKeyword]);
+
+  useEffect(() => {
+    const hasWhatsAppChannel = formData.channels.whatsapp;
+    if (formData.channels.metaCampaign && !hasWhatsAppChannel && !formData.useDifferentMetaNumber) {
+      setFormData(prev => ({ ...prev, useDifferentMetaNumber: true }));
+    }
+  }, [formData.channels.metaCampaign, formData.channels.whatsapp, formData.useDifferentMetaNumber]);
+
   const [isCustomNumber, setIsCustomNumber] = useState(false);
+  const [isCustomMetaNumber, setIsCustomMetaNumber] = useState(false);
 
   const whatChimpNumbers = [
     { number: "+94 74 011 0130", name: "Jesmeen Mohammad" },
@@ -214,7 +234,9 @@ export default function CreateJobWizard() {
         }
         prefix = prefix.replace(/[^A-Z]/g, '') || 'JOB';
       }
-      setFormData(prev => ({ ...prev, jobKeyword: prefix + Math.floor(100 + Math.random() * 900) }));
+      const generatedKw = prefix + Math.floor(100 + Math.random() * 900);
+      setFormData(prev => ({ ...prev, jobKeyword: generatedKw }));
+      setLastSavedKeyword(generatedKw);
     }
     setCurrentStep(prev => Math.min(prev + 1, 4));
   };
@@ -224,18 +246,40 @@ export default function CreateJobWizard() {
     setPublishError("");
     
     try {
-      const primaryRecruiterObj = availableRecruiters?.find(m => m.fullName === formData.primaryRecruiter) || availableRecruiters?.[0];
+      if (formData.channels.whatsapp && !formData.commonWhatsAppNumber.trim()) {
+        throw new Error("WhatsApp channel is enabled, but no WhatsApp number was selected in Step 2.");
+      }
+      if (formData.channels.metaCampaign) {
+        const metaNum = formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : formData.commonWhatsAppNumber;
+        if (!metaNum || !metaNum.trim()) {
+          throw new Error("Meta Campaign is enabled, but no WhatsApp number for ads was configured in Step 2.");
+        }
+      }
+      if (formData.channels.emailCampaign && !formData.emailInbox.trim()) {
+        throw new Error("Email Campaign is enabled, but no inbox address was entered in Step 2.");
+      }
+
+      const recruiterPool = (availableRecruiters && availableRecruiters.length > 0)
+        ? availableRecruiters
+        : (allUsers && allUsers.length > 0)
+        ? allUsers
+        : currentUser
+        ? [currentUser]
+        : [];
+
+      const primaryRecruiterObj = recruiterPool.find(m => m.fullName === formData.primaryRecruiter) || recruiterPool[0];
       const primaryRecruiterId = primaryRecruiterObj?._id;
       
       if (!primaryRecruiterId) {
          throw new Error("No team members found in database to assign as Primary Recruiter.");
       }
 
-      const directorObj = availableDirectors?.find(m => m.fullName === formData.director);
+      const directorPool = (availableDirectors && availableDirectors.length > 0) ? availableDirectors : (allUsers || []);
+      const directorObj = directorPool.find(m => m.fullName === formData.director);
       const directorId = directorObj?._id;
 
       const supportingRecruiterIds = formData.supportingRecruiters
-        .map(name => availableRecruiters?.find(m => m.fullName === name)?._id)
+        .map(name => recruiterPool.find(m => m.fullName === name)?._id)
         .filter(Boolean) as string[];
 
       // Step 1: createJob
@@ -262,9 +306,15 @@ export default function CreateJobWizard() {
         directorId: directorId as any,
         clientContactName: formData.clientContactName || undefined,
         clientContactEmail: formData.clientContactEmail || undefined,
-        // @ts-ignore
-        muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
       });
+      setCreatedJobId(jobId);
+
+      if (formData.muteDefaultWhatsappReply) {
+        await updateJobDetails({
+          jobId,
+          muteDefaultWhatsappReply: true,
+        });
+      }
 
       // Step 2: updateJobChannels
       const channelsPayload: any[] = [];
@@ -688,7 +738,18 @@ export default function CreateJobWizard() {
 
   const renderStep2 = () => {
     const commonWhatsAppNumber = formData.commonWhatsAppNumber || "";
+    const hasWhatsAppChannel = formData.channels.whatsapp;
     const keyword = formData.jobKeyword;
+    const isKeywordChanged = formData.jobKeyword.trim() !== '' && formData.jobKeyword.trim() !== lastSavedKeyword;
+
+    const handleSaveKeyword = (e: React.MouseEvent) => {
+      e.preventDefault();
+      const cleanKeyword = formData.jobKeyword.trim().toUpperCase();
+      if (!cleanKeyword) return;
+      updateFormData('jobKeyword', cleanKeyword);
+      setLastSavedKeyword(cleanKeyword);
+      toast.success('Keyword saved successfully!');
+    };
     
     // Construct the full webhook URL dynamically
     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "";
@@ -706,8 +767,8 @@ export default function CreateJobWizard() {
 
         <div className="bg-surface border border-border rounded-xl p-5 shadow-sm">
           <label className="block text-sm font-medium text-text-secondary mb-2">Job Keyword (Auto-generated)</label>
-          <div className="flex gap-3">
-            <input type="text" className="w-64 border border-gray-700 rounded-md px-3 py-2 text-white font-mono font-bold bg-gray-800" value={keyword} onChange={e => updateFormData('jobKeyword', e.target.value)} />
+          <div className="flex gap-3 items-center">
+            <input type="text" className="w-64 border border-gray-700 rounded-md px-3 py-2 text-white font-mono font-bold bg-gray-800 focus:outline-none focus:border-primary-container" value={keyword} onChange={e => updateFormData('jobKeyword', e.target.value)} />
             <button className="bg-surface-variant text-text-primary border border-border px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high transition-colors flex items-center gap-1.5" onClick={(e) => { 
               e.preventDefault(); 
               const title = formData.jobTitle?.trim() || '';
@@ -721,11 +782,23 @@ export default function CreateJobWizard() {
                 }
                 prefix = prefix.replace(/[^A-Z]/g, '') || 'JOB';
               }
-              updateFormData('jobKeyword', prefix + Math.floor(100 + Math.random() * 900)); 
+              const newKw = prefix + Math.floor(100 + Math.random() * 900);
+              updateFormData('jobKeyword', newKw); 
+              setLastSavedKeyword(newKw);
             }}>
               <span className="material-symbols-outlined text-[16px]">refresh</span>
               Regenerate
             </button>
+            {isKeywordChanged && (
+              <button
+                type="button"
+                className="bg-primary-container text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-primary-container/90 transition-all flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-200 shadow-sm"
+                onClick={handleSaveKeyword}
+              >
+                <span className="material-symbols-outlined text-[16px]">check</span>
+                Save Keyword
+              </button>
+            )}
           </div>
           <p className="text-xs text-text-secondary mt-2">Required for routing applicants to this job (used only in Meta Campaigns).</p>
         </div>
@@ -932,18 +1005,68 @@ export default function CreateJobWizard() {
               <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2 space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1.5">WhatsApp Number for Ads</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" checked={!formData.useDifferentMetaNumber} onChange={() => updateFormData('useDifferentMetaNumber', false)} className="text-primary-container focus:ring-primary-container w-4 h-4" />
-                      <span className="text-xs">Use same number as WhatsApp above</span>
+                  <div className="space-y-3">
+                    <label className={`flex items-center gap-2 ${hasWhatsAppChannel ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                      <input 
+                        type="radio" 
+                        disabled={!hasWhatsAppChannel}
+                        checked={!formData.useDifferentMetaNumber} 
+                        onChange={() => {
+                          if (hasWhatsAppChannel) {
+                            updateFormData('useDifferentMetaNumber', false);
+                          }
+                        }} 
+                        className="text-primary-container focus:ring-primary-container w-4 h-4 disabled:opacity-50" 
+                      />
+                      <span className="text-xs">
+                        Use same number as WhatsApp above {!hasWhatsAppChannel && "(WhatsApp channel not enabled above)"}
+                      </span>
                     </label>
-                    <div className="flex items-center gap-2">
+
+                    <div className="flex flex-col gap-2">
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" checked={formData.useDifferentMetaNumber} onChange={() => updateFormData('useDifferentMetaNumber', true)} className="text-primary-container focus:ring-primary-container w-4 h-4" />
-                        <span className="text-xs">Use different number:</span>
+                        <input 
+                          type="radio" 
+                          checked={formData.useDifferentMetaNumber} 
+                          onChange={() => updateFormData('useDifferentMetaNumber', true)} 
+                          className="text-primary-container focus:ring-primary-container w-4 h-4" 
+                        />
+                        <span className="text-xs">Use different / dedicated number:</span>
                       </label>
                       {formData.useDifferentMetaNumber && (
-                        <input type="text" className="w-48 border border-border rounded-md px-2 py-1 text-xs bg-surface" value={formData.metaWhatsAppNumber} onChange={e => updateFormData('metaWhatsAppNumber', e.target.value)} placeholder="+94 77 000 0001" />
+                        <div className="pl-6 space-y-2 animate-in fade-in slide-in-from-top-1">
+                          <select 
+                            className="w-64 border border-border rounded-md px-3 py-2 text-xs bg-surface text-text-primary"
+                            value={isCustomMetaNumber ? "custom" : (formData.metaWhatsAppNumber || "")} 
+                            onChange={e => {
+                              if (e.target.value === "custom") {
+                                setIsCustomMetaNumber(true);
+                                updateFormData('metaWhatsAppNumber', "");
+                              } else {
+                                setIsCustomMetaNumber(false);
+                                updateFormData('metaWhatsAppNumber', e.target.value);
+                              }
+                            }}
+                          >
+                            <option value="" disabled>Select a WhatChimp number...</option>
+                            {whatChimpNumbers.map(item => (
+                              <option key={item.number} value={item.number}>
+                                {item.name} ({item.number})
+                              </option>
+                            ))}
+                            <option value="custom">+ Custom / Add New</option>
+                          </select>
+
+                          {isCustomMetaNumber && (
+                            <input 
+                              type="text" 
+                              className="w-64 border border-border rounded-md px-3 py-2 text-xs bg-surface text-text-primary animate-in fade-in" 
+                              placeholder="e.g. +94 77 000 0001" 
+                              value={formData.metaWhatsAppNumber} 
+                              onChange={e => updateFormData('metaWhatsAppNumber', e.target.value)} 
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1254,11 +1377,19 @@ export default function CreateJobWizard() {
     if (!formData.requiredSkills) mustFix.push({ msg: "Required Skills: Add at least 1 skill", action: "Fix Now", step: 1 });
     else ready.push("Matching Criteria configured");
 
-    if (formData.channels.metaCampaign && !formData.metaCampaignId) {
-      mustFix.push({ msg: "Meta Campaign: Ad Campaign ID is required", action: "Fix Now", step: 2 });
+    if (formData.channels.metaCampaign) {
+      const metaNumber = formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : formData.commonWhatsAppNumber;
+      if (!metaNumber || !metaNumber.trim()) {
+        mustFix.push({ msg: "Meta Campaign: WhatsApp number for ads is required", action: "Fix Now", step: 2 });
+      } else {
+        ready.push("Meta Campaign WhatsApp number configured");
+      }
     }
 
-    if (formData.channels.whatsapp) {
+    if (formData.channels.whatsapp && !formData.commonWhatsAppNumber.trim()) {
+      mustFix.push({ msg: "WhatsApp Channel: Select or enter a WhatsApp number", action: "Fix Now", step: 2 });
+    } else if (formData.channels.whatsapp) {
+      ready.push("WhatsApp channel configured");
       recommended.push({ msg: "WhatsApp: Common number configured but QR not downloaded yet", action: "Download QR", step: 2 });
     }
     
@@ -1508,7 +1639,7 @@ export default function CreateJobWizard() {
               </div>
 
               <div className="flex gap-4">
-                <button onClick={() => router.push('/dashboard/jobs/wk-brand-mgr')} className="flex-1 py-3 bg-primary-container text-on-primary rounded-lg text-sm font-bold hover:bg-primary transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                <button onClick={() => router.push(`/dashboard/jobs/${createdJobId || formData.jobKeyword}`)} className="flex-1 py-3 bg-primary-container text-on-primary rounded-lg text-sm font-bold hover:bg-primary transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
                   View Job Dashboard
                 </button>
                 <button className="flex-1 py-3 bg-surface border-2 border-border text-text-primary rounded-lg text-sm font-bold hover:bg-surface-variant transition-colors flex items-center justify-center gap-2">

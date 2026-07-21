@@ -129,19 +129,29 @@ export const getByCandidate = query({
 
 // Unresponsive candidates for a specific job (to show inside the Follow-up tab)
 export const getUnresponsiveForJob = query({
-  args: { jobId: v.id("jobs") },
+  args: { jobId: v.string() },
   handler: async (ctx, args) => {
     await requireUser(ctx);
 
+    let actualJobId = ctx.db.normalizeId("jobs", args.jobId);
+    if (!actualJobId) {
+      const jobRecord = await ctx.db
+        .query("jobs")
+        .withIndex("by_keyword", (q) => q.eq("keyword", args.jobId))
+        .first();
+      if (!jobRecord) return [];
+      actualJobId = jobRecord._id;
+    }
+
     const applications = await ctx.db
       .query("applications")
-      .withIndex("by_job_stage", (q) => q.eq("jobId", args.jobId).eq("currentStage", "unresponsive"))
+      .withIndex("by_job_stage", (q) => q.eq("jobId", actualJobId!).eq("currentStage", "unresponsive"))
       .collect();
 
     const now = Date.now();
 
     // Cache the job fetch — all applications are for the same job
-    const job = await ctx.db.get(args.jobId);
+    const job = await ctx.db.get(actualJobId);
     const jobTitle = job?.title ?? "Unknown Job";
 
     return await Promise.all(

@@ -190,12 +190,12 @@ export const pollEmailInbox = action({
     const targetInboxEmail = inboxEmail;
     console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail}`);
     
-    // Fetch last check timestamp from memory
-    const lastFetch = await ctx.runQuery(internal.communications.emailAgent.getLastEmailFetchTimestamp);
+    // Fetch last check timestamp for this specific inbox
+    const lastFetch = await ctx.runQuery(internal.communications.emailAgent.getLastEmailFetchTimestamp, { inboxEmail: targetInboxEmail });
     
-    // Save current time as the new check time for next run
+    // Save current time as the new check time for this inbox
     const currentFetchTime = new Date().toISOString();
-    await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime });
+    await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime, inboxEmail: targetInboxEmail });
 
     // 1. Fetch unread emails
     const messages = await fetchUnreadEmails(targetInboxEmail, lastFetch);
@@ -696,21 +696,26 @@ export const extractAndApplyEmailBodyDetails = internalAction({
 });
 
 export const getLastEmailFetchTimestamp = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
-    return configRow?.lastEmailFetchTimestamp ?? null;
+  args: { inboxEmail: v.optional(v.string()) },
+  handler: async (ctx, { inboxEmail }) => {
+    const key = inboxEmail ? `email_fetch_${inboxEmail}` : "system";
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", key)).first();
+    if (configRow?.lastEmailFetchTimestamp) return configRow.lastEmailFetchTimestamp;
+    
+    const systemRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
+    return systemRow?.lastEmailFetchTimestamp ?? null;
   }
 });
 
 export const updateLastEmailFetchTimestamp = internalMutation({
-  args: { timestamp: v.string() },
-  handler: async (ctx, { timestamp }) => {
-    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
+  args: { timestamp: v.string(), inboxEmail: v.optional(v.string()) },
+  handler: async (ctx, { timestamp, inboxEmail }) => {
+    const key = inboxEmail ? `email_fetch_${inboxEmail}` : "system";
+    const configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", key)).first();
     if (configRow) {
       await ctx.db.patch(configRow._id, { lastEmailFetchTimestamp: timestamp });
     } else {
-      await ctx.db.insert("appSettings", { key: "system", lastEmailFetchTimestamp: timestamp });
+      await ctx.db.insert("appSettings", { key, lastEmailFetchTimestamp: timestamp });
     }
   }
 });

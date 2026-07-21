@@ -4,7 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "convex-dev": "npx convex dev --url https://api.career141.com --admin-key \"convex-self-hosted|01790f183ed16a1df37bb60a04248db8fc152e1c5c2b8952ea531da0026628ffe31b46e2fd\"",
+    "switch:hosted": "node -e \"require('fs').copyFileSync('.env.hosted', '.env.local')\" && echo Switched to Hosted Backend (api.career141.com)",
+    "switch:local": "node -e \"require('fs').copyFileSync('.env.localdev', '.env.local')\" && echo Switched to Local Backend (127.0.0.1)",
+    "dev:hosted": "npm run switch:hosted && npx convex dev --url https://api.career141.com --admin-key \"convex-self-hosted|01790f183ed16a1df37bb60a04248db8fc152e1c5c2b8952ea531da0026628ffe31b46e2fd\"",
+    "dev:local": "npm run switch:local && npx convex dev",
+    "convex-dev": "npm run dev:hosted",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

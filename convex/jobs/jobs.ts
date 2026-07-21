@@ -55,6 +55,7 @@ export const createJob = mutation({
     directorId: v.optional(v.id("users")),
     clientContactName: v.optional(v.string()),
     clientContactEmail: v.optional(v.string()),
+    muteDefaultWhatsappReply: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
