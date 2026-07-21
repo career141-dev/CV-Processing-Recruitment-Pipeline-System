@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Career141 — CV Processing & Recruitment Pipeline System
 
-## Getting Started
+An AI-driven multi-channel recruitment pipeline, candidate deduplication, matching engine, and automated outreach system built on **Next.js**, **Convex**, and **Clerk**.
 
-First, run the development server:
+---
+
+## Development Workflows: Hosted vs Local Machine
+
+To maintain stability and prevent server crashes from concurrent developer updates, developers can choose to run against the shared **Hosted VPS (`api.career141.com`)** or an isolated **Local Machine (`http://127.0.0.1:3210`)** backend.
+
+---
+
+### Commands Overview
+
+| Command | Environment | Description |
+| :--- | :--- | :--- |
+| `npm run dev` | Frontend | Starts Next.js development server (`http://localhost:3000`). |
+| `npm run dev:hosted` | Hosted VPS | Switches `.env.local` to hosted mode and connects Convex to `https://api.career141.com`. |
+| `npm run dev:local` | Local Machine | Switches `.env.local` to local mode and connects Convex to local Docker (`http://127.0.0.1:3210`). |
+| `npm run switch:hosted` | Hosted VPS | Switches `.env.local` variables to Hosted VPS without launching Convex CLI. |
+| `npm run switch:local` | Local Machine | Switches `.env.local` variables to Local Machine without launching Convex CLI. |
+| `npm run db:sync-from-hosted` | Local Machine | Exports database from Hosted VPS and imports it into your Local Machine database with `--replace`. |
+
+---
+
+## 1. Working on Local Machine (`127.0.0.1:3210`)
+
+Your local self-hosted backend runs via Docker (`convex-local-test-backend-1`).
 
 ```bash
+# 1. Ensure local Docker backend is running
+docker start convex-local-test-backend-1
+
+# 2. Start Next.js frontend
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# 3. In a second terminal, connect Convex CLI to local Docker backend
+npm run dev:local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Your local frontend connects directly to `http://127.0.0.1:3210` using explicit `--url` and `--admin-key` flags (completely bypassing Convex Cloud spending limits).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 2. Working on Hosted VPS (`api.career141.com`)
 
-## Learn More
+Use hosted mode when testing multi-channel webhooks (WhatsApp / MS Graph / Email) or when deploying integrated role updates.
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# 1. Start Next.js frontend
+npm run dev
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# 2. In a second terminal, connect to Hosted VPS backend
+npm run dev:hosted
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 3. Database Syncing (Cloning Hosted DB to Local Machine)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+To populate your local database with real-time jobs, candidates, CVs, and applications from the Hosted VPS:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Option A: Automatic 1-Click Sync
+```bash
+npm run db:sync-from-hosted
+```
+*Exports `https://api.career141.com` data to `hosted_export.zip` and imports it into your local backend (`127.0.0.1:3210`).*
+
+### Option B: Manual Dashboard Export/Import
+1. Open the hosted Convex Dashboard (`https://api.career141.com` or port `:6791`).
+2. Go to **Settings** → **Export Database** and download `export.zip`.
+3. Import the snapshot into your local machine database:
+   ```bash
+   npm run switch:local
+   npx convex import --path export.zip --replace
+   ```
