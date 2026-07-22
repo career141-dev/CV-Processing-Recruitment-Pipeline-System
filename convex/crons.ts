@@ -485,4 +485,10 @@ crons.interval(
   internal.stats.stats.updateDashboardStatsCache
 );
 
+crons.interval(
+  "recover-stuck-uploads",
+  { minutes: 10 },
+  internal.cvs.cvUploads.recoverStuckUploads
+);
+
 export default crons;

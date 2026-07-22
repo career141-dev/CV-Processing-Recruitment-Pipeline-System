@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
-import { mutation, internalQuery } from "../_generated/server";
+import { mutation, internalQuery, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { adjustGlobalStat } from "../stats/statsHelper";
 
@@ -253,5 +253,36 @@ export const cancelAllRunningExtractions = mutation({
     }
 
     return { success: true, cancelledCount, batchesCancelled: activeBatches.length };
+  },
+});
+
+export const recoverStuckUploads = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const stuck = await ctx.db
+      .query("cvUploads")
+      .filter((q) => q.eq(q.field("status"), "processing"))
+      .collect();
+
+    let count = 0;
+    const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
+    for (const upload of stuck) {
+      if (upload._creationTime < threeMinutesAgo) {
+        await ctx.db.patch(upload._id, {
+          status: "failed",
+          errorMessage: "Process interrupted (Server restarted/crashed)",
+        });
+        
+        // Also check if this upload is part of a batch
+        if (upload.batchId) {
+          // Trigger next batch evaluation
+          await ctx.scheduler.runAfter(0, api.cvs.cvUploads.checkAndTriggerNextBatch, {
+            batchId: upload.batchId as any,
+          });
+        }
+        count++;
+      }
+    }
+    return count;
   },
 });

@@ -41,6 +41,9 @@ export default function CreateJobWizard() {
   const [showRecruiterDropdown, setShowRecruiterDropdown] = useState(false);
   const [lastSavedKeyword, setLastSavedKeyword] = useState<string>('');
   const [createdJobId, setCreatedJobId] = useState<string>('');
+  const [isCustomEducation, setIsCustomEducation] = useState(false);
+  const [customEdValue, setCustomEdValue] = useState('');
+  const [customEducationLevels, setCustomEducationLevels] = useState<string[]>([]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -300,7 +303,11 @@ export default function CreateJobWizard() {
         salaryMin: parseInt(formData.salaryRange.split("-")[0]?.replace(/[^0-9]/g, '')) || undefined,
         salaryMax: parseInt(formData.salaryRange.split("-")[1]?.replace(/[^0-9]/g, '')) || undefined,
         salaryCurrency: formData.salaryRange.replace(/[0-9\- ]/g, '').trim() || "LKR",
-        educationLevel: formData.educationLevel ? formData.educationLevel.toLowerCase().replace(/ /g, "_") : undefined,
+        educationLevel: formData.educationLevel
+          ? (["Bachelor", "Master", "PhD", "Diploma", "Professional Cert", "Bachelor or Master", "any", "diploma", "bachelor", "master", "phd", "professional_cert", "bachelor_or_master"].includes(formData.educationLevel)
+              ? formData.educationLevel.toLowerCase().replace(/ /g, "_")
+              : formData.educationLevel)
+          : undefined,
         languagesRequired: formData.languages ? formData.languages.split(",").map(s => s.trim()).filter(Boolean) : undefined,
         keyword: formData.jobKeyword || undefined,
         primaryRecruiterId: primaryRecruiterId as any,
@@ -585,14 +592,67 @@ export default function CreateJobWizard() {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1.5">Education</label>
-              <select className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.educationLevel} onChange={e => updateFormData('educationLevel', e.target.value)}>
-                <option value="any">Any</option>
-                <option value="diploma">Diploma</option>
-                <option value="bachelor">Bachelor</option>
-                <option value="master">Master</option>
-                <option value="phd">PhD</option>
-                <option value="professional_cert">Professional Cert</option>
-              </select>
+              {isCustomEducation ? (
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" 
+                    value={customEdValue} 
+                    onChange={e => setCustomEdValue(e.target.value)} 
+                    placeholder="e.g. CIMA / ACCA / specific degree..." 
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (customEdValue.trim() !== "") {
+                        const trimmed = customEdValue.trim();
+                        if (!customEducationLevels.includes(trimmed)) {
+                          setCustomEducationLevels(prev => [...prev, trimmed]);
+                        }
+                        updateFormData('educationLevel', trimmed);
+                      }
+                      setIsCustomEducation(false);
+                    }}
+                    className="px-3 py-2 bg-primary-container text-on-primary rounded-md text-xs font-semibold"
+                  >
+                    Save
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setIsCustomEducation(false);
+                    }}
+                    className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-md text-xs font-semibold text-text-primary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <select 
+                  className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" 
+                  value={formData.educationLevel} 
+                  onChange={e => {
+                    if (e.target.value === 'custom') {
+                      setIsCustomEducation(true);
+                      setCustomEdValue('');
+                    } else {
+                      updateFormData('educationLevel', e.target.value);
+                    }
+                  }}
+                >
+                  <option value="any">Any</option>
+                  <option value="diploma">Diploma</option>
+                  <option value="bachelor">Bachelor</option>
+                  <option value="master">Master</option>
+                  <option value="phd">PhD</option>
+                  <option value="professional_cert">Professional Cert</option>
+                  <option value="bachelor_or_master">Bachelor or Master</option>
+                  {customEducationLevels.map(level => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                  <option value="custom">Other / Custom...</option>
+                </select>
+              )}
             </div>
           </div>
 
@@ -646,9 +706,12 @@ export default function CreateJobWizard() {
               ) : (
                 <>
                   <option value="">Select a Recruiter</option>
-                  {availableRecruiters.map(member => (
-                    <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
-                  ))}
+                  {availableRecruiters.map(member => {
+                    const displayName = member.fullName && member.fullName.trim() !== "Unknown User" && member.fullName.trim() !== "" ? member.fullName : (member.email || "Unknown User");
+                    return (
+                      <option key={member._id} value={member.fullName}>{displayName} ({member.role})</option>
+                    );
+                  })}
                 </>
               )}
             </select>
@@ -666,9 +729,12 @@ export default function CreateJobWizard() {
               ) : (
                 <>
                   <option value="">None</option>
-                  {availableDirectors.map(member => (
-                    <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
-                  ))}
+                  {availableDirectors.map(member => {
+                    const displayName = member.fullName && member.fullName.trim() !== "Unknown User" && member.fullName.trim() !== "" ? member.fullName : (member.email || "Unknown User");
+                    return (
+                      <option key={member._id} value={member.fullName}>{displayName} ({member.role})</option>
+                    );
+                  })}
                 </>
               )}
             </select>
@@ -701,6 +767,7 @@ export default function CreateJobWizard() {
               <div className="absolute z-10 w-full mt-1 bg-surface border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
                 {availableRecruiters?.map(member => {
                   const isSelected = formData.supportingRecruiters.includes(member.fullName);
+                  const displayName = member.fullName && member.fullName.trim() !== "Unknown User" && member.fullName.trim() !== "" ? member.fullName : (member.email || "Unknown User");
                   return (
                     <div 
                       key={member._id} 
@@ -713,8 +780,10 @@ export default function CreateJobWizard() {
                         }
                       }}
                     >
-                      <input type="checkbox" checked={isSelected} readOnly className="rounded border-border" />
-                      <span className="text-sm">{member.fullName} <span className="text-gray-400 text-xs">({member.role})</span></span>
+                      <div className={`w-4 h-4 border rounded flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-border'}`}>
+                        {isSelected && <span className="material-symbols-outlined text-on-primary text-[14px]">check</span>}
+                      </div>
+                      <span className="text-sm text-body">{displayName} ({member.role})</span>
                     </div>
                   );
                 })}

@@ -30,7 +30,7 @@ function AuthSync({ children }: { children: ReactNode }) {
 
       syncCurrentUser({
         email: email,
-        name: displayName,
+        name: displayName || user.username || "Team Member",
         avatarUrl: user.imageUrl,
         invitedRole: (user.publicMetadata?.role as string) || undefined,
       }).catch(console.error);
