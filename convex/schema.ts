@@ -1328,6 +1328,7 @@ export default defineSchema({
     // Denormalized at write-time to eliminate N+1 joins at read-time
     fileName: v.optional(v.string()),
     candidateName: v.optional(v.string()),
+    provider: v.optional(v.string()),
   })
     .index("by_timestamp", ["timestamp"])
     .index("by_taskType", ["taskType"])
