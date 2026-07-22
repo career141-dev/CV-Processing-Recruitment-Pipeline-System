@@ -1024,44 +1024,6 @@ export const getTodayInboxActivity = query({
   }
 });
 
-// ── SAFE PAGINATED COUNTING HELPERS (ACTION-SAFE) ────────────────────
-
-export const getCandidatesPage = query({
-  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("candidates")
-      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
-  },
-});
-
-export const getCvUploadsPage = query({
-  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("cvUploads")
-      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
-  },
-});
-
-export const getApplicationsPage = query({
-  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("applications")
-      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
-  },
-});
-
-export const getJobsPage = query({
-  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("jobs")
-      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
-  },
-});
-
 // Mutation to write values back to the systemStats singleton
 export const saveSystemStats = internalMutation({
   args: {
@@ -1098,7 +1060,12 @@ export const saveSystemStats = internalMutation({
 // The safe, action-based backfill runner
 export const runSafeBackfill = action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{
+    totalCandidates: number;
+    totalCvUploads: number;
+    totalApplications: number;
+    activeJobsCount: number;
+  }> => {
     console.log("Starting safe dashboard stats backfill...");
     const limit = 1000;
 
@@ -1106,7 +1073,7 @@ export const runSafeBackfill = action({
     let totalCandidates = 0;
     let candidateCursor: string | null = null;
     while (true) {
-      const page = await ctx.runQuery(api.stats.stats.getCandidatesPage, {
+      const page: any = await ctx.runQuery(api.stats.statsQueries.getCandidatesPage, {
         cursor: candidateCursor,
         limit,
       });
@@ -1120,7 +1087,7 @@ export const runSafeBackfill = action({
     let totalCvUploads = 0;
     let cvUploadCursor: string | null = null;
     while (true) {
-      const page = await ctx.runQuery(api.stats.stats.getCvUploadsPage, {
+      const page: any = await ctx.runQuery(api.stats.statsQueries.getCvUploadsPage, {
         cursor: cvUploadCursor,
         limit,
       });
@@ -1134,7 +1101,7 @@ export const runSafeBackfill = action({
     let totalApplications = 0;
     let appCursor: string | null = null;
     while (true) {
-      const page = await ctx.runQuery(api.stats.stats.getApplicationsPage, {
+      const page: any = await ctx.runQuery(api.stats.statsQueries.getApplicationsPage, {
         cursor: appCursor,
         limit,
       });
@@ -1148,7 +1115,7 @@ export const runSafeBackfill = action({
     let activeJobsCount = 0;
     let jobCursor: string | null = null;
     while (true) {
-      const page = await ctx.runQuery(api.stats.stats.getJobsPage, {
+      const page: any = await ctx.runQuery(api.stats.statsQueries.getJobsPage, {
         cursor: jobCursor,
         limit,
       });

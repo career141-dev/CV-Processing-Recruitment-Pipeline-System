@@ -79,6 +79,7 @@ import type * as scratch from "../scratch.js";
 import type * as scratchQuery from "../scratchQuery.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
+import type * as stats_statsQueries from "../stats/statsQueries.js";
 import type * as storage_r2 from "../storage/r2.js";
 import type * as users_users from "../users/users.js";
 
@@ -160,6 +161,7 @@ declare const fullApi: ApiFromModules<{
   scratchQuery: typeof scratchQuery;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
+  "stats/statsQueries": typeof stats_statsQueries;
   "storage/r2": typeof storage_r2;
   "users/users": typeof users_users;
 }>;
