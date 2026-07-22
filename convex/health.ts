@@ -227,6 +227,44 @@ export const getUploadById = query({
   },
 });
 
+export const getIngestionLogForFile = query({
+  args: { cvFileId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("ingestionLog")
+      .withIndex("by_cvFileId", (q: any) => q.eq("cvFileId", args.cvFileId))
+      .first();
+  },
+});
+
+export const getIngestionLogShabeen = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("ingestionLog")
+      .withIndex("by_cvFileId", (q: any) => q.eq("cvFileId", "jd7acvpnxa2ya50btd5v1xdbk58b0h3h"))
+      .first();
+  },
+});
+
+export const getUploadStatusDetails = query({
+  args: {},
+  handler: async (ctx) => {
+    const ids = [
+      "jd7b72zqn5np6d786pype144fh8b01ma", // Wasantha
+      "jd7ce95dkrvabgxfj7zdwh8vn98b1pxh", // Deepal
+      "jd7acvpnxa2ya50btd5v1xdbk58b0h3h", // Shabeen
+      "jd72jyv919w931y5tm7zza6pm58b0kvn", // Aruna
+    ];
+    const results = [];
+    for (const id of ids) {
+      const doc = (await ctx.db.get(id as any)) as any;
+      results.push({ id, fileName: doc?.fileName, status: doc?.status, errorMessage: doc?.errorMessage });
+    }
+    return results;
+  },
+});
+
 export const setUploadPending = mutation({
   args: { cvUploadId: v.id("cvUploads") },
   handler: async (ctx, args) => {
