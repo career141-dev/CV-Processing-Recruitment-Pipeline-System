@@ -23,6 +23,8 @@ export function getOpenAI(taskType: TaskType): OpenAI {
   return new OpenAI({
     baseURL: "https://integrate.api.nvidia.com/v1",
     apiKey,
+    timeout: 30000, // 30 seconds to prevent Convex action timeouts
+    maxRetries: 0,  // Disable SDK retries to handle them in our own custom logic
   });
 }
 
