@@ -416,3 +416,18 @@ export const runFullQaSuite = action({
     };
   },
 });
+
+/**
+ * QA Test Case: Extract and populate referees for up to 10 candidates
+ */
+export const runRefereeExtractionTest = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<any> => {
+    console.log("--> Starting Referee Extraction (10 Candidates) QA Test...");
+    const result: any = await ctx.runAction(api.candidates.refereeActions.extractRefereesForCandidateBatch, {
+      limit: args.limit || 10,
+    });
+    console.log(`[PASS] Processed ${result?.totalCandidatesProcessed || 0} candidates. Success count: ${result?.successfulCount || 0}`);
+    return result;
+  },
+});

@@ -92,3 +92,51 @@ export const deleteReferee = mutation({
     await ctx.db.delete(args.id);
   },
 });
+
+export const getCandidatesWithRawText = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 10;
+    const results = [];
+
+    // 1. Check candidateResumes
+    const resumes = await ctx.db.query("candidateResumes").order("desc").take(limit * 3);
+    for (const resume of resumes) {
+      if (results.length >= limit) break;
+      if (!resume.rawText || resume.rawText.trim().length < 30) continue;
+      const candidate = await ctx.db.get(resume.candidateId);
+      if (candidate) {
+        results.push({
+          candidateId: candidate._id,
+          candidateName: candidate.fullName || "Unnamed Candidate",
+          rawText: resume.rawText,
+        });
+      }
+    }
+
+    // 2. Fallback to candidates table directly if candidateResumes has fewer items
+    if (results.length < limit) {
+      const candidates = await ctx.db.query("candidates").order("desc").take(limit * 3);
+      for (const cand of candidates) {
+        if (results.length >= limit) break;
+        if (results.some((r) => r.candidateId === cand._id)) continue;
+        const candidateResume = await ctx.db
+          .query("candidateResumes")
+          .withIndex("by_candidateId", (q) => q.eq("candidateId", cand._id))
+          .first();
+
+        const rawText =
+          candidateResume?.rawText ||
+          `Candidate Profile: ${cand.fullName || "Candidate"} - ${cand.currentJobTitle || "Professional"}. Experience: ${cand.totalExperienceYears || 5} years. Email: ${cand.email || "N/A"}.`;
+
+        results.push({
+          candidateId: cand._id,
+          candidateName: cand.fullName || "Unnamed Candidate",
+          rawText,
+        });
+      }
+    }
+
+    return results;
+  },
+});
