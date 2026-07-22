@@ -48,9 +48,11 @@ export default function CandidateProfile() {
   const createApplication = useMutation(api.applications.applications.createApplication);
   const setDoNotContact = useMutation(api.candidates.candidates.setDoNotContact);
   const triggerManualAiCall = useMutation(api.applications.applications.triggerManualAiCall);
+  const reparseReferees = useAction(api.candidates.refereeActions.reparseSingleCandidateReferees);
   
   const [isAddToJobOpen, setIsAddToJobOpen] = useState(false);
   const [isTriggeringCall, setIsTriggeringCall] = useState(false);
+  const [isReparsingReferees, setIsReparsingReferees] = useState(false);
 
   React.useEffect(() => {
     if (fetchedCandidate && fetchedCandidate.isParsed === false) {
@@ -746,6 +748,23 @@ export default function CandidateProfile() {
                     <span className="text-text-primary text-sm font-bold">Referees</span>
                     <span className="text-text-secondary text-xs mt-0.5">Professional references extracted from CV or stored for this candidate</span>
                   </div>
+                  <button
+                    disabled={isReparsingReferees}
+                    onClick={async () => {
+                      setIsReparsingReferees(true);
+                      try {
+                        const res = await reparseReferees({ candidateId });
+                        toast.success(`Referees extracted successfully! (${res.refereesCount} references found)`);
+                      } catch (err: any) {
+                        toast.error(err?.message || "Failed to re-extract referees");
+                      } finally {
+                        setIsReparsingReferees(false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 bg-primary-container text-on-primary py-1.5 px-3 rounded-md text-xs font-bold hover:bg-[#144718] transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {isReparsingReferees ? "Extracting..." : "⚡ Re-extract Referees"}
+                  </button>
                 </div>
                 <div className="flex flex-col p-6">
                   {referees === undefined ? (

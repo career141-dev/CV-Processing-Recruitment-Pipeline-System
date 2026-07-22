@@ -80,6 +80,27 @@ Phone: ${candidate.phone || 'Unknown'}
       isParsed: true,
     });
 
+    if (extracted.referees && extracted.referees.length > 0) {
+      const validReferees = extracted.referees
+        .filter((r: any) => r && r.name && String(r.name).trim().length > 0)
+        .map((r: any) => ({
+          name: String(r.name).trim(),
+          designation: r.designation ? String(r.designation) : undefined,
+          company: r.company ? String(r.company) : undefined,
+          contactNo: r.contactNo ? String(r.contactNo) : undefined,
+          email: r.email ? String(r.email) : undefined,
+          relationship: r.relationship ? String(r.relationship) : undefined,
+          notes: r.notes ? String(r.notes) : undefined,
+        }));
+
+      if (validReferees.length > 0) {
+        await ctx.runMutation(api.candidates.referees.saveExtractedReferees, {
+          candidateId: args.candidateId,
+          referees: validReferees,
+        });
+      }
+    }
+
     return { status: "success" };
   },
 });

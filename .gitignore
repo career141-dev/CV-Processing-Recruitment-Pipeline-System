@@ -52,6 +52,6 @@ next-env.d.ts
 backup.zip
 monitor-log.txt
 
-CVs
+/CVs/
 convex_backup.zip
 certificates
