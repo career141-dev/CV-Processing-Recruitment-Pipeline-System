@@ -58,12 +58,8 @@ services:
       timeout: 5s
       retries: 5
     # ── CRASH FIX 2: Memory limit prevents OOM kill of the whole VPS ──
-    deploy:
-      resources:
-        limits:
-          memory: 2g
-        reservations:
-          memory: 512m
+    mem_limit: 2g
+    mem_reservation: 512m
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
       driver: "json-file"
@@ -87,10 +83,7 @@ services:
       backend:
         condition: service_healthy
     # ── CRASH FIX 2: Memory limit for dashboard ──
-    deploy:
-      resources:
-        limits:
-          memory: 512m
+    mem_limit: 512m
     logging:
       driver: "json-file"
       options:

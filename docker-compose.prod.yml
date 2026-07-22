@@ -19,12 +19,8 @@ services:
     env_file:
       - .env.production
     # ── CRASH FIX 2: Memory limit — prevents Next.js from eating all RAM ──
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-        reservations:
-          memory: 256m
+    mem_limit: 1g
+    mem_reservation: 256m
     # ── CRASH FIX 4: Log rotation to prevent filling up the VPS disk ──
     logging:
       driver: "json-file"
