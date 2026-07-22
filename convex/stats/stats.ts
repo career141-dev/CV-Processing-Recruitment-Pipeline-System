@@ -1,7 +1,7 @@
 import { query, mutation, action, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "../lib/permissions";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 
 export const getSystemStats = query({
   args: {},
@@ -339,7 +339,7 @@ export const getTeamActivity = query({
   handler: async (ctx) => {
     const logs = await ctx.db.query("activityLog")
       .order("desc")
-      .take(10);
+      .take(5);
 
     return logs.map(l => {
       let iconUrl = "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/4d093c8c-cdbb-4660-939f-6f3503eaac6e";
@@ -1023,4 +1023,158 @@ export const getTodayInboxActivity = query({
     return { total, counts };
   }
 });
+
+// ── SAFE PAGINATED COUNTING HELPERS (ACTION-SAFE) ────────────────────
+
+export const getCandidatesPage = query({
+  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidates")
+      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
+  },
+});
+
+export const getCvUploadsPage = query({
+  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("cvUploads")
+      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
+  },
+});
+
+export const getApplicationsPage = query({
+  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("applications")
+      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
+  },
+});
+
+export const getJobsPage = query({
+  args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("jobs")
+      .paginate({ numItems: args.limit, cursor: args.cursor ?? undefined });
+  },
+});
+
+// Mutation to write values back to the systemStats singleton
+export const saveSystemStats = internalMutation({
+  args: {
+    totalCandidates: v.number(),
+    totalCvUploads: v.number(),
+    totalApplications: v.number(),
+    activeJobsCount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    let sysStat = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
+      .first();
+
+    if (sysStat) {
+      await ctx.db.patch(sysStat._id, {
+        totalCandidates: args.totalCandidates,
+        totalCvUploads: args.totalCvUploads,
+        totalApplications: args.totalApplications,
+        activeJobsCount: args.activeJobsCount,
+      });
+    } else {
+      await ctx.db.insert("systemStats", {
+        singletonKey: "global_stats",
+        totalCandidates: args.totalCandidates,
+        totalCvUploads: args.totalCvUploads,
+        totalApplications: args.totalApplications,
+        activeJobsCount: args.activeJobsCount,
+      });
+    }
+  },
+});
+
+// The safe, action-based backfill runner
+export const runSafeBackfill = action({
+  args: {},
+  handler: async (ctx) => {
+    console.log("Starting safe dashboard stats backfill...");
+    const limit = 1000;
+
+    // 1. Count Candidates
+    let totalCandidates = 0;
+    let candidateCursor: string | null = null;
+    while (true) {
+      const page = await ctx.runQuery(api.stats.stats.getCandidatesPage, {
+        cursor: candidateCursor,
+        limit,
+      });
+      totalCandidates += page.page.length;
+      if (page.isDone) break;
+      candidateCursor = page.continueCursor;
+    }
+    console.log(`Candidates count complete: ${totalCandidates}`);
+
+    // 2. Count CV Uploads
+    let totalCvUploads = 0;
+    let cvUploadCursor: string | null = null;
+    while (true) {
+      const page = await ctx.runQuery(api.stats.stats.getCvUploadsPage, {
+        cursor: cvUploadCursor,
+        limit,
+      });
+      totalCvUploads += page.page.length;
+      if (page.isDone) break;
+      cvUploadCursor = page.continueCursor;
+    }
+    console.log(`CV Uploads count complete: ${totalCvUploads}`);
+
+    // 3. Count Applications
+    let totalApplications = 0;
+    let appCursor: string | null = null;
+    while (true) {
+      const page = await ctx.runQuery(api.stats.stats.getApplicationsPage, {
+        cursor: appCursor,
+        limit,
+      });
+      totalApplications += page.page.length;
+      if (page.isDone) break;
+      appCursor = page.continueCursor;
+    }
+    console.log(`Applications count complete: ${totalApplications}`);
+
+    // 4. Count Active Jobs
+    let activeJobsCount = 0;
+    let jobCursor: string | null = null;
+    while (true) {
+      const page = await ctx.runQuery(api.stats.stats.getJobsPage, {
+        cursor: jobCursor,
+        limit,
+      });
+      // Filter active jobs in memory for the page
+      activeJobsCount += page.page.filter((j: any) => j.status === "active").length;
+      if (page.isDone) break;
+      jobCursor = page.continueCursor;
+    }
+    console.log(`Active Jobs count complete: ${activeJobsCount}`);
+
+    // Save counts back to singleton
+    await ctx.runMutation(internal.stats.stats.saveSystemStats, {
+      totalCandidates,
+      totalCvUploads,
+      totalApplications,
+      activeJobsCount,
+    });
+
+    console.log("Safe backfill execution completed successfully.");
+    return {
+      totalCandidates,
+      totalCvUploads,
+      totalApplications,
+      activeJobsCount,
+    };
+  },
+});
+
 
