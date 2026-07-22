@@ -2,6 +2,7 @@ import { query, action, mutation } from "./_generated/server";
 import { api } from "./_generated/api";
 import OpenAI from "openai";
 import { Id } from "./_generated/dataModel";
+import { v } from "convex/values";
 
 export const ping = query({
   args: {},
