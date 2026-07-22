@@ -77,97 +77,239 @@ export const saveMatchScore = internalMutation({
   },
 });
 
+// 3. Main scoring action — THREE-TIER AI SCORING SYSTEM
+//
+//  Tier 1: NVIDIA 70B (primary — best quality, full reasoning)
+//          3 retries with exponential backoff: 1s → 2s → 4s
+//
+//  Tier 2: NVIDIA 8B (fallback — smaller, faster, avoids rate limits)
+//          2 retries, 1s apart. Uses a shorter prompt to reduce load.
+//
+//  Tier 3: Smart Heuristic Reason (last resort — zero API calls)
+//          Score  = weighted heuristic score (fair — never 0)
+//          Reason = generated from actual CV breakdown (proper recruiter language)
+//
+//  Result: EVERY candidate ALWAYS gets a real score + proper reason.
+//          "Failed to connect" will NEVER appear in your system again.
+//
 export const processCvScoring = action({
   args: { candidateId: v.id("candidates"), jobId: v.id("jobs") },
   handler: async (ctx, args) => {
-    // 1. Get candidate and job
+    // ── Step 1: Load candidate + job data ──────────────────────────────
     const data = await ctx.runQuery(internal.cvs.cvScoringActions.getScoringData, {
       candidateId: args.candidateId,
       jobId: args.jobId,
     });
-    
+
     if (!data || !data.application) {
-      console.error("Failed to find candidate, job, or application for scoring");
+      console.error("[Scoring] Failed to find candidate, job, or application for scoring");
       return;
     }
-    
+
     const { candidate, job, application } = data;
 
-    // 2. Build SearchRequirements from Job
+    // ── Step 2: Build job requirements object ──────────────────────────
     const req = {
-      title: job.title,
-      summary: job.jobDescription,
-      requiredSkills: job.requiredSkills,
-      preferredSkills: job.niceToHaveSkills ?? [],
-      industry: job.clientIndustry,
-      location: job.location,
+      title:             job.title,
+      summary:           job.jobDescription,
+      requiredSkills:    job.requiredSkills,
+      preferredSkills:   job.niceToHaveSkills ?? [],
+      industry:          job.clientIndustry,
+      location:          job.location,
       minYearsExperience: job.experienceMinYears,
-      seniority: job.seniorityLevel,
+      seniority:         job.seniorityLevel,
       alternativeTitles: [],
     };
 
-    // 3. Score candidate heuristically
+    // ── Step 3: Heuristic scoring (always runs — no API needed) ────────
     const { scoreCandidateAgainstRequirements, scoreWithLLM } = await import("./cvScoring.js");
     const scored = scoreCandidateAgainstRequirements(candidate as any, req as any, 0);
 
-    // 4. Overwrite overallScore with weighted AI Config
     const weightedScore = Math.round(
-      (scored.titleScore * ((job.scoreWeightJobTitle ?? 30) / 100)) +
-      (scored.skillScore * ((job.scoreWeightSkills ?? 35) / 100)) +
+      (scored.titleScore      * ((job.scoreWeightJobTitle   ?? 30) / 100)) +
+      (scored.skillScore      * ((job.scoreWeightSkills     ?? 35) / 100)) +
       (scored.experienceScore * ((job.scoreWeightExperience ?? 15) / 100)) +
-      (scored.industryScore * ((job.scoreWeightIndustry ?? 15) / 100)) +
-      (scored.locationScore * ((job.scoreWeightLocation ?? 5) / 100))
+      (scored.industryScore   * ((job.scoreWeightIndustry   ?? 15) / 100)) +
+      (scored.locationScore   * ((job.scoreWeightLocation   ??  5) / 100))
     );
 
-    // 5. Call LLM for deeper scoring
-    let llmScore = 0;
-    let llmReason = "";
-    try {
-      const { result: llmResult, usage } = await scoreWithLLM({ cv: candidate }, req as any);
-      llmScore = llmResult.score;
-      llmReason = llmResult.reason;
+    // ── Step 4: Smart reason builder (Tier 3 fallback) ─────────────────
+    // Generates a proper recruiter-style reason from heuristic data.
+    // Never shows a generic error message to the TA team.
+    function buildHeuristicReason(): string {
+      const name     = (candidate as any).fullName || "The candidate";
+      const jobTitle = job.title || "this role";
+      const parts: string[] = [];
 
-      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
-        logs: [
-          {
-            taskType: "jd_matching",
-            model: usage.model,
-            promptTokens: usage.promptTokens,
-            completionTokens: usage.completionTokens,
-            success: true,
-            cvUploadId: candidate.cvUploadId ?? undefined,
-          }
-        ]
-      });
-    } catch (err) {
-      llmScore = 0;
-      llmReason = "Failed to evaluate candidate with LLM.";
+      // Title match
+      if (scored.titleScore >= 70) {
+        parts.push(`${name}'s job title is a strong match for the ${jobTitle} role.`);
+      } else if (scored.titleScore >= 40) {
+        parts.push(`${name}'s experience is partially aligned with the ${jobTitle} position.`);
+      } else {
+        parts.push(`${name}'s current role differs significantly from the ${jobTitle} requirement.`);
+      }
 
-      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
-        logs: [
-          {
-            taskType: "jd_matching",
-            model: "meta/llama-3.1-70b-instruct",
-            promptTokens: 0,
-            completionTokens: 0,
-            success: false,
-            error: err instanceof Error ? err.message : String(err),
-            cvUploadId: candidate.cvUploadId ?? undefined,
-          }
-        ]
-      });
+      // Skills match
+      const reqSkills = (job.requiredSkills || []).join(", ");
+      if (scored.skillScore >= 70) {
+        parts.push(`Required skills (${reqSkills || "as specified"}) are well-represented in the CV.`);
+      } else if (scored.skillScore >= 40) {
+        parts.push(`Some required skills (${reqSkills || "as specified"}) are present but coverage is partial.`);
+      } else {
+        parts.push(`Required skills (${reqSkills || "as specified"}) are largely absent from the CV.`);
+      }
+
+      // Experience match
+      const minYears  = job.experienceMinYears;
+      const candYears = (candidate as any).totalYearsExperience;
+      if (minYears && candYears) {
+        if (candYears >= minYears) {
+          parts.push(`Candidate has ${candYears} years of experience, meeting the ${minYears}-year requirement.`);
+        } else {
+          parts.push(`Candidate has ${candYears} years of experience, below the ${minYears}-year minimum.`);
+        }
+      } else if (scored.experienceScore >= 60) {
+        parts.push("Experience level appears suitable for this role.");
+      } else {
+        parts.push("Experience level may not fully meet the role requirements.");
+      }
+
+      return parts.slice(0, 3).join(" ");
     }
 
-    // Blend the scores (e.g., 60% Heuristic, 40% LLM)
-    const finalScore = Math.round((weightedScore * 0.6) + (llmScore * 0.4));
-    
-    // 6. Save the final score
+    // ── Step 5: THREE-TIER AI SCORING ──────────────────────────────────
+    let finalScore  = weightedScore;
+    let finalReason = buildHeuristicReason(); // safe default
+    let scoringTier = "heuristic-smart";
+
+    // ── TIER 1: NVIDIA 70B — 3 retries, exponential backoff ────────────
+    let tier1Success = false;
+    let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: "meta/llama-3.1-70b-instruct" };
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const { result, usage } = await scoreWithLLM({ cv: candidate }, req as any);
+        finalScore   = Math.round((weightedScore * 0.6) + (result.score * 0.4));
+        finalReason  = result.reason;
+        tier1Usage   = usage;
+        tier1Success = true;
+        scoringTier  = "nvidia-70b";
+        break;
+      } catch {
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt - 1) * 1000));
+        }
+      }
+    }
+
+    // Log Tier 1
+    await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+      logs: [{
+        taskType: "jd_matching",
+        model:           tier1Usage.model,
+        promptTokens:    tier1Usage.promptTokens,
+        completionTokens: tier1Usage.completionTokens,
+        success: tier1Success,
+        error:   tier1Success ? undefined : "Tier 1 (70B) failed after 3 retries",
+        cvUploadId: candidate.cvUploadId ?? undefined,
+      }]
+    });
+
+    // ── TIER 2: NVIDIA 8B — only if Tier 1 failed ──────────────────────
+    if (!tier1Success) {
+      console.warn(`[Scoring] Tier 1 (70B) failed for ${args.candidateId}. Trying Tier 2 (8B)...`);
+
+      let tier2Success = false;
+      let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: "meta/llama-3.1-8b-instruct" };
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const apiKey = process.env.NVIDIA_API_KEY;
+          if (!apiKey) throw new Error("NVIDIA_API_KEY not set");
+
+          const OpenAILib = (await import("openai")).default;
+          const openai    = new OpenAILib({ 
+            baseURL: "https://integrate.api.nvidia.com/v1", 
+            apiKey,
+            timeout: 30000, 
+            maxRetries: 0 
+          });
+          const model     = "meta/llama-3.1-8b-instruct";
+
+          // Shorter prompt — reduces token usage and rate-limit pressure
+          const response = await openai.chat.completions.create({
+            model,
+            messages: [
+              {
+                role: "system",
+                content: `You are a recruiter. Return ONLY JSON: {"score": 0-100, "reason": "2-3 sentence professional recruiter assessment of fit."}`
+              },
+              {
+                role: "user",
+                content: [
+                  `Job: ${req.title}`,
+                  `Required Skills: ${(req.requiredSkills || []).join(", ")}`,
+                  `Min Experience: ${req.minYearsExperience || "Not specified"} years`,
+                  `Candidate: ${(candidate as any).fullName}`,
+                  `Title: ${(candidate as any).currentTitle || "Unknown"}`,
+                  `Skills: ${((candidate as any).skills || []).join(", ")}`,
+                  `Experience: ${(candidate as any).totalYearsExperience || 0} years`,
+                ].join("\n")
+              }
+            ],
+          });
+
+          const content   = response.choices[0]?.message?.content ?? '{"score":0}';
+          const parsed    = JSON.parse(content) as { score?: number; reason?: string };
+          const score8b   = Math.min(100, Math.max(0, parsed.score ?? 0));
+
+          finalScore   = Math.round((weightedScore * 0.6) + (score8b * 0.4));
+          finalReason  = parsed.reason || buildHeuristicReason();
+          tier2Usage   = {
+            promptTokens:    response.usage?.prompt_tokens    || 0,
+            completionTokens: response.usage?.completion_tokens || 0,
+            model,
+          };
+          tier2Success = true;
+          scoringTier  = "nvidia-8b-fallback";
+          break;
+        } catch {
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      // Log Tier 2
+      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
+        logs: [{
+          taskType: "jd_matching",
+          model:           tier2Usage.model,
+          promptTokens:    tier2Usage.promptTokens,
+          completionTokens: tier2Usage.completionTokens,
+          success: tier2Success,
+          error:   tier2Success ? undefined : "Tier 2 (8B) also failed — using Tier 3 heuristic",
+          cvUploadId: candidate.cvUploadId ?? undefined,
+        }]
+      });
+
+      // ── TIER 3: Smart Heuristic — guaranteed, zero API calls ─────────
+      if (!tier2Success) {
+        console.warn(`[Scoring] All AI tiers failed for ${args.candidateId}. Using Tier 3 smart heuristic reason.`);
+        finalScore  = weightedScore;
+        finalReason = buildHeuristicReason();
+        scoringTier = "heuristic-smart";
+      }
+    }
+
+    console.log(`[Scoring] Candidate ${args.candidateId} → score: ${finalScore}, tier: ${scoringTier}`);
+
+    // ── Step 6: Save final score + reason ──────────────────────────────
     await ctx.runMutation(internal.cvs.cvScoringActions.saveMatchScore, {
       applicationId: application._id,
-      jobId: job._id,
-      candidateId: candidate._id,
-      score: finalScore,
-      reason: llmReason || scored.reason,
+      jobId:         job._id,
+      candidateId:   candidate._id,
+      score:         finalScore,
+      reason:        finalReason,
       minMatchScoreToShow: job.minMatchScoreToShow ?? 60,
     });
   },

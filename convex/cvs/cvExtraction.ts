@@ -280,8 +280,8 @@ function createNvidiaClient(): OpenAI {
   return new OpenAI({
     baseURL: "https://integrate.api.nvidia.com/v1",
     apiKey,
-    timeout: 120000, // 2 minutes
-    maxRetries: 3,
+    timeout: 45000,  // 45 seconds to prevent Convex 5-minute action timeout
+    maxRetries: 0,   // Let our custom retry loop handle it
   });
 }
 
