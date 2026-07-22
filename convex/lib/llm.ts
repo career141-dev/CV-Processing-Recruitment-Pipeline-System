@@ -4,14 +4,15 @@ import OpenAI from "openai";
 import type { ActionCtx } from "../_generated/server";
 
 
-export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing";
+export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
 
 // Model configuration for development
 const MODEL_CONFIG = {
   cv_structuring: "meta/llama-3.1-8b-instruct",      // Fast, good for parsing
   jd_extraction: "meta/llama-3.1-70b-instruct",     // Better understanding  
   jd_matching: "meta/llama-3.1-70b-instruct",         // Strong reasoning
-  email_routing: "meta/llama-3.1-8b-instruct"         // Fast text classification
+  email_routing: "meta/llama-3.1-8b-instruct",        // Fast text classification
+  cv_vision_ocr: "meta/llama-3.2-11b-vision-instruct" // Multimodal vision OCR
 };
 
 export function getOpenAI(taskType: TaskType): OpenAI {
@@ -121,5 +122,110 @@ export async function generateNvidiaEmbedding(
 
   console.error("Embedding generation error:", lastError);
   return undefined;
+}
+
+export async function callNvidiaVisionOCR(
+  ctx: ActionCtx,
+  imageBase64DataUrls: string[],
+  cvUploadId?: Id<"cvUploads">
+): Promise<string> {
+  if (!imageBase64DataUrls || imageBase64DataUrls.length === 0) {
+    throw new Error("No image content provided for Vision OCR");
+  }
+
+  const model = "meta/llama-3.2-11b-vision-instruct";
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) {
+    throw new Error("NVIDIA_API_KEY environment variable is not set");
+  }
+
+  const openai = new OpenAI({
+    baseURL: "https://integrate.api.nvidia.com/v1",
+    apiKey,
+    timeout: 60000,
+    maxRetries: 0,
+  });
+
+  const contentItems: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
+    {
+      type: "text",
+      text: "Transcribe all visible text from the provided document image(s) accurately, completely, and verbatim in top-to-bottom reading order. Return ONLY the extracted document text with no markdown wrapper, no conversational preambles, and no explanation.",
+    },
+  ];
+
+  for (const imageUrl of imageBase64DataUrls) {
+    contentItems.push({
+      type: "image_url",
+      image_url: { url: imageUrl },
+    });
+  }
+
+  const maxAttempts = 3;
+  let lastError = "";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: contentItems as any,
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 4096,
+      });
+
+      if (response.usage) {
+        await logLLMUsage(
+          ctx,
+          "cv_vision_ocr",
+          model,
+          response.usage.prompt_tokens,
+          response.usage.completion_tokens,
+          true,
+          undefined,
+          cvUploadId
+        );
+      }
+
+      const extractedText = response.choices[0]?.message?.content?.trim() || "";
+      return extractedText;
+    } catch (error: any) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastError = message;
+      console.error(`[callNvidiaVisionOCR] Call failed (attempt ${attempt}/${maxAttempts}):`, message);
+
+      const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
+      const isTransientError =
+        isRateLimit ||
+        message.toLowerCase().includes("timed out") ||
+        message.toLowerCase().includes("timeout") ||
+        message.includes("502") ||
+        message.includes("503") ||
+        message.includes("504");
+
+      if (isTransientError && attempt < maxAttempts) {
+        const waitMs = isRateLimit ? attempt * 5000 : Math.pow(2, attempt) * 1000;
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        continue;
+      }
+      break;
+    }
+  }
+
+  await logLLMUsage(
+    ctx,
+    "cv_vision_ocr",
+    model,
+    0,
+    0,
+    false,
+    lastError,
+    cvUploadId
+  );
+
+  throw new Error(`Vision OCR failed: ${lastError}`);
 }
 

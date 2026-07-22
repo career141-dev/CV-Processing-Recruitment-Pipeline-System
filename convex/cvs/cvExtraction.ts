@@ -18,7 +18,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding, logLLMUsage } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -181,26 +181,164 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
-async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
-  throw new Error("Image CV extraction requires OCR, which is currently disabled due to serverless runtime constraints.");
+async function extractImagesFromPdfBuffer(
+  buffer: ArrayBuffer,
+  maxPages: number = 5
+): Promise<string[]> {
+  const images: string[] = [];
+  try {
+    const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+    if (pdfjsLib.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    }
+
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    const pdfDoc = await loadingTask.promise;
+    const numPages = Math.min(pdfDoc.numPages, maxPages);
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const ops = await page.getOperatorList();
+
+      for (let i = 0; i < ops.fnArray.length; i++) {
+        const fn = ops.fnArray[i];
+        if (
+          fn === pdfjsLib.OPS.paintImageXObject ||
+          fn === pdfjsLib.OPS.paintInlineImageXObject
+        ) {
+          const imgName = ops.argsArray[i][0];
+          let imgData: any = null;
+
+          try {
+            imgData = page.objs.get(imgName);
+          } catch { }
+
+          if (!imgData) continue;
+
+          const width = imgData.width;
+          const height = imgData.height;
+
+          if (!width || !height || width < 50 || height < 50) {
+            continue;
+          }
+
+          if (imgData.data && imgData.data.length > 0) {
+            try {
+              let rgbaBuffer: Buffer;
+              const kind = imgData.kind;
+
+              if (kind === 1 || imgData.data.length === width * height) {
+                rgbaBuffer = Buffer.alloc(width * height * 4);
+                for (let j = 0; j < width * height; j++) {
+                  const val = imgData.data[j];
+                  const offset = j * 4;
+                  rgbaBuffer[offset] = val;
+                  rgbaBuffer[offset + 1] = val;
+                  rgbaBuffer[offset + 2] = val;
+                  rgbaBuffer[offset + 3] = 255;
+                }
+              } else if (imgData.data.length === width * height * 3) {
+                rgbaBuffer = Buffer.alloc(width * height * 4);
+                for (let j = 0; j < width * height; j++) {
+                  const srcOffset = j * 3;
+                  const destOffset = j * 4;
+                  rgbaBuffer[destOffset] = imgData.data[srcOffset];
+                  rgbaBuffer[destOffset + 1] = imgData.data[srcOffset + 1];
+                  rgbaBuffer[destOffset + 2] = imgData.data[srcOffset + 2];
+                  rgbaBuffer[destOffset + 3] = 255;
+                }
+              } else if (imgData.data.length === width * height * 4) {
+                rgbaBuffer = Buffer.from(imgData.data);
+              } else {
+                continue;
+              }
+
+              const jimpImg = new Jimp({
+                data: rgbaBuffer,
+                width,
+                height,
+              });
+
+              const base64Data = await jimpImg.getBase64("image/jpeg");
+              images.push(base64Data);
+            } catch (jimpErr) {
+              console.warn(`[PDF Image Extraction] Jimp encoding error on page ${pageNum}:`, jimpErr);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[extractImagesFromPdfBuffer] Failed to extract images from PDF:", err);
+  }
+
+  return images;
+}
+
+async function extractTextFromImage(
+  buffer: ArrayBuffer,
+  fileType: string,
+  ctx?: ActionCtx,
+  cvUploadId?: Id<"cvUploads">
+): Promise<string> {
+  if (!ctx) {
+    throw new Error("Image CV extraction requires Vision OCR, but ActionCtx was not provided.");
+  }
+
+  const mimeType = fileType.toLowerCase().includes("png") ? "image/png" : "image/jpeg";
+  const base64Str = Buffer.from(buffer).toString("base64");
+  const dataUrl = `data:${mimeType};base64,${base64Str}`;
+
+  const visionText = await callNvidiaVisionOCR(ctx, [dataUrl], cvUploadId);
+  if (!visionText || visionText.trim().length < 20) {
+    throw new Error("Insufficient text extracted from image (Vision OCR returned less than 20 characters).");
+  }
+
+  return visionText;
 }
 
 export async function extractText(
   buffer: ArrayBuffer,
   fileType: string,
   skipOCR: boolean = false,
+  ctx?: ActionCtx,
+  cvUploadId?: Id<"cvUploads">
 ): Promise<string> {
   const type = fileType.toLowerCase();
 
   if (type === "pdf" || type === "application/pdf") {
+    let pdfText = "";
     try {
-      const pdfText = await extractTextFromPdf(buffer);
-      if (pdfText.trim().length > 50) return pdfText;
-      throw new Error("PDF text extraction returned less than 50 characters (possibly a scanned PDF which requires OCR).");
+      pdfText = await extractTextFromPdf(buffer);
     } catch (e) {
-      console.warn("Failed to extract text from PDF", e);
-      throw e;
+      console.warn("Standard PDF text extraction failed, falling back to Vision OCR...", e);
     }
+
+    if (pdfText && pdfText.trim().length >= 50) {
+      return pdfText;
+    }
+
+    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Invoking Llama 3.2 11B Vision OCR...`);
+
+    if (!ctx) {
+      throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
+    }
+
+    const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
+    if (!pageImages || pageImages.length === 0) {
+      throw new Error("Scanned PDF text extraction failed: less than 50 characters extracted and no scanned page images could be extracted from PDF.");
+    }
+
+    const visionText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
+    if (!visionText || visionText.trim().length < 20) {
+      throw new Error("Insufficient text extracted from scanned PDF (Vision OCR returned less than 20 characters).");
+    }
+
+    return visionText;
   }
 
   const magic = new Uint8Array(buffer.slice(0, 4));
@@ -210,8 +348,8 @@ export async function extractText(
     return extractTextFromDocx(buffer);
   }
 
-  if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg") {
-    throw new Error("Image CV extraction requires OCR, which is currently disabled.");
+  if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg" || type === "webp") {
+    return extractTextFromImage(buffer, fileType, ctx, cvUploadId);
   }
 
   if (type === "rtf") {
@@ -618,13 +756,13 @@ export async function runCvExtraction(
       return existingCandidate._id;
     }
 
-    const rawText = await extractText(buffer, fileType, !!skipLLM);
+    const rawText = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
     if (trimmed.length < 20) {
       throw new Error("Insufficient text extracted from file");
     }
-    const cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
+    let cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
       : trimmed;
 
@@ -684,9 +822,12 @@ export async function runCvExtraction(
         });
       }
 
-      // Run both LLM extraction and Embedding generation in parallel
-      const [extractedData, embeddingResult] = await Promise.all([
-        callNvidiaLLM(ctx, cappedRawText, cvUploadId),
+      // First try: call Llama 3.1 70B Instruct with extracted text
+      let [extractedData, embeddingResult] = await Promise.all([
+        callNvidiaLLM(ctx, cappedRawText, cvUploadId).catch((err) => {
+          console.warn("[CvExtraction] First call to callNvidiaLLM (70B Instruct) failed:", err.message || err);
+          return null;
+        }),
         generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
           console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", err.message || err);
           return undefined;
@@ -694,6 +835,28 @@ export async function runCvExtraction(
       ]);
 
       extracted = extractedData;
+
+      // Fallback: If 70B LLM failed on standard text, and document is PDF where Vision OCR hasn't run yet
+      if (!extracted && (fileType.toLowerCase() === "pdf" || fileType.toLowerCase() === "application/pdf")) {
+        console.warn(`[CvExtraction] Llama 3.1 70B extraction returned null for standard text. Attempting Llama 3.2 11B Vision OCR fallback...`);
+        try {
+          const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
+          if (pageImages && pageImages.length > 0) {
+            const visionRawText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
+            const cleanedVision = cleanRawText(visionRawText).trim();
+            if (cleanedVision.length >= 20) {
+              cappedRawText = cleanedVision.length > MAX_RAW_TEXT_LENGTH
+                ? cleanedVision.slice(0, MAX_RAW_TEXT_LENGTH)
+                : cleanedVision;
+              console.log(`[CvExtraction] Vision OCR transcribed ${cappedRawText.length} characters. Passing raw text back to Llama 3.1 70B Instruct for candidate detail extraction...`);
+              extracted = await callNvidiaLLM(ctx, cappedRawText, cvUploadId);
+            }
+          }
+        } catch (visionFallbackErr: any) {
+          console.error("[CvExtraction] Vision OCR fallback attempt failed:", visionFallbackErr.message || visionFallbackErr);
+        }
+      }
+
       if (!extracted) {
         throw new Error("LLM failed to extract candidate data (API timeout or invalid response)");
       }
