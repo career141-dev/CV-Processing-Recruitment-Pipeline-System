@@ -418,7 +418,7 @@ ${textToSend}`,
         await logLLMUsage(
           ctx,
           "cv_structuring",
-          "meta/llama-3.1-70b-instruct",
+          "meta/llama-3.1-8b-instruct",
           response.usage.prompt_tokens,
           response.usage.completion_tokens,
           true,
@@ -724,10 +724,12 @@ export async function runCvExtraction(
         description: jh.description,
       }));
 
+      const { referees, ...safeExtractedWithoutReferees } = safeExtracted;
+
       await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
         rawText: cappedRawText,
-        ...safeExtracted,
+        ...safeExtractedWithoutReferees,
         cvUploadId,
         currentEmployer: derivedEmployer,
         currentTitle: derivedTitle,
@@ -834,7 +836,7 @@ export async function runCvExtraction(
     const shouldRetry = (isRateLimit || isTransientLLMError) && ((args as any).retryCount ?? 0) < 5;
 
     // Clean up the blank candidate stub since extraction failed
-    if (candidateId && !shouldRetry) {
+    if (candidateId) {
       console.log(`[CvExtraction] Extraction failed, cleaning up blank candidate: ${candidateId}`);
       await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
     }
