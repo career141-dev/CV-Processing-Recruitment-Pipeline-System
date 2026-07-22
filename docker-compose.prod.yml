@@ -3,12 +3,13 @@ services:
     build:
       context: .
       args:
-        # These are baked in at build time. On your VPS, 
+        # These are baked in at build time. On your VPS,
         # Compose will automatically read these from .env.production
         - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL}
         - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
     image: career141-prod:latest
     container_name: career141-web
+    # ── CRASH FIX 1: Auto-restart if Next.js crashes ──
     restart: unless-stopped
     # We use "expose" instead of "ports" because Caddy will route traffic to it internally.
     # This prevents the app from being accessed directly via the server's IP address.
@@ -17,9 +18,16 @@ services:
     # Load all server-side secrets at runtime
     env_file:
       - .env.production
-    # Log rotation to prevent filling up the VPS disk over time
+    # ── CRASH FIX 2: Memory limit — prevents Next.js from eating all RAM ──
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+    # ── CRASH FIX 4: Log rotation to prevent filling up the VPS disk ──
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "20m"
+        max-file: "5"

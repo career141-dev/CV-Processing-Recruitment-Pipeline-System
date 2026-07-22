@@ -9,30 +9,98 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # ── Step 1: Checkout code ──────────────────────────────────────────
       - name: Checkout Code
         uses: actions/checkout@v3
-        
+
+      # ── Step 2: Setup Node ─────────────────────────────────────────────
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
           node-version: '20'
 
+      # ── Step 3: Install dependencies ───────────────────────────────────
       - name: Install dependencies
         run: npm ci
 
+      # ── Step 4: Deploy Convex functions & schema to production ─────────
       - name: Deploy Convex Database
         run: npx convex deploy --url https://api.career141.com --admin-key "convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
 
-      - name: Execute deployment commands via SSH
+      # ── Step 5: VPS — Pre-start cleanup + Deploy ───────────────────────
+      - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
+          # Give the deployment plenty of time to build and start
+          command_timeout: 15m
           script: |
             set -e
             cd ~/career141
+
+            echo "======================================"
+            echo "  CAREER141 PRODUCTION DEPLOYMENT"
+            echo "======================================"
+
+            # ── CRASH FIX 5: Clean stale temp files before starting ──────
+            echo "[1/5] Cleaning stale Docker temp files..."
+            docker container prune -f || true
+
+            # ── Check disk space — warn if > 80% full ─────────────────────
+            echo "[2/5] Checking disk space..."
+            DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+            echo "      Disk usage: ${DISK_USAGE}%"
+            if [ "$DISK_USAGE" -gt 85 ]; then
+              echo "      WARNING: Disk above 85%! Pruning old Docker images..."
+              docker image prune -f || true
+            fi
+
+            # ── Check available memory ────────────────────────────────────
+            echo "[3/5] Checking memory..."
+            FREE_MEM=$(free -m | awk '/^Mem:/{print $4}')
+            echo "      Free memory: ${FREE_MEM}MB"
+
+            # ── Pull latest code ──────────────────────────────────────────
+            echo "[4/5] Pulling latest code..."
             git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
             git reset --hard
             git pull origin main
+
+            # ── Build and recreate containers ─────────────────────────────
+            echo "[5/5] Building and starting containers..."
             docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --force-recreate
+
+            echo "======================================"
+            echo "  DEPLOYMENT COMPLETE"
+            echo "======================================"
+
+      # ── Step 6: Wait for production to be fully healthy ────────────────
+      - name: Wait for production health check
+        run: |
+          echo "Waiting 30s for containers to initialize..."
+          sleep 30
+          echo "Checking production health..."
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://career141.com || echo "000")
+            echo "  Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ] || [ "$STATUS" = "302" ]; then
+              echo "✅ Production is healthy!"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "⚠️ Production health check timed out — please verify manually."
+          exit 0
+
+      # ── Step 7: Run safe stats backfill on production ──────────────────
+      # This safely recalculates dashboard counters page-by-page
+      # without scanning the full database or risking a crash.
+      - name: Run Stats Backfill on Production
+        run: |
+          echo "Running safe stats backfill on production..."
+          npx convex run stats/stats:runSafeBackfill \
+            --url https://api.career141.com \
+            --admin-key "convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
+          echo "✅ Stats backfill complete"

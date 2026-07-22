@@ -18,6 +18,7 @@ import type * as admin_ioPerformanceMigrations from "../admin/ioPerformanceMigra
 import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
 import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
 import type * as admin_mute from "../admin/mute.js";
+import type * as admin_qaTests from "../admin/qaTests.js";
 import type * as admin_recalculateGlobalStats from "../admin/recalculateGlobalStats.js";
 import type * as admin_removeProfileImages from "../admin/removeProfileImages.js";
 import type * as admin_runBackfill from "../admin/runBackfill.js";
@@ -76,8 +77,10 @@ import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as scratch from "../scratch.js";
+import type * as scratchQuery from "../scratchQuery.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
+import type * as stats_statsQueries from "../stats/statsQueries.js";
 import type * as storage_r2 from "../storage/r2.js";
 import type * as users_users from "../users/users.js";
 
@@ -98,6 +101,7 @@ declare const fullApi: ApiFromModules<{
   "admin/migrateCandidates": typeof admin_migrateCandidates;
   "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
   "admin/mute": typeof admin_mute;
+  "admin/qaTests": typeof admin_qaTests;
   "admin/recalculateGlobalStats": typeof admin_recalculateGlobalStats;
   "admin/removeProfileImages": typeof admin_removeProfileImages;
   "admin/runBackfill": typeof admin_runBackfill;
@@ -156,8 +160,10 @@ declare const fullApi: ApiFromModules<{
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
   scratch: typeof scratch;
+  scratchQuery: typeof scratchQuery;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
+  "stats/statsQueries": typeof stats_statsQueries;
   "storage/r2": typeof storage_r2;
   "users/users": typeof users_users;
 }>;
