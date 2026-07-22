@@ -130,9 +130,7 @@ export default defineSchema({
     salaryMin: v.optional(v.number()),
     salaryMax: v.optional(v.number()),
     salaryCurrency: v.optional(v.string()),
-    educationLevel: v.optional(v.union(
-      v.literal("any"), v.literal("diploma"), v.literal("bachelor"),
-      v.literal("master"), v.literal("phd"), v.literal("professional_cert"))),
+    educationLevel: v.optional(v.string()),
     languagesRequired: v.optional(v.array(v.string())),
 
     // Routing & Identity

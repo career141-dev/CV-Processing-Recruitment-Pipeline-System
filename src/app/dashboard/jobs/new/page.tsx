@@ -41,6 +41,8 @@ export default function CreateJobWizard() {
   const [showRecruiterDropdown, setShowRecruiterDropdown] = useState(false);
   const [lastSavedKeyword, setLastSavedKeyword] = useState<string>('');
   const [createdJobId, setCreatedJobId] = useState<string>('');
+  const [isCustomEducation, setIsCustomEducation] = useState(false);
+  const [customEdValue, setCustomEdValue] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -300,7 +302,11 @@ export default function CreateJobWizard() {
         salaryMin: parseInt(formData.salaryRange.split("-")[0]?.replace(/[^0-9]/g, '')) || undefined,
         salaryMax: parseInt(formData.salaryRange.split("-")[1]?.replace(/[^0-9]/g, '')) || undefined,
         salaryCurrency: formData.salaryRange.replace(/[0-9\- ]/g, '').trim() || "LKR",
-        educationLevel: formData.educationLevel ? formData.educationLevel.toLowerCase().replace(/ /g, "_") : undefined,
+        educationLevel: formData.educationLevel
+          ? (["Bachelor", "Master", "PhD", "Diploma", "Professional Cert", "Bachelor or Master", "any", "diploma", "bachelor", "master", "phd", "professional_cert", "bachelor_or_master"].includes(formData.educationLevel)
+              ? formData.educationLevel.toLowerCase().replace(/ /g, "_")
+              : formData.educationLevel)
+          : undefined,
         languagesRequired: formData.languages ? formData.languages.split(",").map(s => s.trim()).filter(Boolean) : undefined,
         keyword: formData.jobKeyword || undefined,
         primaryRecruiterId: primaryRecruiterId as any,
@@ -585,14 +591,53 @@ export default function CreateJobWizard() {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1.5">Education</label>
-              <select className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.educationLevel} onChange={e => updateFormData('educationLevel', e.target.value)}>
-                <option value="any">Any</option>
-                <option value="diploma">Diploma</option>
-                <option value="bachelor">Bachelor</option>
-                <option value="master">Master</option>
-                <option value="phd">PhD</option>
-                <option value="professional_cert">Professional Cert</option>
-              </select>
+              {isCustomEducation ? (
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" 
+                    value={customEdValue} 
+                    onChange={e => {
+                      setCustomEdValue(e.target.value);
+                      updateFormData('educationLevel', e.target.value);
+                    }} 
+                    placeholder="e.g. CIMA / ACCA / specific degree..." 
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setIsCustomEducation(false);
+                      updateFormData('educationLevel', 'any');
+                    }}
+                    className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-md text-xs font-semibold text-text-primary"
+                  >
+                    Preset
+                  </button>
+                </div>
+              ) : (
+                <select 
+                  className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" 
+                  value={formData.educationLevel} 
+                  onChange={e => {
+                    if (e.target.value === 'custom') {
+                      setIsCustomEducation(true);
+                      setCustomEdValue('');
+                      updateFormData('educationLevel', '');
+                    } else {
+                      updateFormData('educationLevel', e.target.value);
+                    }
+                  }}
+                >
+                  <option value="any">Any</option>
+                  <option value="diploma">Diploma</option>
+                  <option value="bachelor">Bachelor</option>
+                  <option value="master">Master</option>
+                  <option value="phd">PhD</option>
+                  <option value="professional_cert">Professional Cert</option>
+                  <option value="bachelor_or_master">Bachelor or Master</option>
+                  <option value="custom">Other / Custom...</option>
+                </select>
+              )}
             </div>
           </div>
 
