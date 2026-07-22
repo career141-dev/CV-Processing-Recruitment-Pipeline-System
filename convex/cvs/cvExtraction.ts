@@ -58,6 +58,16 @@ export const jobHistorySchema = z.object({
   confidence: z.preprocess(makeNumber, z.number().nullable().optional()),
 });
 
+export const refereeSchema = z.object({
+  name: z.preprocess(makeString, z.string().nullable().optional()),
+  designation: z.preprocess(makeString, z.string().nullable().optional()),
+  company: z.preprocess(makeString, z.string().nullable().optional()),
+  contactNo: z.preprocess(makeString, z.string().nullable().optional()),
+  email: z.preprocess(makeString, z.string().nullable().optional()),
+  relationship: z.preprocess(makeString, z.string().nullable().optional()),
+  notes: z.preprocess(makeString, z.string().nullable().optional()),
+});
+
 const makeSkillArray = (val: any) => {
   if (val === null || val === undefined) return null;
   if (Array.isArray(val)) {
@@ -92,6 +102,7 @@ export const cvExtractionSchema = z.object({
   languages: z.preprocess(makeArray, z.array(z.string()).nullable().optional()),
   summary: z.preprocess(makeString, z.string().nullable().optional()),
   jobHistory: z.array(jobHistorySchema).nullable().optional(),
+  referees: z.array(refereeSchema).nullable().optional(),
 });
 
 export type CvExtractionResult = z.infer<typeof cvExtractionSchema>;
@@ -345,6 +356,7 @@ CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile 
 3. Return skills as an array of objects with value and confidence (0.0 to 1.0).
 4. Return jobHistory as an array of objects, including a confidence field (0.0 to 1.0) on each job object.
 5. If currentTitle or currentEmployer are not explicitly stated as "current" or "present", infer them from the most recent job in their work experience by considering the dates.
+6. Extract any referees or professional references explicitly mentioned in the CV (including name, designation/title, company, contact number/phone, email, relationship to candidate, and any notes). Return as an array of objects under "referees".
 {
   "fullName": null,
   "email": null,
@@ -380,6 +392,17 @@ CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile 
       "endDate": null,
       "description": null,
       "confidence": 0.0
+    }
+  ],
+  "referees": [
+    {
+      "name": null,
+      "designation": null,
+      "company": null,
+      "contactNo": null,
+      "email": null,
+      "relationship": null,
+      "notes": null
     }
   ]
 }
@@ -720,6 +743,27 @@ export async function runCvExtraction(
         isParsed: true,
         embedding,
       });
+
+      if (extracted.referees && extracted.referees.length > 0) {
+        const validReferees = extracted.referees
+          .filter((r) => r && r.name && r.name.trim().length > 0)
+          .map((r) => ({
+            name: r.name!.trim(),
+            designation: r.designation || undefined,
+            company: r.company || undefined,
+            contactNo: r.contactNo || undefined,
+            email: r.email || undefined,
+            relationship: r.relationship || undefined,
+            notes: r.notes || undefined,
+          }));
+
+        if (validReferees.length > 0) {
+          await ctx.runMutation(api.candidates.referees.saveExtractedReferees, {
+            candidateId,
+            referees: validReferees,
+          });
+        }
+      }
 
       if (!embedding) {
         console.log(`[CvExtraction] Embedding was not generated during parsing for candidate ${candidateId}. Scheduling fallback background embedding task...`);

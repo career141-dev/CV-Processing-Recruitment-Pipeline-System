@@ -29,6 +29,7 @@ import type * as applications_applications from "../applications/applications.js
 import type * as candidates_candidates from "../candidates/candidates.js";
 import type * as candidates_derivations from "../candidates/derivations.js";
 import type * as candidates_profile from "../candidates/profile.js";
+import type * as candidates_referees from "../candidates/referees.js";
 import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
 import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   "candidates/candidates": typeof candidates_candidates;
   "candidates/derivations": typeof candidates_derivations;
   "candidates/profile": typeof candidates_profile;
+  "candidates/referees": typeof candidates_referees;
   "candidates/updateAllExp": typeof candidates_updateAllExp;
   "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
   "communications/emailAgent": typeof communications_emailAgent;

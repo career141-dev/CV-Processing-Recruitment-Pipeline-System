@@ -72,6 +72,7 @@ export default function CandidateProfile() {
   const applications = useQuery(api.applications.applications.getByCandidate, candidate ? { candidateId } : "skip");
   const timeline = useQuery(api.applications.applications.getCandidateTimeline, candidate ? { candidateId } : "skip");
   const aiCalls = useQuery(api.applications.applications.getCandidateAiCalls, candidate ? { candidateId } : "skip");
+  const referees = useQuery(api.candidates.referees.getRefereesByCandidate, candidate ? { candidateId } : "skip");
 
   if (candidate === undefined) {
     return (
@@ -279,7 +280,7 @@ export default function CandidateProfile() {
                 { key: "timeline", label: "Timeline" },
                 { key: "communications", label: "Communications" },
                 { key: "applications", label: "Job Applications", badge: applications?.length?.toString() ?? "0" },
-                { key: "callLog", label: "AI Call Log" },
+                { key: "referees", label: "Referees", badge: referees?.length?.toString() ?? "0" },
               ].map((tab) => (
                 <div
                   key={tab.key}
@@ -482,6 +483,54 @@ export default function CandidateProfile() {
                   )}
                 </div>
 
+                {/* Referees */}
+                <div className="flex flex-col bg-surface p-6 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">
+                  <div className="flex items-center justify-between mb-6">
+                    <span className="text-text-primary text-base font-bold">Referees</span>
+                    {referees && referees.length > 0 && (
+                      <span className="text-xs text-text-secondary bg-[#EEEEE9] py-0.5 px-2 rounded-full font-medium">
+                        {referees.length} Reference{referees.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {referees === undefined ? (
+                    <span className="text-text-disabled text-sm">Loading referees...</span>
+                  ) : referees.length === 0 ? (
+                    <span className="text-text-disabled text-sm">No referees extracted or listed.</span>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {referees.map((ref) => (
+                        <div key={ref._id} className="flex flex-col p-4 bg-[#F8FAF2] rounded-lg border border-border">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-text-primary text-[14px] font-bold">{ref.name}</span>
+                            {ref.relationship && (
+                              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                {ref.relationship}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-text-secondary text-xs font-medium">
+                            {[ref.designation, ref.company].filter(Boolean).join(" • ") || "No designation listed"}
+                          </span>
+                          <div className="flex flex-col gap-1 mt-3 pt-3 border-t border-border/50 text-xs">
+                            {ref.email && (
+                              <span className="text-text-secondary">
+                                Email: <a href={`mailto:${ref.email}`} className="text-blue-600 hover:underline">{ref.email}</a>
+                              </span>
+                            )}
+                            {ref.contactNo && (
+                              <span className="text-text-secondary">
+                                Phone: <a href={`tel:${ref.contactNo}`} className="text-text-primary font-medium hover:underline">{ref.contactNo}</a>
+                              </span>
+                            )}
+                            {ref.notes && <p className="text-text-secondary italic mt-1">{ref.notes}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
               </div>
 
               {/* Right Column (Sidebar widgets) */}
@@ -547,8 +596,8 @@ export default function CandidateProfile() {
                     )}
                     {aiCalls && aiCalls.length > 3 && (
                       <button className="text-[#00450D] text-[13px] font-bold bg-transparent border-0 mt-1 hover:underline cursor-pointer"
-                        onClick={() => setActiveTab('callLog')}>
-                        View Full Logs
+                        onClick={() => setActiveTab('communications')}>
+                        View History
                       </button>
                     )}
                   </div>
@@ -688,43 +737,58 @@ export default function CandidateProfile() {
               </div>
             )}
 
-            {activeTab === "callLog" && (
+            {activeTab === "referees" && (
               <div className="flex flex-col bg-surface rounded-xl border border-solid border-border overflow-hidden">
-                <div className="flex items-center px-6 py-4 border-b border-border">
-                  <span className="text-text-primary text-sm font-bold">AI Call Log</span>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                  <div className="flex flex-col">
+                    <span className="text-text-primary text-sm font-bold">Referees</span>
+                    <span className="text-text-secondary text-xs mt-0.5">Professional references extracted from CV or stored for this candidate</span>
+                  </div>
                 </div>
-                <div className="flex flex-col divide-y divide-border">
-                  {aiCalls === undefined ? (
-                    <div className="p-8 text-center text-text-disabled text-sm">Loading...</div>
-                  ) : aiCalls.length === 0 ? (
-                    <div className="p-8 text-center text-text-disabled text-sm">No AI calls recorded yet.</div>
-                  ) : (
-                    aiCalls.map((call) => {
-                      const statusColor = call.callStatus === 'completed' ? 'bg-[#91F78E1A] text-[#00450D] border-[#91F78E4D]' :
-                        call.callStatus === 'no_answer' ? 'bg-[#FFF3E0] text-[#E65100] border-orange-200' :
-                        call.callStatus === 'failed' ? 'bg-red-50 text-red-700 border-red-200' :
-                        'bg-surface-container text-text-secondary border-border';
-                      return (
-                        <div key={call._id} className="flex items-start gap-4 px-6 py-4 hover:bg-surface-container-high transition-colors">
-                          <div className="flex flex-col flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-text-primary text-[13px] font-medium">{call.jobTitle}</span>
-                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border capitalize ${statusColor}`}>
-                                {call.callStatus.replace(/_/g, ' ')}
+                <div className="flex flex-col p-6">
+                  {referees === undefined ? (
+                    <div className="p-8 text-center text-text-disabled text-sm">Loading referees...</div>
+                  ) : referees.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {referees.map((ref) => (
+                        <div key={ref._id} className="flex flex-col p-4 bg-surface-bright rounded-lg border border-border">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-text-primary text-[14px] font-bold">{ref.name}</span>
+                            {ref.relationship && (
+                              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                {ref.relationship}
                               </span>
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-text-secondary">
-                              <span>{new Date(call.calledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                              {call.callDurationSeconds != null && <span>{Math.round(call.callDurationSeconds / 60)}m {call.callDurationSeconds % 60}s</span>}
-                              {call.ivrResponse && <span className="capitalize">{call.ivrResponse.replace(/_/g, ' ')}</span>}
-                            </div>
-                            {call.transcript && (
-                              <p className="text-text-secondary text-xs mt-2 line-clamp-2">{call.transcript}</p>
                             )}
                           </div>
+                          <span className="text-text-secondary text-xs font-medium">
+                            {[ref.designation, ref.company].filter(Boolean).join(" • ") || "No designation listed"}
+                          </span>
+                          <div className="flex flex-col gap-1 mt-3 pt-3 border-t border-border/50 text-xs">
+                            {ref.email && (
+                              <span className="text-text-secondary">
+                                Email: <a href={`mailto:${ref.email}`} className="text-blue-600 hover:underline">{ref.email}</a>
+                              </span>
+                            )}
+                            {ref.contactNo && (
+                              <span className="text-text-secondary">
+                                Phone: <a href={`tel:${ref.contactNo}`} className="text-text-primary font-medium hover:underline">{ref.contactNo}</a>
+                              </span>
+                            )}
+                            {ref.notes && <p className="text-text-secondary italic mt-1">{ref.notes}</p>}
+                          </div>
                         </div>
-                      );
-                    })
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-text-secondary mb-3">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </div>
+                      <span className="text-text-primary text-sm font-bold mb-1">No Referees Found</span>
+                      <span className="text-text-secondary text-xs max-w-sm">No professional references have been extracted or stored for this candidate yet.</span>
+                    </div>
                   )}
                 </div>
               </div>
