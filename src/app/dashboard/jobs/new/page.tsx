@@ -43,6 +43,7 @@ export default function CreateJobWizard() {
   const [createdJobId, setCreatedJobId] = useState<string>('');
   const [isCustomEducation, setIsCustomEducation] = useState(false);
   const [customEdValue, setCustomEdValue] = useState('');
+  const [customEducationLevels, setCustomEducationLevels] = useState<string[]>([]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -597,21 +598,33 @@ export default function CreateJobWizard() {
                     type="text" 
                     className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" 
                     value={customEdValue} 
-                    onChange={e => {
-                      setCustomEdValue(e.target.value);
-                      updateFormData('educationLevel', e.target.value);
-                    }} 
+                    onChange={e => setCustomEdValue(e.target.value)} 
                     placeholder="e.g. CIMA / ACCA / specific degree..." 
                   />
                   <button 
                     type="button" 
                     onClick={() => {
+                      if (customEdValue.trim() !== "") {
+                        const trimmed = customEdValue.trim();
+                        if (!customEducationLevels.includes(trimmed)) {
+                          setCustomEducationLevels(prev => [...prev, trimmed]);
+                        }
+                        updateFormData('educationLevel', trimmed);
+                      }
                       setIsCustomEducation(false);
-                      updateFormData('educationLevel', 'any');
+                    }}
+                    className="px-3 py-2 bg-primary-container text-on-primary rounded-md text-xs font-semibold"
+                  >
+                    Save
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setIsCustomEducation(false);
                     }}
                     className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-md text-xs font-semibold text-text-primary"
                   >
-                    Preset
+                    Cancel
                   </button>
                 </div>
               ) : (
@@ -622,7 +635,6 @@ export default function CreateJobWizard() {
                     if (e.target.value === 'custom') {
                       setIsCustomEducation(true);
                       setCustomEdValue('');
-                      updateFormData('educationLevel', '');
                     } else {
                       updateFormData('educationLevel', e.target.value);
                     }
@@ -635,6 +647,9 @@ export default function CreateJobWizard() {
                   <option value="phd">PhD</option>
                   <option value="professional_cert">Professional Cert</option>
                   <option value="bachelor_or_master">Bachelor or Master</option>
+                  {customEducationLevels.map(level => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
                   <option value="custom">Other / Custom...</option>
                 </select>
               )}
