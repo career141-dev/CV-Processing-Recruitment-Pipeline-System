@@ -68,6 +68,7 @@ export const refereeSchema = z.object({
   notes: z.preprocess(makeString, z.string().nullable().optional()),
 });
 
+
 const makeSkillArray = (val: any) => {
   if (val === null || val === undefined) return null;
   if (Array.isArray(val)) {
