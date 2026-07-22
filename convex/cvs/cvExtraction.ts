@@ -18,7 +18,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -420,21 +420,6 @@ function computeSha256(buffer: ArrayBuffer): string {
   return crypto.createHash("sha256").update(Buffer.from(buffer)).digest("hex");
 }
 
-// ──────────────────────────────────────────────────
-// LLM — same graceful-fallback pattern as C141
-// ──────────────────────────────────────────────────
-
-function createNvidiaClient(): OpenAI {
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) throw new Error("NVIDIA_API_KEY environment variable is not set");
-  return new OpenAI({
-    baseURL: "https://integrate.api.nvidia.com/v1",
-    apiKey,
-    timeout: 45000,  // 45 seconds to prevent Convex 5-minute action timeout
-    maxRetries: 0,   // Let our custom retry loop handle it
-  });
-}
-
 function parseJsonRobustly(content: string): Record<string, unknown> | null {
   try {
     return JSON.parse(content) as Record<string, unknown>;
@@ -458,12 +443,10 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
 }
 
 /**
- * Calls the LLM to extract structured CV data.
- * Returns an empty object (not throws) if the API call fails —
- * matching C141's parseCvWithAI fallback behaviour.
- * The caller decides whether to treat empty data as an error.
+ * Calls OpenRouter LLM to extract structured CV data.
+ * Uses OPENROUTER_PRIMARY_MODEL with fallback models if rate-limited.
  */
-export async function callNvidiaLLM(
+export async function callOpenRouterLLM(
   ctx: ActionCtx,
   rawText: string,
   cvUploadId?: Id<"cvUploads">
@@ -474,21 +457,23 @@ export async function callNvidiaLLM(
       ? rawText.slice(0, MAX_CHARS).replace(/\s+\S*$/, "")
       : rawText;
 
-  const maxAttempts = 3;
+  // TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_PRIMARY_MODEL
+  const modelsToTry = OPENROUTER_FALLBACK_MODELS;
   let lastMessage = "";
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const openai = createNvidiaClient();
-      const response = await openai.chat.completions.create({
-        model: "meta/llama-3.1-70b-instruct",
-        temperature: 0,
-        max_tokens: 4096,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "user",
-            content: `Extract candidate information from the CV text below and return it as a JSON object.
+  for (const model of modelsToTry) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const openai = getOpenAI("cv_structuring");
+        const response = await openai.chat.completions.create({
+          model,
+          temperature: 0,
+          max_tokens: 4096,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "user",
+              content: `Extract candidate information from the CV text below and return it as a JSON object.
 CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile (e.g., if it is an email signature, company brochure, invoice, cover letter without a CV, or random text), you MUST return an empty JSON object: {}
 1. Return only valid JSON. No markdown, no backticks, no explanation.
 2. If a field is not found, return null. Never invent or guess.
@@ -547,86 +532,67 @@ CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile 
 }
 CV TEXT:
 ${textToSend}`,
-          },
-        ],
-      });
+            },
+          ],
+        });
 
-      // Log successful token usage
-      if (response.usage) {
-        await logLLMUsage(
-          ctx,
-          "cv_structuring",
-          "meta/llama-3.1-8b-instruct",
-          response.usage.prompt_tokens,
-          response.usage.completion_tokens,
-          true,
-          undefined,
-          cvUploadId
-        );
+        if (response.usage) {
+          await logLLMUsage(
+            ctx,
+            "cv_structuring",
+            model,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            true,
+            undefined,
+            cvUploadId
+          );
+        }
+
+        const content = response.choices[0]?.message?.content;
+        if (!content) return null;
+
+        const parsed = parseJsonRobustly(content);
+        if (!parsed) return null;
+
+        if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
+          throw new Error("NOT_A_CV");
+        }
+
+        try {
+          return cvExtractionSchema.parse(parsed);
+        } catch (e) {
+          console.error("Zod parse error:", e);
+          return null;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[callOpenRouterLLM] Call failed with model ${model} (attempt ${attempt}):`, message);
+        lastMessage = message;
+
+        if (
+          message.includes("403") ||
+          message.toLowerCase().includes("insufficient") ||
+          message.toLowerCase().includes("balance") ||
+          message.toLowerCase().includes("credits") ||
+          message.includes("NOT_A_CV")
+        ) {
+          throw error;
+        }
+
+        const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
+        if (isRateLimit) {
+          console.warn(`[callOpenRouterLLM] Rate limit (429) on ${model}. Trying next fallback model...`);
+          break;
+        }
       }
-
-      const content = response.choices[0]?.message?.content;
-      if (!content) return null;
-
-      const parsed = parseJsonRobustly(content);
-      if (!parsed) return null;
-
-      // Check if the AI determined this is NOT a CV
-      if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
-        throw new Error("NOT_A_CV");
-      }
-
-      try {
-        return cvExtractionSchema.parse(parsed);
-      } catch (e) {
-        console.error("Zod parse error:", e);
-        return null;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`[callNvidiaLLM] LLM call failed (attempt ${attempt}):`, message);
-      lastMessage = message;
-
-      if (
-        message.includes("403") ||
-        message.toLowerCase().includes("insufficient") ||
-        message.toLowerCase().includes("balance") ||
-        message.toLowerCase().includes("credits") ||
-        message.includes("NOT_A_CV")
-      ) {
-        throw error;
-      }
-
-      const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
-      const isTransientError = 
-        isRateLimit ||
-        message.toLowerCase().includes("timed out") ||
-        message.toLowerCase().includes("timeout") ||
-        message.includes("502") ||
-        message.includes("503") ||
-        message.includes("504");
-
-      if (isTransientError && attempt < maxAttempts) {
-        const baseWaitMs = isRateLimit ? attempt * 5000 : Math.pow(2, attempt) * 1000;
-        const jitterMs = Math.floor(Math.random() * 3000); // 0-3s jitter
-        const waitMs = baseWaitMs + jitterMs;
-        console.log(`[callNvidiaLLM] Nvidia API Rate Limit or Transient error. Retrying in ${(waitMs / 1000).toFixed(1)}s... (attempt ${attempt}/${maxAttempts})`);
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-        continue;
-      }
-
-      if (isRateLimit) {
-        throw new Error(`429: Nvidia API Rate Limit exceeded after ${maxAttempts} attempts. Details: ${message}`);
-      }
-      break;
     }
   }
 
-  // Log failed call after all attempts
   await logLLMUsage(
     ctx,
     "cv_structuring",
-    "meta/llama-3.1-70b-instruct",
+    OPENROUTER_PRIMARY_MODEL,
     0,
     0,
     false,
@@ -635,6 +601,9 @@ ${textToSend}`,
   );
   return null;
 }
+
+// Backward compatibility alias
+export const callNvidiaLLM = callOpenRouterLLM;
 
 // ──────────────────────────────────────────────────
 // null → undefined helper
@@ -824,10 +793,10 @@ export async function runCvExtraction(
         });
       }
 
-      // First try: call Llama 3.1 70B Instruct with extracted text
+      // First try: call OpenRouter LLM (OPENROUTER_PRIMARY_MODEL) with extracted text
       let [extractedData, embeddingResult] = await Promise.all([
-        callNvidiaLLM(ctx, cappedRawText, cvUploadId).catch((err) => {
-          console.warn("[CvExtraction] First call to callNvidiaLLM (70B Instruct) failed:", err.message || err);
+        callOpenRouterLLM(ctx, cappedRawText, cvUploadId).catch((err) => {
+          console.warn("[CvExtraction] First call to callOpenRouterLLM failed:", err.message || err);
           return null;
         }),
         generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
@@ -840,7 +809,7 @@ export async function runCvExtraction(
 
       // Fallback: If 70B LLM failed on standard text, and document is PDF where Vision OCR hasn't run yet
       if (!extracted && (fileType.toLowerCase() === "pdf" || fileType.toLowerCase() === "application/pdf")) {
-        console.warn(`[CvExtraction] Llama 3.1 70B extraction returned null for standard text. Attempting Llama 3.2 11B Vision OCR fallback...`);
+        console.warn(`[CvExtraction] OpenRouter LLM extraction returned null for standard text. Attempting Llama 3.2 11B Vision OCR fallback...`);
         try {
           const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
           if (pageImages && pageImages.length > 0) {

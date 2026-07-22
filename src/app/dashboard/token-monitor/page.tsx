@@ -32,8 +32,8 @@ export default function TokenMonitorPage() {
   const [limit, setLimit] = useState(20);
 
   // Model pricing selection
-  type ModelKey = "llama" | "gpt4o" | "deepseek";
-  const [selectedModel, setSelectedModel] = useState<ModelKey>("llama");
+  type ModelKey = "free" | "llama" | "gpt4o" | "deepseek";
+  const [selectedModel, setSelectedModel] = useState<ModelKey>("free");
 
   // Actions
   const fetchTokenMetrics = useAction(api.stats.stats.getTokenMetricsAction);
@@ -98,12 +98,14 @@ export default function TokenMonitorPage() {
 
   const getPricingForModel = (model: ModelKey) => {
     switch (model) {
+      case "free":
+        return { name: "OpenRouter Free Tier ($0.00)", input: 0.00, output: 0.00 };
       case "llama":
-        return { name: "Llama 3.1 70B Instruct", input: 0.40, output: 0.40 };
+        return { name: "Llama 3.3 70B (Paid)", input: 0.12, output: 0.30 };
       case "gpt4o":
         return { name: "ChatGPT-4o-mini", input: 0.15, output: 0.60 };
       case "deepseek":
-        return { name: "DeepSeek V4 Flash", input: 0.09, output: 0.18 };
+        return { name: "DeepSeek V4 Flash ($0.14/$0.28)", input: 0.14, output: 0.28 };
     }
   };
 
@@ -252,14 +254,15 @@ export default function TokenMonitorPage() {
         {/* Model Pricing Comparison Tabs */}
         <div className="flex flex-wrap bg-surface-container-high rounded-xl p-1 border border-border self-start gap-1">
           {[
-            { key: "llama", label: "Llama 3.1 70B Instruct", price: "In/Out: $0.40/M" },
+            { key: "free", label: "OpenRouter Free Tier", price: "Cost: $0.000 (Current)" },
+            { key: "llama", label: "Llama 3.3 70B (Paid)", price: "In: $0.12 / Out: $0.30/M" },
+            { key: "deepseek", label: "DeepSeek V4 Flash", price: "In: $0.14 / Out: $0.28/M" },
             { key: "gpt4o", label: "GPT-4o-mini", price: "In: $0.15 / Out: $0.60/M" },
-            { key: "deepseek", label: "DeepSeek V4 Flash", price: "In: $0.09 / Out: $0.18/M" },
           ].map((m) => (
             <button
               key={m.key}
               onClick={() => setSelectedModel(m.key as any)}
-              className={`flex flex-col items-center gap-0.5 px-6 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
                 selectedModel === m.key
                   ? "bg-surface text-text-primary shadow-sm border border-border/10"
                   : "text-text-secondary hover:text-text-primary"
@@ -595,7 +598,7 @@ export default function TokenMonitorPage() {
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Timestamp</th>
                   <th className="py-3 px-4">Task</th>
-                  <th className="py-3 px-4">NVIDIA Model</th>
+                  <th className="py-3 px-4">Provider & Model</th>
                   <th className="py-3 px-4 text-right">Prompt / Comp</th>
                   <th className="py-3 px-4">CV Upload Link / Process</th>
                   <th className="py-3 px-4 text-right">Calculated Cost</th>
@@ -605,6 +608,7 @@ export default function TokenMonitorPage() {
                 {filteredLogs && filteredLogs.length > 0 ? (
                   filteredLogs.map((log) => {
                     const localTime = new Date(log.timestamp).toLocaleString();
+                    const isNvidia = log.provider === "nvidia" || log.taskType === "cv_vision_ocr" || log.taskType === "embedding" || log.model.includes("nvidia");
                     return (
                       <tr
                         key={log._id}
@@ -641,9 +645,22 @@ export default function TokenMonitorPage() {
                           </span>
                         </td>
 
-                        {/* Model */}
-                        <td className="py-3 px-4 text-text-primary font-mono text-[10px] font-bold">
-                          {log.model}
+                        {/* Provider & Model */}
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col gap-0.5">
+                            <span
+                              className={`text-[9px] px-1.5 py-0.2 rounded font-bold w-max ${
+                                isNvidia
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                  : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                              }`}
+                            >
+                              {isNvidia ? "NVIDIA API" : "OpenRouter API"}
+                            </span>
+                            <span className="text-text-primary font-mono text-[10px] font-bold">
+                              {log.model}
+                            </span>
+                          </div>
                         </td>
 
                         {/* Tokens */}

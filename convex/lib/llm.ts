@@ -6,26 +6,52 @@ import type { ActionCtx } from "../_generated/server";
 
 export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
 
-// Model configuration for development
+export const OPENROUTER_PRIMARY_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+// TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_PRIMARY_MODEL
+export const OPENROUTER_FALLBACK_MODELS = [
+  OPENROUTER_PRIMARY_MODEL,
+  "google/gemini-2.0-flash-exp:free",
+  "deepseek/deepseek-chat:free",
+];
+
+// Model configuration mapping
 const MODEL_CONFIG = {
-  cv_structuring: "meta/llama-3.1-8b-instruct",      // Fast, good for parsing
-  jd_extraction: "meta/llama-3.1-70b-instruct",     // Better understanding  
-  jd_matching: "meta/llama-3.1-70b-instruct",         // Strong reasoning
-  email_routing: "meta/llama-3.1-8b-instruct",        // Fast text classification
-  cv_vision_ocr: "meta/llama-3.2-11b-vision-instruct" // Multimodal vision OCR
+  cv_structuring: OPENROUTER_PRIMARY_MODEL,
+  jd_extraction: OPENROUTER_PRIMARY_MODEL,
+  jd_matching: OPENROUTER_PRIMARY_MODEL,
+  email_routing: OPENROUTER_PRIMARY_MODEL,
+  cv_vision_ocr: "meta/llama-3.2-11b-vision-instruct",
 };
 
 export function getOpenAI(taskType: TaskType): OpenAI {
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) {
-    throw new Error("NVIDIA_API_KEY is not set");
+  if (taskType === "cv_vision_ocr") {
+    const apiKey = process.env.NVIDIA_API_KEY;
+    if (!apiKey) {
+      throw new Error("NVIDIA_API_KEY is not set for Vision OCR");
+    }
+    return new OpenAI({
+      baseURL: "https://integrate.api.nvidia.com/v1",
+      apiKey,
+      timeout: 45000,
+      maxRetries: 0,
+    });
   }
-  
+
+  const apiKey = process.env.OPENROUTER_API_KEY || "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";
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is not set");
+  }
+
   return new OpenAI({
-    baseURL: "https://integrate.api.nvidia.com/v1",
+    baseURL: "https://openrouter.ai/api/v1",
     apiKey,
-    timeout: 30000, // 30 seconds to prevent Convex action timeouts
-    maxRetries: 0,  // Disable SDK retries to handle them in our own custom logic
+    defaultHeaders: {
+      "HTTP-Referer": "https://career141.com",
+      "X-Title": "Career141 System",
+    },
+    timeout: 45000,
+    maxRetries: 0,
   });
 }
 
@@ -45,9 +71,11 @@ export async function logLLMUsage(
   outputTokens: number,
   success: boolean,
   error?: string,
-  cvUploadId?: Id<"cvUploads">
+  cvUploadId?: Id<"cvUploads">,
+  provider?: string
 ): Promise<void> {
   try {
+    const resolvedProvider = provider || (taskType === "cv_vision_ocr" || taskType === "embedding" || model.includes("nvidia") ? "nvidia" : "openrouter");
     await ctx.runMutation(internal.stats.stats.logNvidiaCallMutation, {
       taskType,
       model,
@@ -57,6 +85,7 @@ export async function logLLMUsage(
       success,
       error,
       cvUploadId,
+      provider: resolvedProvider,
     });
   } catch (err) {
     console.error("Failed to log LLM usage:", err);

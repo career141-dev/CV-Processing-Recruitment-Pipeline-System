@@ -183,9 +183,10 @@ export const processCvScoring = action({
     let finalReason = buildHeuristicReason(); // safe default
     let scoringTier = "heuristic-smart";
 
-    // ── TIER 1: NVIDIA 70B — 3 retries, exponential backoff ────────────
+    // ── TIER 1: OpenRouter Primary Model — 3 retries ───────────────────
     let tier1Success = false;
-    let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: "meta/llama-3.1-70b-instruct" };
+    const { getOpenAI, getModelForTask, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS } = await import("../lib/llm.js");
+    let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: OPENROUTER_PRIMARY_MODEL };
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -194,7 +195,7 @@ export const processCvScoring = action({
         finalReason  = result.reason;
         tier1Usage   = usage;
         tier1Success = true;
-        scoringTier  = "nvidia-70b";
+        scoringTier  = "openrouter-primary";
         break;
       } catch {
         if (attempt < 3) {
@@ -211,31 +212,23 @@ export const processCvScoring = action({
         promptTokens:    tier1Usage.promptTokens,
         completionTokens: tier1Usage.completionTokens,
         success: tier1Success,
-        error:   tier1Success ? undefined : "Tier 1 (70B) failed after 3 retries",
+        error:   tier1Success ? undefined : "Tier 1 (OpenRouter Primary) failed after 3 retries",
         cvUploadId: candidate.cvUploadId ?? undefined,
       }]
     });
 
-    // ── TIER 2: NVIDIA 8B — only if Tier 1 failed ──────────────────────
+    // ── TIER 2: OpenRouter Fallback Model — only if Tier 1 failed ──────
     if (!tier1Success) {
-      console.warn(`[Scoring] Tier 1 (70B) failed for ${args.candidateId}. Trying Tier 2 (8B)...`);
+      console.warn(`[Scoring] Tier 1 (${OPENROUTER_PRIMARY_MODEL}) failed for ${args.candidateId}. Trying Tier 2 fallback...`);
 
       let tier2Success = false;
-      let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: "meta/llama-3.1-8b-instruct" };
+      const fallbackModel = OPENROUTER_FALLBACK_MODELS[1] || "google/gemini-2.0-flash-exp:free";
+      let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: fallbackModel };
 
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const apiKey = process.env.NVIDIA_API_KEY;
-          if (!apiKey) throw new Error("NVIDIA_API_KEY not set");
-
-          const OpenAILib = (await import("openai")).default;
-          const openai    = new OpenAILib({ 
-            baseURL: "https://integrate.api.nvidia.com/v1", 
-            apiKey,
-            timeout: 30000, 
-            maxRetries: 0 
-          });
-          const model     = "meta/llama-3.1-8b-instruct";
+          const openai = getOpenAI("jd_matching");
+          const model  = fallbackModel;
 
           // Shorter prompt — reduces token usage and rate-limit pressure
           const response = await openai.chat.completions.create({
@@ -272,7 +265,7 @@ export const processCvScoring = action({
             model,
           };
           tier2Success = true;
-          scoringTier  = "nvidia-8b-fallback";
+          scoringTier  = "openrouter-fallback";
           break;
         } catch {
           if (attempt < 2) await new Promise(r => setTimeout(r, 1000));

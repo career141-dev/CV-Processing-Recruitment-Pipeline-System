@@ -1328,11 +1328,13 @@ export default defineSchema({
     // Denormalized at write-time to eliminate N+1 joins at read-time
     fileName: v.optional(v.string()),
     candidateName: v.optional(v.string()),
+    provider: v.optional(v.string()), // 'openrouter' | 'nvidia'
   })
     .index("by_timestamp", ["timestamp"])
     .index("by_taskType", ["taskType"])
     .index("by_model", ["model"])
-    .index("by_cvUploadId", ["cvUploadId"]),
+    .index("by_cvUploadId", ["cvUploadId"])
+    .index("by_provider", ["provider"]),
 
   // Rolling aggregate cache for getTokenMetrics — updated on every log write.
   // Replaces the O(n) .collect() scan with an O(1) singleton read.
