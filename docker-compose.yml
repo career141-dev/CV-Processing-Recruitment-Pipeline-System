@@ -6,6 +6,8 @@ services:
     image: ghcr.io/get-convex/convex-backend:latest
     stop_grace_period: 10s
     stop_signal: SIGINT
+    # ── CRASH FIX 1: Auto-restart if the container crashes for any reason ──
+    restart: unless-stopped
     ports:
       - "${PORT:-3210}:3210"
       - "${SITE_PROXY_PORT:-3211}:3211"
@@ -14,10 +16,12 @@ services:
     environment:
       - V8_ACTION_USER_TIMEOUT_SECS
       - NODE_ACTION_USER_TIMEOUT_SECS
-      - APPLICATION_MAX_CONCURRENT_MUTATIONS=${APPLICATION_MAX_CONCURRENT_MUTATIONS:-16}
-      - APPLICATION_MAX_CONCURRENT_NODE_ACTIONS=${APPLICATION_MAX_CONCURRENT_NODE_ACTIONS:-16}
+      # ── CRASH FIX 3: Reduced concurrency to prevent CPU/memory overload ──
+      # Original was 16 for all — lowered to prevent thundering herd under load
+      - APPLICATION_MAX_CONCURRENT_MUTATIONS=${APPLICATION_MAX_CONCURRENT_MUTATIONS:-8}
+      - APPLICATION_MAX_CONCURRENT_NODE_ACTIONS=${APPLICATION_MAX_CONCURRENT_NODE_ACTIONS:-8}
       - APPLICATION_MAX_CONCURRENT_QUERIES=${APPLICATION_MAX_CONCURRENT_QUERIES:-16}
-      - APPLICATION_MAX_CONCURRENT_V8_ACTIONS=${APPLICATION_MAX_CONCURRENT_V8_ACTIONS:-16}
+      - APPLICATION_MAX_CONCURRENT_V8_ACTIONS=${APPLICATION_MAX_CONCURRENT_V8_ACTIONS:-8}
       - AWS_ACCESS_KEY_ID
       - AWS_REGION
       - AWS_S3_DISABLE_CHECKSUMS
@@ -30,8 +34,8 @@ services:
       - CONVEX_SITE_ORIGIN=${CONVEX_SITE_ORIGIN:-http://127.0.0.1:${SITE_PROXY_PORT:-3211}}
       - DATABASE_URL
       - DISABLE_BEACON
-      - DISABLE_METRICS_ENDPOINT=${DISABLE_METRICS_ENDPOINT:-true} # Enable if you want prometheus compatible /metrics endpoint
-      - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-172800} # Lower default document retention to 2 days
+      - DISABLE_METRICS_ENDPOINT=${DISABLE_METRICS_ENDPOINT:-true}
+      - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-172800}
       - DO_NOT_REQUIRE_SSL
       - HTTP_SERVER_TIMEOUT_SECONDS
       - INSTANCE_NAME
@@ -47,17 +51,33 @@ services:
       - S3_STORAGE_MODULES_BUCKET
       - S3_STORAGE_SEARCH_BUCKET
       - S3_STORAGE_SNAPSHOT_IMPORTS_BUCKET
-
     healthcheck:
       test: curl -f http://localhost:3210/version
       interval: 5s
       start_period: 10s
+      timeout: 5s
+      retries: 5
+    # ── CRASH FIX 2: Memory limit prevents OOM kill of the whole VPS ──
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+    # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   dashboard:
     # Change this to :${REV} if you want to pin to a specific version
     image: ghcr.io/get-convex/convex-dashboard:latest
     stop_grace_period: 10s
     stop_signal: SIGINT
+    # ── CRASH FIX 1: Auto-restart dashboard too ──
+    restart: unless-stopped
     ports:
       - "${DASHBOARD_PORT:-6791}:6791"
     environment:
@@ -66,7 +86,16 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    # ── CRASH FIX 2: Memory limit for dashboard ──
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
 
 volumes:
   data:
-

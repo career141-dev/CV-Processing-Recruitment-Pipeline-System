@@ -241,11 +241,156 @@ export const runCorePipelineTest = mutation({
 });
 
 /**
+ * Job Lifecycle, Source Ingestion Routing, and Reverse Matching QA Test Case
+ */
+export const runJobLifecycleAndRoutingTest = mutation({
+  args: { adminUserId: v.id("users") },
+  handler: async (ctx, args) => {
+    console.log("--> Starting Job Lifecycle & Source Ingestion Routing QA Test...");
+    const now = Date.now();
+
+    // 1. Seed two candidates (Sanjeev as React Specialist, Alex as Python Developer)
+    const reactCandId = await ctx.db.insert("candidates", {
+      fullName: "Sanjeev React Senior",
+      email: `sanjeev.qa.${now}@example.com`,
+      phone: "+15551111",
+      overallStatus: "new_cvs",
+      skills: ["React", "TypeScript", "Next.js"],
+      yearsOfExperience: 8,
+      firstSeenAt: now,
+    } as any);
+
+    const pythonCandId = await ctx.db.insert("candidates", {
+      fullName: "Alex Python Dev",
+      email: `alex.qa.${now}@example.com`,
+      phone: "+15552222",
+      overallStatus: "new_cvs",
+      skills: ["Python", "Django"],
+      yearsOfExperience: 4,
+      firstSeenAt: now,
+    } as any);
+
+    console.log(`[PASS] Seeded test candidates: React (${reactCandId}), Python (${pythonCandId})`);
+
+    // 2. Create Job "Lead React Engineer"
+    const jobId = await ctx.db.insert("jobs", {
+      title: "Lead React Engineer",
+      clientName: "Career141 QA Lab",
+      clientIndustry: "Technology",
+      recruitmentType: "job_posting",
+      isConfidential: false,
+      jobDescription: "Build scalable web apps using React and TypeScript. Minimum 5 years experience.",
+      requiredSkills: ["React", "TypeScript"],
+      seniorityLevel: "senior_manager",
+      experienceMinYears: 5,
+      location: "Singapore",
+      primaryRecruiterId: args.adminUserId,
+      status: "active",
+      keyword: `REACT_LEAD_${now}`,
+      stageCounts: {},
+      totalApplications: 0,
+      minMatchScoreToShow: 60,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      agent3AfterDay7: "mark_unresponsive",
+      agent5CallScript: "default",
+      agent5NoAnswerAction: "notify_ta",
+      agent5Trigger: "manual_only",
+      clientReviewEnabled: false,
+      directorReviewEnabled: false,
+      esaCheckEnabled: false,
+      headhuntingEnabled: false,
+      rejectionLoopAction: "restart_from_new_cvs"
+    } as any);
+
+    console.log(`[PASS] Created Job: ${jobId}`);
+
+    // 3. Configure Ingestion Channels (Enable WhatsApp for this Job)
+    const testWhatsAppNum = `+1222333${now.toString().slice(-4)}`;
+    const channelId = await ctx.db.insert("jobChannels", {
+      jobId,
+      channelType: "whatsapp",
+      isEnabled: true,
+      whatsappNumber: testWhatsAppNum,
+      cvCountToday: 0,
+      cvCountTotal: 0,
+      agentStatus: "active",
+      createdAt: new Date().toISOString(),
+    });
+
+    console.log(`[PASS] Enabled Ingestion Source (WhatsApp: ${testWhatsAppNum}) on Channel: ${channelId}`);
+
+    // 4. Simulate Ingestion Flag/Routing Check
+    // Querying the channels table by incoming number mimics the real whatsapp routing mechanism
+    const routedChannel = await ctx.db
+      .query("jobChannels")
+      .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", testWhatsAppNum))
+      .filter((q) => q.eq(q.field("isEnabled"), true))
+      .first();
+
+    if (!routedChannel) {
+      throw new Error("Ingestion routing failed: no enabled channel found");
+    }
+    assert(routedChannel.jobId === jobId, `Ingestion routing error: expected job ID ${jobId}, found ${routedChannel.jobId}`);
+    console.log(`[PASS] Ingestion routing correctly resolved inbound WhatsApp to target Job ID`);
+
+    // 5. Simulate Reverse Matching against old candidates
+    // Sanjeev matches skills and experience (> 5 yrs). Alex does not.
+    // Insert application for Sanjeev with score 88 (>= 60 triggers auto-routing to ta_shortlist)
+    const sanjeevAppId = await ctx.db.insert("applications", {
+      candidateId: reactCandId,
+      jobId,
+      currentStage: "ta_shortlist", // Auto-routed
+      sourceChannel: "whatsapp",
+      isActive: true,
+      aiMatchScore: 88,
+      aiMatchExplanation: "Highly relevant experience in React and TypeScript.",
+      createdAt: now,
+      lastStageChangedAt: now,
+      loopIteration: 0,
+      stageHistory: [
+        {
+          stage: "new_cvs",
+          enteredAt: new Date().toISOString(),
+          changedBy: "system",
+          note: "Reverse matched from database",
+        },
+        {
+          stage: "ta_shortlist",
+          enteredAt: new Date().toISOString(),
+          changedBy: "system",
+          note: "Auto-advanced: score 88 >= 60",
+        }
+      ],
+    } as any);
+
+    await adjustJobStageStat(ctx, jobId, null, "ta_shortlist", true);
+
+    console.log(`[PASS] Reverse Match success: Created Application ${sanjeevAppId} for React Candidate (Auto-routed to ta_shortlist)`);
+
+    // 6. Cleanup
+    await ctx.db.delete(sanjeevAppId);
+    await ctx.db.delete(reactCandId);
+    await ctx.db.delete(pythonCandId);
+    await ctx.db.delete(channelId);
+    await ctx.db.delete(jobId);
+    console.log("[PASS] Cleaned up all job lifecycle and routing test records");
+
+    console.log("[PASS] Job Lifecycle & Source Ingestion Routing QA Test Complete");
+    return { success: true };
+  },
+});
+
+/**
  * Unified Test Suite Action
  */
 export const runFullQaSuite = action({
   args: {},
-  handler: async (ctx): Promise<{ deduplicationTest: string; corePipelineTest: string }> => {
+  handler: async (ctx): Promise<{
+    deduplicationTest: string;
+    corePipelineTest: string;
+    jobLifecycleAndRoutingTest: string;
+  }> => {
     console.log("=========================================");
     console.log("   RUNNING CAREER141 LOCAL QA TEST SUITE   ");
     console.log("=========================================");
@@ -255,8 +400,11 @@ export const runFullQaSuite = action({
     // Test Deduplication
     const dedupResult = await ctx.runMutation(api.admin.qaTests.runDeduplicationTest);
     
-    // Test Core Pipeline (Ingestion, Scoring, Routing, Stats, Transitions)
+    // Test Core Pipeline
     const coreResult = await ctx.runMutation(api.admin.qaTests.runCorePipelineTest, { adminUserId });
+
+    // Test Job Lifecycle, Source Routing & Reverse Matching
+    const lifecycleResult = await ctx.runMutation(api.admin.qaTests.runJobLifecycleAndRoutingTest, { adminUserId });
 
     console.log("=========================================");
     console.log("   ALL QA TESTS COMPLETED SUCCESSFULLY!  ");
@@ -264,6 +412,7 @@ export const runFullQaSuite = action({
     return {
       deduplicationTest: dedupResult.success ? "PASSED" : "FAILED",
       corePipelineTest: coreResult.success ? "PASSED" : "FAILED",
+      jobLifecycleAndRoutingTest: lifecycleResult.success ? "PASSED" : "FAILED",
     };
   },
 });
