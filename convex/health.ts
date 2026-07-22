@@ -218,3 +218,39 @@ export const reprocessFailedITUploads = mutation({
     return { success: true, count };
   },
 });
+
+export const getUploadById = query({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.cvUploadId);
+  },
+});
+
+export const setUploadPending = mutation({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.cvUploadId, { status: "pending", errorMessage: undefined });
+  },
+});
+
+export const reprocessSingleUpload = action({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    const upload = await ctx.runQuery(api.health.getUploadById, { cvUploadId: args.cvUploadId });
+    if (!upload) return { success: false, reason: "not_found" };
+    
+    await ctx.runMutation(api.health.setUploadPending, { cvUploadId: args.cvUploadId });
+    
+    await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+      storageId: upload.storageId,
+      s3Key: upload.s3Key,
+      storageProvider: upload.storageProvider,
+      fileType: upload.fileType,
+      sourceChannel: upload.source ?? "email",
+      uploadedBy: "system",
+      cvUploadId: upload._id,
+    });
+    
+    return { success: true };
+  },
+});
