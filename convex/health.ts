@@ -203,7 +203,8 @@ export const reprocessFailedITUploads = mutation({
     for (const upload of failedIT) {
       await ctx.db.patch(upload._id, { status: "pending", errorMessage: undefined });
       
-      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      const delayOffset = count * 4000;
+      await ctx.scheduler.runAfter(delayOffset, api.cvs.cvExtraction.processCvExtraction, {
         storageId: upload.storageId,
         s3Key: upload.s3Key,
         storageProvider: upload.storageProvider,
