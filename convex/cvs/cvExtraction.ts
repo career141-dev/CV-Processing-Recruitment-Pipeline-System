@@ -469,8 +469,10 @@ ${textToSend}`,
         message.includes("504");
 
       if (isTransientError && attempt < maxAttempts) {
-        const waitMs = isRateLimit ? attempt * 5000 : Math.pow(2, attempt) * 1000;
-        console.log(`[callNvidiaLLM] Nvidia API Rate Limit or Transient error. Retrying in ${waitMs / 1000}s... (attempt ${attempt}/${maxAttempts})`);
+        const baseWaitMs = isRateLimit ? attempt * 5000 : Math.pow(2, attempt) * 1000;
+        const jitterMs = Math.floor(Math.random() * 3000); // 0-3s jitter
+        const waitMs = baseWaitMs + jitterMs;
+        console.log(`[callNvidiaLLM] Nvidia API Rate Limit or Transient error. Retrying in ${(waitMs / 1000).toFixed(1)}s... (attempt ${attempt}/${maxAttempts})`);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue;
       }
@@ -843,14 +845,16 @@ export async function runCvExtraction(
 
     if (shouldRetry) {
       const nextRetryCount = ((args as any).retryCount ?? 0) + 1;
-      const delayMs = nextRetryCount * 60 * 1000; // 1m, 2m, 3m...
+      const baseDelayMs = nextRetryCount * 60 * 1000; // 1m, 2m, 3m...
+      const jitterMs = Math.floor(Math.random() * 30000); // up to 30s jitter
+      const delayMs = baseDelayMs + jitterMs;
       const reason = isRateLimit ? "Nvidia API Rate Limit (429)" : "LLM API Timeout/Invalid Response";
-      console.log(`[CvExtraction] ${reason}. Retrying in ${delayMs / 1000}s (Attempt ${nextRetryCount})`);
+      console.log(`[CvExtraction] ${reason}. Retrying in ${(delayMs / 1000).toFixed(1)}s (Attempt ${nextRetryCount})`);
 
       await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
         cvUploadId,
         status: "pending_retry",
-        errorMessage: `${reason}. Retrying automatically in ${delayMs / 1000}s...`,
+        errorMessage: `${reason}. Retrying automatically in ${(delayMs / 1000).toFixed(1)}s...`,
       });
 
       await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {

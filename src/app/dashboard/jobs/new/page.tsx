@@ -646,9 +646,12 @@ export default function CreateJobWizard() {
               ) : (
                 <>
                   <option value="">Select a Recruiter</option>
-                  {availableRecruiters.map(member => (
-                    <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
-                  ))}
+                  {availableRecruiters.map(member => {
+                    const displayName = member.fullName && member.fullName.trim() !== "Unknown User" && member.fullName.trim() !== "" ? member.fullName : (member.email || "Unknown User");
+                    return (
+                      <option key={member._id} value={member.fullName}>{displayName} ({member.role})</option>
+                    );
+                  })}
                 </>
               )}
             </select>
@@ -666,9 +669,12 @@ export default function CreateJobWizard() {
               ) : (
                 <>
                   <option value="">None</option>
-                  {availableDirectors.map(member => (
-                    <option key={member._id} value={member.fullName}>{member.fullName} ({member.role})</option>
-                  ))}
+                  {availableDirectors.map(member => {
+                    const displayName = member.fullName && member.fullName.trim() !== "Unknown User" && member.fullName.trim() !== "" ? member.fullName : (member.email || "Unknown User");
+                    return (
+                      <option key={member._id} value={member.fullName}>{displayName} ({member.role})</option>
+                    );
+                  })}
                 </>
               )}
             </select>
@@ -701,6 +707,7 @@ export default function CreateJobWizard() {
               <div className="absolute z-10 w-full mt-1 bg-surface border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
                 {availableRecruiters?.map(member => {
                   const isSelected = formData.supportingRecruiters.includes(member.fullName);
+                  const displayName = member.fullName && member.fullName.trim() !== "Unknown User" && member.fullName.trim() !== "" ? member.fullName : (member.email || "Unknown User");
                   return (
                     <div 
                       key={member._id} 
@@ -713,8 +720,10 @@ export default function CreateJobWizard() {
                         }
                       }}
                     >
-                      <input type="checkbox" checked={isSelected} readOnly className="rounded border-border" />
-                      <span className="text-sm">{member.fullName} <span className="text-gray-400 text-xs">({member.role})</span></span>
+                      <div className={`w-4 h-4 border rounded flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-border'}`}>
+                        {isSelected && <span className="material-symbols-outlined text-on-primary text-[14px]">check</span>}
+                      </div>
+                      <span className="text-sm text-body">{displayName} ({member.role})</span>
                     </div>
                   );
                 })}

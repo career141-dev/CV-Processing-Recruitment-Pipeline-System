@@ -17,7 +17,7 @@ function AuthSync({ children }: { children: ReactNode }) {
     if (isLoaded && isSignedIn && user) {
       syncCurrentUser({
         email: user.primaryEmailAddress?.emailAddress || "",
-        name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown User",
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Unknown User",
         avatarUrl: user.imageUrl,
         invitedRole: (user.publicMetadata?.role as string) || undefined,
       }).catch(console.error);
