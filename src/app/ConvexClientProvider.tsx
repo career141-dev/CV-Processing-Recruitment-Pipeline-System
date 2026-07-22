@@ -15,9 +15,22 @@ function AuthSync({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isLoaded && isSignedIn && user) {
+      const email = user.primaryEmailAddress?.emailAddress || "";
+      const rawName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+      let displayName = rawName;
+      if (!displayName && email.includes("@")) {
+        const prefix = email.split("@")[0];
+        displayName = prefix
+          .split(/[._-]/)
+          .filter(Boolean)
+          .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+          .join(" ");
+      }
+      if (!displayName) displayName = "Team Member";
+
       syncCurrentUser({
-        email: user.primaryEmailAddress?.emailAddress || "",
-        name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown User",
+        email: email,
+        name: displayName,
         avatarUrl: user.imageUrl,
         invitedRole: (user.publicMetadata?.role as string) || undefined,
       }).catch(console.error);

@@ -11,13 +11,19 @@ export function TeamTab() {
   const teamMembers = useQuery(api.users.users.getTeamMembers);
   const assignRole = useMutation(api.users.users.assignRole);
   const deactivate = useMutation(api.users.users.deactivate);
+  const updateUser = useMutation(api.users.users.updateUser);
   
-  // Modal state
+  // Invite Modal state
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("ta");
   const [isInviting, setIsInviting] = useState(false);
   const [message, setMessage] = useState({ text: "", isError: false });
+
+  // Edit Name Modal state
+  const [editingMember, setEditingMember] = useState<any | null>(null);
+  const [editName, setEditName] = useState("");
+  const [isSavingName, setIsSavingName] = useState(false);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +64,24 @@ export function TeamTab() {
       await deactivate({ targetUserId: userId, reason: "Admin deactivation via UI" });
     } catch (err: any) {
       alert("Failed to deactivate user: " + err.message);
+    }
+  };
+
+  const handleSaveName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember || !editName.trim()) return;
+    setIsSavingName(true);
+    try {
+      await updateUser({
+        targetUserId: editingMember._id,
+        fullName: editName.trim(),
+      });
+      setEditingMember(null);
+      setEditName("");
+    } catch (err: any) {
+      alert("Failed to update name: " + err.message);
+    } finally {
+      setIsSavingName(false);
     }
   };
 
@@ -119,7 +143,19 @@ export function TeamTab() {
                             {initial}
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-[13px] font-medium text-text-primary">{member.fullName}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[13px] font-medium text-text-primary">{member.fullName}</span>
+                              <button
+                                title="Edit Name"
+                                onClick={() => {
+                                  setEditingMember(member);
+                                  setEditName(member.fullName || "");
+                                }}
+                                className="text-text-disabled hover:text-text-primary p-0.5 rounded transition-colors"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                            </div>
                             <span className="text-[11px] text-text-secondary">{member.email}</span>
                           </div>
                         </div>
@@ -155,7 +191,17 @@ export function TeamTab() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingMember(member);
+                            setEditName(member.fullName || "");
+                          }}
+                          className="text-text-secondary hover:text-text-primary transition-colors text-[12px] font-medium border border-border bg-surface-container-low px-2.5 py-1 rounded-md flex items-center gap-1"
+                        >
+                          <Edit2 size={13} />
+                          Edit Name
+                        </button>
                         {member.isActive && (
                           <button 
                             onClick={() => handleDeactivate(member._id)}
@@ -173,6 +219,65 @@ export function TeamTab() {
           </table>
         </div>
       </Card>
+
+      {/* Edit Name Modal */}
+      {editingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-surface w-full max-w-md rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-border flex justify-between items-center bg-surface-container-low">
+              <h3 className="text-[15px] font-bold text-text-primary">Edit Member Name</h3>
+              <button 
+                onClick={() => setEditingMember(null)}
+                className="text-text-secondary hover:text-text-primary transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveName} className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-semibold text-text-secondary uppercase">Email Address</label>
+                <input 
+                  type="text" 
+                  disabled
+                  value={editingMember.email}
+                  className="w-full bg-surface-container-low/50 border border-border rounded-lg px-4 py-2 text-[13px] text-text-secondary cursor-not-allowed"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-semibold text-text-secondary uppercase">Full Name</label>
+                <input 
+                  type="text" 
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="e.g. Sarah Jenkins"
+                  className="w-full bg-surface-container-low border border-border rounded-lg px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-container transition-all"
+                />
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="px-4 py-2 text-[13px] font-medium text-text-secondary hover:bg-surface-container-low rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSavingName}
+                  className="px-4 py-2 bg-primary-container text-on-primary rounded-lg text-[13px] font-medium hover:bg-primary-container/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isSavingName && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Save Name
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Invite Modal */}
       {isInviteOpen && (

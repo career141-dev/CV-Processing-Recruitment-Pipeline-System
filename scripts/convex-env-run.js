@@ -24,7 +24,7 @@ function getEnvMap(filePath) {
 }
 
 const mode = process.argv[2] || 'local'; // 'local' | 'hosted'
-const action = process.argv[3] || 'dev'; // 'dev' | 'sync-from-hosted'
+const action = process.argv[3] || 'dev'; // 'dev' | 'sync-from-hosted' | 'run'
 
 const targetEnvFile = mode === 'hosted' ? '.env.hosted' : '.env.localdev';
 
@@ -47,6 +47,20 @@ if (action === 'dev') {
 
   console.log(`[Convex Runner] Connecting to ${url}...`);
   execSync(`npx convex dev --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit' });
+
+} else if (action === 'run') {
+  const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
+  const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
+  const funcName = process.argv[4];
+  const extraArgs = process.argv.slice(5).join(' ');
+
+  if (!funcName) {
+    console.error('[ERROR] Please specify a function name to run. Example: node scripts/convex-env-run.js hosted run candidates/refereeActions:reparseAllHostedReferees');
+    process.exit(1);
+  }
+
+  console.log(`[Convex Runner] Running ${funcName} against ${url}...`);
+  execSync(`npx convex run --url "${url}" --admin-key "${adminKey}" ${funcName} ${extraArgs}`, { stdio: 'inherit' });
 
 } else if (action === 'sync-from-hosted') {
   const hostedEnv = getEnvMap('.env.hosted');
