@@ -1,6 +1,7 @@
-import { query, action } from "./_generated/server";
+import { query, action, mutation } from "./_generated/server";
 import { api } from "./_generated/api";
 import OpenAI from "openai";
+import { Id } from "./_generated/dataModel";
 
 export const ping = query({
   args: {},
@@ -17,6 +18,14 @@ export const getRecentUploads = query({
       .order("desc")
       .take(20);
     return recentCvUploads;
+  },
+});
+
+export const getCvUploadsForIT = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("cvUploads").collect();
+    return all.filter((u) => u.assignToJob === "m17abwpzg8ekcqq34e4kw5y6jx8b1p7r");
   },
 });
 
@@ -128,5 +137,83 @@ export const triggerTestCV = action({
     });
     
     return { success: true, message: "Ingestion triggered successfully! Watch the dashboard." };
+  },
+});
+
+export const deleteItDummy = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const candidateId = "j978zd52crzdy6fmb3skxqpkn58b0e69" as Id<"candidates">;
+    
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", candidateId))
+      .collect();
+    for (const a of apps) {
+      await ctx.db.delete(a._id);
+    }
+    
+    const resumes = await ctx.db
+      .query("candidateResumes")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", candidateId))
+      .collect();
+    for (const r of resumes) {
+      await ctx.db.delete(r._id);
+    }
+    
+    const exists = await ctx.db.get(candidateId);
+    if (exists) {
+      await ctx.db.delete(candidateId);
+    }
+
+    // Recalculate and update job stats for Head of IT job
+    const jobId = "m17abwpzg8ekcqq34e4kw5y6jx8b1p7r" as Id<"jobs">;
+    const remainingApps = await ctx.db
+      .query("applications")
+      .withIndex("by_job_active", (q) => q.eq("jobId", jobId))
+      .collect();
+      
+    const newStageCounts: Record<string, number> = {};
+    for (const app of remainingApps) {
+      if (app.isActive) {
+        newStageCounts[app.currentStage] = (newStageCounts[app.currentStage] || 0) + 1;
+      }
+    }
+    
+    await ctx.db.patch(jobId, {
+      totalApplications: remainingApps.length,
+      stageCounts: newStageCounts,
+    });
+    
+    return { success: true };
+  },
+});
+
+export const reprocessFailedITUploads = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("cvUploads").collect();
+    const failedIT = all.filter(
+      (u) =>
+        u.assignToJob === "m17abwpzg8ekcqq34e4kw5y6jx8b1p7r" &&
+        (u.status === "failed" || u.status === "failed_retry")
+    );
+    
+    let count = 0;
+    for (const upload of failedIT) {
+      await ctx.db.patch(upload._id, { status: "pending", errorMessage: undefined });
+      
+      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider,
+        fileType: upload.fileType,
+        sourceChannel: upload.source ?? "email",
+        uploadedBy: "system",
+        cvUploadId: upload._id,
+      });
+      count++;
+    }
+    return { success: true, count };
   },
 });
