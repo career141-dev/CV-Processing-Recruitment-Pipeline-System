@@ -438,6 +438,19 @@ export default defineSchema({
       dimensions: 1024,
     }),
 
+  referees: defineTable({
+    candidateId: v.id("candidates"),
+    name: v.string(),
+    designation: v.optional(v.string()),
+    company: v.optional(v.string()),
+    contactNo: v.optional(v.string()),
+    email: v.optional(v.string()),
+    relationship: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+  })
+    .index("by_candidateId", ["candidateId"]),
+
   candidates: defineTable({
     // New fields from PDF (kept optional to avoid breaking existing queries)
     fullName: v.optional(v.string()),
