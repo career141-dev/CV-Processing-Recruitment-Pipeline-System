@@ -293,6 +293,11 @@ export const pollEmailInbox = action({
           const prompt = `You are an intelligent recruitment email router.
 Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
 
+CRITICAL ROUTING RULES:
+1. Emails (especially from LinkedIn or job boards) rarely contain the job "Keyword". DO NOT rely on the keyword to make a match.
+2. Pay close attention to the EMAIL SUBJECT. Job board notifications usually include the exact job title in the subject line (e.g. "New application for Head of Sales").
+3. Match the email subject and body against the "Title" of the active jobs.
+
 ACTIVE JOBS:
 ${jobsListContext}
 
@@ -318,7 +323,7 @@ Respond ONLY with a valid JSON object in this exact format:
               // Verify the ID actually exists in our active jobs
               const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
               if (matchedJob) {
-                const channel = "email";
+                const channel = (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
                 if (matchedJob.pausedChannels?.includes(channel)) {
                   console.log(`[EmailAgent] Job ${resultObj.matchedJobId} has ${channel} paused. Routing to general pool.`);
                   resolvedJobId = undefined;

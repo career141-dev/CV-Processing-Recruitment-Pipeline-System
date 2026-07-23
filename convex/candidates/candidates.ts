@@ -964,28 +964,48 @@ export async function syncCandidateSummaryToApplications(ctx: any, candidateId: 
     .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
     .collect();
 
-  // Find latest CV upload to get file name
+  // Find latest CV upload to get file name and ID
   let cvFileName = undefined;
-  if (candidate.cvUploadId) {
-    const upload = await ctx.db.get(candidate.cvUploadId);
+  let cvUploadId = candidate.cvUploadId;
+  if (cvUploadId) {
+    const upload = await ctx.db.get(cvUploadId);
     if (upload) {
       cvFileName = upload.fileName;
     }
   }
 
   for (const app of apps) {
-    await ctx.db.patch(app._id, {
+    const patchData: Record<string, any> = {
       candidateName: candidate.fullName,
       candidateEmail: candidate.email,
       candidatePhone: candidate.phone,
       cvFileName,
       candidateTitle: candidate.currentTitle || candidate.currentJobTitle,
       candidateExperience: candidate.totalExperienceYears || candidate.yearsOfExperience,
-      candidateCvUploadId: candidate.cvUploadId,
+      candidateCvUploadId: cvUploadId,
       candidateCurrentSalary: candidate.currentSalary,
       candidateExpectedSalary: candidate.expectedSalary,
       candidateNoticePeriodDays: candidate.noticePeriodDays,
-    });
+    };
+
+    // Also set cvFileId so "View CV" button works
+    if (!app.cvFileId && cvUploadId) {
+      patchData.cvFileId = cvUploadId;
+    }
+
+    await ctx.db.patch(app._id, patchData);
+
+    // Ensure the cvUpload's assignToJob points to this application's job
+    // so the CV is visible inside the correct job
+    if (cvUploadId) {
+      const cvUpload = await ctx.db.get(cvUploadId);
+      if (cvUpload && cvUpload.assignToJob !== app.jobId) {
+        // Only update if the cv has no job assigned yet (don't override another job's assignment)
+        if (!cvUpload.assignToJob) {
+          await ctx.db.patch(cvUploadId, { assignToJob: app.jobId });
+        }
+      }
+    }
   }
 }
 

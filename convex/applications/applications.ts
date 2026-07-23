@@ -302,18 +302,29 @@ export const createApplication = mutation({
       if (args.cvFileId && existing.cvFileId !== args.cvFileId) {
         updates.cvFileId = args.cvFileId;
       }
+
+      // ALWAYS sync the latest denormalized candidate data to the application
+      const candidate = await ctx.db.get(args.candidateId);
+      if (candidate) {
+        updates.candidateName = candidate.fullName || undefined;
+        updates.candidateEmail = candidate.email || undefined;
+        updates.candidatePhone = candidate.phone || undefined;
+        updates.candidateTitle = candidate.currentJobTitle || undefined;
+        updates.candidateExperience = candidate.totalExperienceYears || undefined;
+        updates.candidateCurrentSalary = candidate.currentSalary || undefined;
+        updates.candidateExpectedSalary = candidate.expectedSalary || undefined;
+        updates.candidateNoticePeriodDays = candidate.noticePeriodDays || undefined;
+      }
       
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existing._id, updates);
-        
         
         if (updates.currentStage) {
           await adjustJobStageStat(ctx, args.jobId, existing.currentStage, updates.currentStage);
           await syncCandidateOverallStatus(ctx, args.candidateId);
         }
         
-        if (updates.cvFileId) {
-          const candidate = await ctx.db.get(args.candidateId);
+        if (updates.cvFileId && candidate) {
           await updateFollowUpFlags(ctx, existing._id, candidate);
           await checkAndAdvanceFollowUp(ctx, args.candidateId);
         }
