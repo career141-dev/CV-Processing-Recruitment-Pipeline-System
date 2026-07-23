@@ -7,6 +7,7 @@ import type { ActionCtx } from "../_generated/server";
 export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
 
 export const OPENROUTER_PRIMARY_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+export const OPENROUTER_CV_EXTRACTION_MODEL = "google/gemma-4-26b-a4b-it:free";
 
 // TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_PRIMARY_MODEL
 export const OPENROUTER_FALLBACK_MODELS = [
@@ -15,9 +16,16 @@ export const OPENROUTER_FALLBACK_MODELS = [
   "deepseek/deepseek-chat:free",
 ];
 
+export const OPENROUTER_CV_FALLBACK_MODELS = [
+  OPENROUTER_CV_EXTRACTION_MODEL,
+  OPENROUTER_PRIMARY_MODEL,
+  "google/gemini-2.0-flash-exp:free",
+  "deepseek/deepseek-chat:free",
+];
+
 // Model configuration mapping
 const MODEL_CONFIG = {
-  cv_structuring: OPENROUTER_PRIMARY_MODEL,
+  cv_structuring: OPENROUTER_CV_EXTRACTION_MODEL,
   jd_extraction: OPENROUTER_PRIMARY_MODEL,
   jd_matching: OPENROUTER_PRIMARY_MODEL,
   email_routing: OPENROUTER_PRIMARY_MODEL,

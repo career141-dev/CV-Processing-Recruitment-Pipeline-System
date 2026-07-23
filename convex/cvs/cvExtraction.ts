@@ -18,7 +18,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -457,8 +457,8 @@ export async function callOpenRouterLLM(
       ? rawText.slice(0, MAX_CHARS).replace(/\s+\S*$/, "")
       : rawText;
 
-  // TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_PRIMARY_MODEL
-  const modelsToTry = OPENROUTER_FALLBACK_MODELS;
+  // TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_CV_EXTRACTION_MODEL
+  const modelsToTry = OPENROUTER_CV_FALLBACK_MODELS;
   let lastMessage = "";
 
   for (const model of modelsToTry) {
@@ -592,7 +592,7 @@ ${textToSend}`,
   await logLLMUsage(
     ctx,
     "cv_structuring",
-    OPENROUTER_PRIMARY_MODEL,
+    OPENROUTER_CV_EXTRACTION_MODEL,
     0,
     0,
     false,
