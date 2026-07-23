@@ -65,7 +65,7 @@ export async function logLLMUsage(
   provider?: string
 ): Promise<void> {
   try {
-    const resolvedProvider = provider || (taskType === "cv_vision_ocr" || taskType === "embedding" || model.includes("nvidia") ? "nvidia" : "openrouter");
+    const resolvedProvider = provider || (taskType === "embedding" || model.includes("nvidia") ? "nvidia" : "openrouter");
     await ctx.runMutation(internal.stats.stats.logNvidiaCallMutation, {
       taskType,
       model,

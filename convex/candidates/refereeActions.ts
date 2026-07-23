@@ -2,7 +2,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { callNvidiaLLM } from "../cvs/cvExtraction";
+import { callOpenRouterLLM } from "../cvs/cvExtraction";
 
 export const extractRefereesForCandidateBatch = action({
   args: { limit: v.optional(v.number()) },
@@ -16,7 +16,7 @@ export const extractRefereesForCandidateBatch = action({
       try {
         let extractedReferees: any[] = [];
         try {
-          const llmResult = await callNvidiaLLM(ctx, cand.rawText);
+          const llmResult = await callOpenRouterLLM(ctx, cand.rawText);
           if (llmResult?.referees && llmResult.referees.length > 0) {
             extractedReferees = llmResult.referees.filter((r: any) => r && r.name && String(r.name).trim().length > 0);
           }
@@ -110,7 +110,7 @@ export const reparseSingleCandidateReferees = action({
     // 2. Run LLM Extraction
     let extractedReferees: any[] = [];
     try {
-      const llmResult = await callNvidiaLLM(ctx, rawText, candidate.cvUploadId);
+      const llmResult = await callOpenRouterLLM(ctx, rawText, candidate.cvUploadId);
       if (llmResult?.referees && llmResult.referees.length > 0) {
         extractedReferees = llmResult.referees.filter((r: any) => r && r.name && String(r.name).trim().length > 0);
       }
@@ -176,7 +176,7 @@ export const reparseAllHostedReferees = action({
       try {
         let extractedReferees: any[] = [];
         try {
-          const llmResult = await callNvidiaLLM(ctx, cand.rawText);
+          const llmResult = await callOpenRouterLLM(ctx, cand.rawText);
           if (llmResult?.referees && llmResult.referees.length > 0) {
             extractedReferees = llmResult.referees.filter((r: any) => r && r.name && String(r.name).trim().length > 0);
           }

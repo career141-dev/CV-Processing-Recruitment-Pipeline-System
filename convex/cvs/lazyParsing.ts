@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { callNvidiaLLM } from "./cvExtraction";
+import { callOpenRouterLLM } from "./cvExtraction";
 
 export const triggerLazyParse = action({
   args: {
@@ -28,8 +28,7 @@ export const triggerLazyParse = action({
       throw new Error("No raw text available for parsing");
     }
 
-    // 2. Inject known context into the LLM prompt? 
-    // Wait, callNvidiaLLM currently just takes rawText. We can inject it into the raw text manually.
+    // 2. Inject known context into the LLM prompt
     const injectedContext = `
 [KNOWN CANDIDATE DETAILS FROM ATS]
 Name: ${candidate.fullName || 'Unknown'}
@@ -40,7 +39,7 @@ Phone: ${candidate.phone || 'Unknown'}
     const textToSend = injectedContext + resume.rawText;
 
     // 3. Call LLM with the raw text
-    const extracted = await callNvidiaLLM(ctx, textToSend, candidate.cvUploadId);
+    const extracted = await callOpenRouterLLM(ctx, textToSend, candidate.cvUploadId);
     
     if (!extracted) {
       throw new Error("LLM extraction failed or returned empty");

@@ -222,7 +222,7 @@ export const processCvScoring = action({
       console.warn(`[Scoring] Tier 1 (${OPENROUTER_PRIMARY_MODEL}) failed for ${args.candidateId}. Trying Tier 2 fallback...`);
 
       let tier2Success = false;
-      const fallbackModel = OPENROUTER_FALLBACK_MODELS[1] || "google/gemini-2.0-flash-exp:free";
+      const fallbackModel = OPENROUTER_PRIMARY_MODEL;
       let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: fallbackModel };
 
       for (let attempt = 1; attempt <= 2; attempt++) {

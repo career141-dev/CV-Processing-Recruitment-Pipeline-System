@@ -676,7 +676,7 @@ export const getRecentTokenLogs = query({
     // fileName is already stored on the document — no per-row db.get() needed
     return logs.map((log) => ({
       ...log,
-      provider: log.provider || (log.taskType === "cv_vision_ocr" || log.taskType === "embedding" || log.model.includes("nvidia") ? "nvidia" : "openrouter"),
+      provider: log.provider || (log.taskType === "embedding" || log.model.includes("nvidia") ? "nvidia" : "openrouter"),
       candidateName: log.fileName, // alias for backwards compat with frontend
       estimatedCost: calculateLLMCost(log.model, log.promptTokens, log.completionTokens, log.provider),
     }));
@@ -746,7 +746,7 @@ export const logNvidiaCallsBatchMutation = internalMutation({
     const batchTaskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens: number; completionTokens: number }> = {};
 
     for (const log of args.logs) {
-      const resolvedProvider = log.provider || (log.taskType === "cv_vision_ocr" || log.taskType === "embedding" || log.model.includes("nvidia") ? "nvidia" : "openrouter");
+      const resolvedProvider = log.provider || (log.taskType === "embedding" || log.model.includes("nvidia") ? "nvidia" : "openrouter");
       const cost = calculateLLMCost(log.model, log.promptTokens, log.completionTokens, resolvedProvider);
       const totalTokens = log.promptTokens + log.completionTokens;
 

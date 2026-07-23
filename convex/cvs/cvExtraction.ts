@@ -187,7 +187,12 @@ async function extractImagesFromPdfBuffer(
 ): Promise<string[]> {
   const images: string[] = [];
   try {
-    const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+    let pdfjsLib: any;
+    try {
+      pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+    } catch {
+      pdfjsLib = require("pdfjs-dist");
+    }
     if (pdfjsLib.GlobalWorkerOptions) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = "";
     }
@@ -602,8 +607,7 @@ ${textToSend}`,
   return null;
 }
 
-// Backward compatibility alias
-export const callNvidiaLLM = callOpenRouterLLM;
+
 
 // ──────────────────────────────────────────────────
 // null → undefined helper
@@ -824,9 +828,9 @@ export async function runCvExtraction(
 
       extracted = extractedData;
 
-      // Fallback: If 70B LLM failed on standard text, and document is PDF where Vision OCR hasn't run yet
+      // Fallback: If primary LLM failed on standard text, and document is PDF where Vision OCR hasn't run yet
       if (!extracted && (fileType.toLowerCase() === "pdf" || fileType.toLowerCase() === "application/pdf")) {
-        console.warn(`[CvExtraction] OpenRouter LLM extraction returned null for standard text. Attempting Llama 3.2 11B Vision OCR fallback...`);
+        console.warn(`[CvExtraction] OpenRouter LLM extraction returned null for standard text. Attempting Gemma 4 26B Vision OCR fallback...`);
         try {
           const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
           if (pageImages && pageImages.length > 0) {
@@ -836,8 +840,8 @@ export async function runCvExtraction(
               cappedRawText = cleanedVision.length > MAX_RAW_TEXT_LENGTH
                 ? cleanedVision.slice(0, MAX_RAW_TEXT_LENGTH)
                 : cleanedVision;
-              console.log(`[CvExtraction] Vision OCR transcribed ${cappedRawText.length} characters. Passing raw text back to Llama 3.1 70B Instruct for candidate detail extraction...`);
-              extracted = await callNvidiaLLM(ctx, cappedRawText, cvUploadId);
+              console.log(`[CvExtraction] Vision OCR transcribed ${cappedRawText.length} characters. Passing raw text back to DeepSeek V4 Flash for candidate detail extraction...`);
+              extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId);
             }
           }
         } catch (visionFallbackErr: any) {
