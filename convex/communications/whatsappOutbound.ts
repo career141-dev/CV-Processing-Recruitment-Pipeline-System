@@ -2,6 +2,132 @@ import { v } from "convex/values";
 import { internalAction, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
+// Helper to fetch the correct phone_number_id based on the whatsapp number string
+async function getWhatChimpPhoneId(apiToken: string, targetWhatsAppNumber: string): Promise<string | null> {
+  const cleanNumber = targetWhatsAppNumber.replace(/[^0-9]/g, "");
+  
+  // Hardcoded mapping for known TA WhatChimp numbers because the API does not expose a /numbers endpoint
+  const knownNumbers: Record<string, string> = {
+    "94742197476": "965783109962872",
+  };
+  
+  if (knownNumbers[cleanNumber]) {
+    return knownNumbers[cleanNumber];
+  }
+  
+  console.error(`[WhatChimp] No known phone_number_id mapped for ${cleanNumber}`);
+  return null;
+}
+
+// Internal action to tag a candidate in WhatChimp
+export const assignAiFollowUpLabel = internalAction({
+  args: {
+    candidatePhone: v.string(),
+    jobId: v.id("jobs"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const apiToken = process.env.WHATCHIMP_API_TOKEN;
+      if (!apiToken) return;
+
+      // 1. Find the assigned WhatsApp number from jobChannels
+      const jobChannels = await ctx.runQuery(internal.communications.whatsappOutbound.getJobWhatsAppChannel, { jobId: args.jobId });
+      const activeChannel = jobChannels.find((ch: any) => ch.isEnabled && ch.whatsappNumber);
+      
+      let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      
+      if (activeChannel && activeChannel.whatsappNumber) {
+        const fetchedId = await getWhatChimpPhoneId(apiToken, activeChannel.whatsappNumber);
+        if (fetchedId) phoneId = fetchedId;
+      }
+      
+      if (!phoneId) {
+        console.error("[WhatChimp Labels] No phone_number_id available for labeling");
+        return;
+      }
+
+      // 2. Fetch all labels to find "AI Follow-ups"
+      const labelListRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/label/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ apiToken, phone_number_id: phoneId }),
+      });
+      
+      let labelId = null;
+      if (labelListRes.ok) {
+        const labelData = await labelListRes.json();
+        const labels = Array.isArray(labelData.message) ? labelData.message : [];
+        const existingLabel = labels.find((l: any) => l.label_name && l.label_name.toLowerCase() === "ai follow-ups");
+        
+        if (existingLabel) {
+          labelId = existingLabel.id;
+        }
+      }
+
+      // 3. Create the label if it doesn't exist
+      if (!labelId) {
+        const createRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/label/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ apiToken, phone_number_id: phoneId, label_name: "AI Follow-ups" }),
+        });
+        
+        if (createRes.ok) {
+          const newLabelListRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/label/list", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ apiToken, phone_number_id: phoneId }),
+          });
+          if (newLabelListRes.ok) {
+            const newLabelData = await newLabelListRes.json();
+            const newLabels = Array.isArray(newLabelData.message) ? newLabelData.message : [];
+            const newExisting = newLabels.find((l: any) => l.label_name && l.label_name.toLowerCase() === "ai follow-ups");
+            if (newExisting) labelId = newExisting.id;
+          }
+        }
+      }
+
+      if (!labelId) {
+        console.error("[WhatChimp Labels] Failed to find or create 'AI Follow-ups' label");
+        return;
+      }
+
+      // 4. Assign the label to the subscriber
+      const cleanTargetPhone = args.candidatePhone.replace(/[^0-9]/g, "");
+      const assignRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/subscriber/chat/assign-labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ 
+          apiToken, 
+          phone_number_id: phoneId, 
+          phone_number: cleanTargetPhone, 
+          label_ids: String(labelId) 
+        }),
+      });
+
+      if (!assignRes.ok) {
+        console.error("[WhatChimp Labels] Failed to assign label:", await assignRes.text());
+      } else {
+        console.log(`[WhatChimp Labels] Successfully assigned 'AI Follow-ups' label to ${cleanTargetPhone}`);
+      }
+    } catch (e: any) {
+      console.error("[WhatChimp Labels] Error in assignAiFollowUpLabel:", e);
+    }
+  }
+});
+
+import { internalQuery } from "../_generated/server";
+export const getJobWhatsAppChannel = internalQuery({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("jobChannels")
+      .withIndex("by_job", (q: any) => q.eq("jobId", args.jobId))
+      .filter((q: any) => q.eq(q.field("channelType"), "whatsapp"))
+      .collect();
+  }
+});
+
 async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<string> {
   const isTestMode = process.env.WHATSAPP_TEST_MODE === "true" && process.env.NODE_ENV !== "production";
   const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
@@ -89,8 +215,25 @@ export const sendWhatsApp = internalAction({
 
     // 3. Send message to WhatChimp API
     try {
-      const apiKey = process.env.WHATCHIMP_API_TOKEN;
-      const phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      const baseApiToken = process.env.WHATCHIMP_API_TOKEN;
+      if (!baseApiToken) {
+        throw new Error("WHATCHIMP_API_TOKEN is not configured.");
+      }
+
+      // Fetch job channel to get TA-specific number
+      const jobChannels = await ctx.runQuery(internal.communications.whatsappOutbound.getJobWhatsAppChannel, { jobId: args.jobId });
+      const activeChannel = jobChannels.find((ch: any) => ch.isEnabled && ch.whatsappNumber);
+      
+      let apiKey = baseApiToken;
+      let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+
+      if (activeChannel && activeChannel.whatsappNumber) {
+        const fetchedId = await getWhatChimpPhoneId(apiKey, activeChannel.whatsappNumber);
+        if (fetchedId) {
+          phoneId = fetchedId;
+          console.log(`[WhatsApp Outbound] Using TA assigned number: ${activeChannel.whatsappNumber} (ID: ${phoneId})`);
+        }
+      }
 
       if (!apiKey || !phoneId) {
         console.error("[WhatsApp Outbound] WhatChimp configuration is missing.");
@@ -139,6 +282,13 @@ export const sendWhatsApp = internalAction({
         error: isTestMode ? `Test mode active.${logNote} [Msg ID: ${data?.message_id || data?.messageId || 'unknown'}]` : undefined,
       });
       console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
+
+      // 4. Async tag the candidate in WhatChimp Lists/Labels
+      await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.assignAiFollowUpLabel, {
+        candidatePhone: targetPhone,
+        jobId: args.jobId,
+      });
+
     } catch (err: any) {
       console.error("[WhatsApp Outbound] Failed to dispatch via WhatChimp:", err.message);
       await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {

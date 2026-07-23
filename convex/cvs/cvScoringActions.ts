@@ -258,6 +258,7 @@ export const processCvScoring = action({
                 ].join("\n")
               }
             ],
+            response_format: { type: "json_object" },
           });
 
           const content   = response.choices[0]?.message?.content ?? '{"score":0}';

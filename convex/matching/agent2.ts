@@ -494,11 +494,15 @@ export const runReverseMatch = action({
           };
         });
 
-      // Sort all candidates by overall score descending (soft ranking gate)
+      // Sort all candidates by overall score descending
       matchResults.sort((a, b) => b.overallScore - a.overallScore);
 
-      // Slice the top 30 as new matches
-      const newTop30 = matchResults.slice(0, 30);
+      // STRICT Filter Gate: Only keep candidates who meet the minimum score threshold
+      const minScore = job.minMatchScoreToShow ?? 60;
+      const filteredMatches = matchResults.filter(r => r.overallScore >= minScore);
+
+      // Slice the top 30 from the filtered matches
+      const newTop30 = filteredMatches.slice(0, 30);
       const newTop30Ids = new Set(newTop30.map(r => r.cvId));
 
       // Append any previously matched TA-acted candidates who fell out of the top 30

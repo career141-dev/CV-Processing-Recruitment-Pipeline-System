@@ -11,7 +11,7 @@ const MODEL_CONFIG = {
   cv_structuring: "meta/llama-3.1-8b-instruct",      // Fast, good for parsing
   jd_extraction: "meta/llama-3.1-70b-instruct",     // Better understanding  
   jd_matching: "meta/llama-3.1-70b-instruct",         // Strong reasoning
-  email_routing: "meta/llama-3.1-8b-instruct"         // Fast text classification
+  email_routing: "meta/llama-3.1-70b-instruct"         // Smarter text classification
 };
 
 export function getOpenAI(taskType: TaskType): OpenAI {

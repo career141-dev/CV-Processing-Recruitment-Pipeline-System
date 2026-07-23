@@ -1,7 +1,6 @@
 import { httpAction, mutation, query, action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
-import { getOpenAI, getModelForTask } from "../lib/llm";
 
 export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const bodyText = await request.text();
@@ -100,8 +99,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           if (!checkResult?.isFollowUpReply) {
              const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, { phone: cleanSender });
              if (session) {
-                console.log(`[WhatChimp Webhook] Pre-application chat detected for +${cleanSender}. Dispatching LLM handler.`);
-                await ctx.scheduler.runAfter(0, internal.communications.whatchimp.handlePreApplicationChat, {
+                console.log(`[WhatChimp Webhook] Pre-application question detected for Job ID: ${session.jobId}. Forwarding to AI Chat Agent.`);
+                await ctx.scheduler.runAfter(0, internal.communications.whatchimpActions.handlePreApplicationChat, {
                   phone: cleanSender,
                   textBody,
                   jobId: session.jobId,
@@ -182,8 +181,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: session.jobId });
       if (job && !job.muteDefaultWhatsappReply) {
         isPreAppChat = true;
-        console.log(`[WhatChimp Webhook] Pre-application chat detected for +${cleanFrom}. Dispatching LLM handler.`);
-        await ctx.scheduler.runAfter(0, internal.communications.whatchimp.handlePreApplicationChat, {
+        console.log(`[WhatChimp Webhook] Unrecognized input or pre-application question from ${cleanFrom}. Forwarding to AI Chat Agent for Job: ${session.jobId}`);
+        await ctx.scheduler.runAfter(0, internal.communications.whatchimpActions.handlePreApplicationChat, {
           phone: cleanFrom,
           textBody: text,
           jobId: session.jobId,
@@ -485,65 +484,4 @@ export const testFetchWhatChimp = action({
     }
   },
 });
-
-export const handlePreApplicationChat = internalAction({
-  args: {
-    phone: v.string(),
-    textBody: v.string(),
-    jobId: v.id("jobs"),
-  },
-  handler: async (ctx, args) => {
-    try {
-      const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
-      if (!job) return;
-
-      const openai = getOpenAI("jd_matching"); // Use a fast chat model
-      const model = getModelForTask("jd_matching") || "meta/llama-3.1-70b-instruct";
-
-      const systemPrompt = `You are an intelligent recruitment assistant for Career141. 
-The candidate is interested in the "${job.title}" position. 
-Job Description: ${job.jobDescription.substring(0, 2000)}
-Salary: ${job.salaryMin ? job.salaryMin + " to " + job.salaryMax + " " + (job.salaryCurrency || "") : "Not specified"}
-Location: ${job.location || "Not specified"}
-
-The candidate has NOT uploaded their CV yet. They just asked a question.
-Answer their question politely and accurately based ONLY on the provided job details. Keep it very concise (1-2 short sentences max). Do not hallucinate details.
-ALWAYS end your message by reminding them to "Please upload your CV as a PDF to apply!"`;
-
-      const completion = await openai.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: args.textBody }
-        ],
-        temperature: 0.5,
-      });
-
-      const replyMessage = completion.choices[0]?.message?.content?.trim();
-      if (!replyMessage) return;
-
-      console.log(`[PreApp Chat] Replying to +${args.phone}: ${replyMessage.substring(0, 100)}...`);
-
-      const apiToken = process.env.WHATCHIMP_API_TOKEN;
-      const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
-      
-      if (apiToken && phoneNumberId) {
-        const params = new URLSearchParams();
-        params.append("apiToken", apiToken);
-        params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
-        params.append("phone_number", args.phone);
-        params.append("message", replyMessage);
-
-        await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: params
-        }).then(r => r.text()).catch(console.error);
-      }
-    } catch (e: any) {
-      console.error("[PreApp Chat] Error:", e);
-    }
-  }
-});
-
 

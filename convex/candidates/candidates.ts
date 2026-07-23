@@ -115,13 +115,16 @@ export const listCandidatesPaginated = query({
 });
 
 export const getCandidate = query({
-  args: { id: v.id("candidates") },
+  args: { id: v.string() },
   handler: async (ctx, args) => {
-    const candidate = await ctx.db.get(args.id);
+    const validId = ctx.db.normalizeId("candidates", args.id);
+    if (!validId) return null;
+    
+    const candidate = await ctx.db.get(validId);
     if (!candidate) return null;
     
     const resume = await ctx.db.query("candidateResumes")
-      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", args.id))
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", validId))
       .first();
 
     const { rawText, embedding, jobHistory, ...safeCandidate } = candidate as any;
@@ -714,9 +717,12 @@ export const listFailedUploads = query({
 });
 
 export const getCvUploadUrl = query({
-  args: { cvUploadId: v.id("cvUploads") },
+  args: { cvUploadId: v.string() },
   handler: async (ctx, args) => {
-    const upload = await ctx.db.get(args.cvUploadId);
+    const validId = ctx.db.normalizeId("cvUploads", args.cvUploadId);
+    if (!validId) return null;
+    
+    const upload = await ctx.db.get(validId);
     if (!upload) return null;
 
     let url: string | null = null;

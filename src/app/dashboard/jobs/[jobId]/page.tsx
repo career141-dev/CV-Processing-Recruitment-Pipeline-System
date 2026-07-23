@@ -142,7 +142,7 @@ const CandidateNameDisplay = ({ name, cvUploadId, doNotContact, candidateId }: {
 
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
-  const candidate = useQuery(api.candidates.candidates.getCandidate, (match.candidateName) ? "skip" : { id: match.cvId as Id<"candidates"> });
+  const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
   const createApplication = useMutation(api.applications.applications.createApplication);
   const removeApplication = useMutation(api.applications.applications.removeApplication);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -1422,7 +1422,7 @@ export default function JobDetailPage() {
                             <Link href={`/dashboard/candidates/${app.candidateId}`} className="text-text-primary hover:underline">
                               {app.candidate?.fullName || 'Unknown Candidate'}
                             </Link>
-                            <CvViewButton cvUploadId={(app.candidate as any)?.cvUploadId} />
+                            <CvViewButton cvUploadId={(app as any).cvFileId || (app.candidate as any)?.cvUploadId} />
                           </div>
                         </td>
                         <td className="p-4">
@@ -1500,7 +1500,7 @@ export default function JobDetailPage() {
     const itemsToRender = stageApps.map(app => ({
       id: app._id,
       candidateId: app.candidateId,
-      cvUploadId: app.candidate?.cvUploadId,
+      cvUploadId: (app as any).cvFileId || app.candidate?.cvUploadId,
       name: app.candidate?.fullName || 'Unknown Candidate',
       doNotContact: (app.candidate as any)?.doNotContact,
       score: app.aiMatchScore || 'Pending',

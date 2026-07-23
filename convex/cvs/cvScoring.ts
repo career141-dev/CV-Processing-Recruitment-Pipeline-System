@@ -437,7 +437,8 @@ export async function scoreWithLLM(
           role: "user",
           content: `Job Title: ${req.title}\n\nJob Description:\n${JSON.stringify(req)}\n\nCV:\n${JSON.stringify(cv)}`
         }
-      ]
+      ],
+      response_format: { type: "json_object" },
     });
 
     const content = response.choices[0]?.message?.content ?? '{"score":0}';
