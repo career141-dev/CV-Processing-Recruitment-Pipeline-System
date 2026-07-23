@@ -30,7 +30,7 @@ export default function TokenMonitorPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(100);
 
   // Model pricing selection
   type ModelKey = "free" | "llama" | "gpt4o" | "deepseek";
@@ -96,14 +96,14 @@ export default function TokenMonitorPage() {
   // Cost charting filters & calculations
   const [chartMode, setChartMode] = useState<"all" | "cv_extraction">("all");
 
-  // DeepSeek V4 Flash Dedicated Tracker (calculates from 0 based on logs)
+  // DeepSeek V4 Flash Dedicated Tracker (all-time aggregate from backend metrics, or computed from logs)
   const deepseekLogs = logs?.filter((log) => log.model.toLowerCase().includes("deepseek")) || [];
-  const deepseekPromptTokens = deepseekLogs.reduce((acc, log) => acc + (log.promptTokens || 0), 0);
-  const deepseekCompletionTokens = deepseekLogs.reduce((acc, log) => acc + (log.completionTokens || 0), 0);
-  const deepseekTotalTokens = deepseekPromptTokens + deepseekCompletionTokens;
-  const deepseekTotalCost = (deepseekPromptTokens * 0.14 + deepseekCompletionTokens * 0.28) / 1_000_000;
-  const deepseekTotalCalls = deepseekLogs.length;
-  const deepseekSuccessCalls = deepseekLogs.filter(l => l.success).length;
+  const deepseekPromptTokens = metrics?.deepseekMetrics?.promptTokens ?? deepseekLogs.reduce((acc, log) => acc + (log.promptTokens || 0), 0);
+  const deepseekCompletionTokens = metrics?.deepseekMetrics?.completionTokens ?? deepseekLogs.reduce((acc, log) => acc + (log.completionTokens || 0), 0);
+  const deepseekTotalTokens = metrics?.deepseekMetrics?.totalTokens ?? (deepseekPromptTokens + deepseekCompletionTokens);
+  const deepseekTotalCost = metrics?.deepseekMetrics?.totalCost ?? ((deepseekPromptTokens * 0.14 + deepseekCompletionTokens * 0.28) / 1_000_000);
+  const deepseekTotalCalls = metrics?.deepseekMetrics?.totalCalls ?? deepseekLogs.length;
+  const deepseekSuccessCalls = metrics?.deepseekMetrics?.successCalls ?? deepseekLogs.filter(l => l.success).length;
 
   const filteredLogs = logs?.filter((log) => {
     const matchesType =

@@ -605,6 +605,29 @@ export const getTokenMetrics = query({
       }
     }
 
+    // Compute DeepSeek metrics across all deepseek logs in database
+    const deepseekLogs = await ctx.db
+      .query("nvidiaTokenLogs")
+      .collect();
+    
+    let deepseekPromptTokens = 0;
+    let deepseekCompletionTokens = 0;
+    let deepseekTotalCalls = 0;
+    let deepseekSuccessCalls = 0;
+    let deepseekTotalCost = 0;
+
+    for (const log of deepseekLogs) {
+      if (log.model && log.model.toLowerCase().includes("deepseek")) {
+        const pTokens = log.promptTokens || 0;
+        const cTokens = log.completionTokens || 0;
+        deepseekPromptTokens += pTokens;
+        deepseekCompletionTokens += cTokens;
+        deepseekTotalCalls++;
+        if (log.success) deepseekSuccessCalls++;
+        deepseekTotalCost += calculateLLMCost(log.model, pTokens, cTokens, log.provider || "openrouter");
+      }
+    }
+
     return {
       overall: {
         totalTokens,
@@ -618,6 +641,14 @@ export const getTokenMetrics = query({
         totalCvExtractionsCount,
         cvExtractionCredits,
         avgCostPerCv,
+      },
+      deepseekMetrics: {
+        totalTokens: deepseekPromptTokens + deepseekCompletionTokens,
+        promptTokens: deepseekPromptTokens,
+        completionTokens: deepseekCompletionTokens,
+        totalCost: deepseekTotalCost,
+        totalCalls: deepseekTotalCalls,
+        successCalls: deepseekSuccessCalls,
       },
       taskBreakdown,
       dailyChartData: Array.from(dailyDataMap.values()),
@@ -635,7 +666,7 @@ export const getRecentTokenLogs = query({
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
-    const limit = args.limit ?? 20;
+    const limit = args.limit ?? 100;
 
     const logs = await ctx.db
       .query("nvidiaTokenLogs")
