@@ -28,11 +28,11 @@ function normalizeRequirements(req: SearchRequirements): SearchRequirements {
   return {
     ...req,
     title: req.title || "Position",
-    alternativeTitles: distinct(req.alternativeTitles),
-    occupationSynonyms: distinct(req.occupationSynonyms),
-    requiredSkills: distinct(req.requiredSkills),
-    preferredSkills: distinct(req.preferredSkills),
-    keywords: distinct(req.keywords),
+    alternativeTitles: distinct(req.alternativeTitles ?? []),
+    occupationSynonyms: distinct(req.occupationSynonyms ?? []),
+    requiredSkills: distinct(req.requiredSkills ?? []),
+    preferredSkills: distinct(req.preferredSkills ?? []),
+    keywords: distinct(req.keywords ?? []),
   };
 }
 

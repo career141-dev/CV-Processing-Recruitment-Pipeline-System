@@ -457,25 +457,11 @@ export async function scoreWithLLM(
           model,
         },
       };
-    } catch {
-      return {
-        result: { score: 0, reason: "Error parsing AI evaluation." },
-        usage: {
-          promptTokens: inputTokens,
-          completionTokens: outputTokens,
-          model,
-        },
-      };
+    } catch (parseError) {
+      throw new Error(`Error parsing AI evaluation: ${String(parseError)}`);
     }
   } catch (error) {
-    return {
-      result: { score: 0, reason: "Failed to connect to the scoring service." },
-      usage: {
-        promptTokens: 0,
-        completionTokens: 0,
-        model,
-      },
-    };
+    throw error;
   }
 }
 

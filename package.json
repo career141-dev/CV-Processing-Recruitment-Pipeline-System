@@ -7,7 +7,7 @@
     "switch:hosted": "node -e \"require('fs').copyFileSync('.env.hosted', '.env.local')\" && echo Switched to Hosted Backend (api.career141.com)",
     "switch:local": "node -e \"require('fs').copyFileSync('.env.localdev', '.env.local')\" && echo Switched to Local Backend (127.0.0.1)",
     "dev:hosted": "npm run switch:hosted && npx convex dev",
-    "dev:local": "npm run switch:local && npx convex dev",
+    "dev:local": "npm run switch:local && npx convex dev --url http://127.0.0.1:3210 --admin-key \"convex-self-hosted|0120afbc2cee5c518972267bca0e283c9ddc23e3d9eebc8f2bbe278e5a49256dbed5d4aa39\"",
     "db:sync-from-hosted": "npm run switch:hosted && npx convex export --path hosted_export.zip && npm run switch:local && npx convex import hosted_export.zip --replace --yes",
     "convex-dev": "npm run dev:hosted",
     "build": "next build",

@@ -79,6 +79,7 @@ import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as scratchQuery from "../scratchQuery.js";
 import type * as scratch_backfill from "../scratch_backfill.js";
+import type * as scratch_fix_cv from "../scratch_fix_cv.js";
 import type * as scratch_fix_stats from "../scratch_fix_stats.js";
 import type * as scratch_recovery from "../scratch_recovery.js";
 import type * as scratch_score from "../scratch_score.js";
@@ -166,6 +167,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/stages": typeof pipeline_stages;
   scratchQuery: typeof scratchQuery;
   scratch_backfill: typeof scratch_backfill;
+  scratch_fix_cv: typeof scratch_fix_cv;
   scratch_fix_stats: typeof scratch_fix_stats;
   scratch_recovery: typeof scratch_recovery;
   scratch_score: typeof scratch_score;

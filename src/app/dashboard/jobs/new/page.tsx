@@ -28,6 +28,7 @@ export default function CreateJobWizard() {
   const allUsers = useQuery(api.users.users.getAllUsers);
   const currentUser = useQuery(api.users.users.getCurrentUser);
   const createJob = useMutation(api.jobs.jobs.createJob);
+  const createDraftJob = useMutation(api.jobs.jobs.createDraftJob);
   const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
   const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
   const updateJobAiConfig = useMutation(api.jobs.jobs.updateJobAiConfig);
@@ -37,6 +38,7 @@ export default function CreateJobWizard() {
   const [isExtracting, setIsExtracting] = useState(false);
 
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isDrafting, setIsDrafting] = useState(false);
   const [publishError, setPublishError] = useState("");
   const [showRecruiterDropdown, setShowRecruiterDropdown] = useState(false);
   const [lastSavedKeyword, setLastSavedKeyword] = useState<string>('');
@@ -244,6 +246,62 @@ export default function CreateJobWizard() {
     setCurrentStep(prev => Math.min(prev + 1, 4));
   };
   const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
+  const handleSaveDraft = async () => {
+    setIsDrafting(true);
+    setPublishError("");
+    try {
+      const recruiterPool = (availableRecruiters && availableRecruiters.length > 0)
+        ? availableRecruiters
+        : (allUsers && allUsers.length > 0)
+        ? allUsers
+        : currentUser
+        ? [currentUser]
+        : [];
+
+      const primaryRecruiterObj = recruiterPool.find(m => m.fullName === formData.primaryRecruiter);
+      const primaryRecruiterId = primaryRecruiterObj?._id || recruiterPool[0]?._id;
+
+      const directorPool = (availableDirectors && availableDirectors.length > 0) ? availableDirectors : (allUsers || []);
+      const directorObj = directorPool.find(m => m.fullName === formData.director);
+      const directorId = directorObj?._id;
+
+      const supportingRecruiterIds = formData.supportingRecruiters
+        .map(name => recruiterPool.find(m => m.fullName === name)?._id)
+        .filter(Boolean) as string[];
+
+      const { jobId } = await createDraftJob({
+        title: formData.jobTitle || "Draft Job",
+        description: formData.jobDescription || "No description provided.",
+        clientName: formData.confidential ? "Confidential Client" : (formData.clientCompany || undefined),
+        clientIndustry: formData.industry || undefined,
+        recruitmentType: formData.recruitmentType.includes("headhunting") && formData.recruitmentType.includes("posting") ? "both" : formData.recruitmentType.includes("headhunting") ? "headhunting" : "job_posting",
+        isConfidential: formData.confidential,
+        location: formData.location || undefined,
+        requiredSkills: formData.requiredSkills ? formData.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        niceToHaveSkills: formData.niceToHaveSkills ? formData.niceToHaveSkills.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        seniorityLevel: formData.seniorityLevel ? formData.seniorityLevel.toLowerCase().replace(/ /g, "_").replace("-", "_") : undefined,
+        experienceMinYears: parseInt(formData.experienceMin) || undefined,
+        experienceMaxYears: parseInt(formData.experienceMax) || undefined,
+        salaryRangeMin: parseInt(formData.salaryRange.split("-")[0]?.replace(/[^0-9]/g, '')) || undefined,
+        salaryRangeMax: parseInt(formData.salaryRange.split("-")[1]?.replace(/[^0-9]/g, '')) || undefined,
+        salaryCurrency: formData.salaryRange.replace(/[0-9\- ]/g, '').trim() || undefined,
+        primaryRecruiterId: primaryRecruiterId as any,
+        directorId: directorId as any,
+        supportingRecruiterIds: supportingRecruiterIds as any,
+        clientContactName: formData.clientContactName || undefined,
+        clientContactEmail: formData.clientContactEmail || undefined,
+        muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
+      });
+
+      toast.success("Job saved as draft successfully");
+      router.push(`/dashboard/jobs`);
+    } catch (error: any) {
+      setPublishError(error.message || "Failed to save draft. Please try again.");
+    } finally {
+      setIsDrafting(false);
+    }
+  };
+
   const handlePublish = async () => {
     setIsPublishing(true);
     setPublishError("");
@@ -1653,11 +1711,20 @@ export default function CreateJobWizard() {
                 Next Step <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
               </button>
             ) : (
-              <button 
-                className="px-8 py-2 bg-primary-container text-on-primary rounded-md hover:bg-primary transition-colors font-medium shadow-md flex items-center gap-2 text-lg disabled:opacity-50 disabled:cursor-not-allowed" 
-                onClick={handlePublish}
-                disabled={!formData.jobTitle || !formData.requiredSkills || isPublishing}
-              >
+              <div className="flex gap-4">
+                <button 
+                  className="px-6 py-2 bg-surface border-2 border-border text-text-primary rounded-md hover:bg-surface-variant transition-colors font-medium shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" 
+                  onClick={handleSaveDraft}
+                  disabled={!formData.jobTitle || isDrafting || isPublishing}
+                >
+                  {isDrafting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="material-symbols-outlined">save</span>}
+                  {isDrafting ? "Saving..." : "Save as Draft"}
+                </button>
+                <button 
+                  className="px-8 py-2 bg-primary-container text-on-primary rounded-md hover:bg-primary transition-colors font-medium shadow-md flex items-center gap-2 text-lg disabled:opacity-50 disabled:cursor-not-allowed" 
+                  onClick={handlePublish}
+                  disabled={!formData.jobTitle || !formData.requiredSkills || isPublishing || isDrafting}
+                >
                 {isPublishing ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
@@ -1665,6 +1732,7 @@ export default function CreateJobWizard() {
                 )}
                 {isPublishing ? "Publishing..." : "Publish Job"}
               </button>
+              </div>
             )}
           </div>
         </div>
