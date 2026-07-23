@@ -4,7 +4,7 @@ import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
-type Role = "admin" | "ta_manager" | "senior_ta" | "recruiter" | "director" | "client" | "viewer" | "ta" | "ops";
+type Role = "admin" | "ta_manager" | "senior_ta" | "recruiter" | "director" | "client" | "viewer" | "ta" | "ops" | "test_ta";
 
 export function usePermissions() {
   const { user: clerkUser, isLoaded } = useUser();
@@ -29,12 +29,12 @@ export function usePermissions() {
     canAssignDirector: ["admin", "ta_manager", "senior_ta"].includes(role),
     canAssignClient: ["admin", "ta_manager", "senior_ta"].includes(role),
     canRegenerateKeyword: ["admin", "ta_manager", "senior_ta"].includes(role),
-    canDownloadAssets: ["admin", "ta_manager", "senior_ta", "recruiter", "ta"].includes(role),
+    canDownloadAssets: ["admin", "ta_manager", "senior_ta", "recruiter", "ta", "test_ta"].includes(role),
 
     // Candidate & Pipeline
     canUploadCvManual: ["admin", "ta_manager", "senior_ta", "recruiter", "ta"].includes(role),
     canEditCandidateProfile: ["admin", "ta_manager", "senior_ta", "ta"].includes(role),
-    canViewAiMatchScore: ["admin", "ta_manager", "senior_ta", "recruiter", "ta"].includes(role),
+    canViewAiMatchScore: ["admin", "ta_manager", "senior_ta", "recruiter", "ta", "test_ta"].includes(role),
     
     // Stages
     canActStage1NewCvs: ["admin", "ta_manager", "senior_ta", "recruiter", "ta"].includes(role),

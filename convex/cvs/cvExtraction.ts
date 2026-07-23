@@ -699,12 +699,29 @@ export async function runCvExtraction(
     if (existingCandidate) {
       console.log(`[CvExtraction] Duplicate CV detected (hash: ${fileHash}). Candidate ID: ${existingCandidate._id}. Skipping extraction.`);
       
-      await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+      const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
         cvUploadId,
         status: "processed",
         fileHash,
         candidateId: existingCandidate._id,
-      });
+      }) as string | undefined | null;
+
+      if (jobId) {
+        await ctx.runMutation(api.applications.applications.createApplication, {
+          candidateId: existingCandidate._id,
+          jobId: jobId as any,
+          cvFileId: cvUploadId,
+          sourceChannel: sourceChannel ?? "manual_upload",
+        });
+
+        // Trigger scoring for this duplicate CV on the new job too
+        if (!skipLLM) {
+          await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+            candidateId: existingCandidate._id,
+            jobId: jobId as any,
+          });
+        }
+      }
 
       if (args.logId) {
         await ctx.runMutation(api.cvs.batches.updateLogStage, {

@@ -321,9 +321,9 @@ export function scoreCandidateAgainstRequirements(
 ): ScoredCandidate {
   const candidateTitleText = buildCandidateTitleText(cv);
   const candidateSkills = distinct((cv.skills ?? []).map(normaliseSkill));
-  const requiredSkills = req.requiredSkills.map(normaliseSkill);
-  const preferredSkills = req.preferredSkills.map(normaliseSkill);
-  const jobTitleVariants = distinct([req.title, ...req.alternativeTitles]);
+  const requiredSkills = (req.requiredSkills ?? []).map(normaliseSkill);
+  const preferredSkills = (req.preferredSkills ?? req.niceToHaveSkills ?? []).map(normaliseSkill);
+  const jobTitleVariants = distinct([req.title, ...(req.alternativeTitles ?? [])]);
   const candidateSeniority = cv.seniorityLevel ?? inferSeniorityFromText(candidateTitleText);
   const jobSeniority = req.seniority ?? inferSeniorityFromText(`${req.title} ${req.summary}`);
 
