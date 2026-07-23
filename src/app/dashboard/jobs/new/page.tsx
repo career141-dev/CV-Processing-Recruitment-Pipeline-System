@@ -1699,8 +1699,13 @@ export default function CreateJobWizard() {
             {publishError && (
               <span className="text-red-500 text-sm font-medium">{publishError}</span>
             )}
-            <button className="px-6 py-2 border border-border text-text-primary rounded-md hover:bg-surface-variant transition-colors bg-white font-medium disabled:opacity-50" disabled={isPublishing}>
-              Save as Draft
+            <button 
+              className="px-6 py-2 border border-border text-text-primary rounded-md hover:bg-surface-variant transition-colors bg-white font-medium disabled:opacity-50 flex items-center gap-2" 
+              onClick={handleSaveDraft}
+              disabled={!formData.jobTitle || isDrafting || isPublishing}
+            >
+              {isDrafting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isDrafting ? "Saving..." : "Save as Draft"}
             </button>
             {currentStep < 4 ? (
               <button 
