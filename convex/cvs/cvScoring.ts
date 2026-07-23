@@ -426,16 +426,55 @@ export async function scoreWithLLM(
   const openai = getOpenAI("jd_matching");
 
   try {
+    const candidateObj = cv.cv || cv;
+
+    const candName = candidateObj.fullName || "Candidate";
+    const candTitle = candidateObj.currentTitle || candidateObj.currentJobTitle || "Not specified";
+    const candEmployer = candidateObj.currentEmployer || "Not specified";
+    const candYears = candidateObj.totalYearsExperience ?? candidateObj.yearsOfExperience ?? "Not specified";
+    const candSkills = Array.isArray(candidateObj.skills)
+      ? candidateObj.skills.map((s: any) => (typeof s === "object" ? s.value : String(s))).slice(0, 20).join(", ")
+      : "Not specified";
+
+    const recentJobs = Array.isArray(candidateObj.jobHistory)
+      ? candidateObj.jobHistory.slice(0, 3).map((j: any) => `- ${j.title || "Role"} at ${j.company || "Company"} (${j.startDate || ""} - ${j.endDate || "Present"})`).join("\n")
+      : "";
+
+    const reqSkills = Array.isArray(req.requiredSkills) ? req.requiredSkills.join(", ") : "Not specified";
+    const prefSkills = Array.isArray(req.preferredSkills) ? req.preferredSkills.join(", ") : "None";
+    const jdSnippet = req.summary ? String(req.summary).slice(0, 500) : "";
+
+    const userPrompt = [
+      `JOB REQUIREMENTS:`,
+      `Title: ${req.title || "Not specified"}`,
+      `Required Skills: ${reqSkills}`,
+      `Preferred Skills: ${prefSkills}`,
+      `Min Experience: ${req.minYearsExperience ?? "Not specified"} years`,
+      `Seniority: ${req.seniority || "Not specified"}`,
+      `Industry: ${req.industry || "Not specified"}`,
+      jdSnippet ? `Summary: ${jdSnippet}` : "",
+      ``,
+      `CANDIDATE PROFILE:`,
+      `Name: ${candName}`,
+      `Current Title: ${candTitle}`,
+      `Current Employer: ${candEmployer}`,
+      `Total Experience: ${candYears} years`,
+      `Skills: ${candSkills}`,
+      recentJobs ? `Recent Roles:\n${recentJobs}` : "",
+    ].filter(Boolean).join("\n");
+
     const response = await openai.chat.completions.create({
       model,
+      temperature: 0.1,
+      max_tokens: 300,
       messages: [
         {
           role: "system",
-          content: `You are an expert Talent Acquisition (TA) specialist. Evaluate the candidate's CV against the job description on a scale of 0-100. Return ONLY a JSON object: {"score": number, "reason": "A concise, professional explanation (max 2-3 sentences) from a recruiter's perspective detailing the candidate's fit based on skills, experience, and title match against the JD requirements."}`
+          content: `You are an expert Talent Acquisition (TA) specialist. Evaluate the candidate's CV against the job requirements on a scale of 0-100. Return ONLY a JSON object: {"score": number, "reason": "A concise 2-3 sentence recruiter assessment of fit."}`
         },
         {
           role: "user",
-          content: `Job Title: ${req.title}\n\nJob Description:\n${JSON.stringify(req)}\n\nCV:\n${JSON.stringify(cv)}`
+          content: userPrompt,
         }
       ],
       response_format: { type: "json_object" },

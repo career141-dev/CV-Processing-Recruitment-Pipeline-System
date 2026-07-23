@@ -18,7 +18,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding, logLLMUsage } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -181,26 +181,169 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
-async function extractTextFromImage(buffer: ArrayBuffer): Promise<string> {
-  throw new Error("Image CV extraction requires OCR, which is currently disabled due to serverless runtime constraints.");
+async function extractImagesFromPdfBuffer(
+  buffer: ArrayBuffer,
+  maxPages: number = 5
+): Promise<string[]> {
+  const images: string[] = [];
+  try {
+    let pdfjsLib: any;
+    try {
+      pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+    } catch {
+      pdfjsLib = require("pdfjs-dist");
+    }
+    if (pdfjsLib.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    }
+
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    const pdfDoc = await loadingTask.promise;
+    const numPages = Math.min(pdfDoc.numPages, maxPages);
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const ops = await page.getOperatorList();
+
+      for (let i = 0; i < ops.fnArray.length; i++) {
+        const fn = ops.fnArray[i];
+        if (
+          fn === pdfjsLib.OPS.paintImageXObject ||
+          fn === pdfjsLib.OPS.paintInlineImageXObject
+        ) {
+          const imgName = ops.argsArray[i][0];
+          let imgData: any = null;
+
+          try {
+            imgData = page.objs.get(imgName);
+          } catch { }
+
+          if (!imgData) continue;
+
+          const width = imgData.width;
+          const height = imgData.height;
+
+          if (!width || !height || width < 50 || height < 50) {
+            continue;
+          }
+
+          if (imgData.data && imgData.data.length > 0) {
+            try {
+              let rgbaBuffer: Buffer;
+              const kind = imgData.kind;
+
+              if (kind === 1 || imgData.data.length === width * height) {
+                rgbaBuffer = Buffer.alloc(width * height * 4);
+                for (let j = 0; j < width * height; j++) {
+                  const val = imgData.data[j];
+                  const offset = j * 4;
+                  rgbaBuffer[offset] = val;
+                  rgbaBuffer[offset + 1] = val;
+                  rgbaBuffer[offset + 2] = val;
+                  rgbaBuffer[offset + 3] = 255;
+                }
+              } else if (imgData.data.length === width * height * 3) {
+                rgbaBuffer = Buffer.alloc(width * height * 4);
+                for (let j = 0; j < width * height; j++) {
+                  const srcOffset = j * 3;
+                  const destOffset = j * 4;
+                  rgbaBuffer[destOffset] = imgData.data[srcOffset];
+                  rgbaBuffer[destOffset + 1] = imgData.data[srcOffset + 1];
+                  rgbaBuffer[destOffset + 2] = imgData.data[srcOffset + 2];
+                  rgbaBuffer[destOffset + 3] = 255;
+                }
+              } else if (imgData.data.length === width * height * 4) {
+                rgbaBuffer = Buffer.from(imgData.data);
+              } else {
+                continue;
+              }
+
+              const jimpImg = new Jimp({
+                data: rgbaBuffer,
+                width,
+                height,
+              });
+
+              const base64Data = await jimpImg.getBase64("image/jpeg");
+              images.push(base64Data);
+            } catch (jimpErr) {
+              console.warn(`[PDF Image Extraction] Jimp encoding error on page ${pageNum}:`, jimpErr);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[extractImagesFromPdfBuffer] Failed to extract images from PDF:", err);
+  }
+
+  return images;
+}
+
+async function extractTextFromImage(
+  buffer: ArrayBuffer,
+  fileType: string,
+  ctx?: ActionCtx,
+  cvUploadId?: Id<"cvUploads">
+): Promise<string> {
+  if (!ctx) {
+    throw new Error("Image CV extraction requires Vision OCR, but ActionCtx was not provided.");
+  }
+
+  const mimeType = fileType.toLowerCase().includes("png") ? "image/png" : "image/jpeg";
+  const base64Str = Buffer.from(buffer).toString("base64");
+  const dataUrl = `data:${mimeType};base64,${base64Str}`;
+
+  const visionText = await callNvidiaVisionOCR(ctx, [dataUrl], cvUploadId);
+  if (!visionText || visionText.trim().length < 20) {
+    throw new Error("Insufficient text extracted from image (Vision OCR returned less than 20 characters).");
+  }
+
+  return visionText;
 }
 
 export async function extractText(
   buffer: ArrayBuffer,
   fileType: string,
   skipOCR: boolean = false,
+  ctx?: ActionCtx,
+  cvUploadId?: Id<"cvUploads">
 ): Promise<string> {
   const type = fileType.toLowerCase();
 
   if (type === "pdf" || type === "application/pdf") {
+    let pdfText = "";
     try {
-      const pdfText = await extractTextFromPdf(buffer);
-      if (pdfText.trim().length > 50) return pdfText;
-      throw new Error("PDF text extraction returned less than 50 characters (possibly a scanned PDF which requires OCR).");
+      pdfText = await extractTextFromPdf(buffer);
     } catch (e) {
-      console.warn("Failed to extract text from PDF", e);
-      throw e;
+      console.warn("Standard PDF text extraction failed, falling back to Vision OCR...", e);
     }
+
+    if (pdfText && pdfText.trim().length >= 50) {
+      return pdfText;
+    }
+
+    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Invoking Vision OCR...`);
+
+    if (!ctx) {
+      throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
+    }
+
+    const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
+    if (!pageImages || pageImages.length === 0) {
+      throw new Error("Scanned PDF text extraction failed: less than 50 characters extracted and no scanned page images could be extracted from PDF.");
+    }
+
+    const visionText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
+    if (!visionText || visionText.trim().length < 20) {
+      throw new Error("Insufficient text extracted from scanned PDF (Vision OCR returned less than 20 characters).");
+    }
+
+    return visionText;
   }
 
   const magic = new Uint8Array(buffer.slice(0, 4));
@@ -210,8 +353,8 @@ export async function extractText(
     return extractTextFromDocx(buffer);
   }
 
-  if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg") {
-    throw new Error("Image CV extraction requires OCR, which is currently disabled.");
+  if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg" || type === "webp") {
+    return extractTextFromImage(buffer, fileType, ctx, cvUploadId);
   }
 
   if (type === "rtf") {
@@ -282,21 +425,6 @@ function computeSha256(buffer: ArrayBuffer): string {
   return crypto.createHash("sha256").update(Buffer.from(buffer)).digest("hex");
 }
 
-// ──────────────────────────────────────────────────
-// LLM — same graceful-fallback pattern as C141
-// ──────────────────────────────────────────────────
-
-function createNvidiaClient(): OpenAI {
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) throw new Error("NVIDIA_API_KEY environment variable is not set");
-  return new OpenAI({
-    baseURL: "https://integrate.api.nvidia.com/v1",
-    apiKey,
-    timeout: 45000,  // 45 seconds to prevent Convex 5-minute action timeout
-    maxRetries: 0,   // Let our custom retry loop handle it
-  });
-}
-
 function parseJsonRobustly(content: string): Record<string, unknown> | null {
   try {
     return JSON.parse(content) as Record<string, unknown>;
@@ -320,12 +448,10 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
 }
 
 /**
- * Calls the LLM to extract structured CV data.
- * Returns an empty object (not throws) if the API call fails —
- * matching C141's parseCvWithAI fallback behaviour.
- * The caller decides whether to treat empty data as an error.
+ * Calls OpenRouter LLM to extract structured CV data.
+ * Uses OPENROUTER_PRIMARY_MODEL with fallback models if rate-limited.
  */
-export async function callNvidiaLLM(
+export async function callOpenRouterLLM(
   ctx: ActionCtx,
   rawText: string,
   cvUploadId?: Id<"cvUploads">
@@ -336,21 +462,23 @@ export async function callNvidiaLLM(
       ? rawText.slice(0, MAX_CHARS).replace(/\s+\S*$/, "")
       : rawText;
 
-  const maxAttempts = 3;
+  // TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_CV_EXTRACTION_MODEL
+  const modelsToTry = OPENROUTER_CV_FALLBACK_MODELS;
   let lastMessage = "";
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const openai = createNvidiaClient();
-      const response = await openai.chat.completions.create({
-        model: "meta/llama-3.1-70b-instruct",
-        temperature: 0,
-        max_tokens: 4096,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "user",
-            content: `Extract candidate information from the CV text below and return it as a JSON object.
+  for (const model of modelsToTry) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const openai = getOpenAI("cv_structuring");
+        const response = await openai.chat.completions.create({
+          model,
+          temperature: 0,
+          max_tokens: 4096,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "user",
+              content: `Extract candidate information from the CV text below and return it as a JSON object.
 CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile (e.g., if it is an email signature, company brochure, invoice, cover letter without a CV, or random text), you MUST return an empty JSON object: {}
 1. Return only valid JSON. No markdown, no backticks, no explanation.
 2. If a field is not found, return null. Never invent or guess.
@@ -409,86 +537,67 @@ CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile 
 }
 CV TEXT:
 ${textToSend}`,
-          },
-        ],
-      });
+            },
+          ],
+        });
 
-      // Log successful token usage
-      if (response.usage) {
-        await logLLMUsage(
-          ctx,
-          "cv_structuring",
-          "meta/llama-3.1-8b-instruct",
-          response.usage.prompt_tokens,
-          response.usage.completion_tokens,
-          true,
-          undefined,
-          cvUploadId
-        );
+        if (response.usage) {
+          await logLLMUsage(
+            ctx,
+            "cv_structuring",
+            model,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            true,
+            undefined,
+            cvUploadId
+          );
+        }
+
+        const content = response.choices[0]?.message?.content;
+        if (!content) return null;
+
+        const parsed = parseJsonRobustly(content);
+        if (!parsed) return null;
+
+        if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
+          throw new Error("NOT_A_CV");
+        }
+
+        try {
+          return cvExtractionSchema.parse(parsed);
+        } catch (e) {
+          console.error("Zod parse error:", e);
+          return null;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[callOpenRouterLLM] Call failed with model ${model} (attempt ${attempt}):`, message);
+        lastMessage = message;
+
+        if (
+          message.includes("403") ||
+          message.toLowerCase().includes("insufficient") ||
+          message.toLowerCase().includes("balance") ||
+          message.toLowerCase().includes("credits") ||
+          message.includes("NOT_A_CV")
+        ) {
+          throw error;
+        }
+
+        const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
+        if (isRateLimit) {
+          console.warn(`[callOpenRouterLLM] Rate limit (429) on ${model}. Trying next fallback model...`);
+          break;
+        }
       }
-
-      const content = response.choices[0]?.message?.content;
-      if (!content) return null;
-
-      const parsed = parseJsonRobustly(content);
-      if (!parsed) return null;
-
-      // Check if the AI determined this is NOT a CV
-      if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
-        throw new Error("NOT_A_CV");
-      }
-
-      try {
-        return cvExtractionSchema.parse(parsed);
-      } catch (e) {
-        console.error("Zod parse error:", e);
-        return null;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`[callNvidiaLLM] LLM call failed (attempt ${attempt}):`, message);
-      lastMessage = message;
-
-      if (
-        message.includes("403") ||
-        message.toLowerCase().includes("insufficient") ||
-        message.toLowerCase().includes("balance") ||
-        message.toLowerCase().includes("credits") ||
-        message.includes("NOT_A_CV")
-      ) {
-        throw error;
-      }
-
-      const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
-      const isTransientError = 
-        isRateLimit ||
-        message.toLowerCase().includes("timed out") ||
-        message.toLowerCase().includes("timeout") ||
-        message.includes("502") ||
-        message.includes("503") ||
-        message.includes("504");
-
-      if (isTransientError && attempt < maxAttempts) {
-        const baseWaitMs = isRateLimit ? attempt * 5000 : Math.pow(2, attempt) * 1000;
-        const jitterMs = Math.floor(Math.random() * 3000); // 0-3s jitter
-        const waitMs = baseWaitMs + jitterMs;
-        console.log(`[callNvidiaLLM] Nvidia API Rate Limit or Transient error. Retrying in ${(waitMs / 1000).toFixed(1)}s... (attempt ${attempt}/${maxAttempts})`);
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-        continue;
-      }
-
-      if (isRateLimit) {
-        throw new Error(`429: Nvidia API Rate Limit exceeded after ${maxAttempts} attempts. Details: ${message}`);
-      }
-      break;
     }
   }
 
-  // Log failed call after all attempts
   await logLLMUsage(
     ctx,
     "cv_structuring",
-    "meta/llama-3.1-70b-instruct",
+    OPENROUTER_CV_EXTRACTION_MODEL,
     0,
     0,
     false,
@@ -497,6 +606,8 @@ ${textToSend}`,
   );
   return null;
 }
+
+
 
 // ──────────────────────────────────────────────────
 // null → undefined helper
@@ -637,13 +748,13 @@ export async function runCvExtraction(
       return existingCandidate._id;
     }
 
-    const rawText = await extractText(buffer, fileType, !!skipLLM);
+    const rawText = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
     if (trimmed.length < 20) {
       throw new Error("Insufficient text extracted from file");
     }
-    const cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
+    let cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
       : trimmed;
 
@@ -703,9 +814,12 @@ export async function runCvExtraction(
         });
       }
 
-      // Run both LLM extraction and Embedding generation in parallel
-      const [extractedData, embeddingResult] = await Promise.all([
-        callNvidiaLLM(ctx, cappedRawText, cvUploadId),
+      // First try: call OpenRouter LLM (OPENROUTER_PRIMARY_MODEL) with extracted text
+      let [extractedData, embeddingResult] = await Promise.all([
+        callOpenRouterLLM(ctx, cappedRawText, cvUploadId).catch((err) => {
+          console.warn("[CvExtraction] First call to callOpenRouterLLM failed:", err.message || err);
+          return null;
+        }),
         generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
           console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", err.message || err);
           return undefined;
@@ -713,6 +827,28 @@ export async function runCvExtraction(
       ]);
 
       extracted = extractedData;
+
+      // Fallback: If primary LLM failed on standard text, and document is PDF where Vision OCR hasn't run yet
+      if (!extracted && (fileType.toLowerCase() === "pdf" || fileType.toLowerCase() === "application/pdf")) {
+        console.warn(`[CvExtraction] OpenRouter LLM extraction returned null for standard text. Attempting Gemma 4 26B Vision OCR fallback...`);
+        try {
+          const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
+          if (pageImages && pageImages.length > 0) {
+            const visionRawText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
+            const cleanedVision = cleanRawText(visionRawText).trim();
+            if (cleanedVision.length >= 20) {
+              cappedRawText = cleanedVision.length > MAX_RAW_TEXT_LENGTH
+                ? cleanedVision.slice(0, MAX_RAW_TEXT_LENGTH)
+                : cleanedVision;
+              console.log(`[CvExtraction] Vision OCR transcribed ${cappedRawText.length} characters. Passing raw text back to DeepSeek V4 Flash for candidate detail extraction...`);
+              extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId);
+            }
+          }
+        } catch (visionFallbackErr: any) {
+          console.error("[CvExtraction] Vision OCR fallback attempt failed:", visionFallbackErr.message || visionFallbackErr);
+        }
+      }
+
       if (!extracted) {
         throw new Error("LLM failed to extract candidate data (API timeout or invalid response)");
       }

@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { callNvidiaLLM } from "./cvExtraction";
+import { callOpenRouterLLM } from "./cvExtraction";
 
 export const triggerLazyParse = action({
   args: {
@@ -28,8 +28,7 @@ export const triggerLazyParse = action({
       throw new Error("No raw text available for parsing");
     }
 
-    // 2. Inject known context into the LLM prompt? 
-    // Wait, callNvidiaLLM currently just takes rawText. We can inject it into the raw text manually.
+    // 2. Inject known context into the LLM prompt
     const injectedContext = `
 [KNOWN CANDIDATE DETAILS FROM ATS]
 Name: ${candidate.fullName || 'Unknown'}
@@ -40,7 +39,7 @@ Phone: ${candidate.phone || 'Unknown'}
     const textToSend = injectedContext + resume.rawText;
 
     // 3. Call LLM with the raw text
-    const extracted = await callNvidiaLLM(ctx, textToSend, candidate.cvUploadId);
+    const extracted = await callOpenRouterLLM(ctx, textToSend, candidate.cvUploadId);
     
     if (!extracted) {
       throw new Error("LLM extraction failed or returned empty");
@@ -79,6 +78,27 @@ Phone: ${candidate.phone || 'Unknown'}
       parsingConfidence,
       isParsed: true,
     });
+
+    if (extracted.referees && extracted.referees.length > 0) {
+      const validReferees = extracted.referees
+        .filter((r: any) => r && r.name && String(r.name).trim().length > 0)
+        .map((r: any) => ({
+          name: String(r.name).trim(),
+          designation: r.designation ? String(r.designation) : undefined,
+          company: r.company ? String(r.company) : undefined,
+          contactNo: r.contactNo ? String(r.contactNo) : undefined,
+          email: r.email ? String(r.email) : undefined,
+          relationship: r.relationship ? String(r.relationship) : undefined,
+          notes: r.notes ? String(r.notes) : undefined,
+        }));
+
+      if (validReferees.length > 0) {
+        await ctx.runMutation(api.candidates.referees.saveExtractedReferees, {
+          candidateId: args.candidateId,
+          referees: validReferees,
+        });
+      }
+    }
 
     return { status: "success" };
   },

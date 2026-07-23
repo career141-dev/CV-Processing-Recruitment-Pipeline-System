@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { action, query } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { logLLMUsage } from "../lib/llm";
+import { logLLMUsage, OPENROUTER_PRIMARY_MODEL } from "../lib/llm";
 import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
 import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
@@ -481,7 +481,7 @@ export const aiSearch = action({
           } catch (err) {
             tokenLogs.push({
               taskType: "jd_matching",
-              model: "meta/llama-3.1-70b-instruct",
+              model: OPENROUTER_PRIMARY_MODEL,
               promptTokens: 0,
               completionTokens: 0,
               success: false,
@@ -558,8 +558,9 @@ export const aiSearch = action({
 export const parseNLQuery = action({
   args: { query: v.string() },
   handler: async (ctx, args) => {
-    const apiKey = process.env.NVIDIA_API_KEY;
-    if (!apiKey) throw new Error("NVIDIA_API_KEY not set.");
+    const { getOpenAI, getModelForTask, logLLMUsage } = await import("../lib/llm");
+    const openai = getOpenAI("jd_extraction");
+    const model = getModelForTask("jd_extraction");
 
     const FILTER_SCHEMA = {
       skills: ["string"],
@@ -570,57 +571,49 @@ export const parseNLQuery = action({
       seniority: "Junior | Mid | Senior | Lead | Director",
     };
 
-    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "nvidia/llama-3.1-nemotron-70b-instruct",
+    let response: any;
+    try {
+      response = await openai.chat.completions.create({
+        model,
         messages: [{
           role: "user",
           content: `Extract search filters from this query as JSON: "${args.query}"\nSchema: ${JSON.stringify(FILTER_SCHEMA)}\nRespond ONLY with valid JSON. Do not add markdown backticks.`
         }],
+        temperature: 0,
         max_tokens: 500,
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
+        response_format: { type: "json_object" },
+      });
+    } catch (err: any) {
       await logLLMUsage(
         ctx,
         "jd_matching",
-        "nvidia/llama-3.1-nemotron-70b-instruct",
+        model,
         0,
         0,
         false,
-        `NVIDIA API Error: ${response.status} ${errorText}`
+        `OpenRouter API Error: ${err.message || String(err)}`
       );
-      throw new Error("NVIDIA API failed");
+      throw new Error("OpenRouter API query parse failed");
     }
-    
-    const data = await response.json();
-    
-    // Log successful token usage
-    const promptTokens = data.usage?.prompt_tokens ?? 0;
-    const completionTokens = data.usage?.completion_tokens ?? 0;
+
+    const promptTokens = response.usage?.prompt_tokens ?? 0;
+    const completionTokens = response.usage?.completion_tokens ?? 0;
     await logLLMUsage(
       ctx,
       "jd_matching",
-      "nvidia/llama-3.1-nemotron-70b-instruct",
+      model,
       promptTokens,
       completionTokens,
       true
     );
 
     try {
-      let content = data.choices[0].message.content;
+      let content = response.choices[0].message.content;
       // Strip markdown code blocks if any
       content = content.replace(/```json/g, '').replace(/```/g, '').trim();
       return JSON.parse(content);
     } catch (e) {
-      console.error("Failed to parse NVIDIA response:", e);
+      console.error("Failed to parse LLM response:", e);
       return {};
     }
   }

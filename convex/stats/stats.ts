@@ -375,25 +375,34 @@ export const getTeamActivity = query({
 // NVIDIA API Token Monitoring & Cost Analytics
 // =========================================================================
 
-// Helper to calculate estimated NVIDIA credit costs based on token count & model type
-export function calculateNvidiaCredits(model: string, promptTokens: number, completionTokens: number): number {
+export function calculateLLMCost(model: string, promptTokens: number, completionTokens: number, provider?: string): number {
   const modelName = model.toLowerCase();
 
-  // 1. Embeddings: $0.07 / million tokens
+  // 1. Free tier models (:free suffix)
+  if (modelName.endsWith(":free") || modelName.includes(":free")) {
+    return 0;
+  }
+
+  // 2. Embeddings: $0.07 / million tokens
   if (modelName.includes("embed") || modelName.includes("bge")) {
     return (promptTokens + completionTokens) * (0.07 / 1_000_000);
   }
 
-  // 2. DeepSeek Models (V4-Pro & V4-Flash)
+  // 3. DeepSeek Models (DeepSeek V4-Flash, DeepSeek V3, DeepSeek R1)
   if (modelName.includes("deepseek")) {
-    if (modelName.includes("pro")) {
-      return (promptTokens * 0.435 + completionTokens * 0.87) / 1_000_000;
+    if (modelName.includes("r1") || modelName.includes("pro")) {
+      return (promptTokens * 0.55 + completionTokens * 2.19) / 1_000_000;
     }
-    // Default to DeepSeek V4-Flash rates (Standard input: $0.09/M, output: $0.18/M)
-    return (promptTokens * 0.09 + completionTokens * 0.18) / 1_000_000;
+    // Default to DeepSeek V4-Flash rates (Input: $0.14/M, Output: $0.28/M)
+    return (promptTokens * 0.14 + completionTokens * 0.28) / 1_000_000;
   }
 
-  // 3. Chat/Instruction LLMs (8B models): $0.18 / million tokens
+  // 4. Llama 3.3 70B Paid model ($0.12/1M input, $0.30/1M output)
+  if (modelName.includes("llama-3.3-70b")) {
+    return (promptTokens * 0.12 + completionTokens * 0.30) / 1_000_000;
+  }
+
+  // 5. 8B models: $0.18 / 1M tokens
   if (modelName.includes("8b")) {
     return (promptTokens + completionTokens) * (0.18 / 1_000_000);
   }
@@ -401,6 +410,8 @@ export function calculateNvidiaCredits(model: string, promptTokens: number, comp
   // Default to Llama-3.1-70B rate ($0.40 / 1M tokens)
   return (promptTokens + completionTokens) * (0.40 / 1_000_000);
 }
+
+export const calculateNvidiaCredits = calculateLLMCost;
 
 /**
  * Internal mutation to record an NVIDIA API call.
@@ -418,10 +429,12 @@ export const logNvidiaCallMutation = internalMutation({
     success: v.boolean(),
     error: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
+    provider: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const cost = calculateNvidiaCredits(args.model, args.promptTokens, args.completionTokens);
+    const resolvedProvider = args.provider || (args.taskType === "cv_vision_ocr" || args.taskType === "embedding" || args.model.includes("nvidia") ? "nvidia" : "openrouter");
+    const cost = calculateLLMCost(args.model, args.promptTokens, args.completionTokens, resolvedProvider);
 
     // --- 1. Denormalize fileName at write-time (1 read once, instead of 1 read per dashboard load) ---
     let fileName: string | undefined = undefined;
@@ -433,6 +446,7 @@ export const logNvidiaCallMutation = internalMutation({
     // Insert the log with the denormalized field
     await ctx.db.insert("nvidiaTokenLogs", {
       ...args,
+      provider: resolvedProvider,
       timestamp: now,
       fileName,
     });
@@ -591,6 +605,50 @@ export const getTokenMetrics = query({
       }
     }
 
+    // Compute dedicated metrics for DeepSeek, Gemma 4, and NVIDIA Embeddings across recent logs (capped to 500 max to prevent query timeout)
+    const allLogs = await ctx.db
+      .query("nvidiaTokenLogs")
+      .order("desc")
+      .take(500);
+    
+    let dsPromptTokens = 0, dsCompTokens = 0, dsCalls = 0, dsSuccess = 0, dsCvCount = 0, dsCost = 0;
+    let gemmaPromptTokens = 0, gemmaCompTokens = 0, gemmaCalls = 0, gemmaSuccess = 0, gemmaCvCount = 0;
+    let embedPromptTokens = 0, embedCalls = 0, embedSuccess = 0, embedCost = 0;
+
+    for (const log of allLogs) {
+      const modelLower = (log.model || "").toLowerCase();
+      const pTokens = log.promptTokens || 0;
+      const cTokens = log.completionTokens || 0;
+
+      if (modelLower.includes("deepseek")) {
+        dsPromptTokens += pTokens;
+        dsCompTokens += cTokens;
+        dsCalls++;
+        if (log.success) {
+          dsSuccess++;
+          if (log.taskType === "cv_structuring") {
+            dsCvCount++;
+          }
+        }
+        dsCost += calculateLLMCost(log.model, pTokens, cTokens, log.provider || "openrouter");
+      } else if (modelLower.includes("gemma")) {
+        gemmaPromptTokens += pTokens;
+        gemmaCompTokens += cTokens;
+        gemmaCalls++;
+        if (log.success) {
+          gemmaSuccess++;
+          if (log.taskType === "cv_vision_ocr" || log.taskType === "cv_structuring") {
+            gemmaCvCount++;
+          }
+        }
+      } else if (log.taskType === "embedding" || modelLower.includes("embed")) {
+        embedPromptTokens += pTokens;
+        embedCalls++;
+        if (log.success) embedSuccess++;
+        embedCost += calculateLLMCost(log.model, pTokens, cTokens, "nvidia");
+      }
+    }
+
     return {
       overall: {
         totalTokens,
@@ -605,11 +663,44 @@ export const getTokenMetrics = query({
         cvExtractionCredits,
         avgCostPerCv,
       },
+      openrouterDeepseek: {
+        totalTokens: dsPromptTokens + dsCompTokens,
+        promptTokens: dsPromptTokens,
+        completionTokens: dsCompTokens,
+        totalCost: dsCost,
+        candidatesAddedCount: dsCvCount,
+        totalCalls: dsCalls,
+        successCalls: dsSuccess,
+      },
+      openrouterGemma: {
+        totalTokens: gemmaPromptTokens + gemmaCompTokens,
+        promptTokens: gemmaPromptTokens,
+        completionTokens: gemmaCompTokens,
+        totalCost: 0,
+        candidatesAddedCount: gemmaCvCount,
+        totalCalls: gemmaCalls,
+        successCalls: gemmaSuccess,
+      },
+      nvidiaEmbedding: {
+        totalTokens: embedPromptTokens,
+        totalCost: embedCost,
+        totalCalls: embedCalls,
+        successCalls: embedSuccess,
+      },
+      deepseekMetrics: {
+        totalTokens: dsPromptTokens + dsCompTokens,
+        promptTokens: dsPromptTokens,
+        completionTokens: dsCompTokens,
+        totalCost: dsCost,
+        totalCalls: dsCalls,
+        successCalls: dsSuccess,
+        cvExtractionsCount: dsCvCount,
+      },
       taskBreakdown,
-      dailyChartData: Array.from(dailyDataMap.values()),
     };
   },
 });
+
 
 /**
  * Query to fetch recent logs with linked CV filename details.
@@ -621,7 +712,7 @@ export const getRecentTokenLogs = query({
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta"]);
-    const limit = args.limit ?? 20;
+    const limit = args.limit ?? 100;
 
     const logs = await ctx.db
       .query("nvidiaTokenLogs")
@@ -631,8 +722,9 @@ export const getRecentTokenLogs = query({
     // fileName is already stored on the document — no per-row db.get() needed
     return logs.map((log) => ({
       ...log,
+      provider: log.provider || (log.taskType === "embedding" || log.model.includes("nvidia") ? "nvidia" : "openrouter"),
       candidateName: log.fileName, // alias for backwards compat with frontend
-      estimatedCost: calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens),
+      estimatedCost: calculateLLMCost(log.model, log.promptTokens, log.completionTokens, log.provider),
     }));
   },
 });
@@ -665,6 +757,7 @@ export const logNvidiaCallsBatchMutation = internalMutation({
         success: v.boolean(),
         error: v.optional(v.string()),
         cvUploadId: v.optional(v.id("cvUploads")),
+        provider: v.optional(v.string()),
       })
     ),
   },
@@ -699,7 +792,8 @@ export const logNvidiaCallsBatchMutation = internalMutation({
     const batchTaskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens: number; completionTokens: number }> = {};
 
     for (const log of args.logs) {
-      const cost = calculateNvidiaCredits(log.model, log.promptTokens, log.completionTokens);
+      const resolvedProvider = log.provider || (log.taskType === "embedding" || log.model.includes("nvidia") ? "nvidia" : "openrouter");
+      const cost = calculateLLMCost(log.model, log.promptTokens, log.completionTokens, resolvedProvider);
       const totalTokens = log.promptTokens + log.completionTokens;
 
       // Point read the CV file name at write-time if cvUploadId is provided
@@ -719,6 +813,7 @@ export const logNvidiaCallsBatchMutation = internalMutation({
         success: log.success,
         error: log.error,
         cvUploadId: log.cvUploadId,
+        provider: resolvedProvider,
         timestamp: now,
         fileName,
       });

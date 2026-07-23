@@ -704,6 +704,7 @@ export const listFailedUploads = query({
       .filter((q) =>
         q.or(
           q.eq(q.field("status"), "failed"),
+          q.eq(q.field("status"), "failed_retry"),
           q.eq(q.field("status"), "paused"),
         ),
       );
