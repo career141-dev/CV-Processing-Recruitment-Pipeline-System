@@ -1,7 +1,7 @@
 import { internalAction } from "../_generated/server";
 import { v } from "convex/values";
-import { api, internal } from "../_generated/api";
-import OpenAI from "openai";
+import { api } from "../_generated/api";
+import { getOpenAI, getModelForTask } from "../lib/llm";
 
 export const extractDetailsFromText = internalAction({
   args: {
@@ -18,16 +18,8 @@ export const extractDetailsFromText = internalAction({
       return;
     }
 
-    const apiKey = process.env.NVIDIA_API_KEY;
-    if (!apiKey) {
-      console.error("[Inbound Extraction] NVIDIA_API_KEY is not configured.");
-      return;
-    }
-
-    const openai = new OpenAI({
-      baseURL: "https://integrate.api.nvidia.com/v1",
-      apiKey,
-    });
+    const openai = getOpenAI("jd_extraction");
+    const model = getModelForTask("jd_extraction");
 
     const systemPrompt = `You are an AI data extraction assistant for Career141 recruitment.
 Your job is to analyze the candidate's chat message and extract key details:
@@ -48,7 +40,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
     try {
       const completion = await openai.chat.completions.create({
-        model: "meta/llama-3.1-70b-instruct",
+        model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: args.textBody },

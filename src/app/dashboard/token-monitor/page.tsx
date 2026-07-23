@@ -26,6 +26,7 @@ import { useRole } from "@/hooks/useRole";
 export default function TokenMonitorPage() {
   const { isAdmin } = useRole();
   const [taskTypeFilter, setTaskTypeFilter] = useState<string>("all");
+  const [providerFilter, setProviderFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -33,34 +34,42 @@ export default function TokenMonitorPage() {
 
   // Model pricing selection
   type ModelKey = "free" | "llama" | "gpt4o" | "deepseek";
-  const [selectedModel, setSelectedModel] = useState<ModelKey>("free");
+  const [selectedModel, setSelectedModel] = useState<ModelKey>("deepseek");
 
-  // Actions
+  // Real-time reactive Convex queries (automatically reconnects & syncs live metrics)
+  const queryMetrics = useQuery(api.stats.stats.getTokenMetrics);
+  const queryLogs = useQuery(api.stats.stats.getRecentTokenLogs, { limit });
+
+  // Action fallbacks for manual refresh
   const fetchTokenMetrics = useAction(api.stats.stats.getTokenMetricsAction);
   const fetchRecentTokenLogs = useAction(api.stats.stats.getRecentTokenLogsAction);
 
-  // Local state
-  const [metrics, setMetrics] = useState<any>(null);
-  const [logs, setLogs] = useState<any[] | null>(null);
+  // Local override state for manual refresh triggers
+  const [manualMetrics, setManualMetrics] = useState<any>(null);
+  const [manualLogs, setManualLogs] = useState<any[] | null>(null);
 
-  // Fetch logic helper
+  const metrics = manualMetrics ?? queryMetrics ?? null;
+  const logs = manualLogs ?? queryLogs ?? null;
+
+  // Fetch logic helper with connection retry & error handling
   const loadData = React.useCallback(async () => {
     try {
       const [fetchedMetrics, fetchedLogs] = await Promise.all([
-        fetchTokenMetrics(),
-        fetchRecentTokenLogs({ limit }),
+        fetchTokenMetrics().catch(() => null),
+        fetchRecentTokenLogs({ limit }).catch(() => null),
       ]);
-      setMetrics(fetchedMetrics);
-      setLogs(fetchedLogs);
+      if (fetchedMetrics) setManualMetrics(fetchedMetrics);
+      if (fetchedLogs) setManualLogs(fetchedLogs);
     } catch (err: any) {
-      console.error("Failed to load token monitor stats", err);
+      console.warn("Failed to load token monitor stats via action, relying on real-time query:", err);
     }
   }, [fetchTokenMetrics, fetchRecentTokenLogs, limit]);
 
-  // Load data on mount or limit change
+  // Reset manual overrides when query updates
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (queryMetrics) setManualMetrics(null);
+    if (queryLogs) setManualLogs(null);
+  }, [queryMetrics, queryLogs]);
 
   // Mutations
   const clearLogs = useMutation(api.stats.stats.clearAllTokenLogs);
@@ -76,7 +85,8 @@ export default function TokenMonitorPage() {
     try {
       const res = await clearLogs();
       setIsResetModalOpen(false);
-      await loadData();
+      setManualMetrics(null);
+      setManualLogs(null);
       toast.success(`Purged ${res.count} token logs from the system.`);
     } catch (e: any) {
       toast.error(e.message || "Failed to clear token logs.");
@@ -86,6 +96,15 @@ export default function TokenMonitorPage() {
   // Cost charting filters & calculations
   const [chartMode, setChartMode] = useState<"all" | "cv_extraction">("all");
 
+  // DeepSeek V4 Flash Dedicated Tracker (calculates from 0 based on logs)
+  const deepseekLogs = logs?.filter((log) => log.model.toLowerCase().includes("deepseek")) || [];
+  const deepseekPromptTokens = deepseekLogs.reduce((acc, log) => acc + (log.promptTokens || 0), 0);
+  const deepseekCompletionTokens = deepseekLogs.reduce((acc, log) => acc + (log.completionTokens || 0), 0);
+  const deepseekTotalTokens = deepseekPromptTokens + deepseekCompletionTokens;
+  const deepseekTotalCost = (deepseekPromptTokens * 0.14 + deepseekCompletionTokens * 0.28) / 1_000_000;
+  const deepseekTotalCalls = deepseekLogs.length;
+  const deepseekSuccessCalls = deepseekLogs.filter(l => l.success).length;
+
   const filteredLogs = logs?.filter((log) => {
     const matchesType =
       taskTypeFilter === "all" || log.taskType === taskTypeFilter;
@@ -93,7 +112,17 @@ export default function TokenMonitorPage() {
       statusFilter === "all" ||
       (statusFilter === "success" && log.success) ||
       (statusFilter === "failure" && !log.success);
-    return matchesType && matchesStatus;
+
+    let matchesProvider = true;
+    const isDeepSeek = log.model.toLowerCase().includes("deepseek");
+    const isNvidia = log.provider === "nvidia" || log.taskType === "cv_vision_ocr" || log.taskType === "embedding" || log.model.includes("nvidia");
+    const isFree = log.model.includes(":free");
+
+    if (providerFilter === "deepseek") matchesProvider = isDeepSeek;
+    else if (providerFilter === "openrouter_free") matchesProvider = isFree;
+    else if (providerFilter === "nvidia") matchesProvider = isNvidia;
+
+    return matchesType && matchesStatus && matchesProvider;
   });
 
   const getPricingForModel = (model: ModelKey) => {
@@ -275,7 +304,26 @@ export default function TokenMonitorPage() {
         </div>
 
         {/* Dashboard KPI Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+
+          {/* KPI 0: DeepSeek V4 Flash Specific Tracker (Starting from 0) */}
+          <div className="bg-gradient-to-br from-cyan-500/10 via-surface to-indigo-500/10 border border-cyan-500/30 p-5 rounded-2xl flex items-center justify-between shadow-sm relative overflow-hidden group">
+            <div className="flex flex-col gap-1 z-10">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400">DeepSeek V4 Flash</span>
+                <span className="text-[9px] bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 font-bold px-1.5 py-0.5 rounded">LIVE</span>
+              </div>
+              <span className="text-2xl font-black text-text-primary tabular-nums">
+                {formatCost(deepseekTotalCost)}
+              </span>
+              <span className="text-[10px] text-text-secondary font-medium">
+                {formatTokens(deepseekTotalTokens)} tokens ({deepseekTotalCalls} calls)
+              </span>
+            </div>
+            <div className="w-12 h-12 bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all font-bold text-xs tracking-tighter">
+              DS-V4
+            </div>
+          </div>
           
           {/* KPI 1: Estimated Total Credits */}
           <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm relative overflow-hidden group">
@@ -564,6 +612,19 @@ export default function TokenMonitorPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-1 border border-border rounded-xl px-3 py-1.5 bg-surface-container-lowest">
                 <Filter className="w-3.5 h-3.5 text-text-secondary" />
+                <select
+                  value={providerFilter}
+                  onChange={(e) => setProviderFilter(e.target.value)}
+                  className="bg-transparent text-xs text-text-primary border-none focus:outline-none cursor-pointer font-semibold"
+                >
+                  <option value="all">All Providers & Models</option>
+                  <option value="deepseek">DeepSeek V4 Flash Only</option>
+                  <option value="openrouter_free">OpenRouter Free Models</option>
+                  <option value="nvidia">NVIDIA API Only</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1 border border-border rounded-xl px-3 py-1.5 bg-surface-container-lowest">
                 <select
                   value={taskTypeFilter}
                   onChange={(e) => setTaskTypeFilter(e.target.value)}

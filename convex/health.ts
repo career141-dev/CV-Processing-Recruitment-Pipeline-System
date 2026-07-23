@@ -99,15 +99,10 @@ export const testNvidia = action({
   args: {},
   handler: async () => {
     try {
-      const apiKey = process.env.NVIDIA_API_KEY;
-      if (!apiKey) return { success: false, error: "NVIDIA_API_KEY missing" };
-      const openai = new OpenAI({
-        baseURL: "https://integrate.api.nvidia.com/v1",
-        apiKey,
-        timeout: 10000,
-      });
+      const { getOpenAI, OPENROUTER_PRIMARY_MODEL } = await import("./lib/llm");
+      const openai = getOpenAI("jd_matching");
       const response = await openai.chat.completions.create({
-        model: "meta/llama-3.1-70b-instruct",
+        model: OPENROUTER_PRIMARY_MODEL,
         messages: [{ role: "user", content: "ping" }],
         max_tokens: 10,
       });

@@ -6,21 +6,16 @@ import type { ActionCtx } from "../_generated/server";
 
 export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
 
-export const OPENROUTER_PRIMARY_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
-export const OPENROUTER_CV_EXTRACTION_MODEL = "google/gemma-4-26b-a4b-it:free";
+export const OPENROUTER_PRIMARY_MODEL = "deepseek/deepseek-v4-flash";
+export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
+export const OPENROUTER_SCANNED_CV_MODEL = "google/gemma-4-26b-a4b-it:free";
 
-// TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_PRIMARY_MODEL
 export const OPENROUTER_FALLBACK_MODELS = [
   OPENROUTER_PRIMARY_MODEL,
-  "google/gemini-2.0-flash-exp:free",
-  "deepseek/deepseek-chat:free",
 ];
 
 export const OPENROUTER_CV_FALLBACK_MODELS = [
   OPENROUTER_CV_EXTRACTION_MODEL,
-  OPENROUTER_PRIMARY_MODEL,
-  "google/gemini-2.0-flash-exp:free",
-  "deepseek/deepseek-chat:free",
 ];
 
 // Model configuration mapping
@@ -29,23 +24,10 @@ const MODEL_CONFIG = {
   jd_extraction: OPENROUTER_PRIMARY_MODEL,
   jd_matching: OPENROUTER_PRIMARY_MODEL,
   email_routing: OPENROUTER_PRIMARY_MODEL,
-  cv_vision_ocr: "meta/llama-3.2-11b-vision-instruct",
+  cv_vision_ocr: OPENROUTER_SCANNED_CV_MODEL,
 };
 
 export function getOpenAI(taskType: TaskType): OpenAI {
-  if (taskType === "cv_vision_ocr") {
-    const apiKey = process.env.NVIDIA_API_KEY;
-    if (!apiKey) {
-      throw new Error("NVIDIA_API_KEY is not set for Vision OCR");
-    }
-    return new OpenAI({
-      baseURL: "https://integrate.api.nvidia.com/v1",
-      apiKey,
-      timeout: 45000,
-      maxRetries: 0,
-    });
-  }
-
   const apiKey = process.env.OPENROUTER_API_KEY || "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";
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is not set");
@@ -170,18 +152,8 @@ export async function callNvidiaVisionOCR(
     throw new Error("No image content provided for Vision OCR");
   }
 
-  const model = "meta/llama-3.2-11b-vision-instruct";
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) {
-    throw new Error("NVIDIA_API_KEY environment variable is not set");
-  }
-
-  const openai = new OpenAI({
-    baseURL: "https://integrate.api.nvidia.com/v1",
-    apiKey,
-    timeout: 60000,
-    maxRetries: 0,
-  });
+  const model = OPENROUTER_SCANNED_CV_MODEL;
+  const openai = getOpenAI("cv_vision_ocr");
 
   const contentItems: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
     {
@@ -223,7 +195,8 @@ export async function callNvidiaVisionOCR(
           response.usage.completion_tokens,
           true,
           undefined,
-          cvUploadId
+          cvUploadId,
+          "openrouter"
         );
       }
 
@@ -232,7 +205,7 @@ export async function callNvidiaVisionOCR(
     } catch (error: any) {
       const message = error instanceof Error ? error.message : String(error);
       lastError = message;
-      console.error(`[callNvidiaVisionOCR] Call failed (attempt ${attempt}/${maxAttempts}):`, message);
+      console.error(`[callScannedCvLLM] Call failed (attempt ${attempt}/${maxAttempts}):`, message);
 
       const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
       const isTransientError =
@@ -260,9 +233,10 @@ export async function callNvidiaVisionOCR(
     0,
     false,
     lastError,
-    cvUploadId
+    cvUploadId,
+    "openrouter"
   );
 
-  throw new Error(`Vision OCR failed: ${lastError}`);
+  throw new Error(`Scanned CV text extraction failed: ${lastError}`);
 }
 

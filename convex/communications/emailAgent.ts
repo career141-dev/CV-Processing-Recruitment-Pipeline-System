@@ -562,7 +562,7 @@ Do not mention database fields, variables, or system internals. Write the email 
 
     console.log(`[EmailAgent AI Reply] Generating LLM response for candidate ${candidate.fullName}...`);
     const completion = await openai.chat.completions.create({
-      model: model || "meta/llama-3.1-70b-instruct",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: `Incoming email body from candidate: "${args.incomingBody}"` },
