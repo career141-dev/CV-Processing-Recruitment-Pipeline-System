@@ -185,7 +185,7 @@ export const processCvScoring = action({
 
     // ── TIER 1: OpenRouter Primary Model — 3 retries ───────────────────
     let tier1Success = false;
-    const { getOpenAI, getModelForTask, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS } = await import("../lib/llm.js");
+    const { getOpenAI, getModelForTask, OPENROUTER_PRIMARY_MODEL, OPENROUTER_SCANNED_CV_MODEL } = await import("../lib/llm.js");
     let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: OPENROUTER_PRIMARY_MODEL };
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -217,12 +217,12 @@ export const processCvScoring = action({
       }]
     });
 
-    // ── TIER 2: OpenRouter Fallback Model — only if Tier 1 failed ──────
+    // ── TIER 2: OpenRouter Fallback Model (Gemma 4 26B Free) — only if Tier 1 failed ──────
     if (!tier1Success) {
-      console.warn(`[Scoring] Tier 1 (${OPENROUTER_PRIMARY_MODEL}) failed for ${args.candidateId}. Trying Tier 2 fallback...`);
+      console.warn(`[Scoring] Tier 1 (${OPENROUTER_PRIMARY_MODEL}) failed for ${args.candidateId}. Trying Tier 2 fallback (${OPENROUTER_SCANNED_CV_MODEL})...`);
 
       let tier2Success = false;
-      const fallbackModel = OPENROUTER_PRIMARY_MODEL;
+      const fallbackModel = OPENROUTER_SCANNED_CV_MODEL;
       let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: fallbackModel };
 
       for (let attempt = 1; attempt <= 2; attempt++) {

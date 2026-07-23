@@ -605,26 +605,47 @@ export const getTokenMetrics = query({
       }
     }
 
-    // Compute DeepSeek metrics across all deepseek logs in database
-    const deepseekLogs = await ctx.db
+    // Compute dedicated metrics for DeepSeek, Gemma 4, and NVIDIA Embeddings across recent logs (capped to 500 max to prevent query timeout)
+    const allLogs = await ctx.db
       .query("nvidiaTokenLogs")
-      .collect();
+      .order("desc")
+      .take(500);
     
-    let deepseekPromptTokens = 0;
-    let deepseekCompletionTokens = 0;
-    let deepseekTotalCalls = 0;
-    let deepseekSuccessCalls = 0;
-    let deepseekTotalCost = 0;
+    let dsPromptTokens = 0, dsCompTokens = 0, dsCalls = 0, dsSuccess = 0, dsCvCount = 0, dsCost = 0;
+    let gemmaPromptTokens = 0, gemmaCompTokens = 0, gemmaCalls = 0, gemmaSuccess = 0, gemmaCvCount = 0;
+    let embedPromptTokens = 0, embedCalls = 0, embedSuccess = 0, embedCost = 0;
 
-    for (const log of deepseekLogs) {
-      if (log.model && log.model.toLowerCase().includes("deepseek")) {
-        const pTokens = log.promptTokens || 0;
-        const cTokens = log.completionTokens || 0;
-        deepseekPromptTokens += pTokens;
-        deepseekCompletionTokens += cTokens;
-        deepseekTotalCalls++;
-        if (log.success) deepseekSuccessCalls++;
-        deepseekTotalCost += calculateLLMCost(log.model, pTokens, cTokens, log.provider || "openrouter");
+    for (const log of allLogs) {
+      const modelLower = (log.model || "").toLowerCase();
+      const pTokens = log.promptTokens || 0;
+      const cTokens = log.completionTokens || 0;
+
+      if (modelLower.includes("deepseek")) {
+        dsPromptTokens += pTokens;
+        dsCompTokens += cTokens;
+        dsCalls++;
+        if (log.success) {
+          dsSuccess++;
+          if (log.taskType === "cv_structuring") {
+            dsCvCount++;
+          }
+        }
+        dsCost += calculateLLMCost(log.model, pTokens, cTokens, log.provider || "openrouter");
+      } else if (modelLower.includes("gemma")) {
+        gemmaPromptTokens += pTokens;
+        gemmaCompTokens += cTokens;
+        gemmaCalls++;
+        if (log.success) {
+          gemmaSuccess++;
+          if (log.taskType === "cv_vision_ocr" || log.taskType === "cv_structuring") {
+            gemmaCvCount++;
+          }
+        }
+      } else if (log.taskType === "embedding" || modelLower.includes("embed")) {
+        embedPromptTokens += pTokens;
+        embedCalls++;
+        if (log.success) embedSuccess++;
+        embedCost += calculateLLMCost(log.model, pTokens, cTokens, "nvidia");
       }
     }
 
@@ -642,19 +663,44 @@ export const getTokenMetrics = query({
         cvExtractionCredits,
         avgCostPerCv,
       },
+      openrouterDeepseek: {
+        totalTokens: dsPromptTokens + dsCompTokens,
+        promptTokens: dsPromptTokens,
+        completionTokens: dsCompTokens,
+        totalCost: dsCost,
+        candidatesAddedCount: dsCvCount,
+        totalCalls: dsCalls,
+        successCalls: dsSuccess,
+      },
+      openrouterGemma: {
+        totalTokens: gemmaPromptTokens + gemmaCompTokens,
+        promptTokens: gemmaPromptTokens,
+        completionTokens: gemmaCompTokens,
+        totalCost: 0,
+        candidatesAddedCount: gemmaCvCount,
+        totalCalls: gemmaCalls,
+        successCalls: gemmaSuccess,
+      },
+      nvidiaEmbedding: {
+        totalTokens: embedPromptTokens,
+        totalCost: embedCost,
+        totalCalls: embedCalls,
+        successCalls: embedSuccess,
+      },
       deepseekMetrics: {
-        totalTokens: deepseekPromptTokens + deepseekCompletionTokens,
-        promptTokens: deepseekPromptTokens,
-        completionTokens: deepseekCompletionTokens,
-        totalCost: deepseekTotalCost,
-        totalCalls: deepseekTotalCalls,
-        successCalls: deepseekSuccessCalls,
+        totalTokens: dsPromptTokens + dsCompTokens,
+        promptTokens: dsPromptTokens,
+        completionTokens: dsCompTokens,
+        totalCost: dsCost,
+        totalCalls: dsCalls,
+        successCalls: dsSuccess,
+        cvExtractionsCount: dsCvCount,
       },
       taskBreakdown,
-      dailyChartData: Array.from(dailyDataMap.values()),
     };
   },
 });
+
 
 /**
  * Query to fetch recent logs with linked CV filename details.

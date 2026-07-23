@@ -96,14 +96,8 @@ export default function TokenMonitorPage() {
   // Cost charting filters & calculations
   const [chartMode, setChartMode] = useState<"all" | "cv_extraction">("all");
 
-  // DeepSeek V4 Flash Dedicated Tracker (all-time aggregate from backend metrics, or computed from logs)
-  const deepseekLogs = logs?.filter((log) => log.model.toLowerCase().includes("deepseek")) || [];
-  const deepseekPromptTokens = metrics?.deepseekMetrics?.promptTokens ?? deepseekLogs.reduce((acc, log) => acc + (log.promptTokens || 0), 0);
-  const deepseekCompletionTokens = metrics?.deepseekMetrics?.completionTokens ?? deepseekLogs.reduce((acc, log) => acc + (log.completionTokens || 0), 0);
-  const deepseekTotalTokens = metrics?.deepseekMetrics?.totalTokens ?? (deepseekPromptTokens + deepseekCompletionTokens);
-  const deepseekTotalCost = metrics?.deepseekMetrics?.totalCost ?? ((deepseekPromptTokens * 0.14 + deepseekCompletionTokens * 0.28) / 1_000_000);
-  const deepseekTotalCalls = metrics?.deepseekMetrics?.totalCalls ?? deepseekLogs.length;
-  const deepseekSuccessCalls = metrics?.deepseekMetrics?.successCalls ?? deepseekLogs.filter(l => l.success).length;
+  const [activeProviderTab, setActiveProviderTab] = useState<"openrouter" | "nvidia">("openrouter");
+  const [openrouterSubTab, setOpenrouterSubTab] = useState<"deepseek" | "gemma">("deepseek");
 
   const filteredLogs = logs?.filter((log) => {
     const matchesType =
@@ -115,85 +109,54 @@ export default function TokenMonitorPage() {
 
     let matchesProvider = true;
     const isDeepSeek = log.model.toLowerCase().includes("deepseek");
-    const isNvidia = log.provider === "nvidia" || log.taskType === "cv_vision_ocr" || log.taskType === "embedding" || log.model.includes("nvidia");
-    const isFree = log.model.includes(":free");
+    const isGemma = log.model.toLowerCase().includes("gemma");
+    const isNvidia = log.provider === "nvidia" || log.taskType === "embedding" || log.model.includes("nvidia");
 
     if (providerFilter === "deepseek") matchesProvider = isDeepSeek;
-    else if (providerFilter === "openrouter_free") matchesProvider = isFree;
+    else if (providerFilter === "openrouter_free") matchesProvider = isGemma || log.model.includes(":free");
     else if (providerFilter === "nvidia") matchesProvider = isNvidia;
 
     return matchesType && matchesStatus && matchesProvider;
   });
 
-  const getPricingForModel = (model: ModelKey) => {
-    switch (model) {
-      case "free":
-        return { name: "OpenRouter Free Tier ($0.00)", input: 0.00, output: 0.00 };
-      case "llama":
-        return { name: "Llama 3.3 70B (Paid)", input: 0.12, output: 0.30 };
-      case "gpt4o":
-        return { name: "ChatGPT-4o-mini", input: 0.15, output: 0.60 };
-      case "deepseek":
-        return { name: "DeepSeek V4 Flash ($0.14/$0.28)", input: 0.14, output: 0.28 };
-    }
+  // Extract structured metrics from backend
+  const dsMetrics = metrics?.openrouterDeepseek ?? {
+    totalTokens: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalCost: 0,
+    candidatesAddedCount: 0,
+    totalCalls: 0,
+    successCalls: 0,
   };
 
-  const calculateCost = (model: ModelKey, prompt: number, completion: number, isEmbedding = false) => {
-    if (isEmbedding) {
-      return (prompt + completion) * (0.07 / 1_000_000);
-    }
-    const pricing = getPricingForModel(model);
-    return (prompt * pricing.input + completion * pricing.output) / 1_000_000;
+  const gemmaMetrics = metrics?.openrouterGemma ?? {
+    totalTokens: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalCost: 0,
+    candidatesAddedCount: 0,
+    totalCalls: 0,
+    successCalls: 0,
   };
 
-  // Recompute cost metrics dynamically based on selectedModel and the actual token counts
-  let totalCredits = 0;
-  let cvExtractionCredits = 0;
-  if (metrics) {
-    Object.entries(metrics.taskBreakdown).forEach(([task, details]: [string, any]) => {
-      const prompt = details.promptTokens ?? (details.tokens * 0.7);
-      const comp = details.completionTokens ?? (details.tokens * 0.3);
-      const isEmbedding = task === "embedding";
-      const cost = calculateCost(selectedModel, prompt, comp, isEmbedding);
-      totalCredits += cost;
-      if (task === "cv_structuring") {
-        cvExtractionCredits = cost;
-      }
-    });
-  }
-  const avgCostPerCv = metrics?.cvExtraction.totalCvExtractionsCount > 0
-    ? cvExtractionCredits / metrics.cvExtraction.totalCvExtractionsCount
-    : 0;
+  const nvidiaMetrics = metrics?.nvidiaEmbedding ?? {
+    totalTokens: 0,
+    totalCost: 0,
+    totalCalls: 0,
+    successCalls: 0,
+  };
 
   const getDailyCosts = (d: any) => {
-    const hasTokens = d.promptTokens !== undefined && d.completionTokens !== undefined;
-    
-    let prompt = d.promptTokens ?? 0;
-    let comp = d.completionTokens ?? 0;
-    let cvPrompt = d.cvPromptTokens ?? 0;
-    let cvComp = d.cvCompletionTokens ?? 0;
-    
-    if (!hasTokens) {
-      // Estimate from legacy cost using $0.40/M Llama rate
-      const estimatedTotalTokens = d.totalCost / (0.40 / 1_000_000);
-      prompt = estimatedTotalTokens * 0.7;
-      comp = estimatedTotalTokens * 0.3;
-      
-      const estimatedCvTokens = d.cvExtractionCost / (0.40 / 1_000_000);
-      cvPrompt = estimatedCvTokens * 0.7;
-      cvComp = estimatedCvTokens * 0.3;
-    }
-
-    const totalCost = calculateCost(selectedModel, prompt, comp, false);
-    const cvExtractionCost = calculateCost(selectedModel, cvPrompt, cvComp, false);
-    
-    return { totalCost, cvExtractionCost };
+    return {
+      totalCost: d.totalCost ?? 0,
+      cvExtractionCost: d.cvExtractionCost ?? 0,
+    };
   };
 
   const getLogCost = (log: any) => {
     if (!log.success) return 0;
-    const isEmbedding = log.taskType === "embedding" || log.model.toLowerCase().includes("embed") || log.model.toLowerCase().includes("bge");
-    return calculateCost(selectedModel, log.promptTokens, log.completionTokens, isEmbedding);
+    return log.estimatedCost ?? 0;
   };
 
   // SVG Chart Dimensions
@@ -224,8 +187,12 @@ export default function TokenMonitorPage() {
         return "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/30";
       case "jd_matching":
         return "bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/30";
+      case "jd_extraction":
+        return "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/30";
       case "embedding":
         return "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/30";
+      case "cv_vision_ocr":
+        return "bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800/30";
       default:
         return "bg-gray-50 text-gray-700 border-gray-100 dark:bg-gray-900/20 dark:text-gray-400 dark:border-gray-800/30";
     }
@@ -236,9 +203,13 @@ export default function TokenMonitorPage() {
       case "cv_structuring":
         return "CV Extraction";
       case "jd_matching":
+        return "AI Match Scoring";
+      case "jd_extraction":
         return "Search Query Parse";
       case "embedding":
         return "Vector Embedding";
+      case "cv_vision_ocr":
+        return "Vision OCR (Scanned CV)";
       default:
         return type;
     }
@@ -280,116 +251,255 @@ export default function TokenMonitorPage() {
           </div>
         </div>
 
-        {/* Model Pricing Comparison Tabs */}
-        <div className="flex flex-wrap bg-surface-container-high rounded-xl p-1 border border-border self-start gap-1">
-          {[
-            { key: "free", label: "OpenRouter Free Tier", price: "Cost: $0.000 (Current)" },
-            { key: "llama", label: "Llama 3.3 70B (Paid)", price: "In: $0.12 / Out: $0.30/M" },
-            { key: "deepseek", label: "DeepSeek V4 Flash", price: "In: $0.14 / Out: $0.28/M" },
-            { key: "gpt4o", label: "GPT-4o-mini", price: "In: $0.15 / Out: $0.60/M" },
-          ].map((m) => (
+        {/* Provider Selection Tabs */}
+        <div className="flex items-center justify-between border-b border-border pb-1">
+          <div className="flex items-center gap-2 bg-surface-container-high p-1 rounded-xl border border-border">
             <button
-              key={m.key}
-              onClick={() => setSelectedModel(m.key as any)}
-              className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                selectedModel === m.key
+              onClick={() => setActiveProviderTab("openrouter")}
+              className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeProviderTab === "openrouter"
                   ? "bg-surface text-text-primary shadow-sm border border-border/10"
                   : "text-text-secondary hover:text-text-primary"
               }`}
             >
-              <span>{m.label}</span>
-              <span className="text-[10px] opacity-70 font-medium font-mono">{m.price}</span>
+              <Activity className="w-3.5 h-3.5 text-blue-500" />
+              <span>OpenRouter API</span>
             </button>
-          ))}
+            <button
+              onClick={() => setActiveProviderTab("nvidia")}
+              className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeProviderTab === "nvidia"
+                  ? "bg-surface text-text-primary shadow-sm border border-border/10"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-500" />
+              <span>NVIDIA API (Embeddings)</span>
+            </button>
+          </div>
         </div>
 
-        {/* Dashboard KPI Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Tab 1: OpenRouter API View */}
+        {activeProviderTab === "openrouter" && (
+          <div className="flex flex-col gap-5">
+            {/* OpenRouter Model Sub-Tabs */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setOpenrouterSubTab("deepseek")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                  openrouterSubTab === "deepseek"
+                    ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/40 shadow-sm"
+                    : "bg-surface text-text-secondary border-border hover:bg-surface-container-high"
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                <span>DeepSeek V4 Flash (Primary)</span>
+              </button>
+              <button
+                onClick={() => setOpenrouterSubTab("gemma")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                  openrouterSubTab === "gemma"
+                    ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/40 shadow-sm"
+                    : "bg-surface text-text-secondary border-border hover:bg-surface-container-high"
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-purple-500" />
+                <span>Gemma 4 26B (Free Fallback)</span>
+              </button>
+            </div>
 
-          {/* KPI 0: DeepSeek V4 Flash Specific Tracker (Starting from 0) */}
-          <div className="bg-gradient-to-br from-cyan-500/10 via-surface to-indigo-500/10 border border-cyan-500/30 p-5 rounded-2xl flex items-center justify-between shadow-sm relative overflow-hidden group">
-            <div className="flex flex-col gap-1 z-10">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400">DeepSeek V4 Flash</span>
-                <span className="text-[9px] bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 font-bold px-1.5 py-0.5 rounded">LIVE</span>
+            {/* Sub-Tab A: DeepSeek V4 Flash KPI Grid */}
+            {openrouterSubTab === "deepseek" && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Card 1: Candidates Added (CVs Parsed) */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Candidates Added (CVs Parsed)</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {dsMetrics.candidatesAddedCount}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                      Parsed & stored in database
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Card 2: Calculated Spend */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Calculated Spend ($)</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {formatCost(dsMetrics.totalCost)}
+                    </span>
+                    <span className="text-[10px] text-text-secondary">
+                      Input: $0.14/M • Output: $0.28/M
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950 text-amber-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <Coins className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Card 3: Tokens Used */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Tokens Used</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {formatTokens(dsMetrics.totalTokens)}
+                    </span>
+                    <span className="text-[10px] text-text-secondary font-mono">
+                      In: {formatTokens(dsMetrics.promptTokens)} • Out: {formatTokens(dsMetrics.completionTokens)}
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <TrendingUp className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Card 4: Total API Calls */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">API Invocations</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {dsMetrics.totalCalls}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                      {dsMetrics.totalCalls > 0 ? ((dsMetrics.successCalls / dsMetrics.totalCalls) * 100).toFixed(1) : "100"}% Success Rate
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <CheckCircle className="w-6 h-6" />
+                  </div>
+                </div>
               </div>
-              <span className="text-2xl font-black text-text-primary tabular-nums">
-                {formatCost(deepseekTotalCost)}
-              </span>
-              <span className="text-[10px] text-text-secondary font-medium">
-                {formatTokens(deepseekTotalTokens)} tokens ({deepseekTotalCalls} calls)
-              </span>
-            </div>
-            <div className="w-12 h-12 bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all font-bold text-xs tracking-tighter">
-              DS-V4
-            </div>
-          </div>
-          
-          {/* KPI 1: Estimated Total Credits */}
-          <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm relative overflow-hidden group">
-            <div className="flex flex-col gap-1 z-10">
-              <span className="text-xs font-medium text-text-secondary">Estimated Total Spent</span>
-              <span className="text-2xl font-black text-text-primary tabular-nums">
-                {metrics ? formatCost(totalCredits) : "$0.000"}
-              </span>
-              <span className="text-[10px] text-text-disabled">
-                Across {metrics ? formatTokens(metrics.overall.totalTokens) : 0} tokens
-              </span>
-            </div>
-            <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950 rounded-2xl flex items-center justify-center text-amber-500 group-hover:scale-110 transition-all">
-              <Coins className="w-6 h-6" />
-            </div>
-          </div>
+            )}
 
-          {/* KPI 2: Average Cost per CV Ingest */}
-          <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm relative overflow-hidden group">
-            <div className="flex flex-col gap-1 z-10">
-              <span className="text-xs font-medium text-text-secondary">Avg. Cost / CV Extraction</span>
-              <span className="text-2xl font-black text-text-primary tabular-nums text-primary-container">
-                {metrics ? formatCost(avgCostPerCv) : "$0.000"}
-              </span>
-              <span className="text-[10px] text-text-disabled">
-                Successful extractions: {metrics?.cvExtraction.totalCvExtractionsCount || 0}
-              </span>
+            {/* Sub-Tab B: Gemma 4 26B (Free) KPI Grid */}
+            {openrouterSubTab === "gemma" && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Card 1: Scanned Candidates Added */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Scanned Candidates Added</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {gemmaMetrics.candidatesAddedCount}
+                    </span>
+                    <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold">
+                      Scanned / Image CVs parsed
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Card 2: Calculated Spend */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Calculated Spend ($)</span>
+                    <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      $0.000
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                      OpenRouter Free Tier
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <Coins className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Card 3: Tokens Used */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Tokens Used</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {formatTokens(gemmaMetrics.totalTokens)}
+                    </span>
+                    <span className="text-[10px] text-text-secondary font-mono">
+                      In: {formatTokens(gemmaMetrics.promptTokens)} • Out: {formatTokens(gemmaMetrics.completionTokens)}
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <TrendingUp className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Card 4: Total API Calls */}
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">OCR Invocations</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {gemmaMetrics.totalCalls}
+                    </span>
+                    <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold">
+                      {gemmaMetrics.totalCalls > 0 ? ((gemmaMetrics.successCalls / gemmaMetrics.totalCalls) * 100).toFixed(1) : "100"}% Success Rate
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <Activity className="w-6 h-6" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: NVIDIA API View (Embeddings Only) */}
+        {activeProviderTab === "nvidia" && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Card 1: Total Vector Embedding Operations */}
+            <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Vector Embedding Operations</span>
+                <span className="text-3xl font-black text-text-primary tabular-nums">
+                  {nvidiaMetrics.totalCalls}
+                </span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                  nvidia/nv-embedqa-e5-v5
+                </span>
+              </div>
+              <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                <Database className="w-6 h-6" />
+              </div>
             </div>
-            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/10 rounded-2xl flex items-center justify-center text-blue-500 group-hover:scale-110 transition-all">
-              <FileText className="w-6 h-6" />
+
+            {/* Card 2: Calculated Spend */}
+            <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Calculated Spend ($)</span>
+                <span className="text-3xl font-black text-text-primary tabular-nums">
+                  {formatCost(nvidiaMetrics.totalCost)}
+                </span>
+                <span className="text-[10px] text-text-secondary">
+                  Rate: $0.07 / 1,000,000 tokens
+                </span>
+              </div>
+              <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950 text-amber-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                <Coins className="w-6 h-6" />
+              </div>
+            </div>
+
+            {/* Card 3: Prompt Tokens Used */}
+            <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Prompt Tokens Used</span>
+                <span className="text-3xl font-black text-text-primary tabular-nums">
+                  {formatTokens(nvidiaMetrics.totalTokens)}
+                </span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                  {nvidiaMetrics.totalCalls > 0 ? ((nvidiaMetrics.successCalls / nvidiaMetrics.totalCalls) * 100).toFixed(1) : "100"}% Success Rate
+                </span>
+              </div>
+              <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                <TrendingUp className="w-6 h-6" />
+              </div>
             </div>
           </div>
-
-          {/* KPI 3: Total CV Ingestion Spend */}
-          <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm relative overflow-hidden group">
-            <div className="flex flex-col gap-1 z-10">
-              <span className="text-xs font-medium text-text-secondary">CV Ingestion Cost</span>
-              <span className="text-2xl font-black text-text-primary tabular-nums">
-                {metrics ? formatCost(cvExtractionCredits) : "$0.000"}
-              </span>
-              <span className="text-[10px] text-text-disabled">
-                {totalCredits > 0 ? ((cvExtractionCredits / totalCredits) * 100).toFixed(0) : "0"}% of total credit usage
-              </span>
-            </div>
-            <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 rounded-2xl flex items-center justify-center text-purple-500 group-hover:scale-110 transition-all">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-          </div>
-
-          {/* KPI 4: API Success Rate */}
-          <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm relative overflow-hidden group">
-            <div className="flex flex-col gap-1 z-10">
-              <span className="text-xs font-medium text-text-secondary">API Success Rate</span>
-              <span className="text-2xl font-black text-text-primary tabular-nums">
-                {metrics ? `${metrics.overall.successRate.toFixed(1)}%` : "100%"}
-              </span>
-              <span className="text-[10px] text-text-disabled">
-                Total API calls: {metrics?.overall.totalRequests || 0}
-              </span>
-            </div>
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all ${(metrics?.overall.successRate || 0) >= 95 ? "bg-emerald-50 text-emerald-500 dark:bg-emerald-900/10" : "bg-red-50 text-red-500 dark:bg-red-900/10"}`}>
-              <Activity className="w-6 h-6" />
-            </div>
-          </div>
-
-        </div>
+        )}
 
         {/* Charts & Breakdown Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -550,11 +660,9 @@ export default function TokenMonitorPage() {
             <div className="flex flex-col gap-4 justify-center flex-1">
               {metrics && Object.keys(metrics.taskBreakdown).length > 0 ? (
                 Object.entries(metrics.taskBreakdown).map(([task, details]: [string, any]) => {
-                  const prompt = details.promptTokens ?? (details.tokens * 0.7);
-                  const comp = details.completionTokens ?? (details.tokens * 0.3);
-                  const isEmbedding = task === "embedding";
-                  const taskCost = calculateCost(selectedModel, prompt, comp, isEmbedding);
-                  const share = (taskCost / (totalCredits || 1)) * 100;
+                  const taskCost = details.credits ?? 0;
+                  const totalSpent = metrics.overall?.totalCredits || 1;
+                  const share = (taskCost / (totalSpent || 1)) * 100;
                   
                   // Simple color selector
                   const getTaskBarColor = (t: string) => {
@@ -632,8 +740,10 @@ export default function TokenMonitorPage() {
                 >
                   <option value="all">All Tasks</option>
                   <option value="cv_structuring">CV Extraction</option>
-                  <option value="jd_matching">Search Query Parse</option>
+                  <option value="jd_matching">AI Match Scoring</option>
+                  <option value="jd_extraction">Search Query Parse</option>
                   <option value="embedding">Vector Embeddings</option>
+                  <option value="cv_vision_ocr">Vision OCR (Scanned CV)</option>
                 </select>
               </div>
 

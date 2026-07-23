@@ -327,7 +327,7 @@ export async function extractText(
       return pdfText;
     }
 
-    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Invoking Llama 3.2 11B Vision OCR...`);
+    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Invoking Vision OCR...`);
 
     if (!ctx) {
       throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
