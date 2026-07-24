@@ -75,9 +75,9 @@ export default function RealTimeBatchLog({ batchId }: { batchId: Id<"ingestionBa
   const progressPercent = batch.totalCount > 0 ? Math.round((processedCount / batch.totalCount) * 100) : 0;
 
   return (
-    <div className="p-6 border border-gray-200 rounded-xl shadow-sm bg-white mt-4">
+    <div className="p-6 border border-border rounded-xl shadow-sm bg-surface mt-4">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xl font-semibold">Real-Time Ingestion ({batch.sourceChannel})</h3>
+        <h3 className="text-xl font-semibold text-text-primary">Real-Time Ingestion ({batch.sourceChannel})</h3>
         <div className="flex items-center gap-3">
           {batch.status === "in_progress" && (
             <div className="flex items-center gap-2">
@@ -126,58 +126,58 @@ export default function RealTimeBatchLog({ batchId }: { batchId: Id<"ingestionBa
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6 text-center">
-        <div className="p-3 bg-gray-50 rounded-lg border">
-          <p className="text-sm text-gray-500 font-medium">Total</p>
-          <p className="text-2xl font-bold">{batch.totalCount}</p>
+        <div className="p-3 bg-surface-container rounded-lg border border-border">
+          <p className="text-sm text-text-secondary font-medium">Total</p>
+          <p className="text-2xl font-bold text-text-primary">{batch.totalCount}</p>
         </div>
-        <div className="p-3 bg-gray-50 rounded-lg border">
-          <p className="text-sm text-gray-500 font-medium">Completed</p>
+        <div className="p-3 bg-surface-container rounded-lg border border-border">
+          <p className="text-sm text-text-secondary font-medium">Completed</p>
           <p className="text-2xl font-bold text-green-600">{batch.completedCount}</p>
         </div>
-        <div className="p-3 bg-gray-50 rounded-lg border">
-          <p className="text-sm text-gray-500 font-medium">Failed</p>
+        <div className="p-3 bg-surface-container rounded-lg border border-border">
+          <p className="text-sm text-text-secondary font-medium">Failed</p>
           <p className="text-2xl font-bold text-red-600">{batch.failedCount}</p>
         </div>
-        <div className="p-3 bg-gray-50 rounded-lg border">
-          <p className="text-sm text-gray-500 font-medium">Elapsed</p>
+        <div className="p-3 bg-surface-container rounded-lg border border-border">
+          <p className="text-sm text-text-secondary font-medium">Elapsed</p>
           <p className="text-2xl font-bold text-blue-600">{elapsed}s</p>
         </div>
       </div>
 
-      <div className="w-full bg-gray-200 rounded-full h-3 mb-6 overflow-hidden">
+      <div className="w-full bg-surface-container-high rounded-full h-3 mb-6 overflow-hidden">
         <div 
           className="bg-blue-600 h-3 rounded-full transition-all duration-500 ease-out"
           style={{ width: `${progressPercent}%` }}
         />
       </div>
 
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="border border-border rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-surface-container">
             <tr>
-              <th className="px-6 py-3 text-left font-medium text-gray-500">Candidate / File</th>
-              <th className="px-6 py-3 text-left font-medium text-gray-500">Stage</th>
-              <th className="px-6 py-3 text-right font-medium text-gray-500">Time</th>
+              <th className="px-6 py-3 text-left font-medium text-text-secondary">Candidate / File</th>
+              <th className="px-6 py-3 text-left font-medium text-text-secondary">Stage</th>
+              <th className="px-6 py-3 text-right font-medium text-text-secondary">Time</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-surface divide-y divide-border">
             {logs.map((log: any) => (
-              <tr key={log._id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-3 font-medium text-gray-900 truncate max-w-[200px]">
+              <tr key={log._id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                <td className="px-6 py-3 font-medium text-text-primary truncate max-w-[200px]">
                   {log.candidateName || log.rawSender || "Unknown"}
                 </td>
                 <td className="px-6 py-3">
                   <StageBadge stage={log.stage || "queued"} />
                   {log.errorMessage && <p className="text-xs text-red-500 mt-1 truncate max-w-xs">{log.errorMessage}</p>}
                 </td>
-                <td className="px-6 py-3 text-right text-gray-500">
+                <td className="px-6 py-3 text-right text-text-secondary">
                   {log.processingTimeMs ? `${(log.processingTimeMs / 1000).toFixed(1)}s` : "-"}
                 </td>
               </tr>
             ))}
             {logs.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={3} className="px-6 py-8 text-center text-text-secondary">
                   No logs available yet...
                 </td>
               </tr>

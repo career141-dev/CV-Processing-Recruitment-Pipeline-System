@@ -4,7 +4,7 @@ import { api } from '@/convex/_generated/api';
 import { AddToJobModal } from './modals/AddToJobModal';
 import { BulkMessageModal } from './modals/BulkMessageModal';
 import { DeleteCandidateModal } from './modals/DeleteCandidateModal';
-import { Trash2 } from 'lucide-react';
+import { Trash2, UserPlus, MessageSquare } from 'lucide-react';
 
 interface FloatingActionBarProps {
   selectedCandidates: string[];
@@ -41,22 +41,14 @@ export function FloatingActionBar({ selectedCandidates, onClear }: FloatingActio
           className="flex items-center bg-[#FFFFFF1A] hover:bg-[#FFFFFF33] transition-colors py-1.5 px-3 mr-3 gap-2 rounded-lg border-0 cursor-pointer text-on-primary"
           onClick={() => setIsJobModalOpen(true)}
         >
-          <img
-            src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/ofk4cqe2_expires_30_days.png" 
-            className="w-4 h-4 object-fill"
-            alt="add"
-          />
+          <UserPlus className="w-4 h-4 text-white" />
           <span className="text-sm font-bold">Add to Job</span>
         </button>
         <button 
           className="flex items-center bg-[#FFFFFF1A] hover:bg-[#FFFFFF33] transition-colors py-1.5 px-3 mr-3 gap-2 rounded-lg border-0 cursor-pointer text-on-primary"
           onClick={() => setIsMsgModalOpen(true)}
         >
-          <img
-            src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/lqnahwv7_expires_30_days.png" 
-            className="w-4 h-3 object-fill"
-            alt="msg"
-          />
+          <MessageSquare className="w-4 h-4 text-white" />
           <span className="text-sm font-bold">Send Message</span>
         </button>
         <button 

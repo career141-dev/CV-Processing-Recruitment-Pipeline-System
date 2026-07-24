@@ -72,7 +72,7 @@
   --on-secondary: #ffffff;
   --tertiary-container: #4f0022;
   --surface-bright: #0f120f;
-  --surface-container-high: #222b22;
+  --surface-container-high: #2a3a2a;
   --primary-fixed-dim: #002203;
   --surface-container: #1e251e;
   --on-secondary-fixed: #94f990;
@@ -232,4 +232,11 @@ html, body {
 body {
   background-color: var(--color-background);
   color: var(--color-text-primary);
+}
+
+/* Global dark mode table row hover fix —
+   Ensures ALL table rows show a visible hover highlight in dark mode,
+   even if they use hard-coded hover:bg-gray-50 or similar light colors */
+.dark table tr:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
 }

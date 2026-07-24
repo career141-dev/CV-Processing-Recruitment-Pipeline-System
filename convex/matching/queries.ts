@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalQuery, internalMutation } from "../_generated/server";
+import { query, internalQuery, internalMutation } from "../_generated/server";
 
 import type { Doc, Id } from "../_generated/dataModel";
 
@@ -106,7 +106,7 @@ export const updateJobEmbedding = internalMutation({
   },
 });
 
-export const getRecentCandidates = internalQuery({
+export const getRecentCandidates = query({
   args: { limit: v.number() },
   handler: async (ctx, args) => {
     return await ctx.db
