@@ -556,6 +556,7 @@ export default defineSchema({
     doNotContactReason: v.optional(v.string()),
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
+    extractionModel: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -568,6 +569,7 @@ export default defineSchema({
     .index("by_linkedinUrl", ["linkedinUrl"])
     .index("by_overallStatus", ["overallStatus"])
     .index("by_lastUpdatedAt", ["lastUpdatedAt"])
+    .index("by_extractionModel", ["extractionModel"])
     .searchIndex("search_skills", {
       searchField: "skills",
     })

@@ -23,7 +23,7 @@ export const checkDb = query({
       .take(10);
 
     const candidates = await ctx.db.query("candidates").collect();
-    const workableCandidates = candidates.filter(c => c.source === "Workable" || !!c.workableCandidateId);
+    const workableCandidates = candidates.filter(c => (c as any).source === "Workable" || !!(c as any).workableCandidateId);
 
     const logs = await ctx.db.query("nvidiaTokenLogs").collect();
     const deepseekCvLogs = logs.filter(l => (l.model || "").toLowerCase().includes("deepseek") && l.taskType === "cv_structuring" && l.success);
@@ -50,17 +50,17 @@ export const checkDb = query({
 
 export const getDeepSeekStats = query({
   handler: async (ctx) => {
-    const candidates = await ctx.db.query("candidates").collect();
+    const candidates = await ctx.db.query("candidates").order("desc").take(300);
     
     const candidatesBySource: Record<string, number> = {};
     let parsedCandidatesCount = 0;
     for (const c of candidates) {
-      const src = c.source || "Manual";
+      const src = (c as any).source || "Manual";
       candidatesBySource[src] = (candidatesBySource[src] || 0) + 1;
       if (c.isParsed) parsedCandidatesCount++;
     }
 
-    const tokenLogs = await ctx.db.query("nvidiaTokenLogs").collect();
+    const tokenLogs = await ctx.db.query("nvidiaTokenLogs").order("desc").take(500);
     let deepseekCallsCount = 0;
     let deepseekSuccessfulCalls = 0;
     let deepseekCvStructuringCount = 0;
@@ -84,30 +84,15 @@ export const getDeepSeekStats = query({
       }
     }
 
-    const cvUploads = await ctx.db.query("cvUploads").collect();
-    const uploadsByStatus: Record<string, number> = {};
-    const uploadsBySource: Record<string, number> = {};
-    for (const u of cvUploads) {
-      const st = u.status || "unknown";
-      const src = u.source || "unknown";
-      uploadsByStatus[st] = (uploadsByStatus[st] || 0) + 1;
-      uploadsBySource[src] = (uploadsBySource[src] || 0) + 1;
-    }
-
     return {
-      totalCandidatesInDb: candidates.length,
+      candidatesCheckedSample: candidates.length,
       parsedCandidatesCount,
       candidatesBySource,
-      deepseekLogs: {
+      deepseekLogsRecent500: {
         totalCallsCount: deepseekCallsCount,
         successfulCalls: deepseekSuccessfulCalls,
         cvStructuringSuccessCount: deepseekCvStructuringCount,
         workableCvStructuringCount: workableDeepseekCount,
-      },
-      cvUploads: {
-        totalCount: cvUploads.length,
-        byStatus: uploadsByStatus,
-        bySource: uploadsBySource,
       },
     };
   },

@@ -568,7 +568,7 @@ export const getDeepSeekExtractionStats = query({
     const candidatesBySource: Record<string, number> = {};
     let parsedCandidatesCount = 0;
     for (const c of candidates) {
-      const src = c.source || "Manual";
+      const src = (c as any).source || "Manual";
       candidatesBySource[src] = (candidatesBySource[src] || 0) + 1;
       if (c.isParsed) parsedCandidatesCount++;
     }
@@ -622,6 +622,77 @@ export const getDeepSeekExtractionStats = query({
         byStatus: uploadsByStatus,
         bySource: uploadsBySource,
       },
+    };
+  },
+});
+
+export const getCanonicalDeepSeekCandidatesCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const candidates = await ctx.db
+      .query("candidates")
+      .withIndex("by_extractionModel", (q) => q.eq("extractionModel", "deepseek/deepseek-v4-flash"))
+      .collect();
+
+    return {
+      extractionModel: "deepseek/deepseek-v4-flash",
+      candidateCount: candidates.length,
+      sampleCandidateIds: candidates.slice(0, 5).map((c) => c._id),
+    };
+  },
+});
+
+export const getCanonicalDeepSeekTokenLogsCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const logs = await ctx.db
+      .query("nvidiaTokenLogs")
+      .order("desc")
+      .take(1000);
+
+    const deepseekLogs = logs.filter(
+      (l) =>
+        (l.model || "").toLowerCase().includes("deepseek") &&
+        l.taskType === "cv_structuring" &&
+        l.success === true
+    );
+
+    const distinctUploadIds = new Set<string>();
+    const distinctCandidateIds = new Set<string>();
+
+    for (const log of deepseekLogs) {
+      if (log.cvUploadId) {
+        distinctUploadIds.add(log.cvUploadId);
+      }
+    }
+
+    for (const uploadId of Array.from(distinctUploadIds)) {
+      const cv: any = await ctx.db.get(uploadId as any);
+      if (cv && cv.candidateId) {
+        distinctCandidateIds.add(cv.candidateId);
+      }
+    }
+
+    return {
+      totalLogRows: deepseekLogs.length,
+      distinctCvUploadsCount: distinctUploadIds.size,
+      distinctCandidatesCount: distinctCandidateIds.size,
+    };
+  },
+});
+
+export const getExtractionCountByModel = query({
+  args: { model: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const targetModel = args.model ?? "deepseek/deepseek-v4-flash";
+    const candidates = await ctx.db
+      .query("candidates")
+      .withIndex("by_extractionModel", (q) => q.eq("extractionModel", targetModel))
+      .collect();
+
+    return {
+      model: targetModel,
+      count: candidates.length,
     };
   },
 });

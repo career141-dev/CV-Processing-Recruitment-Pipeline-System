@@ -37,68 +37,51 @@ export const checkRunningImports = query({
         errorMessage: u.errorMessage,
       })),
     };
-export const getDeepSeekExtractionStats = query({
+  },
+});
+
+export const inspectUnpatchedDeepSeekCandidates = query({
   args: {},
   handler: async (ctx) => {
-    const candidates = await ctx.db.query("candidates").collect();
-    
-    const candidatesBySource: Record<string, number> = {};
-    let parsedCandidatesCount = 0;
-    for (const c of candidates) {
-      const src = c.source || "Manual";
-      candidatesBySource[src] = (candidatesBySource[src] || 0) + 1;
-      if (c.isParsed) parsedCandidatesCount++;
-    }
+    const logs = await ctx.db.query("nvidiaTokenLogs").order("desc").take(1000);
+    const deepseekLogs = logs.filter(
+      (l) =>
+        (l.model || "").toLowerCase().includes("deepseek") &&
+        l.taskType === "cv_structuring" &&
+        l.success === true
+    );
 
-    const tokenLogs = await ctx.db.query("nvidiaTokenLogs").collect();
-    let deepseekCallsCount = 0;
-    let deepseekSuccessfulCalls = 0;
-    let deepseekCvStructuringCount = 0;
-    let workableDeepseekCount = 0;
+    const missingModelCandidateIds: string[] = [];
+    const foundModelCandidateIds: string[] = [];
+    const missingCandidateFieldInCvUpload: string[] = [];
 
-    for (const log of tokenLogs) {
-      const modelLower = (log.model || "").toLowerCase();
-      if (modelLower.includes("deepseek")) {
-        deepseekCallsCount++;
-        if (log.success) {
-          deepseekSuccessfulCalls++;
-          if (log.taskType === "cv_structuring") {
-            deepseekCvStructuringCount++;
-            const srcLower = (log.sourceChannel || "").toLowerCase();
-            const fileLower = (log.fileName || "").toLowerCase();
-            if (srcLower.includes("workable") || fileLower.includes("workable")) {
-              workableDeepseekCount++;
-            }
+    for (const log of deepseekLogs) {
+      if (log.cvUploadId) {
+        const cv: any = await ctx.db.get(log.cvUploadId as any);
+        if (!cv) {
+          missingCandidateFieldInCvUpload.push(`cvUpload ${log.cvUploadId} missing doc`);
+        } else if (!cv.candidateId) {
+          missingCandidateFieldInCvUpload.push(`cvUpload ${cv._id} status=${cv.status} missing candidateId`);
+        } else {
+          const candidate: any = await ctx.db.get(cv.candidateId);
+          if (!candidate) {
+            missingCandidateFieldInCvUpload.push(`candidate ${cv.candidateId} doc missing in DB`);
+          } else if (!candidate.extractionModel) {
+            missingModelCandidateIds.push(candidate._id);
+          } else {
+            foundModelCandidateIds.push(candidate._id);
           }
         }
       }
     }
 
-    const cvUploads = await ctx.db.query("cvUploads").collect();
-    const uploadsByStatus: Record<string, number> = {};
-    const uploadsBySource: Record<string, number> = {};
-    for (const u of cvUploads) {
-      const st = u.status || "unknown";
-      const src = u.source || "unknown";
-      uploadsByStatus[st] = (uploadsByStatus[st] || 0) + 1;
-      uploadsBySource[src] = (uploadsBySource[src] || 0) + 1;
-    }
-
     return {
-      totalCandidatesInDb: candidates.length,
-      parsedCandidatesCount,
-      candidatesBySource,
-      deepseekLogs: {
-        totalCallsCount: deepseekCallsCount,
-        successfulCalls: deepseekSuccessfulCalls,
-        cvStructuringSuccessCount: deepseekCvStructuringCount,
-        workableCvStructuringCount: workableDeepseekCount,
-      },
-      cvUploads: {
-        totalCount: cvUploads.length,
-        byStatus: uploadsByStatus,
-        bySource: uploadsBySource,
-      },
+      totalDeepSeekLogs: deepseekLogs.length,
+      missingCandidateFieldInCvUploadCount: missingCandidateFieldInCvUpload.length,
+      missingCandidateFieldInCvUploadSample: missingCandidateFieldInCvUpload.slice(0, 15),
+      missingModelCandidatesCount: new Set(missingModelCandidateIds).size,
+      missingModelCandidateIdsSample: Array.from(new Set(missingModelCandidateIds)).slice(0, 10),
+      foundModelCandidatesCount: new Set(foundModelCandidateIds).size,
     };
   },
 });

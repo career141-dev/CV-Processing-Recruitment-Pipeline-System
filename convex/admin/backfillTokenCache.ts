@@ -6,6 +6,44 @@ import { calculateNvidiaCredits } from "../stats/stats";
  * 1. Populates missing `sourceChannel` on existing `nvidiaTokenLogs` by looking up linked `cvUploads`.
  * 2. Rebuilds `tokenStatsCache` singleton and `dailyTokenStats` rows from raw logs.
  */
+export const backfillCandidateExtractionModelPublic = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const logs = await ctx.db.query("nvidiaTokenLogs").order("desc").take(500);
+    const deepseekLogs = logs.filter((l) =>
+      (l.model || "").toLowerCase().includes("deepseek") &&
+      l.taskType === "cv_structuring" &&
+      l.success === true
+    );
+
+    let candidatesPatched = 0;
+    const patchedCandidateIds = new Set<string>();
+
+    for (const log of deepseekLogs) {
+      if (log.cvUploadId) {
+        const cv: any = await ctx.db.get(log.cvUploadId);
+        if (cv && cv.candidateId) {
+          const candidate: any = await ctx.db.get(cv.candidateId);
+          if (candidate && !candidate.extractionModel) {
+            await ctx.db.patch(candidate._id, {
+              extractionModel: "deepseek/deepseek-v4-flash",
+            });
+            candidatesPatched++;
+            patchedCandidateIds.add(candidate._id);
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      deepseekLogsInspected: deepseekLogs.length,
+      candidatesPatched,
+      patchedCandidateIdsCount: patchedCandidateIds.size,
+    };
+  },
+});
+
 export const backfillTokenCachePublic = mutation({
   args: {},
   handler: async (ctx) => {

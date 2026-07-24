@@ -337,9 +337,8 @@ export const runImportBatch = internalAction({
     const currentJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
     if (!currentJob || currentJob.status === "stopped" || currentJob.status === "done") return;
 
-    // Check if max candidates target has already been reached
-    const totalProcessedSoFar = imported + skipped + deduplicated + failed;
-    if (maxLimit > 0 && totalProcessedSoFar >= maxLimit) {
+    // Check if target imported candidates count has been reached
+    if (maxLimit > 0 && imported >= maxLimit) {
       await ctx.runMutation(internal.integrations.workable.updateImportJob, {
         importId: args.importId,
         status: "done",
@@ -397,7 +396,7 @@ export const runImportBatch = internalAction({
       const checkJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
       if (!checkJob || checkJob.status === "stopped") return;
 
-      if (maxLimit > 0 && (imported + skipped + deduplicated + failed) >= maxLimit) {
+      if (maxLimit > 0 && imported >= maxLimit) {
         await ctx.runMutation(internal.integrations.workable.updateImportJob, {
           importId: args.importId,
           imported,
@@ -518,8 +517,8 @@ export const runImportBatch = internalAction({
 
     const currentTotal = imported + skipped + deduplicated + failed;
 
-    // Chain to next page if next cursor exists and limit not reached
-    if (page.paging?.next && (maxLimit === 0 || currentTotal < maxLimit)) {
+    // Chain to next page if next cursor exists and imported candidate target limit not reached
+    if (page.paging?.next && (maxLimit === 0 || imported < maxLimit)) {
       await ctx.scheduler.runAfter(500, internal.integrations.workableActions.runImportBatch, {
         importId: args.importId,
         subdomain: args.subdomain,

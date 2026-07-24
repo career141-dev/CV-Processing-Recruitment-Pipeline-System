@@ -1109,6 +1109,7 @@ export async function runCvExtraction(
         parsingConfidence,
         isParsed: true,
         embedding,
+        extractionModel: OPENROUTER_PRIMARY_MODEL,
       });
 
       if (extracted.referees && extracted.referees.length > 0) {
