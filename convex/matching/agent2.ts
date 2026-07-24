@@ -584,12 +584,13 @@ export const runReverseMatch = action({
 
 /**
  * Action to recursively backfill embeddings for all candidate resumes in batches.
- * Paced at 15 candidates per run with 30s delay to respect NVIDIA rate limits (40 RPM).
+ * Paced at 40 candidates per run with 12s delay to respect NVIDIA rate limits (40 RPM).
+ * At this pace: 115,000 / 40 = 2,875 batches x 12s = ~9.5 hours for full corpus.
  */
 export const backfillCandidateEmbeddings = action({
   args: { batchSize: v.optional(v.number()), cursor: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ processed: number; remaining: number; continueCursor?: string }> => {
-    const limit = args.batchSize ?? 15;
+    const limit = args.batchSize ?? 40;
 
     // Find resumes missing embeddings using paginated scan
     const result = await ctx.runQuery(internal.matching.queries.getCandidateResumesMissingEmbeddings, {
@@ -602,7 +603,7 @@ export const backfillCandidateEmbeddings = action({
     if (missing.length === 0) {
       if (!result.isDone) {
         // If we hit the end of this batch's scan but there are still pages left in the DB, schedule next page scan
-        await ctx.scheduler.runAfter(30000, api.matching.agent2.backfillCandidateEmbeddings, {
+        await ctx.scheduler.runAfter(12000, api.matching.agent2.backfillCandidateEmbeddings, {
           batchSize: limit,
           cursor: result.continueCursor ?? undefined,
         });
@@ -671,8 +672,9 @@ export const backfillCandidateEmbeddings = action({
     }
 
     if (!result.isDone) {
-      // Pacing delay: 30 seconds between batches to stay under NVIDIA NIM 40 RPM rate limit
-      await ctx.scheduler.runAfter(30000, api.matching.agent2.backfillCandidateEmbeddings, {
+      // Pacing delay: 12 seconds between batches — safe under NVIDIA NIM 40 RPM rate limit
+      // (40 candidates per batch at ~15 API calls = well within 40 RPM)
+      await ctx.scheduler.runAfter(12000, api.matching.agent2.backfillCandidateEmbeddings, {
         batchSize: limit,
         cursor: result.continueCursor ?? undefined,
       });

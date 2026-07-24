@@ -235,7 +235,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
               <button 
                 onClick={handleShortlist}
                 disabled={isShortlisting}
-                className="text-[12px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                className="text-[12px] font-bold bg-green-600 hover:bg-green-500 text-white px-3.5 py-1.5 rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
               >
                 {isShortlisting ? "Adding..." : "Add to Shortlist"}
               </button>

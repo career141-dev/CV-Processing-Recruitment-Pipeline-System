@@ -14,15 +14,11 @@ export default function DashboardLayout({
   return (
     <AccessGate>
       <AccessDeniedModal />
-      <div className="flex flex-col bg-background min-h-screen">
-        <div className="self-stretch bg-background pb-[25px]">
-          <div className="flex items-start self-stretch gap-[21px]">
-            <Sidebar />
-            <div className="flex flex-1 flex-col items-start relative pb-10 min-w-0">
-              <RouteGuard>{children}</RouteGuard>
-            </div>
-          </div>
-        </div>
+      <div className="flex h-screen w-screen bg-background overflow-hidden">
+        <Sidebar />
+        <main className="flex-1 h-screen overflow-y-auto pb-10 min-w-0 pr-6 pl-5 pt-5 relative">
+          <RouteGuard>{children}</RouteGuard>
+        </main>
       </div>
     </AccessGate>
   );

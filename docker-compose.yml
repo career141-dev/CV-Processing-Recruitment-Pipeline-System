@@ -57,9 +57,11 @@ services:
       start_period: 10s
       timeout: 5s
       retries: 5
-    # ── CRASH FIX 2: Memory limit prevents OOM kill of the whole VPS ──
-    mem_limit: 4g
-    mem_reservation: 1g
+    # ── SCALE FIX: Increased from 4g → 6g to handle bulk 115k CV import load ──
+    # Each parallel parse action holds a PDF buffer + LLM response in memory.
+    # 8 parallel actions x ~400MB peak = ~3.2GB. 6g gives safe headroom.
+    mem_limit: 6g
+    mem_reservation: 2g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
       driver: "json-file"

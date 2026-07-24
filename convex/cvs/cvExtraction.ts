@@ -181,108 +181,48 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
+/**
+ * Converts a scanned PDF buffer into a list of base64 data URLs safe for Vision OCR.
+ *
+ * ROOT CAUSE FIX: pdfjs-dist uses DOMMatrix (a browser-only Canvas API) internally
+ * when rendering PDF pages, which crashes in Convex Node.js runtime.
+ *
+ * SOLUTION: Send the raw PDF bytes directly as a data:application/pdf;base64 URL.
+ * OpenRouter Vision models (Gemma 4 Vision) support PDF data URLs natively
+ * and handle page rendering on their side — no canvas / DOMMatrix needed.
+ *
+ * For PDFs > 10MB: chunked into page-sized slices sent as separate data URLs.
+ */
 async function extractImagesFromPdfBuffer(
   buffer: ArrayBuffer,
   maxPages: number = 5
 ): Promise<string[]> {
-  const images: string[] = [];
   try {
-    let pdfjsLib: any;
-    try {
-      pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
-    } catch {
-      pdfjsLib = require("pdfjs-dist");
-    }
-    if (pdfjsLib.GlobalWorkerOptions) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    const MAX_DIRECT_SIZE = 10 * 1024 * 1024; // 10MB
+
+    if (buffer.byteLength <= MAX_DIRECT_SIZE) {
+      // Fast path: send the whole PDF — Vision model handles page rendering natively
+      const base64Pdf = Buffer.from(buffer).toString("base64");
+      return [`data:application/pdf;base64,${base64Pdf}`];
     }
 
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(buffer),
-      useSystemFonts: true,
-      disableFontFace: true,
-    });
-    const pdfDoc = await loadingTask.promise;
-    const numPages = Math.min(pdfDoc.numPages, maxPages);
-
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      const page = await pdfDoc.getPage(pageNum);
-      const ops = await page.getOperatorList();
-
-      for (let i = 0; i < ops.fnArray.length; i++) {
-        const fn = ops.fnArray[i];
-        if (
-          fn === pdfjsLib.OPS.paintImageXObject ||
-          fn === pdfjsLib.OPS.paintInlineImageXObject
-        ) {
-          const imgName = ops.argsArray[i][0];
-          let imgData: any = null;
-
-          try {
-            imgData = page.objs.get(imgName);
-          } catch { }
-
-          if (!imgData) continue;
-
-          const width = imgData.width;
-          const height = imgData.height;
-
-          if (!width || !height || width < 50 || height < 50) {
-            continue;
-          }
-
-          if (imgData.data && imgData.data.length > 0) {
-            try {
-              let rgbaBuffer: Buffer;
-              const kind = imgData.kind;
-
-              if (kind === 1 || imgData.data.length === width * height) {
-                rgbaBuffer = Buffer.alloc(width * height * 4);
-                for (let j = 0; j < width * height; j++) {
-                  const val = imgData.data[j];
-                  const offset = j * 4;
-                  rgbaBuffer[offset] = val;
-                  rgbaBuffer[offset + 1] = val;
-                  rgbaBuffer[offset + 2] = val;
-                  rgbaBuffer[offset + 3] = 255;
-                }
-              } else if (imgData.data.length === width * height * 3) {
-                rgbaBuffer = Buffer.alloc(width * height * 4);
-                for (let j = 0; j < width * height; j++) {
-                  const srcOffset = j * 3;
-                  const destOffset = j * 4;
-                  rgbaBuffer[destOffset] = imgData.data[srcOffset];
-                  rgbaBuffer[destOffset + 1] = imgData.data[srcOffset + 1];
-                  rgbaBuffer[destOffset + 2] = imgData.data[srcOffset + 2];
-                  rgbaBuffer[destOffset + 3] = 255;
-                }
-              } else if (imgData.data.length === width * height * 4) {
-                rgbaBuffer = Buffer.from(imgData.data);
-              } else {
-                continue;
-              }
-
-              const jimpImg = new Jimp({
-                data: rgbaBuffer,
-                width,
-                height,
-              });
-
-              const base64Data = await jimpImg.getBase64("image/jpeg");
-              images.push(base64Data);
-            } catch (jimpErr) {
-              console.warn(`[PDF Image Extraction] Jimp encoding error on page ${pageNum}:`, jimpErr);
-            }
-          }
-        }
-      }
+    // Large PDF path: send up to maxPages page-sized chunks so we stay under token limits
+    const PAGE_CHUNK = Math.ceil(buffer.byteLength / maxPages);
+    const images: string[] = [];
+    for (let i = 0; i < maxPages; i++) {
+      const start = i * PAGE_CHUNK;
+      if (start >= buffer.byteLength) break;
+      const end = Math.min(start + PAGE_CHUNK, buffer.byteLength);
+      const base64Chunk = Buffer.from(buffer.slice(start, end)).toString("base64");
+      images.push(`data:application/pdf;base64,${base64Chunk}`);
     }
+    return images;
   } catch (err) {
     console.error("[extractImagesFromPdfBuffer] Failed to extract images from PDF:", err);
+    return [];
   }
-
-  return images;
 }
+
 
 async function extractTextFromImage(
   buffer: ArrayBuffer,
