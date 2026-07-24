@@ -1,4 +1,72 @@
 "use node";
+
+if (typeof (globalThis as any).DOMMatrix === "undefined") {
+  class DOMMatrixPolyfill {
+    a: number; b: number; c: number; d: number; e: number; f: number;
+    m11: number; m12: number; m13: number; m14: number;
+    m21: number; m22: number; m23: number; m24: number;
+    m31: number; m32: number; m33: number; m34: number;
+    m41: number; m42: number; m43: number; m44: number;
+    is2D: boolean; isIdentity: boolean;
+
+    constructor(init?: any) {
+      if (Array.isArray(init) && init.length === 6) {
+        this.a = init[0]; this.b = init[1]; this.c = init[2]; this.d = init[3]; this.e = init[4]; this.f = init[5];
+      } else if (init && typeof init === "object" && "a" in init) {
+        this.a = init.a; this.b = init.b; this.c = init.c; this.d = init.d; this.e = init.e; this.f = init.f;
+      } else {
+        this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0;
+      }
+      this.m11 = this.a; this.m12 = this.b; this.m13 = 0; this.m14 = 0;
+      this.m21 = this.c; this.m22 = this.d; this.m23 = 0; this.m24 = 0;
+      this.m31 = 0; this.m32 = 0; this.m33 = 1; this.m34 = 0;
+      this.m41 = this.e; this.m42 = this.f; this.m43 = 0; this.m44 = 1;
+      this.is2D = true;
+      this.isIdentity = this.a === 1 && this.b === 0 && this.c === 0 && this.d === 1 && this.e === 0 && this.f === 0;
+    }
+    multiply(other?: any) {
+      const o = other || new DOMMatrixPolyfill();
+      return new DOMMatrixPolyfill([
+        this.a * o.a + this.c * o.b,
+        this.b * o.a + this.d * o.b,
+        this.a * o.c + this.c * o.d,
+        this.b * o.c + this.d * o.d,
+        this.a * o.e + this.c * o.f + this.e,
+        this.b * o.e + this.d * o.f + this.f,
+      ]);
+    }
+    translate(tx = 0, ty = 0) {
+      return this.multiply(new DOMMatrixPolyfill([1, 0, 0, 1, tx, ty]));
+    }
+    scale(sx = 1, sy = sx) {
+      return this.multiply(new DOMMatrixPolyfill([sx, 0, 0, sy, 0, 0]));
+    }
+    rotate(angle = 0) {
+      const rad = (angle * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      return this.multiply(new DOMMatrixPolyfill([cos, sin, -sin, cos, 0, 0]));
+    }
+    inverse() {
+      const det = this.a * this.d - this.b * this.c;
+      if (!det) return new DOMMatrixPolyfill();
+      return new DOMMatrixPolyfill([
+        this.d / det,
+        -this.b / det,
+        -this.c / det,
+        this.a / det,
+        (this.c * this.f - this.d * this.e) / det,
+        (this.b * this.e - this.a * this.f) / det,
+      ]);
+    }
+    transformPoint(p?: any) {
+      const x = p?.x || 0; const y = p?.y || 0;
+      return { x: this.a * x + this.c * y + this.e, y: this.b * x + this.d * y + this.f };
+    }
+  }
+  (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+}
+
 import { Jimp } from "jimp";
 
 import { v } from "convex/values";
@@ -181,46 +249,214 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
+function ensureDOMMatrixPolyfill() {
+  if (typeof (globalThis as any).DOMMatrix === "undefined") {
+    class DOMMatrixPolyfill {
+      a: number; b: number; c: number; d: number; e: number; f: number;
+      m11: number; m12: number; m13: number; m14: number;
+      m21: number; m22: number; m23: number; m24: number;
+      m31: number; m32: number; m33: number; m34: number;
+      m41: number; m42: number; m43: number; m44: number;
+      is2D: boolean; isIdentity: boolean;
+
+      constructor(init?: any) {
+        if (Array.isArray(init) && init.length === 6) {
+          this.a = init[0]; this.b = init[1]; this.c = init[2]; this.d = init[3]; this.e = init[4]; this.f = init[5];
+        } else if (init && typeof init === "object" && "a" in init) {
+          this.a = init.a; this.b = init.b; this.c = init.c; this.d = init.d; this.e = init.e; this.f = init.f;
+        } else {
+          this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0;
+        }
+        this.m11 = this.a; this.m12 = this.b; this.m13 = 0; this.m14 = 0;
+        this.m21 = this.c; this.m22 = this.d; this.m23 = 0; this.m24 = 0;
+        this.m31 = 0; this.m32 = 0; this.m33 = 1; this.m34 = 0;
+        this.m41 = this.e; this.m42 = this.f; this.m43 = 0; this.m44 = 1;
+        this.is2D = true;
+        this.isIdentity = this.a === 1 && this.b === 0 && this.c === 0 && this.d === 1 && this.e === 0 && this.f === 0;
+      }
+      multiply(other?: any) {
+        const o = other || new DOMMatrixPolyfill();
+        return new DOMMatrixPolyfill([
+          this.a * o.a + this.c * o.b,
+          this.b * o.a + this.d * o.b,
+          this.a * o.c + this.c * o.d,
+          this.b * o.c + this.d * o.d,
+          this.a * o.e + this.c * o.f + this.e,
+          this.b * o.e + this.d * o.f + this.f,
+        ]);
+      }
+      translate(tx = 0, ty = 0) {
+        return this.multiply(new DOMMatrixPolyfill([1, 0, 0, 1, tx, ty]));
+      }
+      scale(sx = 1, sy = sx) {
+        return this.multiply(new DOMMatrixPolyfill([sx, 0, 0, sy, 0, 0]));
+      }
+      rotate(angle = 0) {
+        const rad = (angle * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        return this.multiply(new DOMMatrixPolyfill([cos, sin, -sin, cos, 0, 0]));
+      }
+      inverse() {
+        const det = this.a * this.d - this.b * this.c;
+        if (!det) return new DOMMatrixPolyfill();
+        return new DOMMatrixPolyfill([
+          this.d / det,
+          -this.b / det,
+          -this.c / det,
+          this.a / det,
+          (this.c * this.f - this.d * this.e) / det,
+          (this.b * this.e - this.a * this.f) / det,
+        ]);
+      }
+      transformPoint(p?: any) {
+        const x = p?.x || 0; const y = p?.y || 0;
+        return { x: this.a * x + this.c * y + this.e, y: this.b * x + this.d * y + this.f };
+      }
+    }
+    (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+  }
+}
+
 /**
- * Converts a scanned PDF buffer into a list of base64 data URLs safe for Vision OCR.
- *
- * ROOT CAUSE FIX: pdfjs-dist uses DOMMatrix (a browser-only Canvas API) internally
- * when rendering PDF pages, which crashes in Convex Node.js runtime.
- *
- * SOLUTION: Send the raw PDF bytes directly as a data:application/pdf;base64 URL.
- * OpenRouter Vision models (Gemma 4 Vision) support PDF data URLs natively
- * and handle page rendering on their side — no canvas / DOMMatrix needed.
- *
- * For PDFs > 10MB: chunked into page-sized slices sent as separate data URLs.
+ * Converts a scanned PDF buffer into a list of base64 image data URLs safe for Vision OCR.
+ * Uses DOMMatrix polyfill to run pdfjs-dist safely in Node.js server environment without DOM canvas.
  */
 async function extractImagesFromPdfBuffer(
   buffer: ArrayBuffer,
   maxPages: number = 5
 ): Promise<string[]> {
+  ensureDOMMatrixPolyfill();
+  const images: string[] = [];
   try {
-    const MAX_DIRECT_SIZE = 10 * 1024 * 1024; // 10MB
-
-    if (buffer.byteLength <= MAX_DIRECT_SIZE) {
-      // Fast path: send the whole PDF — Vision model handles page rendering natively
-      const base64Pdf = Buffer.from(buffer).toString("base64");
-      return [`data:application/pdf;base64,${base64Pdf}`];
+    let pdfjsLib: any;
+    try {
+      pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+    } catch {
+      pdfjsLib = require("pdfjs-dist");
+    }
+    if (pdfjsLib.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
     }
 
-    // Large PDF path: send up to maxPages page-sized chunks so we stay under token limits
-    const PAGE_CHUNK = Math.ceil(buffer.byteLength / maxPages);
-    const images: string[] = [];
-    for (let i = 0; i < maxPages; i++) {
-      const start = i * PAGE_CHUNK;
-      if (start >= buffer.byteLength) break;
-      const end = Math.min(start + PAGE_CHUNK, buffer.byteLength);
-      const base64Chunk = Buffer.from(buffer.slice(start, end)).toString("base64");
-      images.push(`data:application/pdf;base64,${base64Chunk}`);
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    const pdfDoc = await loadingTask.promise;
+    const numPages = Math.min(pdfDoc.numPages, maxPages);
+
+    const processImgData = async (imgData: any, pageNum: number) => {
+      const width = imgData.width;
+      const height = imgData.height;
+
+      if (!width || !height || width < 50 || height < 50) {
+        return;
+      }
+
+      if (imgData.data && imgData.data.length > 0) {
+        try {
+          let rgbaBuffer: Buffer;
+          const kind = imgData.kind;
+
+          if (kind === 1 || imgData.data.length === width * height) {
+            rgbaBuffer = Buffer.alloc(width * height * 4);
+            for (let j = 0; j < width * height; j++) {
+              const val = imgData.data[j];
+              const offset = j * 4;
+              rgbaBuffer[offset] = val;
+              rgbaBuffer[offset + 1] = val;
+              rgbaBuffer[offset + 2] = val;
+              rgbaBuffer[offset + 3] = 255;
+            }
+          } else if (imgData.data.length === width * height * 3) {
+            rgbaBuffer = Buffer.alloc(width * height * 4);
+            for (let j = 0; j < width * height; j++) {
+              const srcOffset = j * 3;
+              const destOffset = j * 4;
+              rgbaBuffer[destOffset] = imgData.data[srcOffset];
+              rgbaBuffer[destOffset + 1] = imgData.data[srcOffset + 1];
+              rgbaBuffer[destOffset + 2] = imgData.data[srcOffset + 2];
+              rgbaBuffer[destOffset + 3] = 255;
+            }
+          } else if (imgData.data.length === width * height * 4) {
+            rgbaBuffer = Buffer.from(imgData.data);
+          } else {
+            return;
+          }
+
+          const jimpImg = new Jimp({
+            data: rgbaBuffer,
+            width,
+            height,
+          });
+
+          const base64Data = await jimpImg.getBase64("image/jpeg");
+          images.push(base64Data);
+        } catch (jimpErr) {
+          console.warn(`[PDF Image Extraction] Jimp encoding error on page ${pageNum}:`, jimpErr);
+        }
+      }
+    };
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const ops = await page.getOperatorList();
+      const processedKeys = new Set<string>();
+
+      const parseOps = async (operatorList: any) => {
+        for (let i = 0; i < operatorList.fnArray.length; i++) {
+          const fn = operatorList.fnArray[i];
+          if (
+            fn === pdfjsLib.OPS.paintImageXObject ||
+            fn === pdfjsLib.OPS.paintInlineImageXObject
+          ) {
+            const imgName = operatorList.argsArray[i][0];
+            if (processedKeys.has(imgName)) continue;
+            processedKeys.add(imgName);
+
+            let imgData: any = null;
+            try {
+              imgData = page.objs.get(imgName);
+            } catch { }
+
+            if (imgData) {
+              await processImgData(imgData, pageNum);
+            }
+          } else if (fn === pdfjsLib.OPS.paintFormXObject) {
+            const formName = operatorList.argsArray[i][0];
+            try {
+              const formObj = page.objs.get(formName);
+              if (formObj && formObj.operatorList) {
+                await parseOps(formObj.operatorList);
+              }
+            } catch { }
+          }
+        }
+      };
+
+      await parseOps(ops);
+
+      if (images.length === 0 && page.objs) {
+        const objsMap = (page.objs as any)._objs || (page.objs as any).objs || (page.objs as any).data;
+        if (objsMap) {
+          for (const key of Object.keys(objsMap)) {
+            if (processedKeys.has(key)) continue;
+            const obj = objsMap[key];
+            if (obj && typeof obj === "object" && obj.width && obj.height && obj.data) {
+              processedKeys.add(key);
+              await processImgData(obj, pageNum);
+            }
+          }
+        }
+      }
     }
-    return images;
   } catch (err) {
     console.error("[extractImagesFromPdfBuffer] Failed to extract images from PDF:", err);
-    return [];
   }
+
+  return images;
 }
 
 
