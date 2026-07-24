@@ -81,3 +81,23 @@ export const linkHistoricalCvFile = mutation({
     return { success: false, reason: "No matching database record" };
   },
 });
+
+export const cleanExistingReverseMatches = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const jobs = await ctx.db.query("jobs").collect();
+    let updatedCount = 0;
+    for (const job of jobs) {
+      if (job.reverseMatchResults) {
+        const filtered = job.reverseMatchResults.filter((r) => r.overallScore >= 60);
+        if (filtered.length !== job.reverseMatchResults.length) {
+          await ctx.db.patch(job._id, {
+            reverseMatchResults: filtered,
+          });
+          updatedCount++;
+        }
+      }
+    }
+    return { updatedCount, totalJobs: jobs.length };
+  },
+});
