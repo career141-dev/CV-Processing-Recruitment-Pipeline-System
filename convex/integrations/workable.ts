@@ -67,6 +67,27 @@ export const getLatestImportJob = internalQuery({
   },
 });
 
+export const stopAllRunningWorkableImports = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const runningJobs = await ctx.db
+      .query("workableImports")
+      .filter((q) => q.eq(q.field("status"), "running"))
+      .collect();
+
+    let stoppedCount = 0;
+    for (const job of runningJobs) {
+      await ctx.db.patch(job._id, {
+        status: "stopped",
+        errorMessage: "Import stopped by user.",
+      });
+      stoppedCount++;
+    }
+
+    return { stoppedCount, message: `Stopped ${stoppedCount} running Workable import jobs.` };
+  },
+});
+
 export const insertCvUpload = internalMutation({
   args: {
     storageId: v.optional(v.id("_storage")),
@@ -117,13 +138,20 @@ export const clearImportHistory = mutation({
 });
 
 export const getLatestImportStatus = query({
-  args: { userId: v.string() },
+  args: { userId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const job = await ctx.db
-      .query("workableImports")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .first();
+    let job = null;
+    const uid = args.userId;
+    if (uid) {
+      job = await ctx.db
+        .query("workableImports")
+        .withIndex("by_user", (q) => q.eq("userId", uid))
+        .order("desc")
+        .first();
+    }
+    if (!job) {
+      job = await ctx.db.query("workableImports").order("desc").first();
+    }
     if (!job) return null;
     return { ...job, deduplicated: job.deduplicated ?? 0 };
   },

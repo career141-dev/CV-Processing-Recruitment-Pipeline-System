@@ -1,4 +1,107 @@
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
+
+export const checkRunningImports = query({
+  args: {},
+  handler: async (ctx) => {
+    const runningWorkable = await ctx.db
+      .query("workableImports")
+      .filter((q) => q.eq(q.field("status"), "running"))
+      .collect();
+
+    const latestWorkable = await ctx.db
+      .query("workableImports")
+      .order("desc")
+      .take(5);
+
+    const runningBatches = await ctx.db
+      .query("ingestionBatches")
+      .filter((q) => q.eq(q.field("status"), "processing"))
+      .collect();
+
+    const pendingUploads = await ctx.db
+      .query("cvUploads")
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .take(20);
+
+    return {
+      runningWorkableCount: runningWorkable.length,
+      runningWorkableJobs: runningWorkable,
+      latestWorkableJobs: latestWorkable,
+      runningBatchesCount: runningBatches.length,
+      pendingUploadsCount: pendingUploads.length,
+      pendingUploadsDetails: pendingUploads.map((u) => ({
+        _id: u._id,
+        fileName: u.fileName,
+        source: u.source,
+        status: u.status,
+        errorMessage: u.errorMessage,
+      })),
+    };
+export const getDeepSeekExtractionStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("candidates").collect();
+    
+    const candidatesBySource: Record<string, number> = {};
+    let parsedCandidatesCount = 0;
+    for (const c of candidates) {
+      const src = c.source || "Manual";
+      candidatesBySource[src] = (candidatesBySource[src] || 0) + 1;
+      if (c.isParsed) parsedCandidatesCount++;
+    }
+
+    const tokenLogs = await ctx.db.query("nvidiaTokenLogs").collect();
+    let deepseekCallsCount = 0;
+    let deepseekSuccessfulCalls = 0;
+    let deepseekCvStructuringCount = 0;
+    let workableDeepseekCount = 0;
+
+    for (const log of tokenLogs) {
+      const modelLower = (log.model || "").toLowerCase();
+      if (modelLower.includes("deepseek")) {
+        deepseekCallsCount++;
+        if (log.success) {
+          deepseekSuccessfulCalls++;
+          if (log.taskType === "cv_structuring") {
+            deepseekCvStructuringCount++;
+            const srcLower = (log.sourceChannel || "").toLowerCase();
+            const fileLower = (log.fileName || "").toLowerCase();
+            if (srcLower.includes("workable") || fileLower.includes("workable")) {
+              workableDeepseekCount++;
+            }
+          }
+        }
+      }
+    }
+
+    const cvUploads = await ctx.db.query("cvUploads").collect();
+    const uploadsByStatus: Record<string, number> = {};
+    const uploadsBySource: Record<string, number> = {};
+    for (const u of cvUploads) {
+      const st = u.status || "unknown";
+      const src = u.source || "unknown";
+      uploadsByStatus[st] = (uploadsByStatus[st] || 0) + 1;
+      uploadsBySource[src] = (uploadsBySource[src] || 0) + 1;
+    }
+
+    return {
+      totalCandidatesInDb: candidates.length,
+      parsedCandidatesCount,
+      candidatesBySource,
+      deepseekLogs: {
+        totalCallsCount: deepseekCallsCount,
+        successfulCalls: deepseekSuccessfulCalls,
+        cvStructuringSuccessCount: deepseekCvStructuringCount,
+        workableCvStructuringCount: workableDeepseekCount,
+      },
+      cvUploads: {
+        totalCount: cvUploads.length,
+        byStatus: uploadsByStatus,
+        bySource: uploadsBySource,
+      },
+    };
+  },
+});
 
 export const makeAdmin = mutation({
   handler: async (ctx) => {

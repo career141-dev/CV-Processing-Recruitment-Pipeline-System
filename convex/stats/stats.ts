@@ -430,6 +430,7 @@ export const logNvidiaCallMutation = internalMutation({
     error: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     provider: v.optional(v.string()),
+    sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -438,12 +439,12 @@ export const logNvidiaCallMutation = internalMutation({
 
     // --- 1. Denormalize fileName and sourceChannel at write-time ---
     let fileName: string | undefined = undefined;
-    let sourceChannel: string | undefined = undefined;
+    let sourceChannel: string | undefined = args.sourceChannel;
     if (args.cvUploadId) {
       const cv = await ctx.db.get(args.cvUploadId);
       if (cv) {
         fileName = cv.fileName;
-        sourceChannel = cv.source;
+        if (!sourceChannel) sourceChannel = cv.source;
       }
     }
 
@@ -529,6 +530,99 @@ export const logNvidiaCallMutation = internalMutation({
         cvCompletionTokens: args.taskType === "cv_structuring" ? args.completionTokens : 0,
       });
     }
+  },
+});
+
+export const syncWorkableTokenLogs = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // Limit to 300 recent logs to prevent Convex read operation timeout
+    const logs = await ctx.db.query("nvidiaTokenLogs").order("desc").take(300);
+    let denormalizedCount = 0;
+
+    for (const log of logs) {
+      if (!log.sourceChannel && log.cvUploadId) {
+        const cv = await ctx.db.get(log.cvUploadId);
+        if (cv) {
+          const isWorkable = cv.source === "Workable" || (cv.fileName && cv.fileName.toLowerCase().includes("workable"));
+          const srcChannel = isWorkable ? "Workable" : (cv.source || undefined);
+          await ctx.db.patch(log._id, { sourceChannel: srcChannel, fileName: cv.fileName });
+          denormalizedCount++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: `Successfully synchronized ${denormalizedCount} token logs.`,
+      patchedCount: denormalizedCount,
+    };
+  },
+});
+
+export const getDeepSeekExtractionStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("candidates").collect();
+    
+    const candidatesBySource: Record<string, number> = {};
+    let parsedCandidatesCount = 0;
+    for (const c of candidates) {
+      const src = c.source || "Manual";
+      candidatesBySource[src] = (candidatesBySource[src] || 0) + 1;
+      if (c.isParsed) parsedCandidatesCount++;
+    }
+
+    const tokenLogs = await ctx.db.query("nvidiaTokenLogs").collect();
+    let deepseekCallsCount = 0;
+    let deepseekSuccessfulCalls = 0;
+    let deepseekCvStructuringCount = 0;
+    let workableDeepseekCount = 0;
+
+    for (const log of tokenLogs) {
+      const modelLower = (log.model || "").toLowerCase();
+      if (modelLower.includes("deepseek")) {
+        deepseekCallsCount++;
+        if (log.success) {
+          deepseekSuccessfulCalls++;
+          if (log.taskType === "cv_structuring") {
+            deepseekCvStructuringCount++;
+            const srcLower = (log.sourceChannel || "").toLowerCase();
+            const fileLower = (log.fileName || "").toLowerCase();
+            if (srcLower.includes("workable") || fileLower.includes("workable")) {
+              workableDeepseekCount++;
+            }
+          }
+        }
+      }
+    }
+
+    const cvUploads = await ctx.db.query("cvUploads").collect();
+    const uploadsByStatus: Record<string, number> = {};
+    const uploadsBySource: Record<string, number> = {};
+    for (const u of cvUploads) {
+      const st = u.status || "unknown";
+      const src = u.source || "unknown";
+      uploadsByStatus[st] = (uploadsByStatus[st] || 0) + 1;
+      uploadsBySource[src] = (uploadsBySource[src] || 0) + 1;
+    }
+
+    return {
+      totalCandidatesInDb: candidates.length,
+      parsedCandidatesCount,
+      candidatesBySource,
+      deepseekLogs: {
+        totalCallsCount: deepseekCallsCount,
+        successfulCalls: deepseekSuccessfulCalls,
+        cvStructuringSuccessCount: deepseekCvStructuringCount,
+        workableCvStructuringCount: workableDeepseekCount,
+      },
+      cvUploads: {
+        totalCount: cvUploads.length,
+        byStatus: uploadsByStatus,
+        bySource: uploadsBySource,
+      },
+    };
   },
 });
 
@@ -625,7 +719,9 @@ export const getTokenMetrics = query({
       const modelLower = (log.model || "").toLowerCase();
       const pTokens = log.promptTokens || 0;
       const cTokens = log.completionTokens || 0;
-      const isWorkable = log.sourceChannel === "Workable" || log.sourceChannel === "Workable_ZIP" || (log.fileName && log.fileName.toLowerCase().includes("workable"));
+      const srcLower = (log.sourceChannel || "").toLowerCase();
+      const fileLower = (log.fileName || "").toLowerCase();
+      const isWorkable = srcLower.includes("workable") || fileLower.includes("workable");
 
       if (modelLower.includes("deepseek")) {
         dsPromptTokens += pTokens;

@@ -74,12 +74,27 @@ export default function TokenMonitorPage() {
 
   // Mutations
   const clearLogs = useMutation(api.stats.stats.clearAllTokenLogs);
+  const backfillTokenCache = useMutation(api.stats.stats.syncWorkableTokenLogs);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await loadData();
     setIsRefreshing(false);
     toast.success("Usage metrics refreshed successfully.");
+  };
+
+  const handleSyncWorkableTokens = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await backfillTokenCache();
+      toast.success(res.message || "Re-synced Workable token logs!");
+      await loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to re-sync token cache.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleResetLogs = async () => {
@@ -403,64 +418,88 @@ export default function TokenMonitorPage() {
 
             {/* Sub-Tab Workable: Workable DeepSeek Usage KPI Grid */}
             {openrouterSubTab === "workable" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-semibold text-text-secondary">Workable Candidates Processed</span>
-                    <span className="text-3xl font-black text-text-primary tabular-nums">
-                      {workableDsMetrics.candidatesAddedCount}
-                    </span>
-                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">
-                      DeepSeek CV Extraction
-                    </span>
+              <div className="space-y-4">
+                <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-text-primary">Workable Import DeepSeek Tracker</h4>
+                      <p className="text-xs text-text-secondary">
+                        Monitors exact DeepSeek V4-Flash token consumption and costs across Workable candidate imports.
+                      </p>
+                    </div>
                   </div>
-                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
-                    <Building2 className="w-6 h-6" />
-                  </div>
+                  <button
+                    onClick={handleSyncWorkableTokens}
+                    disabled={isSyncing}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                    <span>{isSyncing ? "Syncing..." : "Re-Sync & Recalculate Logs"}</span>
+                  </button>
                 </div>
 
-                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-semibold text-text-secondary">Workable Spend ($)</span>
-                    <span className="text-3xl font-black text-text-primary tabular-nums">
-                      {formatCost(workableDsMetrics.totalCost)}
-                    </span>
-                    <span className="text-[10px] text-text-secondary">
-                      DeepSeek V4-Flash
-                    </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-text-secondary">Workable Candidates Processed</span>
+                      <span className="text-3xl font-black text-text-primary tabular-nums">
+                        {workableDsMetrics.candidatesAddedCount}
+                      </span>
+                      <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">
+                        DeepSeek CV Extraction
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                      <Building2 className="w-6 h-6" />
+                    </div>
                   </div>
-                  <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950 text-amber-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
-                    <Coins className="w-6 h-6" />
-                  </div>
-                </div>
 
-                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-semibold text-text-secondary">Workable Tokens</span>
-                    <span className="text-3xl font-black text-text-primary tabular-nums">
-                      {formatTokens(workableDsMetrics.totalTokens)}
-                    </span>
-                    <span className="text-[10px] text-text-secondary font-mono">
-                      In: {formatTokens(workableDsMetrics.promptTokens)} • Out: {formatTokens(workableDsMetrics.completionTokens)}
-                    </span>
+                  <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-text-secondary">Workable Spend ($)</span>
+                      <span className="text-3xl font-black text-text-primary tabular-nums">
+                        {formatCost(workableDsMetrics.totalCost)}
+                      </span>
+                      <span className="text-[10px] text-text-secondary">
+                        DeepSeek V4-Flash
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950 text-amber-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                      <Coins className="w-6 h-6" />
+                    </div>
                   </div>
-                  <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
-                    <Activity className="w-6 h-6" />
-                  </div>
-                </div>
 
-                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-semibold text-text-secondary">Workable API Calls</span>
-                    <span className="text-3xl font-black text-text-primary tabular-nums">
-                      {workableDsMetrics.totalCalls}
-                    </span>
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
-                      {workableDsMetrics.totalCalls > 0 ? ((workableDsMetrics.successCalls / workableDsMetrics.totalCalls) * 100).toFixed(1) : "100"}% Success Rate
-                    </span>
+                  <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-text-secondary">Workable Tokens</span>
+                      <span className="text-3xl font-black text-text-primary tabular-nums">
+                        {formatTokens(workableDsMetrics.totalTokens)}
+                      </span>
+                      <span className="text-[10px] text-text-secondary font-mono">
+                        In: {formatTokens(workableDsMetrics.promptTokens)} • Out: {formatTokens(workableDsMetrics.completionTokens)}
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                      <Activity className="w-6 h-6" />
+                    </div>
                   </div>
-                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
-                    <CheckCircle className="w-6 h-6" />
+
+                  <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-text-secondary">Workable API Calls</span>
+                      <span className="text-3xl font-black text-text-primary tabular-nums">
+                        {workableDsMetrics.totalCalls}
+                      </span>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                        {workableDsMetrics.totalCalls > 0 ? ((workableDsMetrics.successCalls / workableDsMetrics.totalCalls) * 100).toFixed(1) : "100"}% Success Rate
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                      <CheckCircle className="w-6 h-6" />
+                    </div>
                   </div>
                 </div>
               </div>

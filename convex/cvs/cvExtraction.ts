@@ -337,6 +337,12 @@ function ensureDOMMatrixPolyfill() {
       }
     }
     (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+    if (typeof global !== "undefined") {
+      (global as any).DOMMatrix = DOMMatrixPolyfill;
+    }
+    if (typeof (globalThis as any).window !== "undefined") {
+      (globalThis as any).window.DOMMatrix = DOMMatrixPolyfill;
+    }
   }
 }
 
@@ -652,7 +658,8 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
 export async function callOpenRouterLLM(
   ctx: ActionCtx,
   rawText: string,
-  cvUploadId?: Id<"cvUploads">
+  cvUploadId?: Id<"cvUploads">,
+  sourceChannel?: string
 ): Promise<CvExtractionResult | null> {
   const MAX_CHARS = 15000;
   const textToSend =
@@ -748,7 +755,9 @@ ${textToSend}`,
             response.usage.completion_tokens,
             true,
             undefined,
-            cvUploadId
+            cvUploadId,
+            undefined,
+            sourceChannel
           );
         }
 
@@ -800,7 +809,9 @@ ${textToSend}`,
     0,
     false,
     lastMessage,
-    cvUploadId
+    cvUploadId,
+    undefined,
+    sourceChannel
   );
   return null;
 }
@@ -1014,7 +1025,7 @@ export async function runCvExtraction(
 
       // First try: call OpenRouter LLM (OPENROUTER_PRIMARY_MODEL) with extracted text
       let [extractedData, embeddingResult] = await Promise.all([
-        callOpenRouterLLM(ctx, cappedRawText, cvUploadId).catch((err) => {
+        callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
           console.warn("[CvExtraction] First call to callOpenRouterLLM failed:", err.message || err);
           return null;
         }),
@@ -1039,7 +1050,7 @@ export async function runCvExtraction(
                 ? cleanedVision.slice(0, MAX_RAW_TEXT_LENGTH)
                 : cleanedVision;
               console.log(`[CvExtraction] Vision OCR transcribed ${cappedRawText.length} characters. Passing raw text back to DeepSeek V4 Flash for candidate detail extraction...`);
-              extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId);
+              extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel);
             }
           }
         } catch (visionFallbackErr: any) {

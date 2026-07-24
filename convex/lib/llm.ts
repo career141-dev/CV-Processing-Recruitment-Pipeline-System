@@ -64,7 +64,8 @@ export async function logLLMUsage(
   success: boolean,
   error?: string,
   cvUploadId?: Id<"cvUploads">,
-  provider?: string
+  provider?: string,
+  sourceChannel?: string
 ): Promise<void> {
   try {
     const resolvedProvider = provider || (taskType === "embedding" || model.includes("nvidia") ? "nvidia" : "openrouter");
@@ -78,6 +79,7 @@ export async function logLLMUsage(
       error,
       cvUploadId,
       provider: resolvedProvider,
+      sourceChannel,
     });
   } catch (err) {
     console.error("Failed to log LLM usage:", err);
