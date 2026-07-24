@@ -559,6 +559,7 @@ export default defineSchema({
       )
     ),
     workableCandidateId: v.optional(v.string()),
+    extractionModel: v.optional(v.string()),
     sourceChannel: v.optional(v.string()),
     fileHash: v.optional(v.string()),
     summary: v.optional(v.string()),
