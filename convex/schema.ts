@@ -1329,6 +1329,7 @@ export default defineSchema({
     fileName: v.optional(v.string()),
     candidateName: v.optional(v.string()),
     provider: v.optional(v.string()), // 'openrouter' | 'nvidia'
+    sourceChannel: v.optional(v.string()),
   })
     .index("by_timestamp", ["timestamp"])
     .index("by_taskType", ["taskType"])
