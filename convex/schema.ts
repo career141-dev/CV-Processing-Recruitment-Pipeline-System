@@ -681,6 +681,7 @@ export default defineSchema({
       editedAt: v.string(),
     }))),
   })
+    .index("by_jobId", ["jobId"])
     .index("by_job_stage", ["jobId", "currentStage"])
     .index("by_candidateId", ["candidateId"])
     .index("by_job_source", ["jobId", "sourceChannel"])

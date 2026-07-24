@@ -73,14 +73,27 @@ export const getByJobId = query({
       actualJobId = job._id;
     }
 
-    const applications = await ctx.db
+    const rawApps = await ctx.db
       .query("applications")
-      .withIndex("by_job_active", (q) => q.eq("jobId", actualJobId!).eq("isActive", true))
+      .withIndex("by_jobId", (q) => q.eq("jobId", actualJobId!))
       .collect();
 
-    // Return denormalized details directly. Do NOT fallback to full candidate fetch to avoid massive I/O spikes.
+    const applications = rawApps.filter(app => app.isActive !== false);
+
     const enriched = await Promise.all(applications.map(async (app) => {
-      let candidateObj: any = {
+      const dbCandidate = await ctx.db.get(app.candidateId);
+      let candidateObj: any = dbCandidate ? {
+        ...dbCandidate,
+        fullName: dbCandidate.fullName || app.candidateName || "Unknown Candidate",
+        email: dbCandidate.email || app.candidateEmail,
+        phone: dbCandidate.phone || app.candidatePhone,
+        currentTitle: dbCandidate.currentJobTitle || dbCandidate.currentTitle || app.candidateTitle,
+        totalExperienceYears: dbCandidate.totalExperienceYears ?? app.candidateExperience,
+        cvUploadId: dbCandidate.cvUploadId || app.candidateCvUploadId,
+        currentSalary: dbCandidate.currentSalary ?? app.candidateCurrentSalary,
+        expectedSalary: dbCandidate.expectedSalary ?? app.candidateExpectedSalary,
+        noticePeriodDays: dbCandidate.noticePeriodDays ?? app.candidateNoticePeriodDays,
+      } : {
         _id: app.candidateId,
         fullName: app.candidateName ?? "Unknown Candidate",
         email: app.candidateEmail,
@@ -96,9 +109,11 @@ export const getByJobId = query({
       return {
         ...app,
         candidate: candidateObj,
-        cv: app.cvFileName ? { fileName: app.cvFileName } : null,
+        cv: app.cvFileName ? { fileName: app.cvFileName } : (dbCandidate?.cvUploadId ? { storageId: dbCandidate.cvUploadId } : null),
       };
     }));
+
+    return enriched;
 
     return enriched;
   },
