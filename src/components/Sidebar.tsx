@@ -23,32 +23,32 @@ export default function Sidebar() {
   };
 
   const linkClass = (path: string) =>
-    `flex items-center py-2 mb-1 rounded-md w-full cursor-pointer transition-all ${
+    `flex items-center py-2 mb-1 rounded-lg w-full cursor-pointer transition-all ${
       isActive(path)
-        ? 'bg-[#0f5229]/15 dark:bg-emerald-500/25 border-l-4 border-[#0f5229] dark:border-emerald-400 font-bold text-[#052612] dark:text-white shadow-sm'
-        : 'text-[#0f5229]/90 dark:text-emerald-100/80 hover:bg-[#0f5229]/10 dark:hover:bg-emerald-500/15 hover:text-[#052612] dark:hover:text-white'
+        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-4 border-emerald-600 dark:border-emerald-400 font-bold text-emerald-800 dark:text-emerald-300 shadow-sm'
+        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100'
     }`;
 
   const iconClass = (path: string) =>
     `material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 ${
-      isActive(path) ? 'text-[#0f5229] dark:text-emerald-300 font-bold' : 'text-[#0f5229] dark:text-emerald-400'
+      isActive(path) ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400 dark:text-slate-500'
     }`;
 
   return (
-    <div className="flex flex-col shrink-0 items-center bg-[#ebf6ed] dark:bg-[#062615] text-[#0a3d1e] dark:text-white pb-3 w-64 border-r border-[#c2e5ca] dark:border-emerald-900/60 h-screen sticky top-0 overflow-y-auto shadow-md transition-colors duration-200">
-      <div className="flex items-center py-4 border-b border-solid border-[#c2e5ca] dark:border-emerald-900/60 w-full">
+    <div className="flex flex-col shrink-0 items-center bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 pb-3 w-64 border-r border-slate-200 dark:border-slate-800/80 h-screen sticky top-0 overflow-y-auto shadow-sm transition-colors duration-200">
+      <div className="flex items-center py-4 border-b border-solid border-slate-200 dark:border-slate-800/80 w-full">
         <Link href="/dashboard" className="flex items-center cursor-pointer">
-          <span className="flex flex-col shrink-0 items-center bg-[#0f5229] dark:bg-emerald-400 text-left py-[5px] px-[11px] ml-5 mr-3 rounded-md shadow-sm">
-            <span className="text-white dark:text-[#062615] text-sm font-extrabold">R</span>
+          <span className="flex flex-col shrink-0 items-center bg-emerald-600 dark:bg-emerald-400 text-left py-[5px] px-[11px] ml-5 mr-3 rounded-md shadow-sm">
+            <span className="text-white dark:text-slate-950 text-sm font-extrabold">R</span>
           </span>
-          <span className="text-[#0a3d1e] dark:text-emerald-300 text-base font-extrabold tracking-wide mr-[67px]">
+          <span className="text-slate-800 dark:text-emerald-400 text-base font-extrabold tracking-wide mr-[67px]">
             Career141
           </span>
         </Link>
       </div>
-      <div className="flex items-center bg-[#ddf0e0] dark:bg-[#08361e] py-3 mb-2 border-b border-solid border-[#c2e5ca] dark:border-emerald-900/60 w-full">
+      <div className="flex items-center bg-slate-100 dark:bg-slate-900/40 py-3 mb-2 border-b border-solid border-slate-200 dark:border-slate-800/80 w-full">
         <button
-          className="flex flex-col shrink-0 items-start bg-white dark:bg-[#062615] text-left p-[1px] ml-4 mr-3 rounded-[9999px] border border-solid border-[#0f5229]/20 dark:border-emerald-500/30"
+          className="flex flex-col shrink-0 items-start bg-white dark:bg-slate-800 text-left p-[1px] ml-4 mr-3 rounded-[9999px] border border-solid border-slate-200 dark:border-slate-700/50"
           onClick={() => alert('Pressed!')}
         >
           <img
@@ -59,7 +59,7 @@ export default function Sidebar() {
         </button>
         <div className="flex flex-col shrink-0 items-center mr-[42px]">
           <div className="flex flex-col items-start pr-[50px]">
-            <span className="text-[#052612] dark:text-white text-[13px] font-bold">
+            <span className="text-slate-800 dark:text-white text-[13px] font-bold">
               {userName}
             </span>
           </div>
@@ -102,8 +102,8 @@ export default function Sidebar() {
         {showAdminSettings && (
           <>
             <div className="flex flex-col items-start py-3 mb-1 w-full mt-auto">
-              <div className="bg-[#c2e5ca] dark:bg-emerald-900/60 w-full h-[1px] mb-3"></div>
-              <span className="text-[#0f5229]/80 dark:text-emerald-300/80 text-[11px] font-bold px-3 tracking-wider">ADMIN</span>
+              <div className="bg-slate-200 dark:bg-slate-800 w-full h-[1px] mb-3"></div>
+              <span className="text-slate-400 dark:text-slate-500 text-[11px] font-bold px-3 tracking-wider">ADMIN</span>
             </div>
 
             <Link href="/dashboard/ingestion-monitor" className={linkClass('/dashboard/ingestion-monitor')}>
@@ -131,13 +131,13 @@ export default function Sidebar() {
         <ThemeToggle />
 
         {/* ── Always visible ────────────────────────── */}
-        <div onClick={() => toast.info("Help docs coming soon")} className="flex items-center py-1.5 mb-1 rounded-md w-full cursor-pointer text-[#0f5229]/80 dark:text-emerald-100/80 hover:bg-[#0f5229]/10 dark:hover:bg-emerald-500/15 hover:text-[#052612] dark:hover:text-white transition-colors">
-          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-[#0f5229] dark:text-emerald-400">help</span>
-          <span className="text-xs font-medium">Help &amp; Docs</span>
+        <div onClick={() => toast.info("Help docs coming soon")} className="flex items-center py-2 mb-1 rounded-lg w-full cursor-pointer text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-slate-400 dark:text-slate-500">help</span>
+          <span className="text-[13px] font-medium">Help &amp; Docs</span>
         </div>
-        <div className="flex items-center py-1.5 rounded-md w-full text-[#0f5229]/80 dark:text-emerald-100/80 hover:bg-[#0f5229]/10 dark:hover:bg-emerald-500/15 hover:text-[#052612] dark:hover:text-white transition-colors cursor-pointer" onClick={() => alert('Sign out clicked')}>
-          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-[#0f5229] dark:text-emerald-400">logout</span>
-          <span className="text-xs font-medium">Log out</span>
+        <div className="flex items-center py-2 rounded-lg w-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer" onClick={() => alert('Sign out clicked')}>
+          <span className="material-symbols-outlined ml-3 mr-2 text-[18px] shrink-0 text-slate-400 dark:text-slate-500">logout</span>
+          <span className="text-[13px] font-medium">Log out</span>
         </div>
       </div>
     </div>
