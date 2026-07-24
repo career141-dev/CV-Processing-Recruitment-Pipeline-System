@@ -41,6 +41,7 @@ import type * as communications_graphSubscriptionQueries from "../communications
 import type * as communications_graphSubscriptions from "../communications/graphSubscriptions.js";
 import type * as communications_inboundExtraction from "../communications/inboundExtraction.js";
 import type * as communications_whatchimp from "../communications/whatchimp.js";
+import type * as communications_whatchimpActions from "../communications/whatchimpActions.js";
 import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
 import type * as communications_whatsappOutbound from "../communications/whatsappOutbound.js";
 import type * as crons from "../crons.js";
@@ -126,6 +127,7 @@ declare const fullApi: ApiFromModules<{
   "communications/graphSubscriptions": typeof communications_graphSubscriptions;
   "communications/inboundExtraction": typeof communications_inboundExtraction;
   "communications/whatchimp": typeof communications_whatchimp;
+  "communications/whatchimpActions": typeof communications_whatchimpActions;
   "communications/whatsappAgent": typeof communications_whatsappAgent;
   "communications/whatsappOutbound": typeof communications_whatsappOutbound;
   crons: typeof crons;
