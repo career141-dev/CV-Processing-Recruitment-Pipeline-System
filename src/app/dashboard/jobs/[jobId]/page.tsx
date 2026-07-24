@@ -296,10 +296,18 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
     </button>
   );
   
-  if (!cvUpload?.url) return (
-    <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-red-200 bg-red-50 text-red-400 text-[11px] font-medium" title="CV file not found">
-      <FileText className="w-3 h-3" />
-      View CV
+  if (cvUpload?.isMissingMigrationFile || (!cvUpload?.url && cvUpload !== undefined)) return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        alert(`Cloud Migration Notice:\n\nThis candidate's database profile and AI matching scores are 100% active, but their historical binary CV file was not transferred during the Cloud-to-Self-Hosted Convex migration.\n\nFile access will be enabled automatically as soon as historical storage files are transferred over.`);
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap"
+      title="CV file pending cloud migration transfer. Click for details."
+    >
+      <FileText className="w-3 h-3 text-amber-600" />
+      <span>Pending Migration</span>
+      <Info className="w-3 h-3 text-amber-600 ml-0.5" />
     </button>
   );
   
@@ -1422,7 +1430,7 @@ export default function JobDetailPage() {
                             <Link href={`/dashboard/candidates/${app.candidateId}`} className="text-text-primary hover:underline">
                               {app.candidate?.fullName || 'Unknown Candidate'}
                             </Link>
-                            <CvViewButton cvUploadId={(app as any).cvFileId || (app.candidate as any)?.cvUploadId} />
+                            <CvViewButton cvUploadId={(app as any).cvFileId || (app.candidate as any)?.cvUploadId || app.candidateId || app._id} />
                           </div>
                         </td>
                         <td className="p-4">

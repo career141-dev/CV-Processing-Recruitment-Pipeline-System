@@ -4,6 +4,7 @@ import React from 'react';
 import Sidebar from '@/components/Sidebar';
 import { AccessGate } from '@/components/AccessGate';
 import { RouteGuard } from '@/components/RouteGuard';
+import { AccessDeniedModal } from '@/components/AccessDeniedModal';
 
 export default function DashboardLayout({
   children,
@@ -12,6 +13,7 @@ export default function DashboardLayout({
 }) {
   return (
     <AccessGate>
+      <AccessDeniedModal />
       <div className="flex flex-col bg-background min-h-screen">
         <div className="self-stretch bg-background pb-[25px]">
           <div className="flex items-start self-stretch gap-[21px]">

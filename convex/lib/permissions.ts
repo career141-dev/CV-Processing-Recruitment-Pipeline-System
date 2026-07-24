@@ -32,7 +32,7 @@ export async function requireRole(
 ) {
   const user = await requireUser(ctx);
   if (!allowedRoles.includes(user.role)) {
-    throw new Error(`Access denied. Required: ${allowedRoles.join(" | ")}`);
+    throw new Error(`[403] Access denied. Your role (${user.role}) does not have permission to execute this feature. Required role: ${allowedRoles.join(" | ")}`);
   }
   return user;
 }

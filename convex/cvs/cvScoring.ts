@@ -470,7 +470,7 @@ export async function scoreWithLLM(
       messages: [
         {
           role: "system",
-          content: `You are an expert Talent Acquisition (TA) specialist. Evaluate the candidate's CV against the job requirements on a scale of 0-100. Return ONLY a JSON object: {"score": number, "reason": "A concise 2-3 sentence recruiter assessment of fit."}`
+          content: `You are a Senior Talent Acquisition (TA) Recruiter. Evaluate how well the candidate's CV aligns with the job requirements. Return ONLY a JSON object: {"score": number, "reason": "A 2-3 sentence professional TA evaluation explaining why this candidate is a match, highlighting key matching skills, relevant experience, and overall role fit."}`
         },
         {
           role: "user",

@@ -466,15 +466,51 @@ export const runReverseMatch = action({
             keywords: [],
           });
 
-          // Overall score is weighted average between vector similarity and heuristics
-          const heuristicsWeight = 0.4;
-          const vectorWeight = 0.6;
+          // Normalize NVIDIA E5 vector similarity score (typical range ~0.35 to 0.75) to human-intuitive 0-100%
+          const rawVector = c.vectorScore ?? 0.4;
+          let normVectorScore = 50;
+          if (rawVector >= 0.35) {
+            normVectorScore = Math.min(100, Math.round(50 + ((rawVector - 0.35) / 0.35) * 50));
+          } else {
+            normVectorScore = Math.round((rawVector / 0.35) * 50);
+          }
+
+          // Blend 50% heuristic scores with 50% normalized vector similarity
           const matchScore = Math.round(
-            (scored.overallScore * heuristicsWeight) + ((c.vectorScore * 100) * vectorWeight)
+            (scored.overallScore * 0.5) + (normVectorScore * 0.5)
           );
 
+          // Build authoritative AI Talent Acquisition reason
+          const name = cv.fullName || "Candidate";
+          const role = cv.currentTitle || cv.currentJobTitle || "Professional";
+          const expYears = cv.totalExperienceYears || cv.yearsOfExperience;
+          const matchedList = (scored.matchedRequired || []).slice(0, 4);
+          const missingList = (scored.missingRequired || []).slice(0, 3);
+          
+          let aiReasonParts: string[] = [];
+          
+          if (matchScore >= 75) {
+            aiReasonParts.push(`Highly recommended TA match for ${job.title}. ${name} shows strong domain alignment as a ${role}.`);
+          } else if (matchScore >= 60) {
+            aiReasonParts.push(`Suitable candidate for ${job.title} with relevant background as a ${role}.`);
+          } else {
+            aiReasonParts.push(`Partial match for ${job.title} based on background as a ${role}.`);
+          }
+
+          if (matchedList.length > 0) {
+            aiReasonParts.push(`Key matching skills: ${matchedList.join(", ")}.`);
+          }
+          if (expYears) {
+            aiReasonParts.push(`Brings ${expYears} years of total professional experience.`);
+          }
+          if (missingList.length > 0) {
+            aiReasonParts.push(`Skill gaps to verify: ${missingList.join(", ")}.`);
+          }
+
+          const professionalAiReason = aiReasonParts.join(" ");
+
           return {
-            cvId: cv._id,
+            cvId: cv.cvUploadId ?? cv._id,
             overallScore: matchScore,
             breakdown: {
               skills: scored.skillScore,
@@ -485,7 +521,7 @@ export const runReverseMatch = action({
             },
             matchedSkills: scored.matchedRequired,
             missingSkills: scored.missingRequired,
-            reason: `AI Match score: ${matchScore}% (vector similarity: ${(c.vectorScore * 100).toFixed(1)}%)`,
+            reason: professionalAiReason,
             sourceLevel1: cv.firstSourceChannel ?? undefined,
             sourceLevel2: cv.firstSourceJobId ?? undefined,
             candidateName: cv.fullName ?? undefined,
@@ -494,15 +530,15 @@ export const runReverseMatch = action({
           };
         });
 
-      // Sort all candidates by overall score descending
+      // Sort all candidates by overall score descending (highest score to lowest/good score)
       matchResults.sort((a, b) => b.overallScore - a.overallScore);
 
-      // STRICT Filter Gate: Only keep candidates who meet the minimum score threshold
-      const minScore = job.minMatchScoreToShow ?? 60;
-      const filteredMatches = matchResults.filter(r => r.overallScore >= minScore);
+      // Relaxed Filter Gate: Exclude complete garbage (below 25%), but never strictly drop candidates if good ones exist
+      const safetyFloor = 25;
+      const validMatches = matchResults.filter(r => r.overallScore >= safetyFloor);
 
-      // Slice the top 30 from the filtered matches
-      const newTop30 = filteredMatches.slice(0, 30);
+      // Slice the top 30 ordered highest to lowest
+      const newTop30 = (validMatches.length > 0 ? validMatches : matchResults).slice(0, 30);
       const newTop30Ids = new Set(newTop30.map(r => r.cvId));
 
       // Append any previously matched TA-acted candidates who fell out of the top 30

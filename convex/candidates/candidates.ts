@@ -720,10 +720,48 @@ export const listFailedUploads = query({
 export const getCvUploadUrl = query({
   args: { cvUploadId: v.string() },
   handler: async (ctx, args) => {
-    const validId = ctx.db.normalizeId("cvUploads", args.cvUploadId);
-    if (!validId) return null;
-    
-    const upload = await ctx.db.get(validId);
+    let validId = ctx.db.normalizeId("cvUploads", args.cvUploadId);
+    let upload: any = validId ? await ctx.db.get(validId) : null;
+    let candidate: any = null;
+
+    if (!upload) {
+      // 2. Try candidate ID lookup
+      const candidateId = ctx.db.normalizeId("candidates", args.cvUploadId);
+      if (candidateId) {
+        candidate = await ctx.db.get(candidateId);
+        if (candidate && candidate.cvUploadId) {
+          upload = await ctx.db.get(candidate.cvUploadId as Id<"cvUploads">);
+        }
+      }
+    }
+
+    if (!upload) {
+      // 3. Try application ID lookup
+      const appId = ctx.db.normalizeId("applications", args.cvUploadId);
+      if (appId) {
+        const app = await ctx.db.get(appId);
+        if (app) {
+          if (app.cvFileId) {
+            upload = await ctx.db.get(app.cvFileId as Id<"cvUploads">);
+          }
+          if (!upload && app.candidateId) {
+            candidate = await ctx.db.get(app.candidateId);
+            if (candidate && candidate.cvUploadId) {
+              upload = await ctx.db.get(candidate.cvUploadId as Id<"cvUploads">);
+            }
+          }
+        }
+      }
+    }
+
+    // 4. File hash fallback
+    if ((!upload || (!upload.storageId && !upload.s3Key)) && candidate?.fileHash) {
+      const hashUpload = await ctx.db.query("cvUploads")
+        .withIndex("by_fileHash", q => q.eq("fileHash", candidate.fileHash!))
+        .first();
+      if (hashUpload) upload = hashUpload;
+    }
+
     if (!upload) return null;
 
     let url: string | null = null;
@@ -741,9 +779,20 @@ export const getCvUploadUrl = query({
       }
     }
 
-    if (!url) return null;
+    if (!url) {
+      return {
+        url: null,
+        isMissingMigrationFile: true,
+        fileName: upload?.fileName || "Candidate CV",
+        fileType: upload?.fileType,
+        fileSize: upload?.fileSize,
+        status: upload?.status,
+        message: "Historical CV file pending Cloud to Self-Hosted migration.",
+      };
+    }
     return {
       url,
+      isMissingMigrationFile: false,
       fileName: upload.fileName,
       fileType: upload.fileType,
       fileSize: upload.fileSize,

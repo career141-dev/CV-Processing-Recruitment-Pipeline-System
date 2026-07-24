@@ -954,6 +954,14 @@ export async function runCvExtraction(
           jobId: jobId as any,
         });
       }
+    } else {
+      // Tier 3 Fallback: If Subject & Body matching didn't yield a jobId during ingestion,
+      // match the extracted candidate details against all active jobs after CV extraction.
+      await ctx.scheduler.runAfter(0, internal.cvs.cvExtraction.matchExtractedCandidateToActiveJobs, {
+        candidateId: resolvedCandidateId,
+        cvUploadId,
+        sourceChannel: sourceChannel ?? "manual_upload",
+      });
     }
 
     if (args.logId) {
@@ -1164,5 +1172,83 @@ export const processNextBatch = internalAction({
     // 3. We no longer poll batch progress here.
     // The next batch will be triggered by checkAndTriggerNextBatch
     // when the last CV in this batch finishes extracting.
+  },
+});
+
+export const matchExtractedCandidateToActiveJobs = internalAction({
+  args: {
+    candidateId: v.id("candidates"),
+    cvUploadId: v.optional(v.id("cvUploads")),
+    sourceChannel: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      if (!activeJobs || activeJobs.length === 0) return;
+
+      const candidate = await ctx.runQuery(internal.matching.queries.getCandidate, {
+        candidateId: args.candidateId,
+      });
+      if (!candidate) return;
+
+      const jobsListContext = activeJobs
+        .map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName}`)
+        .join("\n");
+
+      const prompt = `You are an intelligent recruitment candidate router.
+Your task is to analyze an extracted candidate profile and determine which active job posting they match best.
+
+CRITICAL ROUTING RULES:
+1. Perform semantic matching between the candidate's extracted title, skills, and experience against active job titles.
+2. If the candidate is a Video Editor (e.g. skills include Video Editing, Premiere Pro, After Effects, Capcut), match them to the Video Editor job if open.
+3. Only match if there is a clear, confident alignment with an active job. Otherwise, return null.
+
+ACTIVE JOBS:
+${jobsListContext}
+
+CANDIDATE NAME: ${candidate.fullName ?? "Unknown"}
+CURRENT TITLE: ${candidate.currentJobTitle ?? candidate.currentEmployer ?? "N/A"}
+EXTRACTED SKILLS: ${(candidate.skills || []).join(", ")}
+SUMMARY: ${candidate.summary ?? "N/A"}
+
+Respond ONLY with a valid JSON object in this exact format:
+{
+  "matchedJobId": "string ID of the matched job, or null if no confident match"
+}`;
+
+      const openai = getOpenAI("email_routing");
+      const model = OPENROUTER_CV_EXTRACTION_MODEL || "openai/gpt-4o-mini";
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+      });
+
+      const resultStr = completion.choices[0]?.message?.content;
+      if (resultStr) {
+        const resultObj = JSON.parse(resultStr);
+        if (resultObj.matchedJobId) {
+          const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
+          if (matchedJob) {
+            console.log(`[CvExtraction] Post-extract AI matched candidate ${candidate.fullName ?? args.candidateId} to job: ${matchedJob.title} (${resultObj.matchedJobId})`);
+            await ctx.runMutation(api.applications.applications.createApplication, {
+              candidateId: args.candidateId,
+              jobId: resultObj.matchedJobId as any,
+              cvFileId: args.cvUploadId,
+              sourceChannel: args.sourceChannel,
+            });
+
+            await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+              candidateId: args.candidateId,
+              jobId: resultObj.matchedJobId as any,
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error(`[matchExtractedCandidateToActiveJobs] Error matching candidate ${args.candidateId}:`, err.message || err);
+    }
   },
 });
