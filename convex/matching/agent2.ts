@@ -533,12 +533,12 @@ export const runReverseMatch = action({
       // Sort all candidates by overall score descending (highest score to lowest/good score)
       matchResults.sort((a, b) => b.overallScore - a.overallScore);
 
-      // Relaxed Filter Gate: Exclude complete garbage (below 25%), but never strictly drop candidates if good ones exist
-      const safetyFloor = 25;
+      // Strict Filter Gate: Exclude match scores below 60% as requested by the user
+      const safetyFloor = 60;
       const validMatches = matchResults.filter(r => r.overallScore >= safetyFloor);
 
-      // Slice the top 30 ordered highest to lowest
-      const newTop30 = (validMatches.length > 0 ? validMatches : matchResults).slice(0, 30);
+      // Slice the top 30 ordered highest to lowest (strictly filtering only matches >= 60)
+      const newTop30 = validMatches.slice(0, 30);
       const newTop30Ids = new Set(newTop30.map(r => r.cvId));
 
       // Append any previously matched TA-acted candidates who fell out of the top 30
