@@ -70,11 +70,11 @@ export default function CandidateProfile() {
   );
 
   // Live data for profile tabs/sidebar
-  const candidateId = params.candidateId as Id<"candidates">;
-  const applications = useQuery(api.applications.applications.getByCandidate, candidate ? { candidateId } : "skip");
-  const timeline = useQuery(api.applications.applications.getCandidateTimeline, candidate ? { candidateId } : "skip");
-  const aiCalls = useQuery(api.applications.applications.getCandidateAiCalls, candidate ? { candidateId } : "skip");
-  const referees = useQuery(api.candidates.referees.getRefereesByCandidate, candidate ? { candidateId } : "skip");
+  const candidateId = candidate?._id as Id<"candidates">;
+  const applications = useQuery(api.applications.applications.getByCandidate, candidateId ? { candidateId } : "skip");
+  const timeline = useQuery(api.applications.applications.getCandidateTimeline, candidateId ? { candidateId } : "skip");
+  const aiCalls = useQuery(api.applications.applications.getCandidateAiCalls, candidateId ? { candidateId } : "skip");
+  const referees = useQuery(api.candidates.referees.getRefereesByCandidate, candidateId ? { candidateId } : "skip");
 
   if (candidate === undefined) {
     return (
