@@ -510,7 +510,7 @@ export const runReverseMatch = action({
           const professionalAiReason = aiReasonParts.join(" ");
 
           return {
-            cvId: cv.cvUploadId ?? cv._id,
+            cvId: cv._id,
             overallScore: matchScore,
             breakdown: {
               skills: scored.skillScore,

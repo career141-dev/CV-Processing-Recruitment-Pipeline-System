@@ -117,14 +117,37 @@ export const listCandidatesPaginated = query({
 export const getCandidate = query({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    const validId = ctx.db.normalizeId("candidates", args.id);
-    if (!validId) return null;
-    
-    const candidate = await ctx.db.get(validId);
-    if (!candidate) return null;
+    let validId = ctx.db.normalizeId("candidates", args.id);
+    let candidate = validId ? await ctx.db.get(validId) : null;
+
+    if (!candidate) {
+      // Fallback 1: check if ID passed was actually a cvUploadId
+      const uploadId = ctx.db.normalizeId("cvUploads", args.id);
+      if (uploadId) {
+        const upload = await ctx.db.get(uploadId);
+        if (upload && upload.candidateId) {
+          validId = upload.candidateId;
+          candidate = await ctx.db.get(upload.candidateId);
+        }
+      }
+    }
+
+    if (!candidate) {
+      // Fallback 2: check if ID passed was actually an applicationId
+      const appId = ctx.db.normalizeId("applications", args.id);
+      if (appId) {
+        const app = await ctx.db.get(appId);
+        if (app && app.candidateId) {
+          validId = app.candidateId;
+          candidate = await ctx.db.get(app.candidateId);
+        }
+      }
+    }
+
+    if (!candidate || !validId) return null;
     
     const resume = await ctx.db.query("candidateResumes")
-      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", validId))
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", validId!))
       .first();
 
     const { rawText, embedding, jobHistory, ...safeCandidate } = candidate as any;
