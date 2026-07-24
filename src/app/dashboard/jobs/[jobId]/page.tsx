@@ -2227,8 +2227,12 @@ export default function JobDetailPage() {
             <button className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1">
               <Filter className="w-4 h-4" /> Filter
             </button>
-            <button className="border border-primary-container text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary-container/10 transition-colors flex items-center gap-1">
-              <Bot className="w-4 h-4" /> Bulk AI Call
+            <button 
+              disabled
+              title="Bulk AI Call feature is disabled for now"
+              className="border border-border text-text-disabled px-3 py-1.5 rounded-[8px] text-[13px] font-medium opacity-50 cursor-not-allowed flex items-center gap-1"
+            >
+              <Bot className="w-4 h-4 text-text-disabled" /> Bulk AI Call (Disabled)
             </button>
           </div>
         </div>
@@ -2447,28 +2451,6 @@ export default function JobDetailPage() {
       
       {/* Pipeline Table */}
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-        {activePipelineTab === 'Follow-up' && (
-          <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-xl p-4 mb-5 shadow-xs">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                <Send className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-text-primary">Bulk Follow-up Outreach</h4>
-                <p className="text-[11px] text-text-secondary">
-                  Send customized Email & WhatsApp outreach to candidates in this stage and initiate their 7-day follow-up tracking window.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setIsBulkFollowUpOpen(true)}
-              className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition-all shrink-0 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5" />
-              Send Bulk Follow-ups ({applications.filter(a => a.currentStage === 'follow_up').length})
-            </button>
-          </div>
-        )}
         {renderPipelineTable()}
       </div>
         </div>

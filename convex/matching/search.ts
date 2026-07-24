@@ -153,7 +153,7 @@ export const aiSearch = action({
       industry: args.industry ?? parsedReq.industry,
       seniority: args.seniority ?? parsedReq.seniority,
       location: args.location ?? parsedReq.location,
-      minYearsExperience: args.minExperience ?? parsedReq.minYearsExperience,
+      minYearsExperience: (args.minExperience !== undefined && args.minExperience > 0) ? args.minExperience : (parsedReq.minYearsExperience ?? null),
     };
 
     const interp: SearchInterpretation = {
@@ -276,7 +276,7 @@ export const aiSearch = action({
 
     // Fallback: If no results found and query is empty, query recently active candidates
     if (candidates.length === 0 && isQueryEmpty) {
-      candidates = await ctx.runQuery(internal.matching.queries.getRecentCandidates, { limit: 100 });
+      candidates = await ctx.runQuery(api.matching.queries.getRecentCandidates, { limit: 100 });
     }
 
     if (candidates.length === 0) {
@@ -348,7 +348,7 @@ export const aiSearch = action({
         });
       }
 
-      if (args.minExperience !== undefined) {
+      if (args.minExperience !== undefined && args.minExperience > 0) {
         list = list.filter((c) => {
           const exp = c.totalExperienceYears ?? c.yearsOfExperience;
           if (exp === undefined || exp === null) return true;
@@ -356,7 +356,7 @@ export const aiSearch = action({
         });
       }
 
-      if (args.maxExperience !== undefined) {
+      if (args.maxExperience !== undefined && args.maxExperience < 20) {
         list = list.filter((c) => {
           const exp = c.totalExperienceYears ?? c.yearsOfExperience;
           if (exp === undefined || exp === null) return true;

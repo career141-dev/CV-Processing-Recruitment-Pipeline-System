@@ -203,6 +203,18 @@ export default defineSchema({
     agent3Day7Message: v.optional(v.string()),
 
     agent3Enabled: v.optional(v.boolean()),
+    agent3TimeWindowStart: v.optional(v.string()),
+    agent3TimeWindowEnd: v.optional(v.string()),
+    agent3AllowedDays: v.optional(v.array(v.string())),
+    agent3TimeZone: v.optional(v.string()),
+    agent3CustomSteps: v.optional(v.array(v.object({
+      id: v.string(),
+      day: v.number(),
+      channel: v.string(),
+      emailSubject: v.string(),
+      emailBody: v.string(),
+      whatsappBody: v.string(),
+    }))),
     agent3Day2Channel: v.optional(v.union(
       v.literal("email"), v.literal("whatsapp"), v.literal("sms"))),
     agent3Day4Channel: v.optional(v.union(
@@ -1067,6 +1079,7 @@ export default defineSchema({
     skipped: v.number(),
     deduplicated: v.optional(v.number()),
     failed: v.number(),
+    maxCandidates: v.optional(v.number()),
     userId: v.string(),
     startedAt: v.string(),
     errorMessage: v.optional(v.string()),
@@ -1081,6 +1094,7 @@ export default defineSchema({
     imported: v.number(),
     skipped: v.number(),
     failed: v.number(),
+    maxCandidates: v.optional(v.number()),
     userId: v.string(),
     startedAt: v.string(),
     errorMessage: v.optional(v.string()),

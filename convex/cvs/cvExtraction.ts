@@ -244,19 +244,71 @@ const ExtractionActionArgs = {
 // Text Extraction
 // ──────────────────────────────────────────────────
 
+function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
+  try {
+    const str = Buffer.from(buffer).toString("latin1");
+    const textMatches: string[] = [];
+    
+    // Match text within BT (Begin Text) and ET (End Text) operators
+    const btBlocks = str.split("BT");
+    for (const block of btBlocks) {
+      if (!block.includes("ET")) continue;
+      const etContent = block.split("ET")[0];
+      
+      // Match string literals (text)
+      const matches = etContent.match(/\(([^()]+)\)/g);
+      if (matches) {
+        for (const m of matches) {
+          const cleaned = m.slice(1, -1).replace(/\\([()\\])/g, "$1").trim();
+          if (cleaned.length > 2 && /[\w\s@.,:/\-+()]{3,}/.test(cleaned)) {
+            textMatches.push(cleaned);
+          }
+        }
+      }
+    }
+    
+    return textMatches.join(" ");
+  } catch (err) {
+    console.warn("[PDF Raw Stream Fallback] Failed to extract raw text streams:", err);
+    return "";
+  }
+}
+
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
       const PDFParser = require("pdf2json");
       const pdfParser = new PDFParser(null, 1);
-      pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
+      pdfParser.on("pdfParser_dataError", (errData: any) => {
+        console.warn("[pdf2json] Parser error, attempting raw stream fallback:", errData.parserError);
+        const fallbackText = extractRawPdfStreamTextFallback(buffer);
+        if (fallbackText.trim().length >= 30) {
+          console.log(`[extractTextFromPdf] Recovered ${fallbackText.trim().length} chars via raw stream fallback!`);
+          resolve(fallbackText);
+        } else {
+          reject(errData.parserError);
+        }
+      });
       pdfParser.on("pdfParser_dataReady", () => {
-        resolve(pdfParser.getRawTextContent());
+        const text = pdfParser.getRawTextContent();
+        if (!text || text.trim().length < 30) {
+          const fallbackText = extractRawPdfStreamTextFallback(buffer);
+          if (fallbackText.trim().length > (text?.trim().length || 0)) {
+            resolve(fallbackText);
+            return;
+          }
+        }
+        resolve(text);
       });
       pdfParser.parseBuffer(Buffer.from(buffer));
     } catch (error) {
-      console.error("PDF extraction failed:", error);
-      reject(error);
+      console.warn("PDF extraction exception, attempting raw stream fallback:", error);
+      const fallbackText = extractRawPdfStreamTextFallback(buffer);
+      if (fallbackText.trim().length >= 30) {
+        resolve(fallbackText);
+      } else {
+        reject(error);
+      }
     }
   });
 }
@@ -359,12 +411,30 @@ async function extractImagesFromPdfBuffer(
   try {
     let pdfjsLib: any;
     try {
-      pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+      pdfjsLib = require("pdfjs-dist/legacy/build/pdf.mjs");
     } catch {
-      pdfjsLib = require("pdfjs-dist");
+      try {
+        pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+      } catch {
+        pdfjsLib = require("pdfjs-dist");
+      }
     }
-    if (pdfjsLib.GlobalWorkerOptions) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+
+    if (pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+      try {
+        const { pathToFileURL } = require("url");
+        let workerPath = "";
+        try {
+          workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+        } catch {
+          workerPath = require.resolve("pdfjs-dist/build/pdf.worker.mjs");
+        }
+        if (workerPath) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
+        }
+      } catch (workerErr) {
+        console.warn("[PDF Worker] Could not resolve pdf.worker.mjs URL:", workerErr);
+      }
     }
 
     const loadingTask = pdfjsLib.getDocument({
@@ -433,6 +503,25 @@ async function extractImagesFromPdfBuffer(
       const ops = await page.getOperatorList();
       const processedKeys = new Set<string>();
 
+      const getObjFromPage = (name: string): Promise<any> => {
+        return new Promise((resolve) => {
+          try {
+            if (page.objs && page.objs.has && page.objs.has(name)) {
+              page.objs.get(name, (obj: any) => resolve(obj));
+            } else if (page.commonObjs && page.commonObjs.has && page.commonObjs.has(name)) {
+              page.commonObjs.get(name, (obj: any) => resolve(obj));
+            } else if (page.objs && page.objs.get) {
+              const direct = page.objs.get(name);
+              resolve(direct);
+            } else {
+              resolve(null);
+            }
+          } catch {
+            resolve(null);
+          }
+        });
+      };
+
       const parseOps = async (operatorList: any) => {
         for (let i = 0; i < operatorList.fnArray.length; i++) {
           const fn = operatorList.fnArray[i];
@@ -444,10 +533,7 @@ async function extractImagesFromPdfBuffer(
             if (processedKeys.has(imgName)) continue;
             processedKeys.add(imgName);
 
-            let imgData: any = null;
-            try {
-              imgData = page.objs.get(imgName);
-            } catch { }
+            const imgData = await getObjFromPage(imgName);
 
             if (imgData) {
               await processImgData(imgData, pageNum);
@@ -455,7 +541,7 @@ async function extractImagesFromPdfBuffer(
           } else if (fn === pdfjsLib.OPS.paintFormXObject) {
             const formName = operatorList.argsArray[i][0];
             try {
-              const formObj = page.objs.get(formName);
+              const formObj = await getObjFromPage(formName);
               if (formObj && formObj.operatorList) {
                 await parseOps(formObj.operatorList);
               }
@@ -537,8 +623,24 @@ export async function extractText(
       throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
     }
 
-    const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
+    let pageImages: string[] = [];
+    try {
+      const extractImagesWithTimeout = Promise.race([
+        extractImagesFromPdfBuffer(buffer, 5),
+        new Promise<string[]>((_, reject) =>
+          setTimeout(() => reject(new Error("PDF image extraction timed out after 15s")), 15000)
+        ),
+      ]);
+      pageImages = await extractImagesWithTimeout;
+    } catch (imgErr) {
+      console.warn(`[extractText] PDF image extraction failed or timed out:`, imgErr);
+    }
+
     if (!pageImages || pageImages.length === 0) {
+      if (pdfText && pdfText.trim().length > 0) {
+        console.warn(`[extractText] Scanned PDF image extraction returned 0 images. Falling back to pdfText (${pdfText.trim().length} chars).`);
+        return pdfText;
+      }
       throw new Error("Scanned PDF text extraction failed: less than 50 characters extracted and no scanned page images could be extracted from PDF.");
     }
 
@@ -682,8 +784,8 @@ export async function callOpenRouterLLM(
           response_format: { type: "json_object" },
           messages: [
             {
-              role: "user",
-              content: `Extract candidate information from the CV text below and return it as a JSON object.
+              role: "system",
+              content: `Extract candidate information from the CV text provided by the user and return it as a JSON object.
 CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile (e.g., if it is an email signature, company brochure, invoice, cover letter without a CV, or random text), you MUST return an empty JSON object: {}
 1. Return only valid JSON. No markdown, no backticks, no explanation.
 2. If a field is not found, return null. Never invent or guess.
@@ -691,6 +793,8 @@ CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile 
 4. Return jobHistory as an array of objects, including a confidence field (0.0 to 1.0) on each job object.
 5. If currentTitle or currentEmployer are not explicitly stated as "current" or "present", infer them from the most recent job in their work experience by considering the dates.
 6. Extract any referees or professional references explicitly mentioned in the CV (including name, designation/title, company, contact number/phone, email, relationship to candidate, and any notes). Return as an array of objects under "referees".
+
+JSON Target Schema:
 {
   "fullName": null,
   "email": null,
@@ -702,47 +806,18 @@ CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile 
   "seniorityLevel": null,
   "industries": null,
   "sector": null,
-  "skills": [
-    {
-      "value": "string",
-      "confidence": 0.0
-    }
-  ],
-  "education": [
-    {
-      "degree": null,
-      "institution": null,
-      "year": null,
-      "field": null
-    }
-  ],
+  "skills": [{ "value": "string", "confidence": 0.0 }],
+  "education": [{ "degree": null, "institution": null, "year": null, "field": null }],
   "languages": null,
   "summary": null,
-  "jobHistory": [
-    {
-      "company": null,
-      "title": null,
-      "startDate": null,
-      "endDate": null,
-      "description": null,
-      "confidence": 0.0
-    }
-  ],
-  "referees": [
-    {
-      "name": null,
-      "designation": null,
-      "company": null,
-      "contactNo": null,
-      "email": null,
-      "relationship": null,
-      "notes": null
-    }
-  ]
-}
-CV TEXT:
-${textToSend}`,
+  "jobHistory": [{ "company": null, "title": null, "startDate": null, "endDate": null, "description": null, "confidence": 0.0 }],
+  "referees": [{ "name": null, "designation": null, "company": null, "contactNo": null, "email": null, "relationship": null, "notes": null }]
+}`
             },
+            {
+              role: "user",
+              content: `CV TEXT:\n${textToSend}`
+            }
           ],
         });
 

@@ -222,29 +222,12 @@ export default function CandidateProfile() {
                     <span className="text-[13px] font-bold">Shortlist for Job</span>
                   </button>
                   <div className="flex items-center gap-2 w-full">
-                    <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors"
-                      disabled={isTriggeringCall}
-                      onClick={async () => {
-                        if (!applications || applications.length === 0) {
-                          toast.error("Candidate must be shortlisted for a job first");
-                          return;
-                        }
-                        const app = applications.find(a => a.isActive) || applications[0];
-                        setIsTriggeringCall(true);
-                        try {
-                          await triggerManualAiCall({
-                            applicationId: app._id,
-                            candidateId: candidateId,
-                            jobId: app.jobId
-                          });
-                          toast.success("AI Call triggered successfully!");
-                        } catch (err: any) {
-                          toast.error(err.message || "Failed to trigger AI call");
-                        } finally {
-                          setIsTriggeringCall(false);
-                        }
-                      }}>
-                      <span className="text-text-primary text-[13px] whitespace-nowrap">{isTriggeringCall ? 'Triggering...' : 'Trigger AI Call'}</span>
+                    <button 
+                      disabled
+                      title="AI Call feature is disabled for now"
+                      className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border opacity-50 cursor-not-allowed"
+                    >
+                      <span className="text-text-disabled text-[13px] whitespace-nowrap">AI Call (Disabled)</span>
                     </button>
                     <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors"
                       onClick={() => setActiveTab("communications")}>

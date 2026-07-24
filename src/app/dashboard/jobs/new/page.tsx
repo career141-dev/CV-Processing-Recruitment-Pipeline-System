@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert, Mail, MessageSquare, Sparkles, Clock, Eye, Edit3, Check } from "lucide-react";
 import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'sonner';
 
@@ -46,6 +46,12 @@ export default function CreateJobWizard() {
   const [isCustomEducation, setIsCustomEducation] = useState(false);
   const [customEdValue, setCustomEdValue] = useState('');
   const [customEducationLevels, setCustomEducationLevels] = useState<string[]>([]);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateModalTab, setTemplateModalTab] = useState<'schedule' | 'sequence'>('schedule');
+  const [templateModalDay, setTemplateModalDay] = useState<'day0' | 'day2' | 'day4' | 'day7'>('day0');
+  const [templateModalStepIndex, setTemplateModalStepIndex] = useState<number>(0);
+  const [templateModalChannel, setTemplateModalChannel] = useState<'email' | 'whatsapp'>('email');
+  const [templateModalView, setTemplateModalView] = useState<'editor' | 'preview'>('editor');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -116,6 +122,71 @@ export default function CreateJobWizard() {
       day4: true, day4Channel: 'Email',
       day7: true, day7Channel: 'WhatsApp',
       markUnresponsive: true,
+    },
+    followUpMode: 'system' as 'system' | 'custom',
+    followUpWindowStart: '09:00',
+    followUpWindowEnd: '17:00',
+    followUpAllowedDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+    followUpTimeZone: 'Asia/Colombo',
+    customFollowUpSteps: [
+      {
+        id: 'step0',
+        day: 0,
+        channel: 'WhatsApp',
+        emailSubject: "Action Required: Missing info for your {job_title} application",
+        emailBody: `Hi {candidate_name},\n\nThank you for applying for the {job_title} role!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply to this email at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*! 👋\n\nWe received your application for *{job_title}*!\n\nTo move forward, could you please share:\n{missing_fields}\n\nJust reply here — it only takes a minute. Thank you!`,
+      },
+      {
+        id: 'step1',
+        day: 2,
+        channel: 'Email',
+        emailSubject: "Reminder: We still need your details — {job_title}",
+        emailBody: `Hi {candidate_name},\n\nThis is a gentle reminder regarding your application for the {job_title} role.\n\nWe haven't received the following details yet:\n{missing_fields}\n\nCould you please send these across so we can continue reviewing your application?\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*, just a quick follow-up! 📋\n\nWe're still waiting on a few details for your *{job_title}* application:\n{missing_fields}\n\nCould you share these when you get a chance? Thanks!`,
+      },
+      {
+        id: 'step2',
+        day: 4,
+        channel: 'WhatsApp',
+        emailSubject: "Final Reminder: {job_title} Application — Action Needed",
+        emailBody: `Hi {candidate_name},\n\nWe wanted to reach out one more time regarding your {job_title} application.\n\nWe are still missing:\n{missing_fields}\n\nWithout this information, we may not be able to progress your application further. Please respond at the earliest.\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*, this is our third follow-up for your *{job_title}* application.\n\nWe still need:\n{missing_fields}\n\nPlease reply so we don't have to close your application. We'd love to keep you in the running! 🙏`,
+      },
+      {
+        id: 'step3',
+        day: 7,
+        channel: 'Email',
+        emailSubject: "Last Chance: {job_title} — Please Respond",
+        emailBody: `Hi {candidate_name},\n\nWe have made several attempts to reach you regarding your {job_title} application. Unfortunately, we have not received the required information.\n\nIf we do not hear from you, we will be unable to proceed with your application for this role.\n\nIf you are still interested, please reply to this email immediately.\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*, this is our final follow-up for the *{job_title}* role.\n\nIf we don't hear from you today, we'll have to mark your application as unresponsive.\n\nStill interested? Just reply here! ✅`,
+      },
+    ],
+    followUpTemplates: {
+      requestCv: true,
+      requestCurrentSalary: true,
+      requestExpectedSalary: true,
+      requestNoticePeriod: true,
+      day0: {
+        emailSubject: "Action Required: Missing info for your {job_title} application",
+        emailBody: `Hi {candidate_name},\n\nThank you for applying for the {job_title} role!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply to this email at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*! 👋\n\nWe received your application for *{job_title}*!\n\nTo move forward, could you please share:\n{missing_fields}\n\nJust reply here — it only takes a minute. Thank you!`,
+      },
+      day2: {
+        emailSubject: "Reminder: We still need your details — {job_title}",
+        emailBody: `Hi {candidate_name},\n\nThis is a gentle reminder regarding your application for the {job_title} role.\n\nWe haven't received the following details yet:\n{missing_fields}\n\nCould you please send these across so we can continue reviewing your application?\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*, just a quick follow-up! 📋\n\nWe're still waiting on a few details for your *{job_title}* application:\n{missing_fields}\n\nCould you share these when you get a chance? Thanks!`,
+      },
+      day4: {
+        emailSubject: "Final Reminder: {job_title} Application — Action Needed",
+        emailBody: `Hi {candidate_name},\n\nWe wanted to reach out one more time regarding your {job_title} application.\n\nWe are still missing:\n{missing_fields}\n\nWithout this information, we may not be able to progress your application further. Please respond at the earliest.\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*, this is our third follow-up for your *{job_title}* application.\n\nWe still need:\n{missing_fields}\n\nPlease reply so we don't have to close your application. We'd love to keep you in the running! 🙏`,
+      },
+      day7: {
+        emailSubject: "Last Chance: {job_title} — Please Respond",
+        emailBody: `Hi {candidate_name},\n\nWe have made several attempts to reach you regarding your {job_title} application. Unfortunately, we have not received the required information.\n\nIf we do not hear from you, we will be unable to proceed with your application for this role.\n\nIf you are still interested, please reply to this email immediately.\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*, this is our final follow-up for the *{job_title}* role.\n\nIf we don't hear from you today, we'll have to mark your application as unresponsive.\n\nStill interested? Just reply here! ✅`,
+      },
     },
     enablePhoneScreening: false,
     phoneScreeningTriggers: {
@@ -214,6 +285,69 @@ export default function CreateJobWizard() {
         [field]: value
       }
     }));
+  };
+
+  const updateDayTemplate = (day: 'day0' | 'day2' | 'day4' | 'day7', field: 'emailSubject' | 'emailBody' | 'whatsappBody', value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      followUpTemplates: {
+        ...prev.followUpTemplates,
+        [day]: {
+          ...prev.followUpTemplates[day],
+          [field]: value
+        }
+      }
+    }));
+  };
+
+  const addFollowUpStep = () => {
+    setFormData(prev => {
+      const steps = prev.customFollowUpSteps || [];
+      const lastStep = steps[steps.length - 1];
+      const nextDay = lastStep ? lastStep.day + 3 : 10;
+      const newStep = {
+        id: `step_${Date.now()}`,
+        day: nextDay,
+        channel: 'Email',
+        emailSubject: `Follow-up: Action needed for your {job_title} application`,
+        emailBody: `Hi {candidate_name},\n\nWe are following up regarding your application for the {job_title} position.\n\nWe still need the following details:\n{missing_fields}\n\nPlease reply at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`,
+        whatsappBody: `Hi *{candidate_name}*, following up on your *{job_title}* application! 📋\n\nPlease share:\n{missing_fields}\n\nThank you!`,
+      };
+      return {
+        ...prev,
+        customFollowUpSteps: [...steps, newStep],
+      };
+    });
+  };
+
+  const removeFollowUpStep = (index: number) => {
+    setFormData(prev => {
+      const steps = prev.customFollowUpSteps || [];
+      if (steps.length <= 1) return prev; // Keep at least 1 step
+      const newSteps = steps.filter((_, i) => i !== index);
+      return { ...prev, customFollowUpSteps: newSteps };
+    });
+  };
+
+  const updateCustomStep = (index: number, field: string, value: any) => {
+    setFormData(prev => {
+      const steps = [...(prev.customFollowUpSteps || [])];
+      if (steps[index]) {
+        steps[index] = { ...steps[index], [field]: value };
+      }
+      return { ...prev, customFollowUpSteps: steps };
+    });
+  };
+
+  const toggleAllowedDay = (dayName: string) => {
+    setFormData(prev => {
+      const currentDays = prev.followUpAllowedDays || [];
+      const exists = currentDays.includes(dayName);
+      const updatedDays = exists
+        ? currentDays.filter(d => d !== dayName)
+        : [...currentDays, dayName];
+      return { ...prev, followUpAllowedDays: updatedDays };
+    });
   };
 
   const isNextDisabled = () => {
@@ -439,6 +573,11 @@ export default function CreateJobWizard() {
         scoreWeightLocation: formData.scoreWeights.location,
         
         agent3Enabled: formData.enableFollowUps,
+        agent3TimeWindowStart: formData.followUpWindowStart,
+        agent3TimeWindowEnd: formData.followUpWindowEnd,
+        agent3AllowedDays: formData.followUpAllowedDays,
+        agent3TimeZone: formData.followUpTimeZone,
+        agent3CustomSteps: formData.customFollowUpSteps,
         agent3TriggerStages: formData.agent3TriggerStages,
         agent3Day2Channel: formData.followUpSchedule.day2 ? formData.followUpSchedule.day2Channel.toLowerCase() : undefined,
         agent3Day4Channel: formData.followUpSchedule.day4 ? formData.followUpSchedule.day4Channel.toLowerCase() : undefined,
@@ -1370,88 +1509,117 @@ export default function CreateJobWizard() {
         {/* Agent 3 — Follow-Up Sequence */}
         <div className="border border-border rounded-xl p-4 space-y-4 bg-surface">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
-              <span className="material-symbols-outlined text-[16px] text-primary-container">forum</span> Follow-Up Sequence
-            </h3>
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+                <span className="material-symbols-outlined text-[18px] text-primary-container">forum</span> Follow-Up Sequence & Outreach
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Automatically follow up with candidates to request missing information.
+              </p>
+            </div>
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
               <input type="checkbox" className="sr-only peer" checked={formData.enableFollowUps} onChange={e => updateFormData('enableFollowUps', e.target.checked)} />
               <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
             </label>
           </div>
+
           {formData.enableFollowUps && (
-            <div className="space-y-4 pt-2 border-t border-border animate-in fade-in">
-              <p className="text-xs text-text-secondary">
-                Automatically follow up with candidates after they reach a stage. Messages
-                stop the moment a candidate replies, is placed, or moves forward.
-              </p>
-
-              {/* Trigger stages */}
-              <div>
-                <label className="text-xs font-medium mb-1.5 block text-text-primary">Trigger when candidate reaches</label>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { value: "applied", label: "Applied" },
-                    { value: "shortlisted", label: "Shortlisted" },
-                    { value: "interview_scheduled", label: "Interview Scheduled" },
-                    { value: "offered", label: "Offered" }
-                  ].map((stage) => {
-                    const selected = formData.agent3TriggerStages.includes(stage.value);
-                    return (
-                      <button
-                        key={stage.value}
-                        type="button"
-                        onClick={() => {
-                          const newStages = selected 
-                            ? formData.agent3TriggerStages.filter(s => s !== stage.value) 
-                            : [...formData.agent3TriggerStages, stage.value];
-                          updateFormData('agent3TriggerStages', newStages);
-                        }}
-                        className={`text-xs px-3 py-1.5 rounded-full border transition-all cursor-pointer ${selected ? 'bg-primary-container text-white border-primary-container' : 'bg-surface text-text-secondary hover:border-primary-container/40'}`}
-                      >
-                        {stage.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Channel per step */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { key: "day0Channel", label: "Immediate", def: "WhatsApp" },
-                  { key: "day2Channel", label: "Day 2", def: formData.followUpSchedule.day2Channel },
-                  { key: "day4Channel", label: "Day 4", def: formData.followUpSchedule.day4Channel },
-                  { key: "day7Channel", label: "Day 7", def: formData.followUpSchedule.day7Channel },
-                ].map((step) => (
-                  <div key={step.key}>
-                    <label className="text-xs text-text-secondary mb-1 block">{step.label}</label>
-                    <select
-                      value={step.def}
-                      onChange={e => {
-                        if (step.key !== 'day0Channel') {
-                          updateNestedFormData('followUpSchedule', step.key, e.target.value);
-                        }
-                      }}
-                      className="w-full text-xs h-8 border border-border rounded-md px-2 bg-surface text-text-primary"
-                    >
-                      <option value="WhatsApp">WhatsApp</option>
-                      <option value="Email">Email</option>
-                    </select>
+            <div className="space-y-3 pt-2 border-t border-border animate-in fade-in">
+              {/* Streamlined Compact Protocol Banner */}
+              <div className="p-4 rounded-xl border border-border bg-surface-container-low space-y-3.5">
+                
+                {/* Protocol Header & Mode Pill */}
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400">verified_user</span>
+                    <span className="text-xs font-bold text-text-primary">
+                      {formData.followUpMode === 'system' ? 'System Recommended Protocol' : 'Custom Follow-Up Cadence'}
+                    </span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                      formData.followUpMode === 'system'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                        : 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                    }`}>
+                      {formData.followUpMode === 'system' ? 'Standard 4-Touch' : `${(formData.customFollowUpSteps || []).length}-Step Custom`}
+                    </span>
                   </div>
-                ))}
-              </div>
 
-              {/* After Day 7 */}
-              <div>
-                <label className="text-xs font-medium mb-1.5 block text-text-primary">After Day {formData.unresponsiveDays}</label>
-                <select
-                  value={formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "continue_weekly"}
-                  onChange={e => updateNestedFormData('followUpSchedule', 'markUnresponsive', e.target.value === 'mark_unresponsive')}
-                  className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary"
-                >
-                  <option value="mark_unresponsive">Mark as unresponsive & notify recruiter</option>
-                  <option value="continue_weekly">Continue with weekly follow-ups</option>
-                </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplateModalTab('schedule');
+                      setShowTemplateModal(true);
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-primary-container text-white rounded-lg hover:bg-primary transition-all shadow-xs cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Customize Sequence & Schedule
+                  </button>
+                </div>
+
+                {/* Key Settings Indicators */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                  <div className="bg-surface p-2.5 rounded-lg border border-border/70 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-primary-container shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-text-secondary font-medium block uppercase tracking-wider">Outreach Window</span>
+                      <span className="text-[11px] font-bold text-text-primary truncate block">
+                        {formData.followUpWindowStart} – {formData.followUpWindowEnd} ({(formData.followUpAllowedDays || []).length} Days)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-surface p-2.5 rounded-lg border border-border/70 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary-container shrink-0">public</span>
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-text-secondary font-medium block uppercase tracking-wider">Timezone</span>
+                      <span className="text-[11px] font-bold text-text-primary truncate block">Sri Lanka Time (UTC+5:30)</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-surface p-2.5 rounded-lg border border-border/70 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary-container shrink-0">play_circle</span>
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-text-secondary font-medium block uppercase tracking-wider">Trigger Stage</span>
+                      <span className="text-[11px] font-bold text-text-primary truncate block capitalize">
+                        {(formData.agent3TriggerStages || []).join(', ') || 'Shortlisted'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Compact Horizontal Timeline Nodes */}
+                <div className="bg-surface p-3 rounded-lg border border-border/70 space-y-1.5">
+                  <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block">Sequence Flow Preview:</span>
+                  <div className="flex items-center gap-2 overflow-x-auto py-1">
+                    {(formData.followUpMode === 'system'
+                      ? [
+                          { step: 1, day: 0, chan: 'WhatsApp', clr: 'bg-emerald-500' },
+                          { step: 2, day: 2, chan: 'Email', clr: 'bg-blue-500' },
+                          { step: 3, day: 4, chan: 'WhatsApp', clr: 'bg-emerald-500' },
+                          { step: 4, day: 7, chan: 'Email', clr: 'bg-amber-500' },
+                        ]
+                      : (formData.customFollowUpSteps || []).map((s, i) => ({
+                          step: i + 1,
+                          day: s.day,
+                          chan: s.channel,
+                          clr: s.channel === 'Email' ? 'bg-blue-500' : 'bg-emerald-500'
+                        }))
+                    ).map((node, i, arr) => (
+                      <div key={i} className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-low border border-border text-[11px]">
+                          <span className={`w-2 h-2 rounded-full ${node.clr}`}></span>
+                          <span className="font-bold text-text-primary">F/U {node.step}</span>
+                          <span className="text-[10px] text-text-secondary font-mono">Day {node.day}</span>
+                          <span className="text-[9px] font-semibold px-1 rounded bg-surface border text-text-primary">{node.chan}</span>
+                        </div>
+                        {i < arr.length - 1 && (
+                          <span className="material-symbols-outlined text-[14px] text-text-secondary">arrow_forward</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
               </div>
             </div>
           )}
@@ -1743,6 +1911,617 @@ export default function CreateJobWizard() {
         </div>
       </div>
       
+      {showTemplateModal && (() => {
+        const isSystemMode = formData.followUpMode === 'system';
+        const steps = isSystemMode 
+          ? [
+              { id: 'day0', day: 0, channel: 'WhatsApp', emailSubject: formData.followUpTemplates.day0.emailSubject, emailBody: formData.followUpTemplates.day0.emailBody, whatsappBody: formData.followUpTemplates.day0.whatsappBody },
+              { id: 'day2', day: 2, channel: 'Email', emailSubject: formData.followUpTemplates.day2.emailSubject, emailBody: formData.followUpTemplates.day2.emailBody, whatsappBody: formData.followUpTemplates.day2.whatsappBody },
+              { id: 'day4', day: 4, channel: 'WhatsApp', emailSubject: formData.followUpTemplates.day4.emailSubject, emailBody: formData.followUpTemplates.day4.emailBody, whatsappBody: formData.followUpTemplates.day4.whatsappBody },
+              { id: 'day7', day: 7, channel: 'Email', emailSubject: formData.followUpTemplates.day7.emailSubject, emailBody: formData.followUpTemplates.day7.emailBody, whatsappBody: formData.followUpTemplates.day7.whatsappBody },
+            ]
+          : (formData.customFollowUpSteps || []);
+
+        const activeIndex = Math.min(Math.max(0, templateModalStepIndex), steps.length - 1);
+        const activeStep = steps[activeIndex] || steps[0] || { day: 0, channel: 'Email', emailSubject: '', emailBody: '', whatsappBody: '' };
+
+        const activeSubject = activeStep.emailSubject || '';
+        const activeBody = templateModalChannel === 'email' ? activeStep.emailBody || '' : activeStep.whatsappBody || '';
+
+        const getPreviewText = (text: string) => {
+          if (!text) return '';
+          const candidateName = "Jane Doe";
+          const jobTitle = formData.jobTitle || "Product Manager";
+          const missingFieldsList = [];
+          if (formData.followUpTemplates.requestCv) missingFieldsList.push("CV / Resume Document");
+          if (formData.followUpTemplates.requestCurrentSalary) missingFieldsList.push("Current Salary Details");
+          if (formData.followUpTemplates.requestExpectedSalary) missingFieldsList.push("Expected Salary Range");
+          if (formData.followUpTemplates.requestNoticePeriod) missingFieldsList.push("Notice Period / Availability");
+          const missingFieldsStr = missingFieldsList.length > 0 
+            ? missingFieldsList.map(f => `• ${f}`).join('\n') 
+            : "• CV / Resume Document\n• Current Salary Details\n• Expected Salary Range\n• Notice Period / Availability";
+          return text
+            .replace(/\{candidate_name\}/g, candidateName)
+            .replace(/\{job_title\}/g, jobTitle)
+            .replace(/\{missing_fields\}/g, missingFieldsStr);
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-surface rounded-2xl border border-border shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+              
+              {/* Modal Header */}
+              <div className="p-5 border-b border-border flex items-center justify-between bg-surface-container-low">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary-container/10 flex items-center justify-center text-primary-container">
+                    <span className="material-symbols-outlined text-[22px]">tune</span>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-text-primary flex items-center gap-2">
+                      Customize Follow-Up Sequence & Schedule
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                        isSystemMode 
+                          ? 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800' 
+                          : 'text-blue-700 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'
+                      }`}>
+                        {isSystemMode ? 'System Recommended' : 'Custom Config'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-text-secondary mt-0.5">Configure dispatch timing, trigger stages, requested info, and message templates.</p>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setShowTemplateModal(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-surface-variant flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+
+              {/* Top Navigation Tabs (Schedule vs Sequence) */}
+              <div className="flex border-b border-border bg-surface-container-low px-6 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTemplateModalTab('schedule')}
+                  className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                    templateModalTab === 'schedule'
+                      ? 'border-primary-container text-primary-container'
+                      : 'border-transparent text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  <Clock className="w-4 h-4" /> 1. Schedule & Triggers
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTemplateModalTab('sequence')}
+                  className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                    templateModalTab === 'sequence'
+                      ? 'border-primary-container text-primary-container'
+                      : 'border-transparent text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" /> 2. Message Sequence & Templates ({steps.length})
+                </button>
+              </div>
+
+              {/* Modal Content Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+                {/* TAB 1: Schedule & Triggers */}
+                {templateModalTab === 'schedule' && (
+                  <div className="space-y-5 animate-in fade-in">
+                    
+                    {/* Preset Mode Switcher */}
+                    <div className="flex items-center gap-1 bg-surface-container-low p-1.5 rounded-xl border border-border">
+                      <button
+                        type="button"
+                        onClick={() => updateFormData('followUpMode', 'system')}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          formData.followUpMode === 'system'
+                            ? 'bg-primary-container text-white shadow-sm'
+                            : 'text-text-secondary hover:text-text-primary'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">verified</span>
+                        System Recommended Protocol (Default)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateFormData('followUpMode', 'custom')}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          formData.followUpMode === 'custom'
+                            ? 'bg-surface text-text-primary shadow-sm border border-border'
+                            : 'text-text-secondary hover:text-text-primary'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">tune</span>
+                        Custom Configuration Mode
+                      </button>
+                    </div>
+
+                    {/* Time Window & Allowed Days */}
+                    <div className="bg-surface-container-low p-4 rounded-xl border border-border space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-primary-container" />
+                          <span className="text-xs font-bold text-text-primary">Outreach Time Window & Schedule</span>
+                        </div>
+                        <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-md bg-surface border border-border text-emerald-700 dark:text-emerald-400 font-semibold">
+                          Sri Lanka Time (UTC+5:30)
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                        <div>
+                          <label className="text-[11px] font-semibold text-text-secondary block mb-1">Active Window Hours</label>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={formData.followUpWindowStart}
+                              disabled={isSystemMode}
+                              onChange={e => updateFormData('followUpWindowStart', e.target.value)}
+                              className="flex-1 text-xs h-8 border border-border rounded-lg px-2 bg-surface text-text-primary disabled:opacity-60"
+                            >
+                              {['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00'].map(t => (
+                                <option key={t} value={t}>{t} (Morning)</option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-text-secondary">to</span>
+                            <select
+                              value={formData.followUpWindowEnd}
+                              disabled={isSystemMode}
+                              onChange={e => updateFormData('followUpWindowEnd', e.target.value)}
+                              className="flex-1 text-xs h-8 border border-border rounded-lg px-2 bg-surface text-text-primary disabled:opacity-60"
+                            >
+                              {['16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'].map(t => (
+                                <option key={t} value={t}>{t} (Evening)</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-semibold text-text-secondary block mb-1">Allowed Dispatch Days</label>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { name: 'Monday', short: 'Mon' },
+                              { name: 'Tuesday', short: 'Tue' },
+                              { name: 'Wednesday', short: 'Wed' },
+                              { name: 'Thursday', short: 'Thu' },
+                              { name: 'Friday', short: 'Fri' },
+                              { name: 'Saturday', short: 'Sat' },
+                              { name: 'Sunday', short: 'Sun' },
+                            ].map(d => {
+                              const active = (formData.followUpAllowedDays || []).includes(d.name);
+                              return (
+                                <button
+                                  key={d.name}
+                                  type="button"
+                                  disabled={isSystemMode}
+                                  onClick={() => toggleAllowedDay(d.name)}
+                                  className={`text-[10px] font-semibold px-2 py-1 rounded-md border transition-all ${
+                                    active
+                                      ? 'bg-primary-container text-white border-primary-container shadow-xs'
+                                      : 'bg-surface text-text-secondary border-border hover:border-primary-container/40'
+                                  } disabled:opacity-60 disabled:cursor-not-allowed`}
+                                >
+                                  {d.short}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trigger Stage & Checklist */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Trigger stage selection */}
+                      <div className="bg-surface-container-low p-3.5 rounded-xl border border-border">
+                        <label className="text-xs font-bold text-text-primary mb-1.5 block">Trigger outreach when candidate reaches</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { value: "applied", label: "Applied" },
+                            { value: "shortlisted", label: "Shortlisted" },
+                            { value: "interview_scheduled", label: "Interview Scheduled" },
+                            { value: "offered", label: "Offered" }
+                          ].map((stage) => {
+                            const selected = formData.agent3TriggerStages.includes(stage.value);
+                            return (
+                              <button
+                                key={stage.value}
+                                type="button"
+                                disabled={isSystemMode}
+                                onClick={() => {
+                                  const newStages = selected
+                                    ? formData.agent3TriggerStages.filter(s => s !== stage.value)
+                                    : [...formData.agent3TriggerStages, stage.value];
+                                  updateFormData('agent3TriggerStages', newStages);
+                                }}
+                                className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all cursor-pointer ${
+                                  selected
+                                    ? 'bg-primary-container text-white border-primary-container shadow-xs'
+                                    : 'bg-surface text-text-secondary hover:border-primary-container/40'
+                                } disabled:opacity-60 disabled:cursor-not-allowed`}
+                              >
+                                {stage.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Requested Info Checklist */}
+                      <div className="bg-surface-container-low p-3.5 rounded-xl border border-border">
+                        <label className="text-xs font-bold text-text-primary mb-1.5 block">Requested Information Checklist:</label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[
+                            { key: "requestCv", label: "CV / Resume" },
+                            { key: "requestCurrentSalary", label: "Current Salary" },
+                            { key: "requestExpectedSalary", label: "Expected Salary" },
+                            { key: "requestNoticePeriod", label: "Notice Period" },
+                          ].map(item => {
+                            const checked = (formData.followUpTemplates as any)[item.key];
+                            return (
+                              <label
+                                key={item.key}
+                                className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                                  checked
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 text-emerald-800 dark:text-emerald-300 font-semibold'
+                                    : 'bg-surface border-border text-text-secondary hover:bg-surface-container-low'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={isSystemMode}
+                                  onChange={e => updateNestedFormData('followUpTemplates', item.key, e.target.checked)}
+                                  className="rounded text-primary-container focus:ring-0 w-3 h-3 disabled:opacity-60"
+                                />
+                                <span className="text-[10px] truncate">{item.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action after final step */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-surface-container-low rounded-xl border border-border text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                        <span className="text-text-secondary">Sequence automatically stops as soon as the candidate replies.</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-semibold text-text-primary">After Final Step:</span>
+                        <select
+                          value={formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "continue_weekly"}
+                          disabled={isSystemMode}
+                          onChange={e => updateNestedFormData('followUpSchedule', 'markUnresponsive', e.target.value === 'mark_unresponsive')}
+                          className="text-xs h-8 border border-border rounded-md px-2 bg-surface text-text-primary disabled:opacity-60"
+                        >
+                          <option value="mark_unresponsive">Mark unresponsive & notify TA</option>
+                          <option value="continue_weekly">Continue weekly follow-ups</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: Message Sequence & Templates */}
+                {templateModalTab === 'sequence' && (
+                  <div className="space-y-5 animate-in fade-in">
+                    
+                    {/* Dynamic Steps Selector & Add Step button */}
+                    <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-border">
+                      <div className="flex gap-1.5 overflow-x-auto">
+                        {steps.map((st, i) => (
+                          <button
+                            key={st.id || i}
+                            type="button"
+                            onClick={() => {
+                              setTemplateModalStepIndex(i);
+                              setTemplateModalChannel(st.channel.toLowerCase() as any);
+                            }}
+                            className={`py-2 px-3.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                              activeIndex === i
+                                ? 'bg-primary-container text-white border-primary-container shadow-xs'
+                                : 'bg-surface text-text-secondary hover:text-text-primary border-border'
+                            }`}
+                          >
+                            Follow-up {i + 1} <span className="text-[10px] opacity-80">(Day {st.day})</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {!isSystemMode && (
+                        <button
+                          type="button"
+                          onClick={addFollowUpStep}
+                          className="text-xs font-bold text-primary-container px-3 py-1.5 rounded-lg border border-primary-container/20 hover:bg-primary-container/10 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">add</span> Add Step
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-6">
+                      
+                      {/* Editor Column */}
+                      <div className="flex-1 space-y-4">
+                        
+                        {/* Step Configuration Controls */}
+                        {!isSystemMode && (
+                          <div className="p-3 bg-surface-container-low border border-border rounded-xl flex items-center justify-between flex-wrap gap-3 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-text-primary">Dispatch Delay:</span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-text-secondary">Day</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="90"
+                                  value={activeStep.day}
+                                  onChange={e => updateCustomStep(activeIndex, 'day', parseInt(e.target.value) || 0)}
+                                  className="w-14 h-7 text-xs font-mono font-bold border border-border rounded px-1.5 bg-surface text-text-primary text-center"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-text-primary">Channel:</span>
+                              <select
+                                value={activeStep.channel}
+                                onChange={e => {
+                                  const newChan = e.target.value;
+                                  updateCustomStep(activeIndex, 'channel', newChan);
+                                  setTemplateModalChannel(newChan.toLowerCase() as any);
+                                }}
+                                className="text-xs h-7 border border-border rounded px-2 bg-surface text-text-primary font-semibold"
+                              >
+                                <option value="WhatsApp">WhatsApp</option>
+                                <option value="Email">Email</option>
+                              </select>
+                            </div>
+
+                            {steps.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  removeFollowUpStep(activeIndex);
+                                  setTemplateModalStepIndex(Math.max(0, activeIndex - 1));
+                                }}
+                                className="text-xs text-red-600 hover:text-red-700 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">delete</span> Delete Step
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Channel Switcher */}
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setTemplateModalChannel('email')}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                templateModalChannel === 'email'
+                                  ? 'bg-blue-600 text-white shadow-xs'
+                                  : 'bg-surface-container-low text-text-secondary hover:text-text-primary'
+                              }`}
+                            >
+                              <Mail className="w-3.5 h-3.5" /> Email Template
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTemplateModalChannel('whatsapp')}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                templateModalChannel === 'whatsapp'
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'bg-surface-container-low text-text-secondary hover:text-text-primary'
+                              }`}
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" /> WhatsApp Message
+                            </button>
+                          </div>
+
+                          <div className="flex items-center bg-surface-container-low p-0.5 rounded-lg border border-border">
+                            <button
+                              type="button"
+                              onClick={() => setTemplateModalView('editor')}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                                templateModalView === 'editor'
+                                  ? 'bg-surface text-text-primary shadow-xs'
+                                  : 'text-text-secondary hover:text-text-primary'
+                              }`}
+                            >
+                              <Edit3 className="w-3 h-3" /> Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTemplateModalView('preview')}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                                templateModalView === 'preview'
+                                  ? 'bg-surface text-text-primary shadow-xs'
+                                  : 'text-text-secondary hover:text-text-primary'
+                              }`}
+                            >
+                              <Eye className="w-3 h-3" /> Preview
+                            </button>
+                          </div>
+                        </div>
+
+                        {templateModalView === 'editor' ? (
+                          <div className="space-y-4 animate-in fade-in">
+                            {/* Insert Tag pills */}
+                            {!isSystemMode && (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] font-bold text-text-secondary mr-1 uppercase">Insert tag:</span>
+                                {[
+                                  { label: "{candidate_name}", tag: "{candidate_name}" },
+                                  { label: "{job_title}", tag: "{job_title}" },
+                                  { label: "{missing_fields}", tag: "{missing_fields}" },
+                                ].map(ph => (
+                                  <button
+                                    key={ph.tag}
+                                    type="button"
+                                    onClick={() => {
+                                      if (templateModalChannel === 'email') {
+                                        updateCustomStep(activeIndex, 'emailBody', activeBody + ` ${ph.tag}`);
+                                      } else {
+                                        updateCustomStep(activeIndex, 'whatsappBody', activeBody + ` ${ph.tag}`);
+                                      }
+                                    }}
+                                    className="text-[10px] px-2 py-0.5 bg-surface-container-low hover:bg-primary-container/10 hover:text-primary-container border border-border rounded font-mono text-text-primary transition-colors cursor-pointer"
+                                  >
+                                    + {ph.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Email subject line */}
+                            {templateModalChannel === 'email' && (
+                              <div>
+                                <label className="text-xs font-bold text-text-primary block mb-1">Email Subject Line</label>
+                                <input
+                                  type="text"
+                                  value={activeSubject}
+                                  disabled={isSystemMode}
+                                  onChange={e => updateCustomStep(activeIndex, 'emailSubject', e.target.value)}
+                                  className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-surface text-text-primary focus:outline-none focus:border-primary-container disabled:opacity-75 disabled:cursor-not-allowed"
+                                  placeholder="Email subject line with placeholders..."
+                                />
+                              </div>
+                            )}
+
+                            {/* Body text area */}
+                            <div>
+                              <label className="text-xs font-bold text-text-primary block mb-1">
+                                {templateModalChannel === 'email' ? 'Email Body' : 'WhatsApp Message'}
+                              </label>
+                              <textarea
+                                rows={8}
+                                value={activeBody}
+                                disabled={isSystemMode}
+                                onChange={e => {
+                                  if (templateModalChannel === 'email') {
+                                    updateCustomStep(activeIndex, 'emailBody', e.target.value);
+                                  } else {
+                                    updateCustomStep(activeIndex, 'whatsappBody', e.target.value);
+                                  }
+                                }}
+                                className="w-full text-xs border border-border rounded-lg p-3.5 bg-surface text-text-primary font-mono focus:outline-none focus:border-primary-container resize-none disabled:opacity-75 disabled:cursor-not-allowed leading-relaxed"
+                                placeholder="Write your custom message template..."
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          /* Embedded Simple Preview */
+                          <div className="bg-surface-container-low p-4 rounded-xl border border-border space-y-3 animate-in fade-in">
+                            <p className="text-[11px] font-bold text-text-secondary uppercase">Simple preview:</p>
+                            {templateModalChannel === 'email' ? (
+                              <div className="space-y-2 text-xs">
+                                <div className="bg-surface p-2 rounded-lg border border-border font-semibold text-text-primary">
+                                  Subject: {getPreviewText(activeSubject)}
+                                </div>
+                                <div className="bg-surface p-3 rounded-lg border border-border text-text-primary whitespace-pre-wrap leading-relaxed">
+                                  {getPreviewText(activeBody)}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="bg-[#E7F8EE] dark:bg-emerald-950/60 p-3.5 rounded-xl border border-[#CDE5D2] dark:border-emerald-800 text-xs text-gray-900 dark:text-emerald-100 whitespace-pre-wrap leading-relaxed">
+                                {getPreviewText(activeBody)}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Side Mock Preview Column */}
+                      <div className="w-full md:w-[320px] shrink-0 space-y-3">
+                        <span className="text-xs font-bold text-text-secondary block uppercase">Live Client Screen Preview</span>
+                        
+                        {templateModalChannel === 'email' ? (
+                          <div className="border border-border rounded-2xl overflow-hidden bg-[#F4F6F9] dark:bg-zinc-950 shadow-inner flex flex-col h-[320px]">
+                            <div className="bg-white dark:bg-zinc-900 p-3 border-b border-border space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-text-secondary font-mono">From: recruiter@career141.com</span>
+                                <span className="text-[9px] text-text-secondary">Just now</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-[9px] font-bold text-blue-600 dark:text-blue-400">R</span>
+                                <span className="text-[10px] text-text-primary font-bold">To: Jane Doe</span>
+                              </div>
+                              <p className="text-[10px] font-bold text-text-primary pt-1 truncate">
+                                Subject: {getPreviewText(activeSubject) || '(No subject)'}
+                              </p>
+                            </div>
+                            
+                            <div className="p-4 overflow-y-auto flex-1 bg-white dark:bg-zinc-900 m-2 rounded-lg border border-border/60 text-[10px] text-text-primary whitespace-pre-wrap leading-relaxed">
+                              {getPreviewText(activeBody) || '(No template body message content)'}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border border-border rounded-2xl overflow-hidden bg-[#ECE5DD] dark:bg-zinc-900 shadow-inner flex flex-col h-[320px]">
+                            <div className="bg-[#075E54] dark:bg-[#004d40] text-white px-3 py-2 flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-[10px] font-bold text-emerald-800 dark:text-emerald-300">WA</div>
+                              <div>
+                                <p className="text-[10px] font-bold">Career141 Assistant</p>
+                                <p className="text-[7px] text-emerald-100 opacity-90">Online</p>
+                              </div>
+                            </div>
+
+                            <div className="flex-1 p-3 overflow-y-auto space-y-2 flex flex-col justify-end">
+                              <div className="bg-white dark:bg-zinc-800 text-[10px] text-text-primary p-3 rounded-lg shadow-sm border border-border/20 max-w-[85%] self-start relative leading-relaxed">
+                                <p className="whitespace-pre-wrap">{getPreviewText(activeBody) || '(No template body message content)'}</p>
+                                <span className="text-[8px] text-text-secondary block text-right mt-1.5">12:00 PM</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-border bg-surface-container-low flex items-center justify-between">
+                <span className="text-[11px] text-text-secondary font-medium">
+                  {templateModalTab === 'schedule' ? 'Tab 1 of 2 · Schedule & Triggers' : `Tab 2 of 2 · Step ${activeIndex + 1} of ${steps.length}`}
+                </span>
+
+                <div className="flex items-center gap-2">
+                  {templateModalTab === 'schedule' ? (
+                    <button
+                      type="button"
+                      onClick={() => setTemplateModalTab('sequence')}
+                      className="px-4 py-2 bg-primary-container text-white rounded-lg text-xs font-semibold hover:bg-primary transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      Next: Edit Messages <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowTemplateModal(false)}
+                      className="px-5 py-2 bg-primary-container text-on-primary rounded-lg text-xs font-semibold hover:bg-primary transition-all shadow-xs cursor-pointer"
+                    >
+                      Done & Save
+                    </button>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-surface rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-border animate-in fade-in zoom-in duration-200">

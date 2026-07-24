@@ -48,7 +48,7 @@ export function PageHeader({ title }: PageHeaderProps) {
                   <span className="block text-text-disabled text-[10px] mt-1">1 day ago</span>
                 </div>
               </div>
-              <div className="bg-surface-container-lowest border-t border-border px-4 py-2 text-center cursor-pointer hover:bg-gray-100">
+              <div className="bg-surface-container-lowest border-t border-border px-4 py-2 text-center cursor-pointer hover:bg-gray-100 dark:hover:bg-white/5">
                 <span className="text-primary-container text-xs font-medium">View all notifications</span>
               </div>
             </div>

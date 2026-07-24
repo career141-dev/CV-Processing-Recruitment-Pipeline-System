@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Badge, AvatarBadge } from '@/components/ui/Badge';
-import { MessageCircle, Trash2, Sparkles } from 'lucide-react';
+import { MessageCircle, Trash2, Sparkles, MapPin } from 'lucide-react';
 
 interface CandidateCardProps {
   id: string;
@@ -103,11 +103,7 @@ export function CandidateCard({
           
           <div className="flex items-center self-stretch py-1 gap-[17px] flex-wrap">
             <div className="flex shrink-0 items-center gap-1">
-              <img
-                src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/omthap57_expires_30_days.png" 
-                className="w-[9px] h-[11px] object-fill"
-                alt="loc"
-              />
+              <MapPin className="w-3 h-3 text-text-disabled shrink-0" />
               <span className="text-text-disabled text-[11px]">{location}</span>
             </div>
             <div className="flex shrink-0 items-center gap-1 flex-wrap">

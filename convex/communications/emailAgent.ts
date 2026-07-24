@@ -109,18 +109,14 @@ async function fetchUnreadEmails(inboxEmail: string, lastFetch: string | null) {
 
   console.log(`[EmailAgent] Fetching emails for ${inboxEmail} since ${lastFetch || '14 days ago'}`);
   try {
-    // If lastFetch is available, use it (with a 5 min overlap buffer to ensure nothing is missed).
-    // Otherwise fallback to 14-day safety window.
     let cutoffDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     if (lastFetch) {
       const lastFetchTime = new Date(lastFetch).getTime();
-      // subtract 5 minutes to prevent race conditions at the boundary
       cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 14 * 24 * 60 * 60 * 1000)).toISOString();
     }
 
-    // We no longer filter by `isRead eq false` to ensure we don't miss manually read emails
-    // We paginate to ensure we get all emails if there are many.
-    let url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=receivedDateTime ge ${cutoffDate}&$select=id,subject,body,from,hasAttachments&$top=100`;
+    // Filter by isRead eq false to avoid processing read emails repeatedly on every 5-min poll cycle
+    let url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false and receivedDateTime ge ${cutoffDate}&$select=id,subject,body,from,hasAttachments,isRead&$top=100`;
     
     const allMessages: any[] = [];
 
@@ -135,7 +131,7 @@ async function fetchUnreadEmails(inboxEmail: string, lastFetch: string | null) {
       }
 
       const data = await response.json();
-      const messages = data.value || [];
+      const messages = (data.value || []).filter((m: any) => !m.isRead);
       allMessages.push(...messages);
       
       // Handle pagination if more emails exist
@@ -345,6 +341,8 @@ Respond ONLY with a valid JSON object in this exact format:
       }
 
       // Loop over all CV attachments and process them
+      let allCvAttachmentsProcessedSuccessfully = true;
+
       for (const attachment of cvAttachments) {
         console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType})`);
 
@@ -354,29 +352,40 @@ Respond ONLY with a valid JSON object in this exact format:
         }
         
         if (!contentBytes) {
-          console.error(`[EmailAgent] Failed to get contentBytes for attachment ${attachment.name}`);
+          console.error(`[EmailAgent] Failed to get contentBytes for attachment ${attachment.name}. Will keep message unread to retry on next poll cycle.`);
+          allCvAttachmentsProcessedSuccessfully = false;
           continue;
         }
 
-        const binaryString = atob(contentBytes);
-        const fileBuffer = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          fileBuffer[i] = binaryString.charCodeAt(i);
-        }
-        
-        // Hash the file
-        const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
-        const fileHash = Array.from(new Uint8Array(hashBuffer))
-          .map(b => b.toString(16).padStart(2, "0"))
-          .join("");
+        let s3Key: string;
+        let fileBuffer: Uint8Array;
+        let fileHash: string;
 
-        // Store in Cloudflare R2
-        console.log("USING R2 NOW - UPLOADING TO CLOUDFLARE!"); const base64Data = contentBytes;
-        const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
-          fileName: attachment.name ?? "cv.pdf",
-          contentType: attachment.contentType || "application/pdf",
-          base64Data,
-        });
+        try {
+          const binaryString = atob(contentBytes);
+          fileBuffer = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            fileBuffer[i] = binaryString.charCodeAt(i);
+          }
+          
+          // Hash the file
+          const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer.buffer as ArrayBuffer);
+          fileHash = Array.from(new Uint8Array(hashBuffer))
+            .map(b => b.toString(16).padStart(2, "0"))
+            .join("");
+
+          // Store in Cloudflare R2
+          console.log("USING R2 NOW - UPLOADING TO CLOUDFLARE!");
+          s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+            fileName: attachment.name ?? "cv.pdf",
+            contentType: attachment.contentType || "application/pdf",
+            base64Data: contentBytes,
+          });
+        } catch (uploadError) {
+          console.error(`[EmailAgent] Error uploading attachment ${attachment.name} to R2:`, uploadError);
+          allCvAttachmentsProcessedSuccessfully = false;
+          continue;
+        }
 
         // Process CV ingestion
         await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
@@ -406,8 +415,12 @@ Respond ONLY with a valid JSON object in this exact format:
         });
       }
 
-      // Mark as read & reply (Auto-reply temporarily disabled as per request)
-      await markEmailAsRead(targetInboxEmail, message.id);
+      // Mark as read only if all attachments were successfully processed
+      if (allCvAttachmentsProcessedSuccessfully) {
+        await markEmailAsRead(targetInboxEmail, message.id);
+      } else {
+        console.warn(`[EmailAgent] Keeping message "${subject}" (${message.id}) unread to retry attachment processing on next poll.`);
+      }
       /*
       if (!isReplyProcessed && !isLinkedInNoReply) {
         if (resolvedJobId) {

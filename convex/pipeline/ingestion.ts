@@ -45,13 +45,6 @@ export const processCvIngestion = mutation({
 
     const existingFile = await ctx.db.query("cvUploads")
       .withIndex("by_fileHash", (q) => q.eq("fileHash", sha256))
-      .filter((q) => 
-        q.and(
-          q.eq(q.field("assignToJob"), args.jobId),
-          q.neq(q.field("status"), "failed"),
-          q.neq(q.field("status"), "failed_retry")
-        )
-      )
       .first();
 
     if (existingFile) {

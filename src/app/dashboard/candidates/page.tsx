@@ -10,7 +10,7 @@ import { CandidateCard } from '@/components/candidates/CandidateCard';
 import { FloatingActionBar } from '@/components/candidates/FloatingActionBar';
 import { CandidateManagementTable } from '@/components/candidates/CandidateManagementTable';
 import { Button } from '@/components/ui/Button';
-import { X, Loader2, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Pin } from 'lucide-react';
+import { X, Loader2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Sparkles, Pin, SlidersHorizontal, Filter } from 'lucide-react';
 import { MessageComposer } from '@/components/communications/MessageComposer';
 import { DeleteCandidateModal } from '@/components/candidates/modals/DeleteCandidateModal';
 import { toast } from 'sonner';
@@ -62,6 +62,7 @@ export default function CandidatesSearch() {
   const [sortOption, setSortOption] = useState('Best Match');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'management' | 'search'>('management');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
   
   // Search Tab Pagination
   const [searchPage, setSearchPage] = useState(1);
@@ -215,8 +216,10 @@ export default function CandidatesSearch() {
     if (expFilter) {
       const match = expFilter.match(/(\d+)\s*(?:-|–)\s*(\d+)/);
       if (match) {
-        minExperience = parseInt(match[1], 10);
-        maxExperience = parseInt(match[2], 10);
+        const min = parseInt(match[1], 10);
+        const max = parseInt(match[2], 10);
+        if (min > 0) minExperience = min;
+        if (max < 20) maxExperience = max;
       }
     }
 
@@ -275,25 +278,8 @@ export default function CandidatesSearch() {
     }
   };
 
-  // 7. Auto-trigger search when filters/location change (Debounced, Server-side filtering)
-  useEffect(() => {
-    if (activeTab !== 'search') return;
-
-    const hasQuery = searchQuery.trim() !== "";
-    const hasFilters = activeFilters.length > 0 || locationQuery.trim() !== "";
-
-    if (!hasQuery && !hasFilters) {
-      setSearchResults(null);
-      setHasSearched(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      handleAiSearch();
-    }, 450); // 450ms debounce for input/checkbox updates
-
-    return () => clearTimeout(timer);
-  }, [activeFilters, locationQuery]);
+  // Note: Search is triggered explicitly by clicking 'Search Candidates' or pressing Enter
+  // Filters update state locally without making intermediate network calls while editing.
 
   // 8. Search History management logic
   const saveSearchHistoryToStorage = (newHistory: any[]) => {
@@ -474,28 +460,50 @@ export default function CandidatesSearch() {
       )}
 
       {activeTab === 'search' && (
-        <div className="flex flex-col items-start self-stretch relative">
-          <div className="flex items-start self-stretch relative w-full">
-          
-          {/* 4.1 Filter Panel Always Visible Left Column */}
-          <div className="w-[260px] shrink-0 mr-[40px] pl-6">
-            <CandidateSidebarFilters 
-              activeFilters={activeFilters} 
-              onToggleFilter={toggleFilter} 
-              location={locationQuery}
-              onLocationChange={setLocationQuery}
-            />
-          </div>
-          
-          {/* Main Feed */}
-          <div className="flex-1 flex flex-col gap-4 min-w-0 pr-6 pb-[100px]">
-            {/* Heading and Subtopic */}
-            <div className="flex flex-col items-start mb-2">
+        <div className="flex flex-col items-start self-stretch relative w-full px-6 pb-[100px]">
+          {/* Heading and Filter Toggle Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between w-full mb-4 gap-4">
+            <div>
               <h2 className="text-[22px] font-bold text-text-primary">Smart Candidate Sourcing</h2>
               <p className="text-sm text-text-secondary mt-1">
-                Use the AI prompt to describe your ideal hire, and apply filters to narrow down the results perfectly.
+                Use the AI prompt to describe your ideal hire, and toggle filter options to refine results.
               </p>
             </div>
+
+            <button
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                showFilterPanel || activeFilters.length > 0 || locationQuery.trim() !== ''
+                  ? 'bg-[#1B5E20] text-white border-[#1B5E20] shadow-sm'
+                  : 'bg-surface text-text-primary border-border hover:bg-gray-50 dark:hover:bg-white/5'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span>{showFilterPanel ? 'Hide Filters' : 'Filter Options'}</span>
+              {(activeFilters.length > 0 || locationQuery.trim() !== '') && (
+                <span className="ml-1 px-2 py-0.5 bg-white text-[#1B5E20] text-[10px] font-bold rounded-full">
+                  {activeFilters.length + (locationQuery.trim() ? 1 : 0)}
+                </span>
+              )}
+              {showFilterPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+
+          {/* Collapsible 3-Pillar Filter Panel */}
+          {showFilterPanel && (
+            <div className="w-full mb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+              <CandidateSidebarFilters
+                activeFilters={activeFilters}
+                onToggleFilter={toggleFilter}
+                location={locationQuery}
+                onLocationChange={setLocationQuery}
+                onClearAll={() => {
+                  setActiveFilters([]);
+                  setLocationQuery('');
+                }}
+              />
+            </div>
+          )}
 
             {/* AI Search Banner Area */}
             <div className="flex flex-col self-stretch bg-surface py-[17px] mb-2 gap-[17px] rounded-[10px] border border-solid border-border" style={{ boxShadow: '0px 2px 4px #0000000D' }}>
@@ -587,11 +595,7 @@ export default function CandidatesSearch() {
 
               {/* Bottom bar of input area */}
               <div className="flex items-center self-stretch ml-[21px] mr-9 gap-1.5">
-                <img
-                  src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/vj27hvjd_expires_30_days.png" 
-                  className="w-[13px] h-[13px] object-fill"
-                  alt="icon"
-                />
+                <Sparkles className="w-3.5 h-3.5 text-[#1B5E20] shrink-0" />
                 <span className="text-text-secondary text-xs">
                   AI will score all results against this description to find the most relevant matches.
                 </span>
@@ -599,7 +603,7 @@ export default function CandidatesSearch() {
                 {hasSearched && (
                   <Button
                     variant="outline"
-                    className="mr-2 h-9 text-xs py-1 px-3 border border-solid border-[#E0E0E0] hover:bg-gray-50 rounded-md"
+                    className="mr-2 h-9 text-xs py-1 px-3 border border-solid border-[#E0E0E0] hover:bg-gray-50 dark:hover:bg-white/5 rounded-md"
                     onClick={() => {
                       setHasSearched(false);
                       setSearchResults(null);
@@ -620,7 +624,7 @@ export default function CandidatesSearch() {
                     isAiSearching ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <img src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/ft3ifvri_expires_30_days.png" className="w-4 h-4 object-fill" alt="icon" />
+                      <Sparkles className="w-4 h-4 text-white" />
                     )
                   }
                 >
@@ -643,7 +647,7 @@ export default function CandidatesSearch() {
                 </div>
                 <div className="flex flex-col gap-1.5 max-h-[140px] overflow-y-auto">
                   {searchHistory.map(entry => (
-                    <div key={entry.id} className="flex items-center justify-between py-1 px-2 hover:bg-gray-50 rounded-md transition-colors group">
+                    <div key={entry.id} className="flex items-center justify-between py-1 px-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-md transition-colors group">
                       <button 
                         onClick={() => triggerHistorySearch(entry)}
                         className="flex-1 text-left text-xs text-text-primary hover:text-[#006E1C] font-semibold truncate"
@@ -681,29 +685,29 @@ export default function CandidatesSearch() {
                 <h3 className="text-base font-bold text-text-primary mb-1">
                   Smart Talent Sourcing
                 </h3>
-                <p className="text-xs text-text-secondary max-w-sm leading-relaxed mb-6">
-                  Describe your ideal candidate in the prompt above, or apply structured filters on the left panel to browse matching profiles.
+                <p className="text-xs text-text-secondary max-w-md leading-relaxed mb-6 mx-auto">
+                  Describe your ideal candidate in the prompt above, or click Filter Options to refine matching profiles.
                 </p>
                 
-                {/* Example Search Prompts */}
-                <div className="flex flex-col sm:flex-row gap-3 max-w-xl w-full justify-center">
+                {/* Example Search Prompts Centered Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl w-full mx-auto justify-center">
                   <button
                     onClick={() => {
                       setSearchQuery("Senior React Developer with 5+ years of experience in SaaS and Fintech compliance");
                     }}
-                    className="flex-1 bg-surface-container-low hover:bg-surface-container border border-border p-3 rounded-lg text-left text-xs transition-colors cursor-pointer group"
+                    className="bg-surface hover:bg-gray-50 dark:hover:bg-white/5 border border-border p-3.5 rounded-xl text-left text-xs transition-all shadow-sm hover:border-[#1B5E20] cursor-pointer group flex flex-col justify-between"
                   >
-                    <span className="font-bold text-text-primary group-hover:text-[#006E1C] transition-colors block mb-1">Fintech Frontend Dev</span>
-                    <span className="text-text-secondary text-[11px] line-clamp-2">"Senior React Developer with 5+ years of experience in SaaS and Fintech compliance"</span>
+                    <span className="font-bold text-text-primary group-hover:text-[#1B5E20] transition-colors block mb-1">Fintech Frontend Dev</span>
+                    <span className="text-text-secondary text-[11px] line-clamp-2 leading-snug">"Senior React Developer with 5+ years of experience in SaaS and Fintech compliance"</span>
                   </button>
                   <button
                     onClick={() => {
                       setSearchQuery("Data Engineer who knows Python, Spark, AWS Redshift, and data pipeline orchestration");
                     }}
-                    className="flex-1 bg-surface-container-low hover:bg-surface-container border border-border p-3 rounded-lg text-left text-xs transition-colors cursor-pointer group"
+                    className="bg-surface hover:bg-gray-50 dark:hover:bg-white/5 border border-border p-3.5 rounded-xl text-left text-xs transition-all shadow-sm hover:border-[#1B5E20] cursor-pointer group flex flex-col justify-between"
                   >
-                    <span className="font-bold text-text-primary group-hover:text-[#006E1C] transition-colors block mb-1">Data Pipeline Builder</span>
-                    <span className="text-text-secondary text-[11px] line-clamp-2">"Data Engineer who knows Python, Spark, AWS Redshift, and data pipeline orchestration"</span>
+                    <span className="font-bold text-text-primary group-hover:text-[#1B5E20] transition-colors block mb-1">Data Pipeline Builder</span>
+                    <span className="text-text-secondary text-[11px] line-clamp-2 leading-snug">"Data Engineer who knows Python, Spark, AWS Redshift, and data pipeline orchestration"</span>
                   </button>
                 </div>
               </div>
@@ -836,9 +840,7 @@ export default function CandidatesSearch() {
                 )}
               </>
             )}
-          </div>
         </div>
-      </div>
       )}
 
       <FloatingActionBar 
