@@ -2,11 +2,20 @@ import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
 
 export const getRefereesByCandidate = query({
-  args: { candidateId: v.id("candidates") },
+  args: { candidateId: v.string() },
   handler: async (ctx, args) => {
+    let validId = ctx.db.normalizeId("candidates", args.candidateId);
+    if (!validId) {
+      const upload = await ctx.db.get(args.candidateId as any);
+      if (upload && (upload as any).candidateId) {
+        validId = (upload as any).candidateId;
+      }
+    }
+    if (!validId) return [];
+
     return await ctx.db
       .query("referees")
-      .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", validId!))
       .collect();
   },
 });

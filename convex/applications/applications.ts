@@ -106,12 +106,21 @@ export const getByJobId = query({
 
 // All applications for a single candidate, joined with job details
 export const getByCandidate = query({
-  args: { candidateId: v.id("candidates") },
+  args: { candidateId: v.string() },
   handler: async (ctx, args) => {
     await requireUser(ctx);
+    let validId = ctx.db.normalizeId("candidates", args.candidateId);
+    if (!validId) {
+      const upload = await ctx.db.get(args.candidateId as any);
+      if (upload && (upload as any).candidateId) {
+        validId = (upload as any).candidateId;
+      }
+    }
+    if (!validId) return [];
+
     const applications = await ctx.db
       .query("applications")
-      .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", validId!))
       .collect();
 
     return await Promise.all(
@@ -224,12 +233,21 @@ export const getUnresponsiveForJob = query({
 
 // Chronological event log for a candidate (newest first)
 export const getCandidateTimeline = query({
-  args: { candidateId: v.id("candidates") },
+  args: { candidateId: v.string() },
   handler: async (ctx, args) => {
     await requireUser(ctx);
+    let validId = ctx.db.normalizeId("candidates", args.candidateId);
+    if (!validId) {
+      const upload = await ctx.db.get(args.candidateId as any);
+      if (upload && (upload as any).candidateId) {
+        validId = (upload as any).candidateId;
+      }
+    }
+    if (!validId) return [];
+
     const events = await ctx.db
       .query("pipelineEvents")
-      .withIndex("by_candidate", (q) => q.eq("candidateId", args.candidateId))
+      .withIndex("by_candidate", (q) => q.eq("candidateId", validId!))
       .order("desc")
       .collect();
 
@@ -251,12 +269,21 @@ export const getCandidateTimeline = query({
 
 // AI call log for a candidate (newest first)
 export const getCandidateAiCalls = query({
-  args: { candidateId: v.id("candidates") },
+  args: { candidateId: v.string() },
   handler: async (ctx, args) => {
     await requireUser(ctx);
+    let validId = ctx.db.normalizeId("candidates", args.candidateId);
+    if (!validId) {
+      const upload = await ctx.db.get(args.candidateId as any);
+      if (upload && (upload as any).candidateId) {
+        validId = (upload as any).candidateId;
+      }
+    }
+    if (!validId) return [];
+
     const calls = await ctx.db
       .query("aiCalls")
-      .withIndex("by_candidate", (q) => q.eq("candidateId", args.candidateId))
+      .withIndex("by_candidate", (q) => q.eq("candidateId", validId!))
       .order("desc")
       .collect();
 
