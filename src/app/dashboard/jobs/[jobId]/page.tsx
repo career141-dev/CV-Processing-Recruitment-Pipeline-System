@@ -1414,7 +1414,7 @@ export default function JobDetailPage() {
                     <th className="p-4">Source</th>
                     <th className="p-4">Match Score</th>
                     <th className="p-4">Role & Exp</th>
-                    <th className="p-4">AI Status</th>
+                    <th className="p-4">AI Reason</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1450,7 +1450,21 @@ export default function JobDetailPage() {
                           <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}</div>
                           <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
                         </td>
-                        <td className="p-4"><StatusDot status={app.aiCallStatus || 'Not Called'} /></td>
+                        <td className="p-4 text-[12px] max-w-[280px]">
+                          {(app as any).aiMatchExplanation ? (
+                            <div className="text-text-secondary leading-snug line-clamp-2" title={(app as any).aiMatchExplanation}>
+                              <span className="font-semibold text-primary">AI Match: </span>
+                              {(app as any).aiMatchExplanation}
+                            </div>
+                          ) : (app.candidate as any)?.summary ? (
+                            <div className="text-text-secondary leading-snug line-clamp-2" title={(app.candidate as any).summary}>
+                              <span className="font-semibold text-text-primary">Summary: </span>
+                              {(app.candidate as any).summary}
+                            </div>
+                          ) : (
+                            <span className="text-text-disabled italic text-[11px]">No AI match reason generated yet</span>
+                          )}
+                        </td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end">
                             <select 
