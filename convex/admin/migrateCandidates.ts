@@ -5,6 +5,8 @@ export const migrateCandidates = mutation({
     // Process in batches of 100 to avoid hitting mutation limits
     const candidates = await ctx.db.query("candidates").take(100);
     let migratedCount = 0;
+    let newCount = 0;    // CVs inserted as brand-new candidateResumes records
+    let mergeCount = 0;  // CVs merged/patched into existing candidateResumes records
 
     for (const candidate of candidates) {
       let needsUpdate = false;
@@ -27,12 +29,17 @@ export const migrateCandidates = mutation({
             embedding: c.embedding,
             hasEmbedding: !!(c.embedding && c.embedding.length > 0),
           });
+          newCount++;
         } else if (c.embedding && !existingResume.embedding) {
           // If resume exists but lacks embedding, patch it
           await ctx.db.patch(existingResume._id, { 
             embedding: c.embedding,
             hasEmbedding: true,
           });
+          mergeCount++;
+        } else {
+          // Resume already exists and is up to date — counted as merge/dedup
+          mergeCount++;
         }
 
         // Compute pastJobTitles
@@ -60,6 +67,8 @@ export const migrateCandidates = mutation({
 
     return {
       migratedCount,
+      newCount,
+      mergeCount,
       hasMore: candidates.length === 100,
     };
   },

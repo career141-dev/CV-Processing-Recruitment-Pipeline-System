@@ -1,4 +1,72 @@
 "use node";
+
+if (typeof (globalThis as any).DOMMatrix === "undefined") {
+  class DOMMatrixPolyfill {
+    a: number; b: number; c: number; d: number; e: number; f: number;
+    m11: number; m12: number; m13: number; m14: number;
+    m21: number; m22: number; m23: number; m24: number;
+    m31: number; m32: number; m33: number; m34: number;
+    m41: number; m42: number; m43: number; m44: number;
+    is2D: boolean; isIdentity: boolean;
+
+    constructor(init?: any) {
+      if (Array.isArray(init) && init.length === 6) {
+        this.a = init[0]; this.b = init[1]; this.c = init[2]; this.d = init[3]; this.e = init[4]; this.f = init[5];
+      } else if (init && typeof init === "object" && "a" in init) {
+        this.a = init.a; this.b = init.b; this.c = init.c; this.d = init.d; this.e = init.e; this.f = init.f;
+      } else {
+        this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0;
+      }
+      this.m11 = this.a; this.m12 = this.b; this.m13 = 0; this.m14 = 0;
+      this.m21 = this.c; this.m22 = this.d; this.m23 = 0; this.m24 = 0;
+      this.m31 = 0; this.m32 = 0; this.m33 = 1; this.m34 = 0;
+      this.m41 = this.e; this.m42 = this.f; this.m43 = 0; this.m44 = 1;
+      this.is2D = true;
+      this.isIdentity = this.a === 1 && this.b === 0 && this.c === 0 && this.d === 1 && this.e === 0 && this.f === 0;
+    }
+    multiply(other?: any) {
+      const o = other || new DOMMatrixPolyfill();
+      return new DOMMatrixPolyfill([
+        this.a * o.a + this.c * o.b,
+        this.b * o.a + this.d * o.b,
+        this.a * o.c + this.c * o.d,
+        this.b * o.c + this.d * o.d,
+        this.a * o.e + this.c * o.f + this.e,
+        this.b * o.e + this.d * o.f + this.f,
+      ]);
+    }
+    translate(tx = 0, ty = 0) {
+      return this.multiply(new DOMMatrixPolyfill([1, 0, 0, 1, tx, ty]));
+    }
+    scale(sx = 1, sy = sx) {
+      return this.multiply(new DOMMatrixPolyfill([sx, 0, 0, sy, 0, 0]));
+    }
+    rotate(angle = 0) {
+      const rad = (angle * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      return this.multiply(new DOMMatrixPolyfill([cos, sin, -sin, cos, 0, 0]));
+    }
+    inverse() {
+      const det = this.a * this.d - this.b * this.c;
+      if (!det) return new DOMMatrixPolyfill();
+      return new DOMMatrixPolyfill([
+        this.d / det,
+        -this.b / det,
+        -this.c / det,
+        this.a / det,
+        (this.c * this.f - this.d * this.e) / det,
+        (this.b * this.e - this.a * this.f) / det,
+      ]);
+    }
+    transformPoint(p?: any) {
+      const x = p?.x || 0; const y = p?.y || 0;
+      return { x: this.a * x + this.c * y + this.e, y: this.b * x + this.d * y + this.f };
+    }
+  }
+  (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+}
+
 import { Jimp } from "jimp";
 
 import { v } from "convex/values";
@@ -203,10 +271,84 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
+function ensureDOMMatrixPolyfill() {
+  if (typeof (globalThis as any).DOMMatrix === "undefined") {
+    class DOMMatrixPolyfill {
+      a: number; b: number; c: number; d: number; e: number; f: number;
+      m11: number; m12: number; m13: number; m14: number;
+      m21: number; m22: number; m23: number; m24: number;
+      m31: number; m32: number; m33: number; m34: number;
+      m41: number; m42: number; m43: number; m44: number;
+      is2D: boolean; isIdentity: boolean;
+
+      constructor(init?: any) {
+        if (Array.isArray(init) && init.length === 6) {
+          this.a = init[0]; this.b = init[1]; this.c = init[2]; this.d = init[3]; this.e = init[4]; this.f = init[5];
+        } else if (init && typeof init === "object" && "a" in init) {
+          this.a = init.a; this.b = init.b; this.c = init.c; this.d = init.d; this.e = init.e; this.f = init.f;
+        } else {
+          this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0;
+        }
+        this.m11 = this.a; this.m12 = this.b; this.m13 = 0; this.m14 = 0;
+        this.m21 = this.c; this.m22 = this.d; this.m23 = 0; this.m24 = 0;
+        this.m31 = 0; this.m32 = 0; this.m33 = 1; this.m34 = 0;
+        this.m41 = this.e; this.m42 = this.f; this.m43 = 0; this.m44 = 1;
+        this.is2D = true;
+        this.isIdentity = this.a === 1 && this.b === 0 && this.c === 0 && this.d === 1 && this.e === 0 && this.f === 0;
+      }
+      multiply(other?: any) {
+        const o = other || new DOMMatrixPolyfill();
+        return new DOMMatrixPolyfill([
+          this.a * o.a + this.c * o.b,
+          this.b * o.a + this.d * o.b,
+          this.a * o.c + this.c * o.d,
+          this.b * o.c + this.d * o.d,
+          this.a * o.e + this.c * o.f + this.e,
+          this.b * o.e + this.d * o.f + this.f,
+        ]);
+      }
+      translate(tx = 0, ty = 0) {
+        return this.multiply(new DOMMatrixPolyfill([1, 0, 0, 1, tx, ty]));
+      }
+      scale(sx = 1, sy = sx) {
+        return this.multiply(new DOMMatrixPolyfill([sx, 0, 0, sy, 0, 0]));
+      }
+      rotate(angle = 0) {
+        const rad = (angle * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        return this.multiply(new DOMMatrixPolyfill([cos, sin, -sin, cos, 0, 0]));
+      }
+      inverse() {
+        const det = this.a * this.d - this.b * this.c;
+        if (!det) return new DOMMatrixPolyfill();
+        return new DOMMatrixPolyfill([
+          this.d / det,
+          -this.b / det,
+          -this.c / det,
+          this.a / det,
+          (this.c * this.f - this.d * this.e) / det,
+          (this.b * this.e - this.a * this.f) / det,
+        ]);
+      }
+      transformPoint(p?: any) {
+        const x = p?.x || 0; const y = p?.y || 0;
+        return { x: this.a * x + this.c * y + this.e, y: this.b * x + this.d * y + this.f };
+      }
+    }
+    (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+  }
+}
+
+/**
+ * Converts a scanned PDF buffer into a list of base64 image data URLs safe for Vision OCR.
+ * Uses DOMMatrix polyfill to run pdfjs-dist safely in Node.js server environment without DOM canvas.
+ */
 async function extractImagesFromPdfBuffer(
   buffer: ArrayBuffer,
   maxPages: number = 5
 ): Promise<string[]> {
+  ensureDOMMatrixPolyfill();
   const images: string[] = [];
   try {
     let pdfjsLib: any;
@@ -227,73 +369,106 @@ async function extractImagesFromPdfBuffer(
     const pdfDoc = await loadingTask.promise;
     const numPages = Math.min(pdfDoc.numPages, maxPages);
 
+    const processImgData = async (imgData: any, pageNum: number) => {
+      const width = imgData.width;
+      const height = imgData.height;
+
+      if (!width || !height || width < 50 || height < 50) {
+        return;
+      }
+
+      if (imgData.data && imgData.data.length > 0) {
+        try {
+          let rgbaBuffer: Buffer;
+          const kind = imgData.kind;
+
+          if (kind === 1 || imgData.data.length === width * height) {
+            rgbaBuffer = Buffer.alloc(width * height * 4);
+            for (let j = 0; j < width * height; j++) {
+              const val = imgData.data[j];
+              const offset = j * 4;
+              rgbaBuffer[offset] = val;
+              rgbaBuffer[offset + 1] = val;
+              rgbaBuffer[offset + 2] = val;
+              rgbaBuffer[offset + 3] = 255;
+            }
+          } else if (imgData.data.length === width * height * 3) {
+            rgbaBuffer = Buffer.alloc(width * height * 4);
+            for (let j = 0; j < width * height; j++) {
+              const srcOffset = j * 3;
+              const destOffset = j * 4;
+              rgbaBuffer[destOffset] = imgData.data[srcOffset];
+              rgbaBuffer[destOffset + 1] = imgData.data[srcOffset + 1];
+              rgbaBuffer[destOffset + 2] = imgData.data[srcOffset + 2];
+              rgbaBuffer[destOffset + 3] = 255;
+            }
+          } else if (imgData.data.length === width * height * 4) {
+            rgbaBuffer = Buffer.from(imgData.data);
+          } else {
+            return;
+          }
+
+          const jimpImg = new Jimp({
+            data: rgbaBuffer,
+            width,
+            height,
+          });
+
+          const base64Data = await jimpImg.getBase64("image/jpeg");
+          images.push(base64Data);
+        } catch (jimpErr) {
+          console.warn(`[PDF Image Extraction] Jimp encoding error on page ${pageNum}:`, jimpErr);
+        }
+      }
+    };
+
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       const page = await pdfDoc.getPage(pageNum);
       const ops = await page.getOperatorList();
+      const processedKeys = new Set<string>();
 
-      for (let i = 0; i < ops.fnArray.length; i++) {
-        const fn = ops.fnArray[i];
-        if (
-          fn === pdfjsLib.OPS.paintImageXObject ||
-          fn === pdfjsLib.OPS.paintInlineImageXObject
-        ) {
-          const imgName = ops.argsArray[i][0];
-          let imgData: any = null;
+      const parseOps = async (operatorList: any) => {
+        for (let i = 0; i < operatorList.fnArray.length; i++) {
+          const fn = operatorList.fnArray[i];
+          if (
+            fn === pdfjsLib.OPS.paintImageXObject ||
+            fn === pdfjsLib.OPS.paintInlineImageXObject
+          ) {
+            const imgName = operatorList.argsArray[i][0];
+            if (processedKeys.has(imgName)) continue;
+            processedKeys.add(imgName);
 
-          try {
-            imgData = page.objs.get(imgName);
-          } catch { }
-
-          if (!imgData) continue;
-
-          const width = imgData.width;
-          const height = imgData.height;
-
-          if (!width || !height || width < 50 || height < 50) {
-            continue;
-          }
-
-          if (imgData.data && imgData.data.length > 0) {
+            let imgData: any = null;
             try {
-              let rgbaBuffer: Buffer;
-              const kind = imgData.kind;
+              imgData = page.objs.get(imgName);
+            } catch { }
 
-              if (kind === 1 || imgData.data.length === width * height) {
-                rgbaBuffer = Buffer.alloc(width * height * 4);
-                for (let j = 0; j < width * height; j++) {
-                  const val = imgData.data[j];
-                  const offset = j * 4;
-                  rgbaBuffer[offset] = val;
-                  rgbaBuffer[offset + 1] = val;
-                  rgbaBuffer[offset + 2] = val;
-                  rgbaBuffer[offset + 3] = 255;
-                }
-              } else if (imgData.data.length === width * height * 3) {
-                rgbaBuffer = Buffer.alloc(width * height * 4);
-                for (let j = 0; j < width * height; j++) {
-                  const srcOffset = j * 3;
-                  const destOffset = j * 4;
-                  rgbaBuffer[destOffset] = imgData.data[srcOffset];
-                  rgbaBuffer[destOffset + 1] = imgData.data[srcOffset + 1];
-                  rgbaBuffer[destOffset + 2] = imgData.data[srcOffset + 2];
-                  rgbaBuffer[destOffset + 3] = 255;
-                }
-              } else if (imgData.data.length === width * height * 4) {
-                rgbaBuffer = Buffer.from(imgData.data);
-              } else {
-                continue;
+            if (imgData) {
+              await processImgData(imgData, pageNum);
+            }
+          } else if (fn === pdfjsLib.OPS.paintFormXObject) {
+            const formName = operatorList.argsArray[i][0];
+            try {
+              const formObj = page.objs.get(formName);
+              if (formObj && formObj.operatorList) {
+                await parseOps(formObj.operatorList);
               }
+            } catch { }
+          }
+        }
+      };
 
-              const jimpImg = new Jimp({
-                data: rgbaBuffer,
-                width,
-                height,
-              });
+      await parseOps(ops);
 
-              const base64Data = await jimpImg.getBase64("image/jpeg");
-              images.push(base64Data);
-            } catch (jimpErr) {
-              console.warn(`[PDF Image Extraction] Jimp encoding error on page ${pageNum}:`, jimpErr);
+      if (images.length === 0 && page.objs) {
+        const objsMap = (page.objs as any)._objs || (page.objs as any).objs || (page.objs as any).data;
+        if (objsMap) {
+          for (const key of Object.keys(objsMap)) {
+            if (processedKeys.has(key)) continue;
+            const obj = objsMap[key];
+            if (obj && typeof obj === "object" && obj.width && obj.height && obj.data) {
+              processedKeys.add(key);
+              await processImgData(obj, pageNum);
             }
           }
         }
@@ -305,6 +480,7 @@ async function extractImagesFromPdfBuffer(
 
   return images;
 }
+
 
 async function extractTextFromImage(
   buffer: ArrayBuffer,
@@ -976,6 +1152,14 @@ export async function runCvExtraction(
           jobId: jobId as any,
         });
       }
+    } else {
+      // Tier 3 Fallback: If Subject & Body matching didn't yield a jobId during ingestion,
+      // match the extracted candidate details against all active jobs after CV extraction.
+      await ctx.scheduler.runAfter(0, internal.cvs.cvExtraction.matchExtractedCandidateToActiveJobs, {
+        candidateId: resolvedCandidateId,
+        cvUploadId,
+        sourceChannel: sourceChannel ?? "manual_upload",
+      });
     }
 
     if (args.logId) {
@@ -1186,5 +1370,83 @@ export const processNextBatch = internalAction({
     // 3. We no longer poll batch progress here.
     // The next batch will be triggered by checkAndTriggerNextBatch
     // when the last CV in this batch finishes extracting.
+  },
+});
+
+export const matchExtractedCandidateToActiveJobs = internalAction({
+  args: {
+    candidateId: v.id("candidates"),
+    cvUploadId: v.optional(v.id("cvUploads")),
+    sourceChannel: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      if (!activeJobs || activeJobs.length === 0) return;
+
+      const candidate = await ctx.runQuery(internal.matching.queries.getCandidate, {
+        candidateId: args.candidateId,
+      });
+      if (!candidate) return;
+
+      const jobsListContext = activeJobs
+        .map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName}`)
+        .join("\n");
+
+      const prompt = `You are an intelligent recruitment candidate router.
+Your task is to analyze an extracted candidate profile and determine which active job posting they match best.
+
+CRITICAL ROUTING RULES:
+1. Perform semantic matching between the candidate's extracted title, skills, and experience against active job titles.
+2. If the candidate is a Video Editor (e.g. skills include Video Editing, Premiere Pro, After Effects, Capcut), match them to the Video Editor job if open.
+3. Only match if there is a clear, confident alignment with an active job. Otherwise, return null.
+
+ACTIVE JOBS:
+${jobsListContext}
+
+CANDIDATE NAME: ${candidate.fullName ?? "Unknown"}
+CURRENT TITLE: ${candidate.currentJobTitle ?? candidate.currentEmployer ?? "N/A"}
+EXTRACTED SKILLS: ${(candidate.skills || []).join(", ")}
+SUMMARY: ${candidate.summary ?? "N/A"}
+
+Respond ONLY with a valid JSON object in this exact format:
+{
+  "matchedJobId": "string ID of the matched job, or null if no confident match"
+}`;
+
+      const openai = getOpenAI("email_routing");
+      const model = OPENROUTER_CV_EXTRACTION_MODEL || "openai/gpt-4o-mini";
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+      });
+
+      const resultStr = completion.choices[0]?.message?.content;
+      if (resultStr) {
+        const resultObj = JSON.parse(resultStr);
+        if (resultObj.matchedJobId) {
+          const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
+          if (matchedJob) {
+            console.log(`[CvExtraction] Post-extract AI matched candidate ${candidate.fullName ?? args.candidateId} to job: ${matchedJob.title} (${resultObj.matchedJobId})`);
+            await ctx.runMutation(api.applications.applications.createApplication, {
+              candidateId: args.candidateId,
+              jobId: resultObj.matchedJobId as any,
+              cvFileId: args.cvUploadId,
+              sourceChannel: args.sourceChannel,
+            });
+
+            await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+              candidateId: args.candidateId,
+              jobId: resultObj.matchedJobId as any,
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error(`[matchExtractedCandidateToActiveJobs] Error matching candidate ${args.candidateId}:`, err.message || err);
+    }
   },
 });

@@ -157,7 +157,7 @@ Return JSON:
     }
   ]
 }
-Only include candidates with overallScore >= ${minScore}. Sort by overallScore descending. Max 30 results.`,
+Only include candidates with overallScore >= 60. Sort by overallScore descending. Max 30 results.`,
             },
             {
               role: "user",
@@ -201,7 +201,7 @@ Only include candidates with overallScore >= ${minScore}. Sort by overallScore d
       }
 
       const results: ReverseMatchResult[] = scored
-        .filter((s) => s.index >= 0 && s.index < pool.length && s.overallScore >= minScore)
+        .filter((s) => s.index >= 0 && s.index < pool.length && s.overallScore >= 60)
         .map((s) => {
           const cv = pool[s.index]!;
           return {

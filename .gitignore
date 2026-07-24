@@ -41,7 +41,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-
+_storage.zip
+_storage/
+_storage_temp/
+_storage_temp/*
 
 # clerk configuration (can include secrets)
 /.clerk/
@@ -55,3 +58,4 @@ monitor-log.txt
 /CVs/
 convex_backup.zip
 certificates
+whatchimp_docs.txt
