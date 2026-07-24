@@ -1060,6 +1060,7 @@ export default defineSchema({
   workableImports: defineTable({
     status: v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped")),
     totalCandidates: v.number(),
+    maxCandidates: v.optional(v.number()),
     imported: v.number(),
     skipped: v.number(),
     deduplicated: v.optional(v.number()),
@@ -1082,6 +1083,28 @@ export default defineSchema({
     startedAt: v.string(),
     errorMessage: v.optional(v.string()),
     lastCursor: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
+
+  zipImportJobs: defineTable({
+    userId: v.string(),
+    urls: v.array(v.string()),
+    currentUrlIndex: v.number(),
+    currentFileIndex: v.number(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("stopped"),
+      v.literal("done"),
+      v.literal("error")
+    ),
+    totalFound: v.number(),
+    imported: v.number(),
+    duplicates: v.number(),
+    notCv: v.number(),
+    errors: v.number(),
+    startedAt: v.string(),
+    updatedAt: v.string(),
+    errorMessage: v.optional(v.string()),
   }).index("by_user", ["userId"]),
 
   // ─── Hercules Tables Merged Below ───
@@ -1329,12 +1352,14 @@ export default defineSchema({
     fileName: v.optional(v.string()),
     candidateName: v.optional(v.string()),
     provider: v.optional(v.string()), // 'openrouter' | 'nvidia'
+    sourceChannel: v.optional(v.string()), // 'Workable' | 'Email' | 'WhatsApp' | 'Manual'
   })
     .index("by_timestamp", ["timestamp"])
     .index("by_taskType", ["taskType"])
     .index("by_model", ["model"])
     .index("by_cvUploadId", ["cvUploadId"])
-    .index("by_provider", ["provider"]),
+    .index("by_provider", ["provider"])
+    .index("by_sourceChannel", ["sourceChannel"]),
 
   // Rolling aggregate cache for getTokenMetrics — updated on every log write.
   // Replaces the O(n) .collect() scan with an O(1) singleton read.

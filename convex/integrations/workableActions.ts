@@ -24,24 +24,36 @@ type WorkableCandidateDetail = {
   };
 };
 
+/**
+ * 5-Tier Fallback Resume URL Resolver:
+ * 1. Top-level resume_url (most reliable)
+ * 2. Nested resume object (url or file_url)
+ * 3. Attachments explicitly typed as resume or cv
+ * 4. Any attachment whose name contains "cv" or "resume"
+ * 5. Fallback to ANY attachment with a URL
+ */
 function extractResumeUrl(detail: WorkableCandidateDetail["candidate"]): string | undefined {
   if (detail.resume_url) return detail.resume_url;
   if (detail.resume?.url) return detail.resume.url;
   if (detail.resume?.file_url) return detail.resume.file_url;
+
   const typedAttachment = detail.attachments?.find(
     (a) => a.type === "resume" || a.type === "cv"
   );
   if (typedAttachment?.url) return typedAttachment.url;
   if (typedAttachment?.file_url) return typedAttachment.file_url;
+
   const namedAttachment = detail.attachments?.find((a) => {
     const name = (a.name ?? "").toLowerCase();
     return name.includes("cv") || name.includes("resume");
   });
   if (namedAttachment?.url) return namedAttachment.url;
   if (namedAttachment?.file_url) return namedAttachment.file_url;
+
   const anyAttachment = detail.attachments?.find((a) => a.url ?? a.file_url);
   if (anyAttachment?.url) return anyAttachment.url;
   if (anyAttachment?.file_url) return anyAttachment.file_url;
+
   return undefined;
 }
 
@@ -70,6 +82,7 @@ async function fetchCandidateDetail(
   apiKey: string,
   candidateId: string
 ): Promise<{ resumeUrl?: string; name: string; email?: string; phone?: string }> {
+  // Throttle 700ms to stay safely under Workable rate limits (~1 req/sec)
   await new Promise((r) => setTimeout(r, 700));
   const url = workableUrl(subdomain, `/candidates/${candidateId}`);
   const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
@@ -86,8 +99,7 @@ async function fetchCandidateDetail(
 
 function detectFileType(url: string, contentType: string): string {
   const normalizedUrl = url.toLowerCase();
-  const ext =
-    normalizedUrl.match(/\.(pdf|docx?|rtf|txt)$/)?.[1] ?? "";
+  const ext = normalizedUrl.match(/\.(pdf|docx?|rtf|txt)$/)?.[1] ?? "";
 
   if (ext === "pdf" || contentType.includes("pdf")) return "pdf";
   if (ext === "docx" || ext === "doc" || contentType.includes("word") || contentType.includes("docx")) return "docx";
@@ -128,14 +140,31 @@ export const testConnection = action({
 // ─── Start bulk import ────────────────────────────────────────────────────────
 
 export const startBulkImport = action({
-  args: { subdomain: v.string(), apiKey: v.string(), userId: v.string() },
+  args: {
+    subdomain: v.string(),
+    apiKey: v.string(),
+    userId: v.optional(v.string()),
+    maxCandidates: v.optional(v.number()),
+  },
   handler: async (ctx, args): Promise<{ importId: string }> => {
+    let currentUserId = args.userId;
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity) {
+      currentUserId = identity.tokenIdentifier;
+    }
+    if (!currentUserId) {
+      throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
+    }
+
+    const maxCandidates = args.maxCandidates ?? 500; // Default target cap 500 for this run
+
     const lastJob: any = await ctx.runQuery(internal.integrations.workable.getLatestImportJob as any, {});
-    const nextUrl = lastJob && lastJob.userId === args.userId ? lastJob.lastCursor : undefined;
+    const nextUrl = lastJob && lastJob.userId === currentUserId ? lastJob.lastCursor : undefined;
 
     const importId = await ctx.runMutation(internal.integrations.workable.createImportJob, {
-      userId: args.userId,
+      userId: currentUserId,
       totalCandidates: 0,
+      maxCandidates,
       subdomain: args.subdomain,
       apiKey: args.apiKey,
     });
@@ -144,12 +173,13 @@ export const startBulkImport = action({
       importId,
       subdomain: args.subdomain,
       apiKey: args.apiKey,
-      userId: args.userId,
+      userId: currentUserId,
       nextUrl: nextUrl,
       imported: 0,
       skipped: 0,
       deduplicated: 0,
       failed: 0,
+      maxCandidates,
     });
 
     return { importId };
@@ -159,10 +189,16 @@ export const startBulkImport = action({
 // ─── Get latest import status ─────────────────────────────────────────────────
 
 export const getLatestImportStatus = action({
-  args: { userId: v.string() },
+  args: { userId: v.optional(v.string()) },
   handler: async (ctx, args): Promise<any> => {
+    let currentUserId = args.userId;
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity) {
+      currentUserId = identity.tokenIdentifier;
+    }
     const job: any = await ctx.runQuery(internal.integrations.workable.getLatestImportJob as any, {});
-    if (!job || job.userId !== args.userId) return null;
+    if (!job) return null;
+    if (currentUserId && job.userId !== currentUserId) return null;
     return { ...job, deduplicated: job.deduplicated ?? 0 };
   },
 });
@@ -176,13 +212,14 @@ export const getImportStatus = action({
   },
 });
 
-// ─── Retry a failed import ────────────────────────────────────────────────────
+// ─── Retry / Resume a stopped or failed import ─────────────────────────────
 
 export const retryImport = action({
   args: {
     importId: v.id("workableImports"),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
+    maxCandidates: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<void> => {
     const job: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
@@ -190,6 +227,7 @@ export const retryImport = action({
 
     const subdomain = args.subdomain ?? job.subdomain;
     const apiKey = args.apiKey ?? job.apiKey;
+    const maxCandidates = args.maxCandidates ?? job.maxCandidates ?? 500;
     if (!subdomain || !apiKey) {
       throw new ConvexError({ message: "Please enter your Workable subdomain and API key.", code: "BAD_REQUEST" });
     }
@@ -198,6 +236,7 @@ export const retryImport = action({
       importId: args.importId,
       status: "running",
       errorMessage: "",
+      maxCandidates,
       subdomain,
       apiKey,
     });
@@ -212,6 +251,7 @@ export const retryImport = action({
       skipped: job.skipped,
       deduplicated: job.deduplicated ?? 0,
       failed: job.failed,
+      maxCandidates,
     });
   },
 });
@@ -254,6 +294,7 @@ export const retrySkipped = action({
       skipped: 0,
       deduplicated: job.deduplicated ?? 0,
       failed: 0,
+      maxCandidates: job.maxCandidates ?? 500,
     });
   },
 });
@@ -271,9 +312,7 @@ export const stopImport = action({
   },
 });
 
-// ─── Core import batch runner ─────────────────────────────────────────────────
-
-const MAX_IMPORT = 10; // Limit per import run
+// ─── Core import batch runner (20 per API page, configurable max limit e.g. 500) ──
 
 export const runImportBatch = internalAction({
   args: {
@@ -286,23 +325,27 @@ export const runImportBatch = internalAction({
     skipped: v.number(),
     deduplicated: v.number(),
     failed: v.number(),
+    maxCandidates: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<void> => {
     let imported = args.imported;
     let skipped = args.skipped;
     let deduplicated = args.deduplicated;
     let failed = args.failed;
+    const maxLimit = args.maxCandidates ?? 500;
 
-    if (imported >= MAX_IMPORT) {
+    const currentJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
+    if (!currentJob || currentJob.status === "stopped" || currentJob.status === "done") return;
+
+    // Check if max candidates target has already been reached
+    const totalProcessedSoFar = imported + skipped + deduplicated + failed;
+    if (maxLimit > 0 && totalProcessedSoFar >= maxLimit) {
       await ctx.runMutation(internal.integrations.workable.updateImportJob, {
         importId: args.importId,
         status: "done",
       });
       return;
     }
-
-    const currentJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
-    if (!currentJob || currentJob.status === "stopped" || currentJob.status === "done") return;
 
     let page: WorkableCandidatesPage;
     try {
@@ -350,6 +393,23 @@ export const runImportBatch = internalAction({
     }
 
     for (const candidate of page.candidates) {
+      // Re-verify if job was stopped mid-batch or target max reached
+      const checkJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
+      if (!checkJob || checkJob.status === "stopped") return;
+
+      if (maxLimit > 0 && (imported + skipped + deduplicated + failed) >= maxLimit) {
+        await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+          importId: args.importId,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          status: "done",
+          lastCursor: args.nextUrl ?? undefined,
+        });
+        return;
+      }
+
       try {
         const existing: any = await ctx.runQuery(internal.integrations.workable.findCandidateByWorkableId as any, {
           workableCandidateId: candidate.id,
@@ -406,12 +466,14 @@ export const runImportBatch = internalAction({
         const fileName = `${detail.name || candidate.id}.${downloaded.fileType}`;
         const base64Data = Buffer.from(downloaded.buffer).toString("base64");
         
+        // Upload CV binary buffer to Cloudflare R2 storage
         const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
           fileName,
           contentType: downloaded.contentType,
           base64Data,
         });
 
+        // Insert cvUploads record referencing Cloudflare R2 storage
         const cvUploadId = await ctx.runMutation(internal.integrations.workable.insertCvUpload, {
           s3Key,
           storageProvider: "r2",
@@ -421,7 +483,8 @@ export const runImportBatch = internalAction({
           userId: args.userId,
         });
 
-        await ctx.scheduler.runAfter(imported * 4000, api.cvs.cvExtraction.processCvExtraction, {
+        // Trigger background CV extraction (DeepSeek V4 Flash)
+        await ctx.scheduler.runAfter(imported * 2000, api.cvs.cvExtraction.processCvExtraction, {
           s3Key,
           storageProvider: "r2",
           fileType: downloaded.fileType,
@@ -429,7 +492,7 @@ export const runImportBatch = internalAction({
           uploadedBy: args.userId,
           cvUploadId,
           workableCandidateId: candidate.id,
-          skipLLM: true,
+          skipLLM: false,
           preExtractedData: {
             fullName: detail.name || candidate.name,
             email: detail.email,
@@ -438,13 +501,12 @@ export const runImportBatch = internalAction({
         });
 
         imported++;
-
-        if (imported >= MAX_IMPORT) break;
       } catch {
         failed++;
       }
     }
 
+    // Save batch progress and page cursor
     await ctx.runMutation(internal.integrations.workable.updateImportJob, {
       importId: args.importId,
       imported,
@@ -454,12 +516,10 @@ export const runImportBatch = internalAction({
       lastCursor: page.paging?.next ?? undefined,
     });
 
-    if (imported >= MAX_IMPORT) {
-      await ctx.runMutation(internal.integrations.workable.updateImportJob, {
-        importId: args.importId,
-        status: "done",
-      });
-    } else if (page.paging?.next) {
+    const currentTotal = imported + skipped + deduplicated + failed;
+
+    // Chain to next page if next cursor exists and limit not reached
+    if (page.paging?.next && (maxLimit === 0 || currentTotal < maxLimit)) {
       await ctx.scheduler.runAfter(500, internal.integrations.workableActions.runImportBatch, {
         importId: args.importId,
         subdomain: args.subdomain,
@@ -470,6 +530,7 @@ export const runImportBatch = internalAction({
         skipped,
         deduplicated,
         failed,
+        maxCandidates: maxLimit,
       });
     } else {
       await ctx.runMutation(internal.integrations.workable.updateImportJob, {

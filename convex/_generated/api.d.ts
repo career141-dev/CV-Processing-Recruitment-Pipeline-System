@@ -41,7 +41,6 @@ import type * as communications_graphSubscriptionQueries from "../communications
 import type * as communications_graphSubscriptions from "../communications/graphSubscriptions.js";
 import type * as communications_inboundExtraction from "../communications/inboundExtraction.js";
 import type * as communications_whatchimp from "../communications/whatchimp.js";
-import type * as communications_whatchimpActions from "../communications/whatchimpActions.js";
 import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
 import type * as communications_whatsappOutbound from "../communications/whatsappOutbound.js";
 import type * as crons from "../crons.js";
@@ -57,6 +56,7 @@ import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
+import type * as integrations_zipMutations from "../integrations/zipMutations.js";
 import type * as jobs_actions from "../jobs/actions.js";
 import type * as jobs_assignments from "../jobs/assignments.js";
 import type * as jobs_jobs from "../jobs/jobs.js";
@@ -78,6 +78,7 @@ import type * as pipeline_headhunt from "../pipeline/headhunt.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
+import type * as scratchQuery from "../scratchQuery.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
 import type * as stats_statsQueries from "../stats/statsQueries.js";
@@ -124,7 +125,6 @@ declare const fullApi: ApiFromModules<{
   "communications/graphSubscriptions": typeof communications_graphSubscriptions;
   "communications/inboundExtraction": typeof communications_inboundExtraction;
   "communications/whatchimp": typeof communications_whatchimp;
-  "communications/whatchimpActions": typeof communications_whatchimpActions;
   "communications/whatsappAgent": typeof communications_whatsappAgent;
   "communications/whatsappOutbound": typeof communications_whatsappOutbound;
   crons: typeof crons;
@@ -140,6 +140,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/elevenlabs": typeof integrations_elevenlabs;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
+  "integrations/zipMutations": typeof integrations_zipMutations;
   "jobs/actions": typeof jobs_actions;
   "jobs/assignments": typeof jobs_assignments;
   "jobs/jobs": typeof jobs_jobs;
@@ -161,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/ingestion": typeof pipeline_ingestion;
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
+  scratchQuery: typeof scratchQuery;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
   "stats/statsQueries": typeof stats_statsQueries;

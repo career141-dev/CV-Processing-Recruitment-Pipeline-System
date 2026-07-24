@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Building2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRole } from "@/hooks/useRole";
@@ -97,7 +98,7 @@ export default function TokenMonitorPage() {
   const [chartMode, setChartMode] = useState<"all" | "cv_extraction">("all");
 
   const [activeProviderTab, setActiveProviderTab] = useState<"openrouter" | "nvidia">("openrouter");
-  const [openrouterSubTab, setOpenrouterSubTab] = useState<"deepseek" | "gemma">("deepseek");
+  const [openrouterSubTab, setOpenrouterSubTab] = useState<"deepseek" | "workable" | "gemma">("deepseek");
 
   const filteredLogs = logs?.filter((log) => {
     const matchesType =
@@ -111,8 +112,10 @@ export default function TokenMonitorPage() {
     const isDeepSeek = log.model.toLowerCase().includes("deepseek");
     const isGemma = log.model.toLowerCase().includes("gemma");
     const isNvidia = log.provider === "nvidia" || log.taskType === "embedding" || log.model.includes("nvidia");
+    const isWorkable = log.sourceChannel === "Workable" || log.sourceChannel === "Workable_ZIP" || (log.fileName && log.fileName.toLowerCase().includes("workable"));
 
     if (providerFilter === "deepseek") matchesProvider = isDeepSeek;
+    else if (providerFilter === "workable") matchesProvider = isWorkable && isDeepSeek;
     else if (providerFilter === "openrouter_free") matchesProvider = isGemma || log.model.includes(":free");
     else if (providerFilter === "nvidia") matchesProvider = isNvidia;
 
@@ -121,6 +124,16 @@ export default function TokenMonitorPage() {
 
   // Extract structured metrics from backend
   const dsMetrics = metrics?.openrouterDeepseek ?? {
+    totalTokens: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalCost: 0,
+    candidatesAddedCount: 0,
+    totalCalls: 0,
+    successCalls: 0,
+  };
+
+  const workableDsMetrics = metrics?.workableDeepseek ?? {
     totalTokens: 0,
     promptTokens: 0,
     completionTokens: 0,
@@ -296,6 +309,17 @@ export default function TokenMonitorPage() {
                 <span>DeepSeek V4 Flash (Primary)</span>
               </button>
               <button
+                onClick={() => setOpenrouterSubTab("workable")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                  openrouterSubTab === "workable"
+                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/40 shadow-sm"
+                    : "bg-surface text-text-secondary border-border hover:bg-surface-container-high"
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                <span>Workable Imports (DeepSeek)</span>
+              </button>
+              <button
                 onClick={() => setOpenrouterSubTab("gemma")}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
                   openrouterSubTab === "gemma"
@@ -368,6 +392,71 @@ export default function TokenMonitorPage() {
                     </span>
                     <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
                       {dsMetrics.totalCalls > 0 ? ((dsMetrics.successCalls / dsMetrics.totalCalls) * 100).toFixed(1) : "100"}% Success Rate
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <CheckCircle className="w-6 h-6" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Tab Workable: Workable DeepSeek Usage KPI Grid */}
+            {openrouterSubTab === "workable" && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Workable Candidates Processed</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {workableDsMetrics.candidatesAddedCount}
+                    </span>
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">
+                      DeepSeek CV Extraction
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Workable Spend ($)</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {formatCost(workableDsMetrics.totalCost)}
+                    </span>
+                    <span className="text-[10px] text-text-secondary">
+                      DeepSeek V4-Flash
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950 text-amber-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <Coins className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Workable Tokens</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {formatTokens(workableDsMetrics.totalTokens)}
+                    </span>
+                    <span className="text-[10px] text-text-secondary font-mono">
+                      In: {formatTokens(workableDsMetrics.promptTokens)} • Out: {formatTokens(workableDsMetrics.completionTokens)}
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/10 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">
+                    <Activity className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="bg-surface border border-border p-5 rounded-2xl flex items-center justify-between shadow-sm group">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Workable API Calls</span>
+                    <span className="text-3xl font-black text-text-primary tabular-nums">
+                      {workableDsMetrics.totalCalls}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                      {workableDsMetrics.totalCalls > 0 ? ((workableDsMetrics.successCalls / workableDsMetrics.totalCalls) * 100).toFixed(1) : "100"}% Success Rate
                     </span>
                   </div>
                   <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all">

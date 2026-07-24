@@ -436,19 +436,24 @@ export const logNvidiaCallMutation = internalMutation({
     const resolvedProvider = args.provider || (args.taskType === "cv_vision_ocr" || args.taskType === "embedding" || args.model.includes("nvidia") ? "nvidia" : "openrouter");
     const cost = calculateLLMCost(args.model, args.promptTokens, args.completionTokens, resolvedProvider);
 
-    // --- 1. Denormalize fileName at write-time (1 read once, instead of 1 read per dashboard load) ---
+    // --- 1. Denormalize fileName and sourceChannel at write-time ---
     let fileName: string | undefined = undefined;
+    let sourceChannel: string | undefined = undefined;
     if (args.cvUploadId) {
       const cv = await ctx.db.get(args.cvUploadId);
-      if (cv) fileName = cv.fileName;
+      if (cv) {
+        fileName = cv.fileName;
+        sourceChannel = cv.source;
+      }
     }
 
-    // Insert the log with the denormalized field
+    // Insert the log with denormalized fields
     await ctx.db.insert("nvidiaTokenLogs", {
       ...args,
       provider: resolvedProvider,
       timestamp: now,
       fileName,
+      sourceChannel,
     });
 
     // --- 2. Update the all-time rolling singleton cache ---
@@ -612,6 +617,7 @@ export const getTokenMetrics = query({
       .take(500);
     
     let dsPromptTokens = 0, dsCompTokens = 0, dsCalls = 0, dsSuccess = 0, dsCvCount = 0, dsCost = 0;
+    let workablePromptTokens = 0, workableCompTokens = 0, workableCalls = 0, workableSuccess = 0, workableCvCount = 0, workableCost = 0;
     let gemmaPromptTokens = 0, gemmaCompTokens = 0, gemmaCalls = 0, gemmaSuccess = 0, gemmaCvCount = 0;
     let embedPromptTokens = 0, embedCalls = 0, embedSuccess = 0, embedCost = 0;
 
@@ -619,6 +625,7 @@ export const getTokenMetrics = query({
       const modelLower = (log.model || "").toLowerCase();
       const pTokens = log.promptTokens || 0;
       const cTokens = log.completionTokens || 0;
+      const isWorkable = log.sourceChannel === "Workable" || log.sourceChannel === "Workable_ZIP" || (log.fileName && log.fileName.toLowerCase().includes("workable"));
 
       if (modelLower.includes("deepseek")) {
         dsPromptTokens += pTokens;
@@ -630,7 +637,19 @@ export const getTokenMetrics = query({
             dsCvCount++;
           }
         }
-        dsCost += calculateLLMCost(log.model, pTokens, cTokens, log.provider || "openrouter");
+        const callCost = calculateLLMCost(log.model, pTokens, cTokens, log.provider || "openrouter");
+        dsCost += callCost;
+
+        if (isWorkable) {
+          workablePromptTokens += pTokens;
+          workableCompTokens += cTokens;
+          workableCalls++;
+          if (log.success) {
+            workableSuccess++;
+            if (log.taskType === "cv_structuring") workableCvCount++;
+          }
+          workableCost += callCost;
+        }
       } else if (modelLower.includes("gemma")) {
         gemmaPromptTokens += pTokens;
         gemmaCompTokens += cTokens;
@@ -671,6 +690,15 @@ export const getTokenMetrics = query({
         candidatesAddedCount: dsCvCount,
         totalCalls: dsCalls,
         successCalls: dsSuccess,
+      },
+      workableDeepseek: {
+        totalTokens: workablePromptTokens + workableCompTokens,
+        promptTokens: workablePromptTokens,
+        completionTokens: workableCompTokens,
+        totalCost: workableCost,
+        candidatesAddedCount: workableCvCount,
+        totalCalls: workableCalls,
+        successCalls: workableSuccess,
       },
       openrouterGemma: {
         totalTokens: gemmaPromptTokens + gemmaCompTokens,

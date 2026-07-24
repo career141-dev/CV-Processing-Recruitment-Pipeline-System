@@ -96,6 +96,7 @@ export default function IngestionMonitorPage() {
   const [isWorkableModalOpen, setIsWorkableModalOpen] = useState(false);
   const [subdomain, setSubdomain] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [maxCandidates, setMaxCandidates] = useState<number>(500);
   const [isWorkableImporting, setIsWorkableImporting] = useState(false);
 
   // Manual Upload State
@@ -131,8 +132,8 @@ export default function IngestionMonitorPage() {
     }
     setIsWorkableImporting(true);
     try {
-      await startBulkImport({ subdomain, apiKey, userId: user.id });
-      toast.success("Workable import started!");
+      await startBulkImport({ subdomain, apiKey, userId: user.id, maxCandidates });
+      toast.success(`Workable import started (limit: ${maxCandidates} candidates)`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start import");
     } finally {
@@ -761,13 +762,14 @@ export default function IngestionMonitorPage() {
             <>
               <div className="bg-[#E1F5FE] border border-[#B3E5FC] rounded-xl p-4 text-[#0277BD]">
                 <p className="text-sm font-bold flex items-center gap-2 mb-2">
-                  <Info className="w-4 h-4 shrink-0" /> How this works
+                  <Info className="w-4 h-4 shrink-0" /> Workable Integration Engine
                 </p>
                 <ol className="text-xs space-y-1 list-decimal list-inside font-medium ml-1">
-                  <li>We connect to your Workable account using your API key.</li>
-                  <li>Candidates with a CV/resume attached are downloaded.</li>
-                  <li>CVs are extracted and processed with AI (name, skills, experience).</li>
-                  <li>Up to 10 new candidates will be imported in a single run.</li>
+                  <li>Connects via Bearer token to your Workable SPI v3 API.</li>
+                  <li>Uses 5-tier fallback algorithm to capture all candidate CV attachments.</li>
+                  <li>Stores files in Cloudflare R2 Storage and executes AI details parsing.</li>
+                  <li>Runs continuous pagination with auto-resume rate-limit protection (429 backoff).</li>
+                  <li>Stop or Pause anytime—resumes from the exact saved cursor.</li>
                 </ol>
               </div>
 
@@ -802,11 +804,32 @@ export default function IngestionMonitorPage() {
                     className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
                   />
                 </div>
+
+                <div>
+                  <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
+                    <Activity className="w-4 h-4 text-text-secondary" /> Import Limit (Candidates per run)
+                  </label>
+                  <select
+                    value={maxCandidates}
+                    onChange={(e) => setMaxCandidates(Number(e.target.value))}
+                    className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container font-medium"
+                  >
+                    <option value={100}>100 Candidates (Quick Test)</option>
+                    <option value={500}>500 Candidates (Recommended Initial Target)</option>
+                    <option value={1000}>1,000 Candidates</option>
+                    <option value={5000}>5,000 Candidates</option>
+                    <option value={50000}>50,000 Candidates</option>
+                    <option value={0}>Unlimited (Extract All Candidates)</option>
+                  </select>
+                  <p className="text-[11px] text-text-secondary mt-1">
+                    API fetches in pages of 20. The import stops automatically once this target is reached.
+                  </p>
+                </div>
                 
                 <div className="pt-2 flex justify-end gap-3">
                   <Button variant="outline" onClick={() => setIsWorkableModalOpen(false)}>Cancel</Button>
                   <Button onClick={handleWorkableImport} disabled={isWorkableImporting}>
-                    {isWorkableImporting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Starting...</> : "Start Import"}
+                    {isWorkableImporting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Starting...</> : `Start Import (${maxCandidates === 0 ? "Unlimited" : maxCandidates})`}
                   </Button>
                 </div>
               </div>

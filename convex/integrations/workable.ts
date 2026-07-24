@@ -6,6 +6,7 @@ export const createImportJob = internalMutation({
   args: {
     userId: v.string(),
     totalCandidates: v.number(),
+    maxCandidates: v.optional(v.number()),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
   },
@@ -13,6 +14,7 @@ export const createImportJob = internalMutation({
     return await ctx.db.insert("workableImports", {
       status: "running",
       totalCandidates: args.totalCandidates,
+      maxCandidates: args.maxCandidates,
       imported: 0,
       skipped: 0,
       failed: 0,
@@ -32,6 +34,7 @@ export const updateImportJob = internalMutation({
     deduplicated: v.optional(v.number()),
     failed: v.optional(v.number()),
     totalCandidates: v.optional(v.number()),
+    maxCandidates: v.optional(v.number()),
     status: v.optional(
       v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped"))
     ),
