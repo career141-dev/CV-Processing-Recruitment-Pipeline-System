@@ -1079,7 +1079,6 @@ export default defineSchema({
     skipped: v.number(),
     deduplicated: v.optional(v.number()),
     failed: v.number(),
-    maxCandidates: v.optional(v.number()),
     userId: v.string(),
     startedAt: v.string(),
     errorMessage: v.optional(v.string()),

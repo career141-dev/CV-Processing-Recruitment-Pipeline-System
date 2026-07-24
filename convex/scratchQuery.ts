@@ -40,6 +40,68 @@ export const checkRunningImports = query({
   },
 });
 
+export const getDeepSeekUsageByFunctionReport = query({
+  args: {},
+  handler: async (ctx) => {
+    const logs = await ctx.db.query("nvidiaTokenLogs").order("desc").take(500);
+    
+    const taskBreakdown: Record<string, {
+      callsCount: number;
+      successfulCalls: number;
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+      costUsd: number;
+    }> = {};
+
+    let totalDeepSeekCalls = 0;
+    let totalDeepSeekTokens = 0;
+    let totalDeepSeekCostUsd = 0;
+
+    for (const log of logs) {
+      const modelLower = (log.model || "").toLowerCase();
+      if (modelLower.includes("deepseek")) {
+        totalDeepSeekCalls++;
+        const task = log.taskType || "unknown";
+        if (!taskBreakdown[task]) {
+          taskBreakdown[task] = {
+            callsCount: 0,
+            successfulCalls: 0,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            costUsd: 0,
+          };
+        }
+
+        const inputTokens = log.promptTokens || 0;
+        const outputTokens = log.completionTokens || 0;
+        const total = log.totalTokens || (inputTokens + outputTokens);
+
+        const cost = (inputTokens / 1_000_000 * 0.14) + (outputTokens / 1_000_000 * 0.28);
+
+        taskBreakdown[task].callsCount++;
+        if (log.success) taskBreakdown[task].successfulCalls++;
+        taskBreakdown[task].promptTokens += inputTokens;
+        taskBreakdown[task].completionTokens += outputTokens;
+        taskBreakdown[task].totalTokens += total;
+        taskBreakdown[task].costUsd += cost;
+
+        totalDeepSeekTokens += total;
+        totalDeepSeekCostUsd += cost;
+      }
+    }
+
+    return {
+      totalLogsAnalyzed: logs.length,
+      totalDeepSeekCalls,
+      totalDeepSeekTokens,
+      totalDeepSeekCostUsd,
+      taskBreakdown,
+    };
+  },
+});
+
 export const inspectUnpatchedDeepSeekCandidates = query({
   args: {},
   handler: async (ctx) => {
