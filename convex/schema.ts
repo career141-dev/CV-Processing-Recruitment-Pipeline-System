@@ -560,6 +560,7 @@ export default defineSchema({
       )
     ),
     workableCandidateId: v.optional(v.string()),
+    extractionModel: v.optional(v.string()),
     sourceChannel: v.optional(v.string()),
     fileHash: v.optional(v.string()),
     summary: v.optional(v.string()),
@@ -683,6 +684,7 @@ export default defineSchema({
       editedAt: v.string(),
     }))),
   })
+    .index("by_jobId", ["jobId"])
     .index("by_job_stage", ["jobId", "currentStage"])
     .index("by_candidateId", ["candidateId"])
     .index("by_job_source", ["jobId", "sourceChannel"])

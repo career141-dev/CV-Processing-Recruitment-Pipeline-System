@@ -64,9 +64,7 @@ const TABS = [
   { id: 'Rejected', label: 'Rejected', icon: XCircle },
 ];
 
-const ScoreRing = ({ score, reason }: { score: number | string, reason?: string }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
+const ScoreRing = ({ score }: { score: number | string }) => {
   if (score === 'Pending' || score === null || score === undefined) {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-text-disabled bg-surface-container px-2 py-1 rounded-full">
@@ -88,20 +86,32 @@ const ScoreRing = ({ score, reason }: { score: number | string, reason?: string 
         </svg>
         <span className={`absolute text-[10px] font-bold ${colorClass}`}>{numScore}</span>
       </div>
-      {reason && (
-        <div className="text-[11.5px] text-green-700 bg-green-50/70 border border-green-100/50 px-2.5 py-1.5 rounded-lg leading-relaxed max-w-[200px] flex flex-col items-start gap-1">
-          <div className={isExpanded ? "" : "line-clamp-2"}>
-            {reason}
-          </div>
-          {reason.length > 50 && (
-            <button 
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="text-[10px] text-green-800 font-bold hover:underline self-start mt-0.5 shrink-0"
-            >
-              {isExpanded ? "See Less" : "See More"}
-            </button>
-          )}
-        </div>
+    </div>
+  );
+};
+
+const AiReasonDisplay = ({ reason }: { reason?: string | null }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!reason || reason.trim() === '') {
+    return <span className="text-text-disabled italic text-[11px]">No AI match reason generated yet</span>;
+  }
+
+  const isLong = reason.length > 90;
+
+  return (
+    <div className="text-[12px] text-text-secondary leading-snug max-w-[280px]">
+      <div className={isExpanded ? "" : "line-clamp-2"} title={reason}>
+        {reason}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-primary hover:underline text-[11px] font-semibold mt-0.5 inline-block"
+        >
+          {isExpanded ? "See Less" : "See More"}
+        </button>
       )}
     </div>
   );
@@ -210,24 +220,13 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
           </div>
         </td>
         <td className="p-4"><span className="text-[#0A66C2] font-medium">{match.sourceLevel1 || 'Database'}</span></td>
-        <td className="p-4"><ScoreRing score={match.overallScore} reason={match.reason} /></td>
+        <td className="p-4"><ScoreRing score={match.overallScore} /></td>
         <td className="p-4 text-[13px]">
           <div className="font-medium text-text-primary truncate max-w-[200px]" title={(candidate as any)?.currentTitle || candidate?.currentJobTitle || match.candidateRole || 'Unknown Role'}>{(candidate as any)?.currentTitle || candidate?.currentJobTitle || match.candidateRole || 'Unknown Role'}</div>
           <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : (match.candidateExp ? `${match.candidateExp} yrs exp` : 'Exp not specified'))}</div>
         </td>
-        <td className="p-4 text-[13px] text-text-secondary">
-          <div className="flex items-center gap-2">
-            <div className="max-w-[120px] sm:max-w-[180px] truncate" title={match.reason}>{match.reason || 'N/A'}</div>
-            {match.reason && (
-              <button 
-                onClick={() => setIsExpanded(!isExpanded)}
-                className={`text-primary hover:text-primary/80 transition-colors shrink-0 ${isExpanded ? 'bg-primary/10 rounded p-0.5' : ''}`}
-                title="View full reason"
-              >
-                <Info className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+        <td className="p-4">
+          <AiReasonDisplay reason={match.reason} />
         </td>
         <td className="p-4 text-right">
           <div className="flex items-center justify-end gap-2">
@@ -1484,7 +1483,7 @@ export default function JobDetailPage() {
                     <th className="p-4">Source</th>
                     <th className="p-4">Match Score</th>
                     <th className="p-4">Role & Exp</th>
-                    <th className="p-4">AI Status</th>
+                    <th className="p-4">AI Reason</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1515,12 +1514,14 @@ export default function JobDetailPage() {
                              ((app.candidate as any)?.source || 'Manual')}
                           </span>
                         </td>
-                        <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} reason={(app as any).aiMatchExplanation} /></td>
+                        <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} /></td>
                         <td className="p-4 text-[13px]">
                           <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}</div>
                           <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
                         </td>
-                        <td className="p-4"><StatusDot status={app.aiCallStatus || 'Not Called'} /></td>
+                        <td className="p-4">
+                          <AiReasonDisplay reason={(app as any).aiMatchExplanation || (app.candidate as any)?.summary} />
+                        </td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end">
                             <select 
@@ -1677,7 +1678,7 @@ export default function JobDetailPage() {
                     <td className="p-4 font-medium">
                       <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
                     </td>
-                    <td className="p-4"><ScoreRing score={item.score} reason={item.scoreReason} /></td>
+                    <td className="p-4"><ScoreRing score={item.score} /></td>
                     <td className="p-4 text-right">
                       {renderKanbanDropdown(item.id, 'ta_shortlist')}
                     </td>
