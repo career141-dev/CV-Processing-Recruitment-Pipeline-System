@@ -97,6 +97,18 @@ export const getTimeline = query({
     // Sort descending (newest first)
     events.sort((a, b) => b.timestamp - a.timestamp);
 
-    return events;
+    return {
+      events,
+      applicationInfo: {
+        currentStage: application.currentStage,
+        lastStageChangedAt: typeof application.lastStageChangedAt === 'string' 
+          ? new Date(application.lastStageChangedAt).getTime() 
+          : application.lastStageChangedAt,
+        followUpCvReceived: application.followUpCvReceived,
+        followUpCurrentSalary: application.followUpCurrentSalary,
+        followUpExpectedSalary: application.followUpExpectedSalary,
+        followUpNoticePeriod: application.followUpNoticePeriod,
+      }
+    };
   },
 });
