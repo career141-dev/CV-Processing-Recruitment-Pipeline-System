@@ -45,15 +45,14 @@ export const assignAiFollowUpLabel = internalAction({
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
       if (!apiToken) return;
 
-      // 1. Find the assigned WhatsApp number from jobChannels
-      const jobChannels = await ctx.runQuery(internal.communications.whatsappOutbound.getJobWhatsAppChannel, { jobId: args.jobId });
-      const activeChannel = jobChannels.find((ch: any) => ch.isEnabled && ch.whatsappNumber);
+      // 1. Find the assigned WhatsApp number from the job
+      const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
       
       let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
       
-      if (activeChannel && activeChannel.whatsappNumber) {
+      if (outboundNumber) {
         const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
-          targetWhatsAppNumber: activeChannel.whatsappNumber 
+          targetWhatsAppNumber: outboundNumber 
         });
         if (fetchedId) phoneId = fetchedId;
       }
@@ -142,6 +141,29 @@ export const getJobWhatsAppChannel = internalQuery({
       .withIndex("by_job", (q: any) => q.eq("jobId", args.jobId))
       .filter((q: any) => q.eq(q.field("channelType"), "whatsapp"))
       .collect();
+  }
+});
+
+export const getJobOutboundWhatsAppNumber = internalQuery({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) return null;
+    
+    // 1. Prioritize explicit TA Outreach Number configured on the Job
+    if (job.outreachWhatsAppNumber) {
+      return job.outreachWhatsAppNumber;
+    }
+    
+    // 2. Fallback to inbound channel configuration for backward compatibility
+    const channels = await ctx.db
+      .query("jobChannels")
+      .withIndex("by_job", (q: any) => q.eq("jobId", args.jobId))
+      .filter((q: any) => q.eq(q.field("channelType"), "whatsapp"))
+      .collect();
+      
+    const activeChannel = channels.find((ch: any) => ch.isEnabled && ch.whatsappNumber);
+    return activeChannel ? activeChannel.whatsappNumber : null;
   }
 });
 
@@ -237,20 +259,19 @@ export const sendWhatsApp = internalAction({
         throw new Error("WHATCHIMP_API_TOKEN is not configured.");
       }
 
-      // Fetch job channel to get TA-specific number
-      const jobChannels = await ctx.runQuery(internal.communications.whatsappOutbound.getJobWhatsAppChannel, { jobId: args.jobId });
-      const activeChannel = jobChannels.find((ch: any) => ch.isEnabled && ch.whatsappNumber);
+      // Fetch job's designated outbound TA number (or fallback)
+      const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
       
       let apiKey = baseApiToken;
       let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
 
-      if (activeChannel && activeChannel.whatsappNumber) {
+      if (outboundNumber) {
         const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
-          targetWhatsAppNumber: activeChannel.whatsappNumber 
+          targetWhatsAppNumber: outboundNumber 
         });
         if (fetchedId) {
           phoneId = fetchedId;
-          console.log(`[WhatsApp Outbound] Using TA assigned number: ${activeChannel.whatsappNumber} (ID: ${phoneId})`);
+          console.log(`[WhatsApp Outbound] Using TA assigned number: ${outboundNumber} (ID: ${phoneId})`);
         }
       }
 

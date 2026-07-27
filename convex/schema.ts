@@ -246,6 +246,9 @@ export default defineSchema({
       v.literal("notify_ta")),
     agent5HideCompany: v.optional(v.boolean()),
 
+    // Agent 3 — Outbound TA Identity
+    outreachWhatsAppNumber: v.optional(v.string()),
+
     // SLA Thresholds (days)
     slaNoNewCvsDays: v.optional(v.number()),
     slaTaReviewDays: v.optional(v.number()),
