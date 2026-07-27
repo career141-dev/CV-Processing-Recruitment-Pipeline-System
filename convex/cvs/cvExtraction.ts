@@ -100,7 +100,88 @@ if (typeof globalThis.DOMMatrix === "undefined") {
   };
 }
 
-// Tesseract OCR removed due to Convex V8 runtime worker thread incompatibility
+import tesseract from "node-tesseract-ocr";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+
+const execFileAsync = promisify(execFile);
+
+async function runNativeOcrOnBuffer(
+  buffer: ArrayBuffer,
+  fileType: string
+): Promise<{ text: string; pagesCount: number } | null> {
+  const type = fileType.toLowerCase();
+  const isPdf = type === "pdf" || type === "application/pdf";
+  const tempId = crypto.randomUUID();
+  const tempDir = path.join(os.tmpdir(), `ocr_${tempId}`);
+
+  try {
+    await fs.mkdir(tempDir, { recursive: true });
+
+    let imageFiles: string[] = [];
+
+    if (isPdf) {
+      const pdfPath = path.join(tempDir, "input.pdf");
+      await fs.writeFile(pdfPath, Buffer.from(buffer));
+      const outPrefix = path.join(tempDir, "page");
+
+      try {
+        await execFileAsync("pdftoppm", ["-png", "-r", "150", pdfPath, outPrefix]);
+        const files = await fs.readdir(tempDir);
+        imageFiles = files
+          .filter((f) => f.startsWith("page-") && f.endsWith(".png"))
+          .sort((a, b) => {
+            const numA = parseInt(a.replace(/[^\d]/g, "")) || 0;
+            const numB = parseInt(b.replace(/[^\d]/g, "")) || 0;
+            return numA - numB;
+          })
+          .map((f) => path.join(tempDir, f));
+      } catch (pdftoppmErr: any) {
+        console.warn("[runNativeOcrOnBuffer] pdftoppm failed or binary not found:", pdftoppmErr.message || pdftoppmErr);
+        return null;
+      }
+    } else {
+      const ext = type.includes("png") ? ".png" : type.includes("tiff") ? ".tiff" : type.includes("webp") ? ".webp" : ".jpg";
+      const imgPath = path.join(tempDir, `input${ext}`);
+      await fs.writeFile(imgPath, Buffer.from(buffer));
+      imageFiles = [imgPath];
+    }
+
+    if (imageFiles.length === 0) return null;
+
+    const tesseractConfig = {
+      lang: "eng",
+      oem: 1,
+      psm: 3,
+    };
+
+    const textParts: string[] = [];
+    for (const imgFile of imageFiles.slice(0, 5)) {
+      try {
+        const text = await tesseract.recognize(imgFile, tesseractConfig);
+        if (text && text.trim()) {
+          textParts.push(text.trim());
+        }
+      } catch (ocrErr: any) {
+        console.warn(`[runNativeOcrOnBuffer] Tesseract error on ${imgFile}:`, ocrErr.message || ocrErr);
+      }
+    }
+
+    const combinedText = textParts.join("\n\n").trim();
+    return { text: combinedText, pagesCount: imageFiles.length };
+  } catch (err: any) {
+    console.warn("[runNativeOcrOnBuffer] Native OCR attempt failed:", err.message || err);
+    return null;
+  } finally {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
 import {
   deriveNoticePeriodDays,
   deriveSeniorityLevel,
@@ -602,22 +683,36 @@ export async function extractText(
   skipOCR: boolean = false,
   ctx?: ActionCtx,
   cvUploadId?: Id<"cvUploads">
-): Promise<string> {
+): Promise<{ text: string; extractionModel: string }> {
   const type = fileType.toLowerCase();
 
+  // 1. PDF Document Extraction
   if (type === "pdf" || type === "application/pdf") {
     let pdfText = "";
     try {
       pdfText = await extractTextFromPdf(buffer);
     } catch (e) {
-      console.warn("Standard PDF text extraction failed, falling back to Vision OCR...", e);
+      console.warn("[extractText] Standard PDF text extraction failed:", e);
     }
 
+    // Condition: If pdf2json extracts >= 50 characters, use normal text extraction path!
     if (pdfText && pdfText.trim().length >= 50) {
-      return pdfText;
+      return { text: pdfText, extractionModel: "deepseek-v4-flash" };
     }
 
-    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Invoking Vision OCR...`);
+    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Attempting Native Tesseract OCR pre-processing...`);
+
+    // Trigger condition (< 50 chars): Try Native Tesseract OCR pre-processing first!
+    if (!skipOCR) {
+      const ocrResult = await runNativeOcrOnBuffer(buffer, fileType);
+      if (ocrResult && ocrResult.text.length > 80) {
+        console.log(`[extractText] Native Tesseract OCR extracted ${ocrResult.text.length} chars. Routing to DeepSeek V4 Flash with extractionModel="ocr-tesseract".`);
+        return { text: ocrResult.text, extractionModel: "ocr-tesseract" };
+      }
+    }
+
+    // IF OCR text length <= 80 chars (or native OCR binary missing/failed): Fall through to Vision LLM fallback
+    console.log(`[extractText] Native OCR yielded <= 80 chars or failed. Falling through to Vision LLM fallback (vision-llama32)...`);
 
     if (!ctx) {
       throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
@@ -639,7 +734,7 @@ export async function extractText(
     if (!pageImages || pageImages.length === 0) {
       if (pdfText && pdfText.trim().length > 0) {
         console.warn(`[extractText] Scanned PDF image extraction returned 0 images. Falling back to pdfText (${pdfText.trim().length} chars).`);
-        return pdfText;
+        return { text: pdfText, extractionModel: "deepseek-v4-flash" };
       }
       throw new Error("Scanned PDF text extraction failed: less than 50 characters extracted and no scanned page images could be extracted from PDF.");
     }
@@ -649,20 +744,33 @@ export async function extractText(
       throw new Error("Insufficient text extracted from scanned PDF (Vision OCR returned less than 20 characters).");
     }
 
-    return visionText;
+    return { text: visionText, extractionModel: "vision-llama32" };
   }
 
+  // 2. DOCX / DOC
   const magic = new Uint8Array(buffer.slice(0, 4));
   const isZipHeader = magic[0] === 0x50 && magic[1] === 0x4b && magic[2] === 0x03 && magic[3] === 0x04;
 
   if (type === "docx" || type === "doc" || type.includes("wordprocessingml") || isZipHeader) {
-    return extractTextFromDocx(buffer);
+    const docxText = await extractTextFromDocx(buffer);
+    return { text: docxText, extractionModel: "deepseek-v4-flash" };
   }
 
-  if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg" || type === "webp") {
-    return extractTextFromImage(buffer, fileType, ctx, cvUploadId);
+  // 3. Images (PNG, JPG, JPEG, WEBP, TIFF)
+  if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg" || type === "webp" || type === "tiff") {
+    if (!skipOCR) {
+      const ocrResult = await runNativeOcrOnBuffer(buffer, fileType);
+      if (ocrResult && ocrResult.text.length > 80) {
+        console.log(`[extractText] Native Tesseract OCR extracted ${ocrResult.text.length} chars from Image. Routing to DeepSeek V4 Flash with extractionModel="ocr-tesseract".`);
+        return { text: ocrResult.text, extractionModel: "ocr-tesseract" };
+      }
+    }
+
+    const visionText = await extractTextFromImage(buffer, fileType, ctx, cvUploadId);
+    return { text: visionText, extractionModel: "vision-llama32" };
   }
 
+  // 4. RTF & TXT
   if (type === "rtf") {
     const decoded = new TextDecoder("utf-8").decode(buffer);
     const text = decoded
@@ -672,14 +780,14 @@ export async function extractText(
       .replace(/\\'[0-9a-f]{2}/g, "")
       .replace(/\s+/g, " ")
       .trim();
-    if (text.length > 50) return text;
+    if (text.length > 50) return { text, extractionModel: "deepseek-v4-flash" };
   }
 
   if (type === "txt") {
-    return new TextDecoder("utf-8").decode(buffer);
+    return { text: new TextDecoder("utf-8").decode(buffer), extractionModel: "deepseek-v4-flash" };
   }
 
-  return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+  return { text: new TextDecoder("utf-8", { fatal: false }).decode(buffer), extractionModel: "deepseek-v4-flash" };
 }
 
 // ──────────────────────────────────────────────────
@@ -1032,7 +1140,7 @@ export async function runCvExtraction(
       return existingCandidate._id;
     }
 
-    const rawText = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
+    const { text: rawText, extractionModel } = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
     if (trimmed.length < 20) {
@@ -1049,6 +1157,7 @@ export async function runCvExtraction(
       cvUploadId,
       workableCandidateId: workableCandidateId ?? undefined,
       isParsed: !skipLLM,
+      extractionModel,
     });
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
@@ -1184,7 +1293,7 @@ export async function runCvExtraction(
         parsingConfidence,
         isParsed: true,
         embedding,
-        extractionModel: OPENROUTER_PRIMARY_MODEL,
+        extractionModel: extractionModel || OPENROUTER_PRIMARY_MODEL,
       });
 
       if (extracted.referees && extracted.referees.length > 0) {
