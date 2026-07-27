@@ -100,87 +100,7 @@ if (typeof globalThis.DOMMatrix === "undefined") {
   };
 }
 
-import tesseract from "node-tesseract-ocr";
-import { execFile } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
 
-const execFileAsync = promisify(execFile);
-
-async function runNativeOcrOnBuffer(
-  buffer: ArrayBuffer,
-  fileType: string
-): Promise<{ text: string; pagesCount: number } | null> {
-  const type = fileType.toLowerCase();
-  const isPdf = type === "pdf" || type === "application/pdf";
-  const tempId = crypto.randomUUID();
-  const tempDir = path.join(os.tmpdir(), `ocr_${tempId}`);
-
-  try {
-    await fs.mkdir(tempDir, { recursive: true });
-
-    let imageFiles: string[] = [];
-
-    if (isPdf) {
-      const pdfPath = path.join(tempDir, "input.pdf");
-      await fs.writeFile(pdfPath, Buffer.from(buffer));
-      const outPrefix = path.join(tempDir, "page");
-
-      try {
-        await execFileAsync("pdftoppm", ["-png", "-r", "150", pdfPath, outPrefix]);
-        const files = await fs.readdir(tempDir);
-        imageFiles = files
-          .filter((f) => f.startsWith("page-") && f.endsWith(".png"))
-          .sort((a, b) => {
-            const numA = parseInt(a.replace(/[^\d]/g, "")) || 0;
-            const numB = parseInt(b.replace(/[^\d]/g, "")) || 0;
-            return numA - numB;
-          })
-          .map((f) => path.join(tempDir, f));
-      } catch (pdftoppmErr: any) {
-        console.warn("[runNativeOcrOnBuffer] pdftoppm failed or binary not found:", pdftoppmErr.message || pdftoppmErr);
-        return null;
-      }
-    } else {
-      const ext = type.includes("png") ? ".png" : type.includes("tiff") ? ".tiff" : type.includes("webp") ? ".webp" : ".jpg";
-      const imgPath = path.join(tempDir, `input${ext}`);
-      await fs.writeFile(imgPath, Buffer.from(buffer));
-      imageFiles = [imgPath];
-    }
-
-    if (imageFiles.length === 0) return null;
-
-    const tesseractConfig = {
-      lang: "eng",
-      oem: 1,
-      psm: 3,
-    };
-
-    const textParts: string[] = [];
-    for (const imgFile of imageFiles.slice(0, 5)) {
-      try {
-        const text = await tesseract.recognize(imgFile, tesseractConfig);
-        if (text && text.trim()) {
-          textParts.push(text.trim());
-        }
-      } catch (ocrErr: any) {
-        console.warn(`[runNativeOcrOnBuffer] Tesseract error on ${imgFile}:`, ocrErr.message || ocrErr);
-      }
-    }
-
-    const combinedText = textParts.join("\n\n").trim();
-    return { text: combinedText, pagesCount: imageFiles.length };
-  } catch (err: any) {
-    console.warn("[runNativeOcrOnBuffer] Native OCR attempt failed:", err.message || err);
-    return null;
-  } finally {
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch {}
-  }
-}
 
 import {
   deriveNoticePeriodDays,
@@ -700,19 +620,7 @@ export async function extractText(
       return { text: pdfText, extractionModel: "deepseek-v4-flash" };
     }
 
-    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Attempting Native Tesseract OCR pre-processing...`);
-
-    // Trigger condition (< 50 chars): Try Native Tesseract OCR pre-processing first!
-    if (!skipOCR) {
-      const ocrResult = await runNativeOcrOnBuffer(buffer, fileType);
-      if (ocrResult && ocrResult.text.length > 80) {
-        console.log(`[extractText] Native Tesseract OCR extracted ${ocrResult.text.length} chars. Routing to DeepSeek V4 Flash with extractionModel="ocr-tesseract".`);
-        return { text: ocrResult.text, extractionModel: "ocr-tesseract" };
-      }
-    }
-
-    // IF OCR text length <= 80 chars (or native OCR binary missing/failed): Fall through to Vision LLM fallback
-    console.log(`[extractText] Native OCR yielded <= 80 chars or failed. Falling through to Vision LLM fallback (vision-llama32)...`);
+    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Falling through to Vision LLM fallback (vision-llama32)...`);
 
     if (!ctx) {
       throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
@@ -746,13 +654,6 @@ export async function extractText(
 
   // 3. Images (PNG, JPG, JPEG, WEBP, TIFF)
   if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg" || type === "webp" || type === "tiff") {
-    if (!skipOCR) {
-      const ocrResult = await runNativeOcrOnBuffer(buffer, fileType);
-      if (ocrResult && ocrResult.text.length > 80) {
-        console.log(`[extractText] Native Tesseract OCR extracted ${ocrResult.text.length} chars from Image. Routing to DeepSeek V4 Flash with extractionModel="ocr-tesseract".`);
-        return { text: ocrResult.text, extractionModel: "ocr-tesseract" };
-      }
-    }
 
     const visionText = await extractTextFromImage(buffer, fileType, ctx, cvUploadId);
     return { text: visionText, extractionModel: "vision-llama32" };
