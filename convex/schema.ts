@@ -269,6 +269,7 @@ export default defineSchema({
     embedding: v.optional(v.array(v.number())),
 
     // Timestamps
+    outreachWhatsAppNumber: v.optional(v.string()),
     createdAt: v.string(),
     publishedAt: v.optional(v.string()),
     filledAt: v.optional(v.string()),
@@ -691,6 +692,7 @@ export default defineSchema({
       editedBy: v.id("users"),
       editedAt: v.string(),
     }))),
+    metaConversionSentFor: v.optional(v.array(v.string())),
   })
     .index("by_jobId", ["jobId"])
     .index("by_job_stage", ["jobId", "currentStage"])

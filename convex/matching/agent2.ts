@@ -204,6 +204,73 @@ export const runReverseMatch = action({
         ? args.customPreferences
         : job.taPreferences;
 
+      // Parse custom TA preferences with LLM if present
+      let parsedPreferences: {
+        overrideSeniority?: string | null;
+        maxYearsExperience?: number | null;
+        minYearsExperience?: number | null;
+        requiredSkillsOverride?: string[];
+        negativeKeywords?: string[];
+      } = {};
+
+      if (activePreferences && activePreferences.trim()) {
+        try {
+          const { getModelForTask, getOpenAI, logLLMUsage } = await import("../lib/llm.js");
+          const model = getModelForTask("jd_matching");
+          const openai = getOpenAI("jd_matching");
+
+          const response = await openai.chat.completions.create({
+            model,
+            temperature: 0.1,
+            max_tokens: 300,
+            messages: [
+              {
+                role: "system",
+                content: `You are a Senior TA Recruiter. Extract candidate criteria overrides from recruiter feedback.
+Return ONLY valid JSON matching this schema:
+{
+  "overrideSeniority": "intern" | "junior" | "mid" | "senior" | "lead" | "executive" | null,
+  "maxYearsExperience": number | null,
+  "minYearsExperience": number | null,
+  "requiredSkillsOverride": string[],
+  "negativeKeywords": string[]
+}`
+              },
+              {
+                role: "user",
+                content: activePreferences
+              }
+            ],
+            response_format: { type: "json_object" }
+          });
+
+          const content = response.choices[0]?.message?.content ?? "{}";
+          const promptTokens = response.usage?.prompt_tokens ?? 0;
+          const completionTokens = response.usage?.completion_tokens ?? 0;
+
+          tokenLogs.push({
+            taskType: "jd_matching",
+            model,
+            promptTokens,
+            completionTokens,
+            success: true,
+          });
+
+          const parsed = JSON.parse(content);
+          if (parsed && typeof parsed === "object") {
+            parsedPreferences = {
+              overrideSeniority: typeof parsed.overrideSeniority === "string" ? parsed.overrideSeniority : null,
+              maxYearsExperience: typeof parsed.maxYearsExperience === "number" ? parsed.maxYearsExperience : null,
+              minYearsExperience: typeof parsed.minYearsExperience === "number" ? parsed.minYearsExperience : null,
+              requiredSkillsOverride: Array.isArray(parsed.requiredSkillsOverride) ? parsed.requiredSkillsOverride : [],
+              negativeKeywords: Array.isArray(parsed.negativeKeywords) ? parsed.negativeKeywords : [],
+            };
+          }
+        } catch (err) {
+          console.error("Failed to parse TA custom preferences:", err);
+        }
+      }
+
       // Set status to running immediately
       await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
@@ -463,10 +530,15 @@ export const runReverseMatch = action({
             email: cv.email,
             phone: cv.phone,
             location: cv.location,
-            currentJobTitle: cv.currentJobTitle,
+            currentTitle: cv.currentTitle || cv.currentJobTitle,
+            currentJobTitle: cv.currentJobTitle || cv.currentTitle,
             currentEmployer: cv.currentEmployer,
-            totalExperienceYears: cv.totalExperienceYears,
+            seniorityLevel: cv.seniorityLevel,
+            yearsOfExperience: cv.yearsOfExperience ?? cv.totalExperienceYears,
+            totalExperienceYears: cv.totalExperienceYears ?? cv.yearsOfExperience,
             skills: cv.skills,
+            summary: cv.summary || cv.rawText?.slice(0, 500),
+            rawText: cv.rawText,
             educationDegree: cv.educationDegree,
             educationInstitution: cv.educationInstitution,
             educationYear: cv.educationYear,
@@ -477,11 +549,19 @@ export const runReverseMatch = action({
             noticePeriodDays: cv.noticePeriodDays,
           };
 
+          const reqSkills = [
+            ...(job.requiredSkills ?? []),
+            ...(parsedPreferences.requiredSkillsOverride ?? []),
+          ];
+
           const scored = scoreCandidateAgainstRequirements(cvPayload, {
             title: job.title,
-            requiredSkills: job.requiredSkills ?? [],
+            requiredSkills: reqSkills,
             niceToHaveSkills: job.niceToHaveSkills ?? [],
-            minYearsExperience: job.experienceMinYears ?? null,
+            minYearsExperience: parsedPreferences.minYearsExperience ?? job.experienceMinYears ?? null,
+            maxYearsExperience: parsedPreferences.maxYearsExperience ?? job.experienceMaxYears ?? null,
+            overrideSeniority: parsedPreferences.overrideSeniority ?? null,
+            negativeKeywords: parsedPreferences.negativeKeywords ?? [],
             education: job.educationLevel ?? null,
             languages: job.languagesRequired ?? [],
             location: job.location,

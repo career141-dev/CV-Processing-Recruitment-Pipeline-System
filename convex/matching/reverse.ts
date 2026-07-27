@@ -164,6 +164,7 @@ export const runReverseMatch = action({
               role: "system",
               content: `You are a talent matching expert. Score each candidate against a job's requirements.
 For each candidate return a breakdown score (0-100) across 5 dimensions, plus which required skills they have/lack.
+CRITICAL: Apply a heavy penalty if a candidate is significantly overqualified (e.g. Senior/Lead/Manager applying for an Intern/Junior role, or experience exceeds maximum threshold for entry-level jobs). Overqualified candidates must receive low overall scores (< 50).
 Return JSON:
 {
   "matches": [

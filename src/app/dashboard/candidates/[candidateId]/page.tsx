@@ -309,9 +309,9 @@ export default function CandidateProfile() {
                       <div className="flex items-center justify-center h-[600px]">
                         <span className="text-text-disabled text-sm">Loading CV...</span>
                       </div>
-                    ) : cvUpload ? (
+                    ) : cvUpload && cvUpload.url ? (
                       <iframe
-                        src={(cvUpload.url || "").replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}
+                        src={cvUpload.url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}
                         className="w-full h-[800px] border-0"
                         title="CV Preview"
                       />
