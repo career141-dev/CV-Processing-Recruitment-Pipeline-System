@@ -29,8 +29,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const fromNumber = message.from;
       const cleanFromNumber = fromNumber.replace(/[^0-9]/g, "");
 
-      if (cleanFromNumber === businessPhone || (cleanConfigured && cleanFromNumber === cleanConfigured)) {
-        console.log("[WhatChimp Webhook] Ignoring Meta message from business number itself.");
+      const isTaNumber = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFromNumber });
+      if (cleanFromNumber === businessPhone || (cleanConfigured && cleanFromNumber === cleanConfigured) || isTaNumber) {
+        console.log("[WhatChimp Webhook] Ignoring Meta message from business/TA number itself.");
         continue;
       }
 
@@ -69,7 +70,11 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
             });
 
             const apiToken = process.env.WHATCHIMP_API_TOKEN;
-            const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+            const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+              targetWhatsAppNumber: toNumber 
+            });
+            const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID;
+
             if (apiToken && phoneNumberId && !job.muteDefaultWhatsappReply) {
               const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
               const params = new URLSearchParams();
@@ -157,8 +162,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
   console.log(`[WhatChimp Webhook] Flat payload parsed: From=+${cleanFrom}, Text="${text}", Has Media=${!!mediaUrl}`);
 
-  if (cleanFrom === businessPhone || (cleanConfigured && cleanFrom === cleanConfigured)) {
-    console.log("[WhatChimp Webhook] Ignoring outbound/status notification from the business number itself.");
+  const isTaNumberCustom = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFrom });
+  if (cleanFrom === businessPhone || (cleanConfigured && cleanFrom === cleanConfigured) || isTaNumberCustom) {
+    console.log("[WhatChimp Webhook] Ignoring outbound/status notification from the business/TA number itself.");
     return new Response("OK", { status: 200 });
   }
 
@@ -296,7 +302,10 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
       // 6. Send acknowledgment back to candidate
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
-      const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+        targetWhatsAppNumber: cleanTo 
+      });
+      const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID;
       if (apiToken && phoneNumberId) {
         let replyMessage = "Thank you! Your CV has been successfully received and is being processed by our system. We will contact you if there is a match.";
         

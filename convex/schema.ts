@@ -194,7 +194,12 @@ export default defineSchema({
     }))),
 
 
-    // Agent 3 — Follow-up Config
+    // Agent 3 — Follow-up Config (Dynamic AI Flow)
+    followUpInitialTemplate: v.optional(v.string()),
+    followUpSampleTemplate: v.optional(v.string()),
+    customFollowUpQuestions: v.optional(v.array(v.string())),
+    maxFollowUpDays: v.optional(v.number()),
+    maxFollowUpAttempts: v.optional(v.number()),
 
     agent3TriggerStages: v.optional(v.array(v.string())),
     agent3InitialChannel: v.optional(v.string()),
@@ -666,11 +671,15 @@ export default defineSchema({
       firstChannelUsed: v.optional(v.string()),
       replyChannel: v.optional(v.string())
     })),
+    followUpAttemptCount: v.optional(v.number()),
+    nextFollowUpScheduledAt: v.optional(v.number()),
+    nextFollowUpMessage: v.optional(v.string()),
     // Per-application follow-up completion flags (scoped per-job to avoid cross-job contamination)
     followUpCvReceived: v.optional(v.boolean()),
     followUpCurrentSalary: v.optional(v.boolean()),
     followUpExpectedSalary: v.optional(v.boolean()),
     followUpNoticePeriod: v.optional(v.boolean()),
+    customFollowUpAnswers: v.optional(v.record(v.string(), v.string())), // Maps question to candidate's answer
     followUpEnteredAt: v.optional(v.number()),    // timestamp when candidate entered follow_up stage
     followUpAiCallAttempts: v.optional(v.number()), // count of AI call retries within follow_up
     rejectedFromStage: v.optional(v.string()),
@@ -1403,5 +1412,28 @@ export default defineSchema({
     cvPromptTokens: v.optional(v.number()),
     cvCompletionTokens: v.optional(v.number()),
   }).index("by_dateStr", ["dateStr"]),
+
+  // ■■ MESSAGE TEMPLATES ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  messageTemplates: defineTable({
+    name: v.string(), // e.g. "Friendly Follow-Up"
+    type: v.union(v.literal("initial_outreach"), v.literal("sample_follow_up"), v.literal("general")),
+    content: v.string(), // The actual template text with [variables]
+    createdBy: v.id("users"), // The TA who created it
+    isGlobal: v.boolean(), // If true, available to all TAs (set by admin)
+    isActive: v.boolean(),
+    createdAt: v.string(),
+    updatedAt: v.optional(v.string()),
+  })
+    .index("by_createdBy", ["createdBy"])
+    .index("by_type", ["type"])
+    .index("by_isGlobal", ["isGlobal"]),
+
+  // ■■ WHATSAPP NUMBERS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  whatsappNumbers: defineTable({
+    name: v.string(), // e.g. "Jesmeen Mohammad"
+    phone: v.string(), // e.g. "+94 74 011 0130"
+    whatchimpPhoneId: v.string(), // e.g. "965783109962872"
+    createdAt: v.string(),
+  }).index("by_phone", ["phone"]),
 
 });

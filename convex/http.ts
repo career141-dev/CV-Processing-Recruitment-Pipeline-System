@@ -617,8 +617,8 @@ http.route({
         // Schedule the inbox read action to retrieve the new messages
         await ctx.scheduler.runAfter(
           0,
-          internal.communications.graphEmail.readInboxMessages,
-          { taEmail, top: 10 }
+          api.communications.emailAgent.pollEmailInbox,
+          { inboxEmail: taEmail }
         );
 
         console.log(`[Graph Webhook] Scheduled inbox read for ${taEmail}`);

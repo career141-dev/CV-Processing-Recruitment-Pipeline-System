@@ -2,22 +2,37 @@ import { v } from "convex/values";
 import { internalAction, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
-// Helper to fetch the correct phone_number_id based on the whatsapp number string
-async function getWhatChimpPhoneId(apiToken: string, targetWhatsAppNumber: string): Promise<string | null> {
-  const cleanNumber = targetWhatsAppNumber.replace(/[^0-9]/g, "");
-  
-  // Hardcoded mapping for known TA WhatChimp numbers because the API does not expose a /numbers endpoint
-  const knownNumbers: Record<string, string> = {
-    "94742197476": "965783109962872",
-  };
-  
-  if (knownNumbers[cleanNumber]) {
-    return knownNumbers[cleanNumber];
+// Internal query to fetch the correct phone_number_id based on the whatsapp number string from the database
+export const getWhatChimpPhoneId = internalQuery({
+  args: { targetWhatsAppNumber: v.string() },
+  handler: async (ctx, args) => {
+    const cleanNumber = args.targetWhatsAppNumber.startsWith('+') 
+      ? args.targetWhatsAppNumber 
+      : `+${args.targetWhatsAppNumber.replace(/[^0-9]/g, "")}`;
+    
+    const dbNumber = await ctx.db
+      .query("whatsappNumbers")
+      .withIndex("by_phone", (q) => q.eq("phone", cleanNumber))
+      .first();
+      
+    if (dbNumber) {
+      return dbNumber.whatchimpPhoneId;
+    }
+    
+    // Fallback mapping for known numbers during transition
+    const legacyClean = args.targetWhatsAppNumber.replace(/[^0-9]/g, "");
+    const knownNumbers: Record<string, string> = {
+      "94742197476": "965783109962872",
+    };
+    
+    if (knownNumbers[legacyClean]) {
+      return knownNumbers[legacyClean];
+    }
+    
+    console.error(`[WhatChimp] No phone_number_id mapped for ${args.targetWhatsAppNumber}`);
+    return null;
   }
-  
-  console.error(`[WhatChimp] No known phone_number_id mapped for ${cleanNumber}`);
-  return null;
-}
+});
 
 // Internal action to tag a candidate in WhatChimp
 export const assignAiFollowUpLabel = internalAction({
@@ -37,7 +52,9 @@ export const assignAiFollowUpLabel = internalAction({
       let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
       
       if (activeChannel && activeChannel.whatsappNumber) {
-        const fetchedId = await getWhatChimpPhoneId(apiToken, activeChannel.whatsappNumber);
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+          targetWhatsAppNumber: activeChannel.whatsappNumber 
+        });
         if (fetchedId) phoneId = fetchedId;
       }
       
@@ -228,7 +245,9 @@ export const sendWhatsApp = internalAction({
       let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
 
       if (activeChannel && activeChannel.whatsappNumber) {
-        const fetchedId = await getWhatChimpPhoneId(apiKey, activeChannel.whatsappNumber);
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+          targetWhatsAppNumber: activeChannel.whatsappNumber 
+        });
         if (fetchedId) {
           phoneId = fetchedId;
           console.log(`[WhatsApp Outbound] Using TA assigned number: ${activeChannel.whatsappNumber} (ID: ${phoneId})`);

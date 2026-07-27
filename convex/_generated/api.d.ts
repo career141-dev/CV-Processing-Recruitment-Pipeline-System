@@ -35,6 +35,7 @@ import type * as candidates_referees from "../candidates/referees.js";
 import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
 import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
+import type * as communications_followUpMutations from "../communications/followUpMutations.js";
 import type * as communications_graphEmail from "../communications/graphEmail.js";
 import type * as communications_graphEmailMutations from "../communications/graphEmailMutations.js";
 import type * as communications_graphSubscriptionQueries from "../communications/graphSubscriptionQueries.js";
@@ -80,11 +81,13 @@ import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as scratchQuery from "../scratchQuery.js";
+import type * as settings_whatsappNumbers from "../settings/whatsappNumbers.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
 import type * as stats_statsQueries from "../stats/statsQueries.js";
 import type * as storageMigration from "../storageMigration.js";
 import type * as storage_r2 from "../storage/r2.js";
+import type * as templates_messageTemplates from "../templates/messageTemplates.js";
 import type * as users_users from "../users/users.js";
 
 import type {
@@ -121,6 +124,7 @@ declare const fullApi: ApiFromModules<{
   "candidates/updateAllExp": typeof candidates_updateAllExp;
   "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
   "communications/emailAgent": typeof communications_emailAgent;
+  "communications/followUpMutations": typeof communications_followUpMutations;
   "communications/graphEmail": typeof communications_graphEmail;
   "communications/graphEmailMutations": typeof communications_graphEmailMutations;
   "communications/graphSubscriptionQueries": typeof communications_graphSubscriptionQueries;
@@ -166,11 +170,13 @@ declare const fullApi: ApiFromModules<{
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
   scratchQuery: typeof scratchQuery;
+  "settings/whatsappNumbers": typeof settings_whatsappNumbers;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;
   "stats/statsQueries": typeof stats_statsQueries;
   storageMigration: typeof storageMigration;
   "storage/r2": typeof storage_r2;
+  "templates/messageTemplates": typeof templates_messageTemplates;
   "users/users": typeof users_users;
 }>;
 

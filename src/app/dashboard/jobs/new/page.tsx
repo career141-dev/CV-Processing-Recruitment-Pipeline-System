@@ -8,12 +8,16 @@ import { api } from "../../../../../convex/_generated/api";
 import { Loader2, ShieldAlert, Mail, MessageSquare, Sparkles, Clock, Eye, Edit3, Check } from "lucide-react";
 import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'sonner';
+import { SmartTemplateEditor } from '@/components/ui/SmartTemplateEditor';
+import { Modal } from '@/components/ui/Modal';
+import { MessageTemplatesTab } from '@/components/settings/tabs/MessageTemplatesTab';
 
 export default function CreateJobWizard() {
   const router = useRouter();
   const { canCreateJob, isLoaded } = usePermissions();
   const [currentStep, setCurrentStep] = useState(1);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
 
   // RBAC Gate
   useEffect(() => {
@@ -26,9 +30,11 @@ export default function CreateJobWizard() {
   const availableRecruiters = useQuery(api.users.users.listByRoles, { roles: ["senior_ta", "recruiter", "admin", "ta_manager", "ta", "test_ta"] });
   const availableDirectors = useQuery(api.users.users.listByRoles, { roles: ["director", "admin", "ta_manager"] });
   const allUsers = useQuery(api.users.users.getAllUsers);
+  const templates = useQuery(api.templates.messageTemplates.getTemplates, {});
   const currentUser = useQuery(api.users.users.getCurrentUser);
   const createJob = useMutation(api.jobs.jobs.createJob);
   const createDraftJob = useMutation(api.jobs.jobs.createDraftJob);
+  const whatChimpNumbersDB = useQuery(api.settings.whatsappNumbers.list) || [];
   const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
   const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
   const updateJobAiConfig = useMutation(api.jobs.jobs.updateJobAiConfig);
@@ -116,6 +122,11 @@ export default function CreateJobWizard() {
     },
     agent3TriggerStages: ['shortlisted'] as string[],
     enableFollowUps: false,
+    followUpInitialTemplate: `Hi {candidate_name},\n\nThank you for applying for the {job_title} role!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease let us know how soon you can provide this information.\n\nBest regards,\nTalent Acquisition Team`,
+    followUpSampleTemplate: `Hi {candidate_name}, thanks for getting back to us.\n\nWe just need your {missing_fields} to move forward.\n\nPlease share them at your earliest convenience.`,
+    maxFollowUpDays: 3,
+    maxFollowUpAttempts: 3,
+    customFollowUpQuestions: [] as string[],
     unresponsiveDays: '7',
     followUpSchedule: {
       day2: true, day2Channel: 'Email',
@@ -249,11 +260,13 @@ export default function CreateJobWizard() {
   const [isCustomNumber, setIsCustomNumber] = useState(false);
   const [isCustomMetaNumber, setIsCustomMetaNumber] = useState(false);
 
-  const whatChimpNumbers = [
-    { number: "+94 74 011 0130", name: "Jesmeen Mohammad" },
-    { number: "+94 74 219 7476", name: "Sudaraka De Alwis" },
-    { number: "+94 75 377 8899", name: "Uzmaan" }
-  ];
+  const whatChimpNumbers = whatChimpNumbersDB.length > 0 
+    ? whatChimpNumbersDB.map(n => ({ number: n.phone, name: n.name }))
+    : [
+        { number: "+94 74 011 0130", name: "Jesmeen Mohammad" },
+        { number: "+94 74 219 7476", name: "Sudaraka De Alwis" },
+        { number: "+94 75 377 8899", name: "Uzmaan" }
+      ];
 
   if (!isLoaded || !canCreateJob) {
     return (
@@ -573,16 +586,13 @@ export default function CreateJobWizard() {
         scoreWeightLocation: formData.scoreWeights.location,
         
         agent3Enabled: formData.enableFollowUps,
-        agent3TimeWindowStart: formData.followUpWindowStart,
-        agent3TimeWindowEnd: formData.followUpWindowEnd,
-        agent3AllowedDays: formData.followUpAllowedDays,
-        agent3TimeZone: formData.followUpTimeZone,
-        agent3CustomSteps: formData.customFollowUpSteps,
+        followUpInitialTemplate: formData.followUpInitialTemplate,
+        followUpSampleTemplate: formData.followUpSampleTemplate,
+        maxFollowUpDays: formData.maxFollowUpDays,
+        maxFollowUpAttempts: formData.maxFollowUpAttempts,
+        customFollowUpQuestions: formData.customFollowUpQuestions,
         agent3TriggerStages: formData.agent3TriggerStages,
-        agent3Day2Channel: formData.followUpSchedule.day2 ? formData.followUpSchedule.day2Channel.toLowerCase() : undefined,
-        agent3Day4Channel: formData.followUpSchedule.day4 ? formData.followUpSchedule.day4Channel.toLowerCase() : undefined,
-        agent3Day7Channel: formData.followUpSchedule.day7 ? formData.followUpSchedule.day7Channel.toLowerCase() : undefined,
-        agent3AfterDay7: formData.followUpSchedule.markUnresponsive ? "mark_unresponsive" : "continue_weekly",
+        agent3AfterDay7: "move_to_unresponsive",
         
         agent5Enabled: false,
         agent5Trigger: "manual_only",
@@ -1524,102 +1534,174 @@ export default function CreateJobWizard() {
           </div>
 
           {formData.enableFollowUps && (
-            <div className="space-y-3 pt-2 border-t border-border animate-in fade-in">
-              {/* Streamlined Compact Protocol Banner */}
-              <div className="p-4 rounded-xl border border-border bg-surface-container-low space-y-3.5">
-                
-                {/* Protocol Header & Mode Pill */}
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400">verified_user</span>
-                    <span className="text-xs font-bold text-text-primary">
-                      {formData.followUpMode === 'system' ? 'System Recommended Protocol' : 'Custom Follow-Up Cadence'}
-                    </span>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                      formData.followUpMode === 'system'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                        : 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
-                    }`}>
-                      {formData.followUpMode === 'system' ? 'Standard 4-Touch' : `${(formData.customFollowUpSteps || []).length}-Step Custom`}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTemplateModalTab('schedule');
-                      setShowTemplateModal(true);
-                    }}
-                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-primary-container text-white rounded-lg hover:bg-primary transition-all shadow-xs cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" /> Customize Sequence & Schedule
-                  </button>
+            <div className="space-y-4 pt-4 border-t border-border animate-in fade-in">
+              <div className="bg-surface-container-low p-4 rounded-xl border border-border">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-primary-container" />
+                  <span className="text-sm font-bold text-text-primary">AI-Driven Dynamic Follow-Up</span>
                 </div>
+                <p className="text-xs text-text-secondary mb-4">
+                  The AI will automatically handle up to {formData.maxFollowUpAttempts} follow-ups within {formData.maxFollowUpDays} days. It uses the initial template to start the conversation, and learns your tone from the sample template to draft contextual replies based on the candidate's answers.
+                </p>
 
-                {/* Key Settings Indicators */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
-                  <div className="bg-surface p-2.5 rounded-lg border border-border/70 flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-primary-container shrink-0" />
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-text-secondary font-medium block uppercase tracking-wider">Outreach Window</span>
-                      <span className="text-[11px] font-bold text-text-primary truncate block">
-                        {formData.followUpWindowStart} – {formData.followUpWindowEnd} ({(formData.followUpAllowedDays || []).length} Days)
-                      </span>
-                    </div>
+                {/* Custom Follow-up Questions */}
+                <div className="mb-6 pt-4 border-t border-border">
+                  <div className="mb-2">
+                    <label className="text-xs font-semibold text-text-primary block">Custom Follow-Up Questions (Optional)</label>
+                    <p className="text-[10px] text-text-secondary">The AI will automatically ask these questions and extract the candidate's answers. They will be included in the {'{missing_fields}'} list.</p>
                   </div>
-
-                  <div className="bg-surface p-2.5 rounded-lg border border-border/70 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px] text-primary-container shrink-0">public</span>
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-text-secondary font-medium block uppercase tracking-wider">Timezone</span>
-                      <span className="text-[11px] font-bold text-text-primary truncate block">Sri Lanka Time (UTC+5:30)</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-surface p-2.5 rounded-lg border border-border/70 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px] text-primary-container shrink-0">play_circle</span>
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-text-secondary font-medium block uppercase tracking-wider">Trigger Stage</span>
-                      <span className="text-[11px] font-bold text-text-primary truncate block capitalize">
-                        {(formData.agent3TriggerStages || []).join(', ') || 'Shortlisted'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Compact Horizontal Timeline Nodes */}
-                <div className="bg-surface p-3 rounded-lg border border-border/70 space-y-1.5">
-                  <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block">Sequence Flow Preview:</span>
-                  <div className="flex items-center gap-2 overflow-x-auto py-1">
-                    {(formData.followUpMode === 'system'
-                      ? [
-                          { step: 1, day: 0, chan: 'WhatsApp', clr: 'bg-emerald-500' },
-                          { step: 2, day: 2, chan: 'Email', clr: 'bg-blue-500' },
-                          { step: 3, day: 4, chan: 'WhatsApp', clr: 'bg-emerald-500' },
-                          { step: 4, day: 7, chan: 'Email', clr: 'bg-amber-500' },
-                        ]
-                      : (formData.customFollowUpSteps || []).map((s, i) => ({
-                          step: i + 1,
-                          day: s.day,
-                          chan: s.channel,
-                          clr: s.channel === 'Email' ? 'bg-blue-500' : 'bg-emerald-500'
-                        }))
-                    ).map((node, i, arr) => (
-                      <div key={i} className="flex items-center gap-2 shrink-0">
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-low border border-border text-[11px]">
-                          <span className={`w-2 h-2 rounded-full ${node.clr}`}></span>
-                          <span className="font-bold text-text-primary">F/U {node.step}</span>
-                          <span className="text-[10px] text-text-secondary font-mono">Day {node.day}</span>
-                          <span className="text-[9px] font-semibold px-1 rounded bg-surface border text-text-primary">{node.chan}</span>
-                        </div>
-                        {i < arr.length - 1 && (
-                          <span className="material-symbols-outlined text-[14px] text-text-secondary">arrow_forward</span>
-                        )}
+                  
+                  <div className="space-y-2 max-w-md">
+                    {formData.customFollowUpQuestions.map((q, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-surface-container-low border border-border rounded-lg p-2">
+                        <span className="text-xs text-text-primary">{q}</span>
+                        <button 
+                          onClick={() => updateFormData('customFollowUpQuestions', formData.customFollowUpQuestions.filter((_, i) => i !== idx))}
+                          className="text-text-secondary hover:text-red-500 transition-colors p-1"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
                       </div>
                     ))}
+                    
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        id="new-custom-question"
+                        className="flex-1 bg-surface border border-border rounded-lg p-2 text-xs text-text-primary outline-none focus:border-primary-container"
+                        placeholder="e.g. Do you have a valid UAE driver's license?"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = e.currentTarget.value.trim();
+                            if (val && !formData.customFollowUpQuestions.includes(val)) {
+                              updateFormData('customFollowUpQuestions', [...formData.customFollowUpQuestions, val]);
+                              e.currentTarget.value = '';
+                            }
+                          }
+                        }}
+                      />
+                      <button 
+                        onClick={() => {
+                          const input = document.getElementById('new-custom-question') as HTMLInputElement;
+                          const val = input.value.trim();
+                          if (val && !formData.customFollowUpQuestions.includes(val)) {
+                            updateFormData('customFollowUpQuestions', [...formData.customFollowUpQuestions, val]);
+                            input.value = '';
+                          }
+                        }}
+                        className="bg-surface-container border border-border hover:bg-surface-container-highest px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <div className="flex justify-between items-end mb-1">
+                      <div>
+                        <label className="text-xs font-semibold text-text-primary block flex items-center gap-2">
+                          Initial Outreach Template
+                          <div className="group relative">
+                            <span className="material-symbols-outlined text-[14px] text-text-secondary cursor-help">info</span>
+                            <div className="absolute left-0 bottom-full mb-2 w-64 p-2 bg-surface-container shadow-lg border border-border rounded-lg text-[10px] text-text-primary opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                              <span className="font-bold">Note:</span> {'{missing_fields}'} will automatically list 'CV', 'Current Salary', 'Expected Salary', 'Notice Period' and any Custom Questions below if the candidate has not provided them yet.
+                            </div>
+                          </div>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] text-text-secondary">Sent immediately when candidate enters follow-up.</p>
+                        </div>
+                      </div>
+                      <select 
+                        className="text-[10px] bg-surface-container border border-border rounded px-2 py-1 outline-none cursor-pointer max-w-[150px] truncate"
+                        value=""
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'manage') {
+                            setIsTemplateModalOpen(true);
+                          } else {
+                            const t = templates?.find(temp => temp._id === val);
+                            if (t) updateFormData('followUpInitialTemplate', t.content);
+                          }
+                        }}
+                      >
+                        <option value="" disabled>Load Template...</option>
+                        {templates?.filter(t => t.type === 'initial_outreach').map(t => (
+                          <option key={t._id} value={t._id}>{t.name}</option>
+                        ))}
+                        <option disabled>──────────</option>
+                        <option value="manage">+ Manage Templates</option>
+                      </select>
+                    </div>
+                    <SmartTemplateEditor 
+                      value={formData.followUpInitialTemplate}
+                      onChange={(val) => updateFormData('followUpInitialTemplate', val)}
+                      requiredVariables={['{missing_fields}']}
+                      rows={8}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-end mb-1">
+                      <div>
+                        <label className="text-xs font-semibold text-text-primary block">Sample Follow-Up Template</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] text-text-secondary">The AI learns your tone from this.</p>
+                        </div>
+                      </div>
+                      <select 
+                        className="text-[10px] bg-surface-container border border-border rounded px-2 py-1 outline-none cursor-pointer max-w-[150px] truncate"
+                        value=""
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'manage') {
+                            setIsTemplateModalOpen(true);
+                          } else {
+                            const t = templates?.find(temp => temp._id === val);
+                            if (t) updateFormData('followUpSampleTemplate', t.content);
+                          }
+                        }}
+                      >
+                        <option value="" disabled>Load Template...</option>
+                        {templates?.filter(t => t.type === 'sample_follow_up').map(t => (
+                          <option key={t._id} value={t._id}>{t.name}</option>
+                        ))}
+                        <option disabled>──────────</option>
+                        <option value="manage">+ Manage Templates</option>
+                      </select>
+                    </div>
+                    <SmartTemplateEditor 
+                      value={formData.followUpSampleTemplate}
+                      onChange={(val) => updateFormData('followUpSampleTemplate', val)}
+                      rows={8}
+                    />
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-4 max-w-sm">
+                  <div>
+                    <label className="text-xs font-semibold text-text-primary mb-1 block">Max Attempts</label>
+                    <input 
+                      type="number" 
+                      min="1" max="5"
+                      className="w-full text-sm h-8 border border-border rounded-md px-2 bg-surface text-text-primary"
+                      value={formData.maxFollowUpAttempts}
+                      onChange={(e) => updateFormData('maxFollowUpAttempts', parseInt(e.target.value) || 3)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-text-primary mb-1 block">Max Days (Timeout)</label>
+                    <input 
+                      type="number" 
+                      min="1" max="14"
+                      className="w-full text-sm h-8 border border-border rounded-md px-2 bg-surface text-text-primary"
+                      value={formData.maxFollowUpDays}
+                      onChange={(e) => updateFormData('maxFollowUpDays', parseInt(e.target.value) || 3)}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -2574,6 +2656,18 @@ export default function CreateJobWizard() {
           </div>
         </div>
       )}
+      {/* Template Manager Modal */}
+      <Modal 
+        isOpen={isTemplateModalOpen} 
+        onClose={() => setIsTemplateModalOpen(false)}
+        title="Template Library"
+        maxWidth="max-w-5xl"
+      >
+        <div className="p-4 bg-surface-container-low max-h-[70vh] overflow-y-auto">
+          <MessageTemplatesTab />
+        </div>
+      </Modal>
+
     </div>
   );
 }

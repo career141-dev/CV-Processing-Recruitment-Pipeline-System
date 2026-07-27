@@ -144,7 +144,17 @@ export async function initiateFollowUpOutreach(
     app.followUpNoticePeriod === true ||
     (app.followUpNoticePeriod === undefined && candidate.noticePeriodDays !== undefined);
 
-  const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
+  const customQuestions = job.customFollowUpQuestions || [];
+  const customAnswers = app.customFollowUpAnswers || {};
+  let customQuestionsComplete = true;
+  for (const q of customQuestions) {
+    if (!customAnswers[q]) {
+      customQuestionsComplete = false;
+      break;
+    }
+  }
+
+  const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod && customQuestionsComplete;
   if (allComplete) return; // All data points already gathered, no outreach needed
 
   const missingFields: string[] = [];
@@ -152,13 +162,34 @@ export async function initiateFollowUpOutreach(
   if (!hasCurrentSalary) missingFields.push("Current Salary");
   if (!hasExpectedSalary) missingFields.push("Expected Salary");
   if (!hasNoticePeriod) missingFields.push("Notice Period");
+  for (const q of customQuestions) {
+    if (!customAnswers[q]) {
+      missingFields.push(q);
+    }
+  }
+  
+  const formattedMissingFields = missingFields.map(f => `• ${f}`).join("\n");
 
-  const body = [
-    `Hi ${candidate.fullName || "there"},`,
-    `We're still waiting on the following to progress your application for **${job.title}**:`,
-    missingFields.map(f => `• ${f}`).join("\n"),
-    `Please share these at your earliest convenience. Thank you!`,
-  ].join("\n\n");
+  let body = "";
+  if (job.followUpInitialTemplate) {
+    const configRow = await ctx.db.query("appSettings")
+      .withIndex("by_key", (q: any) => q.eq("key", "system"))
+      .first();
+    const companyName = configRow?.brandName || "our company";
+
+    body = job.followUpInitialTemplate
+      .replace(/{candidate_name}/g, candidate.fullName || "there")
+      .replace(/{job_title}/g, job.title || "the role")
+      .replace(/{missing_fields}/g, formattedMissingFields)
+      .replace(/{company_name}/g, companyName);
+  } else {
+    body = [
+      `Hi ${candidate.fullName || "there"},`,
+      `We're still waiting on the following to progress your application for **${job.title}**:`,
+      formattedMissingFields,
+      `Please share these at your earliest convenience. Thank you!`,
+    ].join("\n\n");
+  }
 
   const now = Date.now();
 
