@@ -97,3 +97,63 @@ export const getDeepSeekStats = query({
     };
   },
 });
+
+export const getDeepSeekTokenReport = query({
+  handler: async (ctx) => {
+    const logs = await ctx.db.query("nvidiaTokenLogs").order("desc").take(500);
+
+    const breakdown: Record<string, {
+      callsCount: number;
+      successfulCalls: number;
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+      costUsd: number;
+    }> = {};
+
+    let grandTotalTokens = 0;
+    let grandTotalCostUsd = 0;
+    let totalDeepSeekCalls = 0;
+
+    for (const log of logs) {
+      const modelLower = (log.model || "").toLowerCase();
+      if (modelLower.includes("deepseek")) {
+        totalDeepSeekCalls++;
+        const task = log.taskType || "cv_structuring";
+        if (!breakdown[task]) {
+          breakdown[task] = {
+            callsCount: 0,
+            successfulCalls: 0,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            costUsd: 0,
+          };
+        }
+
+        const prompt = log.promptTokens || 0;
+        const completion = log.completionTokens || 0;
+        const total = log.totalTokens || (prompt + completion);
+        const cost = (prompt / 1_000_000 * 0.14) + (completion / 1_000_000 * 0.28);
+
+        breakdown[task].callsCount++;
+        if (log.success) breakdown[task].successfulCalls++;
+        breakdown[task].promptTokens += prompt;
+        breakdown[task].completionTokens += completion;
+        breakdown[task].totalTokens += total;
+        breakdown[task].costUsd += cost;
+
+        grandTotalTokens += total;
+        grandTotalCostUsd += cost;
+      }
+    }
+
+    return {
+      sampleLogsInspected: logs.length,
+      totalDeepSeekCalls,
+      grandTotalTokens,
+      grandTotalCostUsd,
+      breakdown,
+    };
+  },
+});

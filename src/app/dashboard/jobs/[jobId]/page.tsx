@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -1123,7 +1123,10 @@ export default function JobDetailPage() {
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   
   const runReverseMatch = useAction(api.matching.agent2.runReverseMatch);
+  const updateTaPreferencesMutation = useMutation(api.jobs.jobs.updateTaPreferences);
   const [isScanning, setIsScanning] = useState(false);
+  const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
+  const [customPreferencesText, setCustomPreferencesText] = useState("");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isBulkFollowUpOpen, setIsBulkFollowUpOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -1131,16 +1134,35 @@ export default function JobDetailPage() {
   const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const processCvIngestion = useMutation(api.pipeline.ingestion.processCvIngestion);
 
-  const handleScanDatabase = async () => {
+  const handleScanDatabase = async (customPrompt?: string) => {
     setIsScanning(true);
+    const toastId = toast.loading(customPrompt !== undefined && customPrompt.trim() !== "" ? "Rescanning database with TA preferences..." : "Scanning candidate database...");
     try {
-      await runReverseMatch({ jobId: jobId as Id<"jobs"> });
+      await runReverseMatch({
+        jobId: jobId as Id<"jobs">,
+        customPreferences: customPrompt,
+      });
       setMatchesPage(1);
+      setIsPreferenceModalOpen(false);
+      toast.success("Database scan complete!", { id: toastId });
     } catch (error) {
       console.error(error);
-      alert("Error scanning database");
+      toast.error("Error scanning database", { id: toastId });
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  const handleClearPreferences = async () => {
+    const toastId = toast.loading("Clearing custom TA preferences...");
+    try {
+      await updateTaPreferencesMutation({ jobId: jobId as Id<"jobs">, taPreferences: undefined });
+      setCustomPreferencesText("");
+      await runReverseMatch({ jobId: jobId as Id<"jobs">, customPreferences: "" });
+      toast.success("Preferences cleared & database rescanned", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to clear preferences", { id: toastId });
     }
   };
 
@@ -1329,19 +1351,55 @@ export default function JobDetailPage() {
       <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col mb-0">
         {/* Toolbar */}
         <div className="p-4 border-b border-border flex justify-between items-center bg-surface">
-          <div className="flex gap-2 text-[13px]">
+          <div className="flex items-center gap-3 text-[13px]">
             <h3 className="font-semibold text-[15px]">AI Matches from Database</h3>
+            {job?.taPreferences && (
+              <span className="bg-primary/10 text-primary border border-primary/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> Custom TA Criteria Active
+              </span>
+            )}
           </div>
-          <div className="flex gap-3">
-            <button 
-              onClick={handleScanDatabase}
-              disabled={isScanning}
-              className="border border-primary text-primary px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1 disabled:opacity-50"
-            >
-              <Bot className="w-4 h-4" /> {isScanning ? "Scanning..." : "Scan Database"}
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-[8px] border border-primary overflow-hidden shadow-sm">
+              <button 
+                onClick={() => handleScanDatabase()}
+                disabled={isScanning}
+                className="bg-surface text-primary px-3 py-1.5 text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1.5 disabled:opacity-50 border-r border-primary/30"
+                title="Rescan database with standard job description"
+              >
+                <Bot className="w-4 h-4 text-primary" /> {isScanning ? "Scanning..." : "Scan Database"}
+              </button>
+              <button
+                onClick={() => {
+                  setCustomPreferencesText(job?.taPreferences || "");
+                  setIsPreferenceModalOpen(true);
+                }}
+                disabled={isScanning}
+                className="bg-surface text-primary px-2 py-1.5 text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center justify-center disabled:opacity-50"
+                title="Add custom preferences or required skills before rescanning"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Active Preferences Banner */}
+        {job?.taPreferences && (
+          <div className="bg-primary/5 border-b border-primary/15 px-4 py-2 flex items-center justify-between text-[12px]">
+            <div className="flex items-center gap-2 text-primary font-medium truncate pr-4">
+              <Sparkles className="w-4 h-4 text-primary shrink-0" />
+              <span className="truncate">Active Filter Criteria: <strong className="font-semibold text-text-primary">"{job.taPreferences}"</strong></span>
+            </div>
+            <button 
+              onClick={handleClearPreferences}
+              className="text-text-secondary hover:text-red-500 text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors"
+              title="Clear preferences and rescan"
+            >
+              <X className="w-3.5 h-3.5" /> Clear Preferences
+            </button>
+          </div>
+        )}
 
         {/* Table */}
         <div className="overflow-x-auto">
@@ -1366,16 +1424,28 @@ export default function JobDetailPage() {
                         <Bot className="w-8 h-8 text-primary" />
                       </div>
                       <h4 className="text-[16px] font-semibold text-text-primary mb-2">No Candidates Found</h4>
-                      <p className="text-[13px] text-text-secondary max-w-[400px] mb-6 leading-relaxed">
-                        We couldn't find any relevant matches for this role in your database. Click 'Scan Database' to let the AI search your entire talent pool against this job description.
+                      <p className="text-[13px] text-text-secondary max-w-[420px] mb-6 leading-relaxed">
+                        We couldn't find any matching candidates in your database. You can scan with standard requirements or add custom TA preferences & skills.
                       </p>
-                      <button 
-                        onClick={handleScanDatabase}
-                        disabled={isScanning}
-                        className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
-                      >
-                        <Bot className="w-4 h-4" /> {isScanning ? "Scanning Database..." : "Scan Database Now"}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={() => handleScanDatabase()}
+                          disabled={isScanning}
+                          className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <Bot className="w-4 h-4" /> {isScanning ? "Scanning Database..." : "Scan Database Now"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCustomPreferencesText(job?.taPreferences || "");
+                            setIsPreferenceModalOpen(true);
+                          }}
+                          disabled={isScanning}
+                          className="border border-primary text-primary px-4 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <MessageSquarePlus className="w-4 h-4" /> Add Preferences & Rescan <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -2461,6 +2531,85 @@ export default function JobDetailPage() {
         onClose={() => setIsEditModalOpen(false)}
         job={job}
       />
+
+      {/* Rescan with TA Preferences Modal */}
+      {isPreferenceModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface border border-border rounded-xl shadow-xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-border flex justify-between items-center bg-surface-bright">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                  <Bot className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-[16px] text-text-primary">Custom TA Preferences for Database Matching</h3>
+                  <p className="text-[12px] text-text-secondary">Guide the AI on candidate background, skills, or domain focus</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsPreferenceModalOpen(false)}
+                className="text-text-secondary hover:text-text-primary p-1 rounded-lg hover:bg-surface-container transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[13px] font-medium text-text-primary mb-1.5">
+                  Candidate Preferences & Required Skills
+                </label>
+                <textarea
+                  value={customPreferencesText}
+                  onChange={(e) => setCustomPreferencesText(e.target.value)}
+                  placeholder="e.g., Looking for candidates with strong banking/fintech domain experience, proficient in React Native and AWS, minimum 4 years experience..."
+                  className="w-full h-32 px-3 py-2.5 text-[13px] bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 leading-relaxed text-text-primary placeholder:text-text-secondary/60"
+                />
+              </div>
+
+              <div>
+                <span className="block text-[11px] font-semibold uppercase text-text-secondary tracking-wider mb-2">Quick Preference Suggestions:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    "Fintech / Banking domain experience",
+                    "Strong React Native & Node.js skills",
+                    "Senior management / team leadership",
+                    "Prior experience in MNC environment",
+                    "Certifications: AWS / Azure Certified"
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => {
+                        setCustomPreferencesText(prev => prev ? `${prev}, ${chip}` : chip);
+                      }}
+                      className="text-[11px] bg-surface-bright hover:bg-primary/10 border border-border text-text-secondary hover:text-primary px-2.5 py-1 rounded-full transition-colors"
+                    >
+                      + {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-border bg-surface-bright flex justify-end gap-3">
+              <button
+                onClick={() => setIsPreferenceModalOpen(false)}
+                className="px-4 py-2 text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleScanDatabase(customPreferencesText)}
+                disabled={isScanning}
+                className="bg-primary text-white px-5 py-2 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                <Bot className="w-4 h-4" /> {isScanning ? "Rescanning..." : "Submit & Rescan Database"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SendBulkFollowUpModal
         isOpen={isBulkFollowUpOpen}

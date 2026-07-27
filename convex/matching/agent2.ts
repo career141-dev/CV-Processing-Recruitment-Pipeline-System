@@ -182,12 +182,27 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
  * Reverse Match using Vector Search and Keyword Matching
  */
 export const runReverseMatch = action({
-  args: { jobId: v.id("jobs") },
+  args: {
+    jobId: v.id("jobs"),
+    customPreferences: v.optional(v.string()),
+  },
   handler: async (ctx, args): Promise<void> => {
     const tokenLogs: any[] = [];
     try {
       const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
       if (!job) return;
+
+      // If customPreferences is provided, save it on the job record
+      if (args.customPreferences !== undefined) {
+        await ctx.runMutation(internal.jobs.jobs.updateTaPreferencesInternal, {
+          jobId: args.jobId,
+          taPreferences: args.customPreferences,
+        });
+      }
+
+      const activePreferences = args.customPreferences !== undefined
+        ? args.customPreferences
+        : job.taPreferences;
 
       // Set status to running immediately
       await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
@@ -196,13 +211,15 @@ export const runReverseMatch = action({
         status: "running",
       });
 
-      let jobEmbedding = job.embedding;
+      // Force regenerating job embedding if customPreferences parameter was explicitly provided
+      let jobEmbedding = (args.customPreferences !== undefined) ? null : job.embedding;
 
-      // 1. Generate job embedding if missing
+      // 1. Generate job embedding if missing or if customPreferences provided
       if (!jobEmbedding || jobEmbedding.length === 0) {
         const jobRequirementsText = `
           Title: ${job.title}
           Description: ${job.jobDescription}
+          ${activePreferences ? `TA Recruiter Custom Preferences & Required Skills: ${activePreferences}` : ""}
           Required Skills: ${(job.requiredSkills || []).join(", ")}
           Nice to have Skills: ${(job.niceToHaveSkills || []).join(", ")}
           Industry: ${job.clientIndustry || ""}
@@ -242,6 +259,14 @@ export const runReverseMatch = action({
       const terms: string[] = [];
       if (job.title) terms.push(job.title);
       for (const s of (job.requiredSkills ?? []).slice(0, 4)) terms.push(s);
+      if (activePreferences && activePreferences.trim()) {
+        const prefTerms = activePreferences
+          .split(/[\n,;]+/)
+          .map((s: string) => s.trim())
+          .filter((s: string) => s.length > 2 && s.length < 50)
+          .slice(0, 3);
+        terms.push(...prefTerms);
+      }
 
       const batches = await Promise.all(
         terms.slice(0, 6).map((term) =>
@@ -489,6 +514,10 @@ export const runReverseMatch = action({
           
           let aiReasonParts: string[] = [];
           
+          if (activePreferences && activePreferences.trim()) {
+            aiReasonParts.push(`Evaluated with custom TA criteria: "${activePreferences.trim()}".`);
+          }
+
           if (matchScore >= 75) {
             aiReasonParts.push(`Highly recommended TA match for ${job.title}. ${name} shows strong domain alignment as a ${role}.`);
           } else if (matchScore >= 60) {

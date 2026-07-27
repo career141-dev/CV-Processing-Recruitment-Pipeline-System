@@ -171,6 +171,7 @@ export default defineSchema({
     scoreWeightLocation: v.optional(v.number()), // default 5
     minMatchScoreToShow: v.optional(v.number()), // default 60
     reverseMatchOnPublish: v.optional(v.boolean()),
+    taPreferences: v.optional(v.string()),
 
     reverseMatchStatus: v.optional(v.union(
       v.literal("running"), v.literal("done"), v.literal("error")
