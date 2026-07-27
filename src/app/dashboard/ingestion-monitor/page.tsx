@@ -1,37 +1,45 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { useUser } from '@clerk/nextjs';
-import { PageHeader } from '@/components/ui/PageHeader';
-import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
-import { 
-  RefreshCw, Upload, AlertCircle, Loader2, CheckCircle2, Info, Building2, Key, 
-  X, Play, RotateCcw, Copy, SkipForward, XCircle, Link2, Mail, MessageCircle, Share2, Activity,
-  AlertTriangle
-} from 'lucide-react';
-import { ChannelStatusCard } from '@/components/ingestion-monitor/ChannelStatusCard';
+import React, { useState, useRef, useEffect } from "react";
+import { useUser } from "@clerk/nextjs";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
+import {
+  RefreshCw,
+  Upload,
+  AlertCircle,
+  Loader2,
+  CheckCircle2,
+  Info,
+  Building2,
+  Key,
+  X,
+  Play,
+  Pause,
+  Square,
+  RotateCcw,
+  Copy,
+  SkipForward,
+  XCircle,
+  Link2,
+  Mail,
+  MessageCircle,
+  Share2,
+  Activity,
+  AlertTriangle,
+  FileText,
+  ExternalLink,
+  ChevronRight,
+} from "lucide-react";
 import RealTimeBatchLog from "@/components/ingestion-monitor/RealTimeBatchLog";
-import { useQuery, useAction, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { Id } from '@/convex/_generated/dataModel';
-import { toast } from 'sonner';
+import { useQuery, useAction, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
+import { toast } from "sonner";
 
-const SOURCE_OPTIONS = ["LinkedIn", "WhatsApp", "Meta", "Email", "Workable", "Manual", "Headhunting"];
+const SOURCE_OPTIONS = ["Manual", "Headhunting", "Referral", "Agency", "Direct Email"];
 
-type ImportStatus = {
-  _id: string;
-  status: "running" | "done" | "error" | "stopped";
-  totalCandidates: number;
-  imported: number;
-  skipped: number;
-  deduplicated: number;
-  failed: number;
-  startedAt: string;
-  errorMessage?: string;
-  lastCursor?: string;
-  subdomain?: string;
-};
+type SourceTabKey = "workable" | "manual" | "linkedin" | "whatsapp" | "meta" | "email" | "portal";
 
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -45,8 +53,16 @@ function ProgressBar({ value, max, color }: { value: number; max: number; color:
   );
 }
 
-function StatBox({ label, value, icon: Icon, color }: {
-  label: string; value: number; icon: React.ElementType; color: string;
+function StatBox({
+  label,
+  value,
+  icon: Icon,
+  color,
+}: {
+  label: string;
+  value: number;
+  icon: React.ElementType;
+  color: string;
 }) {
   return (
     <div className="bg-surface border border-border rounded-xl p-4 flex items-center gap-3 shadow-sm">
@@ -65,11 +81,11 @@ export default function IngestionMonitorPage() {
   const stats = useQuery(api.stats.stats.getIngestionStats);
   const toggles = useQuery(api.admin.settings.getSystemSettings);
   const updateToggles = useMutation(api.admin.settings.updateChannelToggles);
-  
+
   const resumeFailedUploads = useAction(api.cvs.cvExtraction.resumeFailedUploads);
   const startBatchExtraction = useAction(api.cvs.cvExtraction.startBatchExtraction);
   const activeBatchId = useQuery(api.cvs.batches.getLatestActiveBatch);
-  
+
   const { user } = useUser();
   const startBulkImport = useAction(api.integrations.workableActions.startBulkImport);
   const retryImport = useAction(api.integrations.workableActions.retryImport);
@@ -80,7 +96,7 @@ export default function IngestionMonitorPage() {
   // Reactive query for Workable import status
   const importStatus = useQuery(
     api.integrations.workable.getLatestImportStatus,
-    user?.id ? { userId: user.id } : "skip"
+    {}
   );
 
   const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
@@ -89,29 +105,28 @@ export default function IngestionMonitorPage() {
   const updateBatchProgress = useMutation(api.cvs.batches.updateBatchProgress);
 
   const [retrying, setRetrying] = useState(false);
-  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'errors' | 'permanent' | 'activity'>('errors');
-  
+  const [activeSourceTab, setActiveSourceTab] = useState<SourceTabKey>("workable");
+  const [activeBottomTab, setActiveBottomTab] = useState<"errors" | "permanent" | "activity">("errors");
+
   // Workable State
-  const [isWorkableModalOpen, setIsWorkableModalOpen] = useState(false);
   const [subdomain, setSubdomain] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [maxCandidates, setMaxCandidates] = useState<number>(500);
   const [isWorkableImporting, setIsWorkableImporting] = useState(false);
 
   // Manual Upload State
-  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [importBatchId, setImportBatchId] = useState<Id<"ingestionBatches"> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Manual Upload Tags
   const [source, setSource] = useState("Manual");
   const [campaignLabel, setCampaignLabel] = useState("");
   const [assignToJob, setAssignToJob] = useState("");
   const [showSourceDropdown, setShowSourceDropdown] = useState(false);
 
-  // --- Workable Effects ---
+  // Workable Subdomain Effect
   useEffect(() => {
     if (importStatus?.subdomain) {
       setSubdomain(importStatus.subdomain);
@@ -131,8 +146,8 @@ export default function IngestionMonitorPage() {
     }
     setIsWorkableImporting(true);
     try {
-      await startBulkImport({ subdomain, apiKey, userId: user.id });
-      toast.success("Workable import started!");
+      await startBulkImport({ subdomain, apiKey, userId: user.id, maxCandidates });
+      toast.success(`Workable import started (limit: ${maxCandidates} candidates)`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start import");
     } finally {
@@ -144,7 +159,11 @@ export default function IngestionMonitorPage() {
     if (!importStatus) return;
     setIsWorkableImporting(true);
     try {
-      await retryImport({ importId: importStatus._id as any, subdomain: subdomain || undefined, apiKey: apiKey || undefined });
+      await retryImport({
+        importId: importStatus._id as any,
+        subdomain: subdomain || undefined,
+        apiKey: apiKey || undefined,
+      });
       toast.info("Import retrying from where it left off.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to retry");
@@ -157,7 +176,11 @@ export default function IngestionMonitorPage() {
     if (!importStatus) return;
     setIsWorkableImporting(true);
     try {
-      await retrySkippedAction({ importId: importStatus._id as any, subdomain: subdomain || undefined, apiKey: apiKey || undefined });
+      await retrySkippedAction({
+        importId: importStatus._id as any,
+        subdomain: subdomain || undefined,
+        apiKey: apiKey || undefined,
+      });
       toast.info("Retrying skipped candidates from the beginning.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to retry skipped");
@@ -190,7 +213,7 @@ export default function IngestionMonitorPage() {
     ? importStatus.imported + importStatus.skipped + importStatus.deduplicated + importStatus.failed
     : 0;
 
-  // --- Manual Upload Handlers ---
+  // Manual Upload Handlers
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
   };
@@ -202,19 +225,18 @@ export default function IngestionMonitorPage() {
 
   const handleManualUpload = async () => {
     if (files.length === 0 || !user?.id) return;
-    
+
     const filesToUpload = [...files];
     const uploadSource = source || "Manual";
     const uploadCampaignLabel = campaignLabel;
     const uploadAssignToJob = assignToJob;
 
     setIsUploading(true);
-    setIsManualModalOpen(false);
     setFiles([]);
     setSource("Manual");
     setCampaignLabel("");
     setAssignToJob("");
-    
+
     let successCount = 0;
     try {
       const batchId = await createBatch({
@@ -223,15 +245,22 @@ export default function IngestionMonitorPage() {
         jobId: (uploadAssignToJob as Id<"jobs">) || undefined,
       });
       setImportBatchId(batchId);
-      setActiveTab('activity');
+      setActiveBottomTab("activity");
 
       for (const file of filesToUpload) {
         try {
-          let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: file.name, contentType: file.type });
-          const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-          
+          let { url: uploadUrl, key: s3Key } = await generateUploadUrl({
+            fileName: file.name,
+            contentType: file.type,
+          });
+          const resp = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": file.type },
+            body: file,
+          });
+
           if (!resp.ok) throw new Error("Upload failed");
-          
+
           await saveUpload({
             s3Key,
             storageProvider: "r2",
@@ -250,7 +279,7 @@ export default function IngestionMonitorPage() {
           console.error("Upload failed for file:", file.name, err);
           await updateBatchProgress({
             batchId,
-            status: "failed"
+            status: "failed",
           });
         }
       }
@@ -290,7 +319,7 @@ export default function IngestionMonitorPage() {
         totalCount: failedUploads.length,
       });
       setImportBatchId(batchId);
-      setActiveTab('activity');
+      setActiveBottomTab("activity");
       await resumeFailedUploads({ batchId });
       toast.success("Retry queued! Background process started.");
     } catch (err) {
@@ -301,10 +330,12 @@ export default function IngestionMonitorPage() {
     }
   };
 
-  const handleToggle = async (channel: 'whatsappIngestion' | 'emailIngestion', newValue: boolean) => {
+  const handleToggle = async (channel: "whatsappIngestion" | "emailIngestion", newValue: boolean) => {
     try {
       await updateToggles({ toggles: { ...toggles, [channel]: newValue } });
-      toast.success(`${channel === 'whatsappIngestion' ? 'WhatsApp' : 'Email'} ingestion ${newValue ? 'resumed' : 'paused'}.`);
+      toast.success(
+        `${channel === "whatsappIngestion" ? "WhatsApp" : "Email"} ingestion ${newValue ? "resumed" : "paused"}.`
+      );
     } catch (err) {
       toast.error(`Failed to update ${channel} toggle.`);
     }
@@ -321,7 +352,7 @@ export default function IngestionMonitorPage() {
 
   const groupFailures = (uploads: any[]) => {
     return uploads.reduce((acc: any, curr: any) => {
-      const s = curr.source || 'Manual';
+      const s = curr.source || "Manual";
       if (!acc[s]) acc[s] = [];
       acc[s].push(curr);
       return acc;
@@ -333,34 +364,48 @@ export default function IngestionMonitorPage() {
 
   const getStats = (channel: string) => statsBySource[channel] || { todayCount: 0, lastReceived: null };
   const getErrorCount = (channel: string) => {
-    // Map standard channel names to the generic ones tracked in 'failedBySource'
     let searchKey = channel;
-    if (channel === 'Career Portal / Web Form') searchKey = 'Link';
-    if (channel === 'LinkedIn Inbox') searchKey = 'linkedin';
-    
+    if (channel === "Career Portal / Web Form" || channel === "Link") searchKey = "Link";
+    if (channel === "LinkedIn Inbox" || channel === "linkedin") searchKey = "linkedin";
+
     const count1 = (failedBySource[searchKey] || []).length;
     const count2 = (failedRetryBySource[searchKey] || []).length;
     return count1 + count2;
   };
 
-  const workableStats = getStats('Workable');
-  const manualStats = getStats('Manual');
-  const linkStats = getStats('Link');
-  const emailStats = getStats('Email');
-  const whatsappStats = getStats('WhatsApp');
-  const metaStats = getStats('Meta');
-  const linkedinStats = getStats('linkedin');
+  const workableStats = getStats("Workable");
+  const manualStats = getStats("Manual");
+  const linkStats = getStats("Link");
+  const emailStats = getStats("Email");
+  const whatsappStats = getStats("WhatsApp");
+  const metaStats = getStats("Meta");
+  const linkedinStats = getStats("linkedin");
 
-  const totalToday = 
-    workableStats.todayCount + manualStats.todayCount + linkStats.todayCount + 
-    emailStats.todayCount + whatsappStats.todayCount + metaStats.todayCount + linkedinStats.todayCount;
-    
+  const totalToday =
+    workableStats.todayCount +
+    manualStats.todayCount +
+    linkStats.todayCount +
+    emailStats.todayCount +
+    whatsappStats.todayCount +
+    metaStats.todayCount +
+    linkedinStats.todayCount;
+
   const totalFailed = failedUploads.length + (failedRetryUploads?.length || 0);
+
+  const TABS_CONFIG: Array<{ key: SourceTabKey; label: string; icon: React.ElementType; badge?: string; errorCount: number }> = [
+    { key: "workable", label: "Workable", icon: RefreshCw, badge: workableStats.todayCount > 0 ? `${workableStats.todayCount}` : undefined, errorCount: getErrorCount("Workable") },
+    { key: "manual", label: "Direct Upload", icon: Upload, badge: manualStats.todayCount > 0 ? `${manualStats.todayCount}` : undefined, errorCount: getErrorCount("Manual") },
+    { key: "linkedin", label: "LinkedIn", icon: Share2, badge: linkedinStats.todayCount > 0 ? `${linkedinStats.todayCount}` : undefined, errorCount: getErrorCount("linkedin") },
+    { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, badge: whatsappStats.todayCount > 0 ? `${whatsappStats.todayCount}` : undefined, errorCount: getErrorCount("WhatsApp") },
+    { key: "meta", label: "Meta Campaigns", icon: Activity, badge: metaStats.todayCount > 0 ? `${metaStats.todayCount}` : undefined, errorCount: getErrorCount("Meta") },
+    { key: "email", label: "Email (Office 365)", icon: Mail, badge: emailStats.todayCount > 0 ? `${emailStats.todayCount}` : undefined, errorCount: getErrorCount("Email") },
+    { key: "portal", label: "Career Portal / Web Form", icon: Link2, badge: linkStats.todayCount > 0 ? `${linkStats.todayCount}` : undefined, errorCount: getErrorCount("Link") },
+  ];
 
   return (
     <div className="self-stretch bg-background min-h-screen w-full flex flex-col">
       <PageHeader title="" />
-      
+
       <div className="px-6 pb-24 md:pb-6 mx-auto w-full max-w-7xl">
         {/* Section A: Header Metrics Bar */}
         <header className="mb-6">
@@ -374,7 +419,7 @@ export default function IngestionMonitorPage() {
               <span className="text-[11px] font-bold tracking-widest text-green-600 dark:text-green-400">LIVE SYNC</span>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-surface border border-border p-3.5 rounded-xl flex items-center justify-between">
               <div>
@@ -409,173 +454,556 @@ export default function IngestionMonitorPage() {
                 <p className="text-2xl font-bold text-amber-500 dark:text-amber-400 mt-1">{activeBatchId ? 1 : 0}</p>
               </div>
               <div className="w-10 h-10 rounded-full bg-amber-500/10 dark:bg-amber-500/20 flex items-center justify-center text-amber-500 dark:text-amber-400">
-                <Loader2 className={`w-5 h-5 ${activeBatchId ? 'animate-spin' : ''}`} />
+                <Loader2 className={`w-5 h-5 ${activeBatchId ? "animate-spin" : ""}`} />
               </div>
             </div>
           </div>
         </header>
 
-        {/* Section B: Channel Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-          <ChannelStatusCard
-            title="Workable Sync"
-            isSelected={selectedChannel === 'Workable'}
-            onClick={() => setSelectedChannel(selectedChannel === 'Workable' ? null : 'Workable')}
-            status={workableStats.lastReceived ? "Active" : "Awaiting Data"}
-            statusColor={workableStats.lastReceived ? "text-blue-600 dark:text-blue-400" : "text-text-secondary"}
-            icon={<RefreshCw size={18} />}
-            pulse={!!activeUploads.find((u: any) => u.source === 'Workable')}
-            errorCount={getErrorCount('Workable')}
-            toggle={{ enabled: true, onChange: () => {}, disabled: true }}
-            stats={[
-              { label: 'CVs Uploaded Today', value: workableStats.todayCount.toString() },
-              { label: 'Last received', value: formatTime(workableStats.lastReceived) }
-            ]}
-            actionButton={
-              <button 
-                onClick={(e) => { e.stopPropagation(); setIsWorkableModalOpen(true); }}
-                className="w-full mt-1 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-md transition-colors"
+        {/* Section B: Source Tabs Header */}
+        <div className="mb-6 bg-surface border border-border rounded-xl p-1.5 flex gap-1.5 overflow-x-auto shadow-sm custom-scrollbar">
+          {TABS_CONFIG.map((t) => {
+            const IconComponent = t.icon;
+            const isActive = activeSourceTab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveSourceTab(t.key)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                  isActive
+                    ? "bg-primary-container text-on-primary shadow-sm"
+                    : "text-text-secondary hover:text-text-primary hover:bg-surface-container-high"
+                }`}
               >
-                Import Data
+                <IconComponent className="w-4 h-4" />
+                <span>{t.label}</span>
+                {t.badge && (
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isActive ? "bg-on-primary/20 text-on-primary" : "bg-surface-container-high text-text-secondary"}`}>
+                    {t.badge}
+                  </span>
+                )}
+                {t.errorCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title={`${t.errorCount} extraction errors`} />
+                )}
               </button>
-            }
-          />
-          
-          <ChannelStatusCard
-            title="Direct-to (Manual)"
-            isSelected={selectedChannel === 'Manual'}
-            onClick={() => setSelectedChannel(selectedChannel === 'Manual' ? null : 'Manual')}
-            status={manualStats.lastReceived ? "Active" : "Ready"}
-            statusColor={manualStats.lastReceived ? "text-blue-500 dark:text-blue-400" : "text-text-secondary"}
-            icon={<Upload size={18} />}
-            pulse={!!activeUploads.find((u: any) => u.source === 'Manual' || !u.source)}
-            errorCount={getErrorCount('Manual')}
-            toggle={{ enabled: true, onChange: () => {}, disabled: true }}
-            stats={[
-              { label: 'CVs Uploaded Today', value: manualStats.todayCount.toString() },
-              { label: 'Last Batch', value: formatTime(manualStats.lastReceived) }
-            ]}
-            actionButton={
-              <button 
-                onClick={(e) => { e.stopPropagation(); setIsManualModalOpen(true); }}
-                className="w-full mt-1 py-1.5 text-xs font-semibold text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-md transition-colors"
-              >
-                Upload CVs
-              </button>
-            }
-          />
-
-          <ChannelStatusCard
-            title="Email (Office 365)"
-            isSelected={selectedChannel === 'Email'}
-            onClick={() => setSelectedChannel(selectedChannel === 'Email' ? null : 'Email')}
-            status={!toggles.emailIngestion ? "Paused" : emailStats.lastReceived ? "Active" : "Monitoring"}
-            statusColor={!toggles.emailIngestion ? "text-amber-500 dark:text-amber-400" : emailStats.lastReceived ? "text-orange-500 dark:text-orange-400" : "text-text-secondary"}
-            icon={<Mail size={18} />}
-            pulse={!!activeUploads.find((u: any) => u.source === 'Email' || u.source === 'email_campaign')}
-            errorCount={getErrorCount('Email')}
-            toggle={{ 
-              enabled: toggles.emailIngestion, 
-              onChange: (v) => handleToggle('emailIngestion', v) 
-            }}
-            stats={[
-              { label: 'CVs Received Today', value: emailStats.todayCount.toString() },
-              { label: 'Last received', value: formatTime(emailStats.lastReceived) }
-            ]}
-          />
-
-          <ChannelStatusCard
-            title="WhatsApp (Meta API)"
-            isSelected={selectedChannel === 'WhatsApp'}
-            onClick={() => setSelectedChannel(selectedChannel === 'WhatsApp' ? null : 'WhatsApp')}
-            status={!toggles.whatsappIngestion ? "Paused" : whatsappStats.lastReceived ? "Active" : "Monitoring"}
-            statusColor={!toggles.whatsappIngestion ? "text-amber-500 dark:text-amber-400" : whatsappStats.lastReceived ? "text-green-600 dark:text-green-400" : "text-text-secondary"}
-            icon={<MessageCircle size={18} />}
-            pulse={!!activeUploads.find((u: any) => u.source === 'WhatsApp')}
-            errorCount={getErrorCount('WhatsApp')}
-            toggle={{ 
-              enabled: toggles.whatsappIngestion, 
-              onChange: (v) => handleToggle('whatsappIngestion', v) 
-            }}
-            stats={[
-              { label: 'CVs Received Today', value: whatsappStats.todayCount.toString() },
-              { label: 'Last received', value: formatTime(whatsappStats.lastReceived) }
-            ]}
-          />
-
-          <ChannelStatusCard
-            title="Career Portal / Web Form"
-            isSelected={selectedChannel === 'Link'}
-            onClick={() => setSelectedChannel(selectedChannel === 'Link' ? null : 'Link')}
-            status={linkStats.lastReceived ? "Active" : "Monitoring"}
-            statusColor={linkStats.lastReceived ? "text-emerald-600 dark:text-emerald-400" : "text-text-secondary"}
-            icon={<Link2 size={18} />}
-            pulse={!!activeUploads.find((u: any) => u.source === 'Link')}
-            errorCount={getErrorCount('Career Portal / Web Form')}
-            toggle={{ enabled: true, onChange: () => {}, disabled: true }}
-            stats={[
-              { label: 'CVs Uploaded Today', value: linkStats.todayCount.toString() },
-              { label: 'Last received', value: formatTime(linkStats.lastReceived) }
-            ]}
-          />
-
-          <ChannelStatusCard
-            title="Meta Campaign"
-            isSelected={selectedChannel === 'Meta'}
-            onClick={() => setSelectedChannel(selectedChannel === 'Meta' ? null : 'Meta')}
-            status={metaStats.lastReceived ? "Active" : "Monitoring"}
-            statusColor={metaStats.lastReceived ? "text-blue-700 dark:text-blue-400" : "text-text-secondary"}
-            icon={<Share2 size={18} />}
-            pulse={!!activeUploads.find((u: any) => u.source === 'Meta')}
-            errorCount={getErrorCount('Meta')}
-            toggle={{ enabled: true, onChange: () => {}, disabled: true }}
-            stats={[
-              { label: 'CVs Captured Today', value: metaStats.todayCount.toString() },
-              { label: 'Last received', value: formatTime(metaStats.lastReceived) }
-            ]}
-          />
-
-          <ChannelStatusCard
-            title="LinkedIn Inbox"
-            isSelected={selectedChannel === 'linkedin'}
-            onClick={() => setSelectedChannel(selectedChannel === 'linkedin' ? null : 'linkedin')}
-            status={!toggles.emailIngestion ? "Paused" : linkedinStats.lastReceived ? "Active" : "Monitoring"}
-            statusColor={!toggles.emailIngestion ? "text-amber-500 dark:text-amber-400" : linkedinStats.lastReceived ? "text-green-700 dark:text-green-400" : "text-text-secondary"}
-            icon={
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>
-                <rect x="2" y="9" width="4" height="12"/>
-                <circle cx="4" cy="4" r="2"/>
-              </svg>
-            }
-            pulse={!!activeUploads.find((u: any) => u.source === 'linkedin')}
-            errorCount={getErrorCount('LinkedIn Inbox')}
-            toggle={{ 
-              enabled: toggles.emailIngestion, 
-              onChange: (v) => handleToggle('emailIngestion', v),
-            }}
-            stats={[
-              { label: 'CVs Received Today', value: linkedinStats.todayCount.toString() },
-              { label: 'Last received', value: formatTime(linkedinStats.lastReceived) }
-            ]}
-          >
-            <div className="mt-1 bg-green-50/50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/30 rounded-md px-2 py-1.5 text-[10px] text-green-700 dark:text-green-400 font-medium flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
-              Polling <span className="font-bold truncate">linkedin@career141.com</span>
-            </div>
-          </ChannelStatusCard>
+            );
+          })}
         </div>
-        
-        {/* Section C: Errors & Activity Panel */}
+
+        {/* Section C: Tab Content Views */}
+        <div className="mb-8 bg-surface border border-border rounded-2xl p-6 shadow-sm">
+          {/* TAB 1: Workable */}
+          {activeSourceTab === "workable" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                    <RefreshCw className="w-5 h-5 text-blue-600 dark:text-blue-400" /> Workable Integration
+                  </h2>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Connect Workable SPI API to extract candidates, resume attachments, and sync directly to Cloudflare R2.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-text-secondary bg-surface-container-low px-3 py-1.5 rounded-lg border border-border">
+                  <span>Today: {workableStats.todayCount} CVs</span>
+                  <span>•</span>
+                  <span>Last received: {formatTime(workableStats.lastReceived)}</span>
+                </div>
+              </div>
+
+              {!importStatus ? (
+                <div className="space-y-5">
+                  <div className="bg-[#E1F5FE] border border-[#B3E5FC] rounded-xl p-4 text-[#0277BD]">
+                    <p className="text-sm font-bold flex items-center gap-2 mb-2">
+                      <Info className="w-4 h-4 shrink-0" /> Workable Extraction Engine Highlights
+                    </p>
+                    <ol className="text-xs space-y-1 list-decimal list-inside font-medium ml-1">
+                      <li>Connects via Bearer token to your Workable SPI v3 API.</li>
+                      <li>Uses 5-tier fallback algorithm to capture all candidate CV attachments.</li>
+                      <li>Stores files in Cloudflare R2 Storage and executes AI detail parsing with DeepSeek V4-Flash.</li>
+                      <li>Runs continuous pagination with auto-resume rate-limit protection (429 backoff).</li>
+                      <li>Stop or Pause anytime—resumes from the exact saved cursor.</li>
+                    </ol>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
+                        <Building2 className="w-4 h-4 text-text-secondary" /> Workable Subdomain
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="mycompany"
+                          value={subdomain}
+                          onChange={(e) => setSubdomain(e.target.value)}
+                          className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border flex-1 focus:outline-none focus:border-primary-container"
+                        />
+                        <span className="flex items-center text-[13px] text-text-secondary bg-surface-container-low px-3 rounded-md border border-border whitespace-nowrap font-medium">
+                          .workable.com
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
+                        <Key className="w-4 h-4 text-text-secondary" /> API Key
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="your-workable-api-key"
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
+                      <Activity className="w-4 h-4 text-text-secondary" /> Import Limit (Candidates per run)
+                    </label>
+                    <select
+                      value={maxCandidates}
+                      onChange={(e) => setMaxCandidates(Number(e.target.value))}
+                      className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container font-medium max-w-md"
+                    >
+                      <option value={100}>100 Candidates (Quick Test)</option>
+                      <option value={500}>500 Candidates (Recommended Initial Target)</option>
+                      <option value={1000}>1,000 Candidates</option>
+                      <option value={5000}>5,000 Candidates</option>
+                      <option value={50000}>50,000 Candidates</option>
+                      <option value={0}>Unlimited (Extract All Candidates)</option>
+                    </select>
+                  </div>
+
+                  <div className="pt-2 flex justify-start gap-3">
+                    <Button onClick={handleWorkableImport} disabled={isWorkableImporting}>
+                      {isWorkableImporting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" /> Starting Import...
+                        </>
+                      ) : (
+                        `Start Workable Import (${maxCandidates === 0 ? "Unlimited" : maxCandidates})`
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-primary">Workable Import Live Progress</h3>
+                    {importStatus.status === "running" && (
+                      <div className="flex items-center gap-1.5 bg-[#E8F5E9] text-[#1B5E20] px-3 py-1 rounded-md border border-[#C8E6C9]">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Running</span>
+                      </div>
+                    )}
+                    {importStatus.status === "stopped" && (
+                      <div className="flex items-center gap-1.5 bg-[#FFF3E0] text-[#E65100] px-3 py-1 rounded-md border border-[#FFE0B2]">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Stopped</span>
+                      </div>
+                    )}
+                    {importStatus.status === "done" && (
+                      <div className="flex items-center gap-1.5 bg-[#E8F5E9] text-[#1B5E20] px-3 py-1 rounded-md border border-[#C8E6C9]">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Complete</span>
+                      </div>
+                    )}
+                    {importStatus.status === "error" && (
+                      <div className="flex items-center gap-1.5 bg-[#FFEBEE] text-[#D32F2F] px-3 py-1 rounded-md border border-[#FFCDD2]">
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Error</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {importStatus.totalCandidates > 0 && (
+                    <div>
+                      <div className="flex justify-between text-xs font-bold text-text-secondary">
+                        <span>Overall Progress</span>
+                        <span>
+                          {totalProcessed.toLocaleString()} / {importStatus.totalCandidates.toLocaleString()}
+                        </span>
+                      </div>
+                      <ProgressBar value={totalProcessed} max={importStatus.totalCandidates} color="bg-[#006E1C]" />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <StatBox label="Imported" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
+                    <StatBox label="Duplicates" value={importStatus.deduplicated} icon={Copy} color="bg-[#E1F5FE] text-[#0277BD]" />
+                    <StatBox label="Skipped" value={importStatus.skipped} icon={SkipForward} color="bg-[#FFF3E0] text-[#E65100]" />
+                    <StatBox label="Failed" value={importStatus.failed} icon={XCircle} color="bg-[#FFEBEE] text-[#D32F2F]" />
+                  </div>
+
+                  {importStatus.errorMessage && importStatus.status === "error" && (
+                    <div className="flex items-start gap-2 bg-[#FFEBEE] border border-[#FFCDD2] rounded-lg p-3 text-xs font-medium text-[#D32F2F]">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      {importStatus.errorMessage}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                    {importStatus.status === "running" && (
+                      <>
+                        <button
+                          onClick={handleStopWorkable}
+                          className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
+                        >
+                          <Pause className="w-4 h-4" fill="currentColor" />
+                          <span>Pause Import</span>
+                        </button>
+                        <button
+                          onClick={handleClearHistory}
+                          className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
+                        >
+                          <Square className="w-3.5 h-3.5" fill="currentColor" />
+                          <span>Stop & Cancel</span>
+                        </button>
+                      </>
+                    )}
+
+                    {importStatus.status === "stopped" && (
+                      <>
+                        <button
+                          onClick={handleRetryWorkable}
+                          disabled={isWorkableImporting}
+                          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                        >
+                          {isWorkableImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" fill="currentColor" />}
+                          <span>Resume Import</span>
+                        </button>
+                        <button
+                          onClick={handleClearHistory}
+                          className="flex items-center gap-2 text-xs font-bold text-text-secondary hover:text-red-600 py-2 px-4 rounded-lg border border-border hover:bg-surface-container-high transition-all"
+                        >
+                          <Square className="w-3.5 h-3.5" fill="currentColor" />
+                          <span>Clear & Start Over</span>
+                        </button>
+                      </>
+                    )}
+
+                    {importStatus.status === "error" && (
+                      <>
+                        <button
+                          onClick={handleRetryWorkable}
+                          disabled={isWorkableImporting}
+                          className="flex items-center gap-2 bg-primary-container text-on-primary py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                        >
+                          {isWorkableImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                          <span>Retry Import</span>
+                        </button>
+                        <button
+                          onClick={handleClearHistory}
+                          className="flex items-center gap-2 text-xs font-bold text-text-secondary hover:text-red-600 py-2 px-4 rounded-lg border border-border hover:bg-surface-container-high transition-all"
+                        >
+                          <span>Clear History</span>
+                        </button>
+                      </>
+                    )}
+
+                    {importStatus.status === "done" && (
+                      <button
+                        onClick={handleClearHistory}
+                        className="flex items-center gap-2 bg-primary-container text-on-primary py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Start New Import</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: Direct Upload (Manual) */}
+          {activeSourceTab === "manual" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                    <Upload className="w-5 h-5 text-blue-500 dark:text-blue-400" /> Direct File Upload
+                  </h2>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Drag and drop bulk candidate CV files (PDF, DOCX, RTF, TXT) for instant AI extraction.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-text-secondary bg-surface-container-low px-3 py-1.5 rounded-lg border border-border">
+                  <span>Today: {manualStats.todayCount} CVs</span>
+                  <span>•</span>
+                  <span>Last Batch: {formatTime(manualStats.lastReceived)}</span>
+                </div>
+              </div>
+
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-border hover:border-primary-container bg-surface-container-low hover:bg-surface-container-high transition-all rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer text-center"
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  multiple
+                  accept=".pdf,.doc,.docx,.rtf,.txt"
+                  className="hidden"
+                />
+                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-3">
+                  <Upload className="w-6 h-6" />
+                </div>
+                <p className="text-sm font-bold text-text-primary">Click or Drag & Drop CV files here</p>
+                <p className="text-xs text-text-secondary mt-1">Supports PDF, DOCX, RTF, TXT up to 50MB per file</p>
+              </div>
+
+              {files.length > 0 && (
+                <div className="space-y-4 bg-surface-container-low p-4 rounded-xl border border-border">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-text-primary">{files.length} Files Selected</span>
+                    <button onClick={() => setFiles([])} className="text-xs font-semibold text-red-500 hover:underline">
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                    {files.map((f, i) => (
+                      <div key={i} className="flex justify-between items-center bg-surface p-2 rounded-lg border border-border text-xs">
+                        <span className="truncate max-w-xs font-medium text-text-primary">{f.name}</span>
+                        <span className="text-text-secondary font-mono">{(f.size / 1024).toFixed(0)} KB</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-text-secondary uppercase mb-1.5 block">Source Tag</label>
+                  <select
+                    value={source}
+                    onChange={(e) => setSource(e.target.value)}
+                    className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container font-medium"
+                  >
+                    {SOURCE_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-text-secondary uppercase mb-1.5 block">Campaign Label</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Q3 Hiring Spree"
+                    value={campaignLabel}
+                    onChange={(e) => setCampaignLabel(e.target.value)}
+                    className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-text-secondary uppercase mb-1.5 block">Assign to Job (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="Job ID"
+                    value={assignToJob}
+                    onChange={(e) => setAssignToJob(e.target.value)}
+                    className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Button onClick={handleManualUpload} disabled={files.length === 0 || isUploading}>
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" /> Uploading & Processing...
+                    </>
+                  ) : (
+                    `Upload & Parse ${files.length > 0 ? `${files.length} Files` : "CVs"}`
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: LinkedIn */}
+          {activeSourceTab === "linkedin" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                    <Share2 className="w-5 h-5 text-blue-600 dark:text-blue-400" /> LinkedIn Integration
+                  </h2>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Extract candidate profiles directly from LinkedIn Recruiter & InMail via Career141 Chrome Extension.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-text-secondary bg-surface-container-low px-3 py-1.5 rounded-lg border border-border">
+                  <span>Today: {linkedinStats.todayCount} CVs</span>
+                  <span>•</span>
+                  <span>Last Received: {formatTime(linkedinStats.lastReceived)}</span>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                    <Share2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-text-primary">LinkedIn Inbox Monitor Active</h4>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      Polling incoming LinkedIn candidate emails at <span className="font-bold text-blue-600 dark:text-blue-400">linkedin@career141.com</span>.
+                    </p>
+                  </div>
+                </div>
+                <span className="flex items-center gap-1.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> Active Monitoring
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <StatBox label="Captured Today" value={linkedinStats.todayCount} icon={CheckCircle2} color="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400" />
+                <StatBox label="Extraction Errors" value={getErrorCount("linkedin")} icon={AlertCircle} color="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: WhatsApp */}
+          {activeSourceTab === "whatsapp" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                    <MessageCircle className="w-5 h-5 text-green-600 dark:text-green-400" /> WhatsApp Intake (Meta API)
+                  </h2>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Automated WhatsApp webhook listening for candidate CV attachments and recruiter forwarded messages.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-text-secondary">Ingestion Status</span>
+                  <button
+                    onClick={() => handleToggle("whatsappIngestion", !toggles.whatsappIngestion)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      toggles.whatsappIngestion
+                        ? "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/40 dark:text-green-300"
+                        : "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300"
+                    }`}
+                  >
+                    {toggles.whatsappIngestion ? "Active (Click to Pause)" : "Paused (Click to Resume)"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <StatBox label="Received Today" value={whatsappStats.todayCount} icon={MessageCircle} color="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400" />
+                <StatBox label="Last Received" value={whatsappStats.lastReceived ? 1 : 0} icon={Activity} color="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: Meta Campaigns */}
+          {activeSourceTab === "meta" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-blue-700 dark:text-blue-400" /> Meta Campaign Intake
+                  </h2>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Direct lead ads webhook capturing candidate submissions from Facebook & Instagram ad campaigns.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-text-secondary bg-surface-container-low px-3 py-1.5 rounded-lg border border-border">
+                  <span>Today: {metaStats.todayCount} CVs</span>
+                  <span>•</span>
+                  <span>Last Received: {formatTime(metaStats.lastReceived)}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <StatBox label="Captured Today" value={metaStats.todayCount} icon={Activity} color="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400" />
+                <StatBox label="Extraction Errors" value={getErrorCount("Meta")} icon={AlertCircle} color="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: Email (Office 365) */}
+          {activeSourceTab === "email" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                    <Mail className="w-5 h-5 text-orange-500 dark:text-orange-400" /> Email Ingestion (Office 365)
+                  </h2>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Microsoft Graph API inbox monitor parsing incoming CV attachments from job board forwarders and candidates.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-text-secondary">Ingestion Status</span>
+                  <button
+                    onClick={() => handleToggle("emailIngestion", !toggles.emailIngestion)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      toggles.emailIngestion
+                        ? "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/40 dark:text-green-300"
+                        : "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300"
+                    }`}
+                  >
+                    {toggles.emailIngestion ? "Active (Click to Pause)" : "Paused (Click to Resume)"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <StatBox label="Received Today" value={emailStats.todayCount} icon={Mail} color="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400" />
+                <StatBox label="Last Received" value={emailStats.lastReceived ? 1 : 0} icon={Activity} color="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: Career Portal / Web Form */}
+          {activeSourceTab === "portal" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                    <Link2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" /> Career Portal / Web Form
+                  </h2>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Direct public candidate application portal and embedded website application form submissions.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-text-secondary bg-surface-container-low px-3 py-1.5 rounded-lg border border-border">
+                  <span>Today: {linkStats.todayCount} CVs</span>
+                  <span>•</span>
+                  <span>Last Received: {formatTime(linkStats.lastReceived)}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <StatBox label="Submissions Today" value={linkStats.todayCount} icon={Link2} color="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400" />
+                <StatBox label="Extraction Errors" value={getErrorCount("Career Portal / Web Form")} icon={AlertCircle} color="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Section D: Bottom Errors & Activity Panel */}
         <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col min-h-[400px]">
-          {/* Tabs */}
           <div className="flex border-b border-border bg-surface-container-low px-2 pt-2 gap-1 overflow-x-auto">
-            <button 
-              onClick={() => setActiveTab('errors')}
+            <button
+              onClick={() => setActiveBottomTab("errors")}
               className={`px-4 py-2.5 text-sm font-semibold rounded-t-lg transition-colors flex items-center gap-2 ${
-                activeTab === 'errors' 
-                  ? 'bg-surface text-red-600 dark:text-red-400 border-x border-t border-border border-b-transparent shadow-[0_2px_0_0_#fff]' 
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface/50 border border-transparent'
+                activeBottomTab === "errors"
+                  ? "bg-surface text-red-600 dark:text-red-400 border-x border-t border-border border-b-transparent shadow-[0_2px_0_0_#fff]"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface/50 border border-transparent"
               }`}
             >
               <AlertCircle className="w-4 h-4" />
@@ -586,12 +1014,13 @@ export default function IngestionMonitorPage() {
                 </span>
               )}
             </button>
-            <button 
-              onClick={() => setActiveTab('permanent')}
+
+            <button
+              onClick={() => setActiveBottomTab("permanent")}
               className={`px-4 py-2.5 text-sm font-semibold rounded-t-lg transition-colors flex items-center gap-2 ${
-                activeTab === 'permanent' 
-                  ? 'bg-surface text-amber-700 dark:text-amber-400 border-x border-t border-border border-b-transparent shadow-[0_2px_0_0_#fff]' 
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface/50 border border-transparent'
+                activeBottomTab === "permanent"
+                  ? "bg-surface text-amber-700 dark:text-amber-400 border-x border-t border-border border-b-transparent shadow-[0_2px_0_0_#fff]"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface/50 border border-transparent"
               }`}
             >
               <AlertTriangle className="w-4 h-4" />
@@ -602,25 +1031,23 @@ export default function IngestionMonitorPage() {
                 </span>
               )}
             </button>
-            <button 
-              onClick={() => setActiveTab('activity')}
+
+            <button
+              onClick={() => setActiveBottomTab("activity")}
               className={`px-4 py-2.5 text-sm font-semibold rounded-t-lg transition-colors flex items-center gap-2 ${
-                activeTab === 'activity' 
-                  ? 'bg-surface text-primary border-x border-t border-border border-b-transparent shadow-[0_2px_0_0_#fff]' 
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface/50 border border-transparent'
+                activeBottomTab === "activity"
+                  ? "bg-surface text-primary border-x border-t border-border border-b-transparent shadow-[0_2px_0_0_#fff]"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface/50 border border-transparent"
               }`}
             >
               <Activity className="w-4 h-4" />
               Activity Log
-              {importBatchId && (
-                <span className="w-2 h-2 rounded-full bg-primary animate-pulse ml-1" />
-              )}
+              {importBatchId && <span className="w-2 h-2 rounded-full bg-primary animate-pulse ml-1" />}
             </button>
           </div>
 
-          {/* Tab Content */}
           <div className="p-5 flex-1 bg-surface">
-            {activeTab === 'errors' && (
+            {activeBottomTab === "errors" && (
               <div className="animate-in fade-in duration-300">
                 <div className="flex justify-between items-center mb-5">
                   <div>
@@ -636,7 +1063,7 @@ export default function IngestionMonitorPage() {
                     {retrying ? "Queueing..." : "Retry All Failed"}
                   </button>
                 </div>
-                
+
                 {Object.keys(failedBySource).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-text-secondary border-2 border-dashed border-border rounded-xl">
                     <CheckCircle2 className="w-8 h-8 text-green-500 mb-2 opacity-50" />
@@ -657,7 +1084,9 @@ export default function IngestionMonitorPage() {
                         <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
                           {uploads.map((f: any) => (
                             <div key={f._id} className="bg-surface dark:bg-surface-container-high p-3 rounded-lg border border-red-100 dark:border-red-900/30 shadow-sm">
-                              <p className="text-[13px] font-semibold text-text-primary truncate" title={f.fileName}>{f.fileName}</p>
+                              <p className="text-[13px] font-semibold text-text-primary truncate" title={f.fileName}>
+                                {f.fileName}
+                              </p>
                               <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 flex items-start gap-1">
                                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                                 <span className="line-clamp-2">{f.errorMessage || "Unknown extraction error"}</span>
@@ -672,13 +1101,13 @@ export default function IngestionMonitorPage() {
               </div>
             )}
 
-            {activeTab === 'permanent' && (
+            {activeBottomTab === "permanent" && (
               <div className="animate-in fade-in duration-300">
                 <div className="mb-5">
                   <h2 className="text-[15px] font-bold text-text-primary">Permanent Failures</h2>
                   <p className="text-xs text-text-secondary mt-0.5">CVs that failed repeatedly even after manual retries. These require human review.</p>
                 </div>
-                
+
                 {Object.keys(failedRetryBySource).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-text-secondary border-2 border-dashed border-border rounded-xl">
                     <CheckCircle2 className="w-8 h-8 text-green-500 mb-2 opacity-50" />
@@ -699,7 +1128,9 @@ export default function IngestionMonitorPage() {
                         <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
                           {uploads.map((f: any) => (
                             <div key={f._id} className="bg-surface dark:bg-surface-container-high p-3 rounded-lg border border-amber-100 dark:border-amber-900/30 shadow-sm">
-                              <p className="text-[13px] font-semibold text-text-primary truncate" title={f.fileName}>{f.fileName}</p>
+                              <p className="text-[13px] font-semibold text-text-primary truncate" title={f.fileName}>
+                                {f.fileName}
+                              </p>
                               <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1 flex items-start gap-1">
                                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                                 <span className="line-clamp-2">{f.errorMessage || "Failed repeatedly during retry"}</span>
@@ -714,7 +1145,7 @@ export default function IngestionMonitorPage() {
               </div>
             )}
 
-            {activeTab === 'activity' && (
+            {activeBottomTab === "activity" && (
               <div className="animate-in fade-in duration-300">
                 <div className="flex justify-between items-center mb-5">
                   <div>
@@ -746,290 +1177,7 @@ export default function IngestionMonitorPage() {
             )}
           </div>
         </div>
-
       </div>
-
-      {/* Workable Modal */}
-      <Modal
-        isOpen={isWorkableModalOpen}
-        onClose={() => setIsWorkableModalOpen(false)}
-        title="Import from Workable"
-        maxWidth="max-w-2xl"
-      >
-        <div className="flex flex-col gap-5 py-2 w-[550px] max-w-full">
-          {!importStatus ? (
-            <>
-              <div className="bg-[#E1F5FE] border border-[#B3E5FC] rounded-xl p-4 text-[#0277BD]">
-                <p className="text-sm font-bold flex items-center gap-2 mb-2">
-                  <Info className="w-4 h-4 shrink-0" /> How this works
-                </p>
-                <ol className="text-xs space-y-1 list-decimal list-inside font-medium ml-1">
-                  <li>We connect to your Workable account using your API key.</li>
-                  <li>Candidates with a CV/resume attached are downloaded.</li>
-                  <li>CVs are extracted and processed with AI (name, skills, experience).</li>
-                  <li>Up to 10 new candidates will be imported in a single run.</li>
-                </ol>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
-                    <Building2 className="w-4 h-4 text-text-secondary" /> Workable subdomain
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="mycompany"
-                      value={subdomain}
-                      onChange={(e) => setSubdomain(e.target.value)}
-                      className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border flex-1 focus:outline-none focus:border-primary-container"
-                    />
-                    <span className="flex items-center text-[13px] text-text-secondary bg-surface-container-low px-3 rounded-md border border-border whitespace-nowrap font-medium">
-                      .workable.com
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-bold text-text-primary flex items-center gap-2 mb-1.5">
-                    <Key className="w-4 h-4 text-text-secondary" /> API key
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="your-workable-api-key"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="text-text-primary bg-background text-[13px] py-2 px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
-                  />
-                </div>
-                
-                <div className="pt-2 flex justify-end gap-3">
-                  <Button variant="outline" onClick={() => setIsWorkableModalOpen(false)}>Cancel</Button>
-                  <Button onClick={handleWorkableImport} disabled={isWorkableImporting}>
-                    {isWorkableImporting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Starting...</> : "Start Import"}
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="bg-surface rounded-xl p-2 space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-[15px] font-bold text-text-primary">Import Progress</h2>
-                {importStatus.status === "running" && (
-                  <div className="flex items-center gap-1.5 bg-[#E8F5E9] text-[#1B5E20] px-2.5 py-1 rounded-md border border-[#C8E6C9]">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Running</span>
-                  </div>
-                )}
-                {importStatus.status === "stopped" && (
-                  <div className="flex items-center gap-1.5 bg-[#FFF3E0] text-[#E65100] px-2.5 py-1 rounded-md border border-[#FFE0B2]">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Stopped</span>
-                  </div>
-                )}
-                {importStatus.status === "done" && (
-                  <div className="flex items-center gap-1.5 bg-[#E8F5E9] text-[#1B5E20] px-2.5 py-1 rounded-md border border-[#C8E6C9]">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Complete</span>
-                  </div>
-                )}
-                {importStatus.status === "error" && (
-                  <div className="flex items-center gap-1.5 bg-[#FFEBEE] text-[#D32F2F] px-2.5 py-1 rounded-md border border-[#FFCDD2]">
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Error</span>
-                  </div>
-                )}
-              </div>
-
-              {importStatus.totalCandidates > 0 && (
-                <div className="mb-4">
-                  <div className="flex justify-between text-xs font-bold text-text-secondary">
-                    <span>Overall progress</span>
-                    <span>{totalProcessed.toLocaleString()} / {importStatus.totalCandidates.toLocaleString()}</span>
-                  </div>
-                  <ProgressBar value={totalProcessed} max={importStatus.totalCandidates} color="bg-[#006E1C]" />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                <StatBox label="Imported" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
-                <StatBox label="Duplicates" value={importStatus.deduplicated} icon={Copy} color="bg-[#E1F5FE] text-[#0277BD]" />
-                <StatBox label="Skipped" value={importStatus.skipped} icon={SkipForward} color="bg-[#FFF3E0] text-[#E65100]" />
-                <StatBox label="Failed" value={importStatus.failed} icon={XCircle} color="bg-[#FFEBEE] text-[#D32F2F]" />
-              </div>
-
-              {importStatus.errorMessage && importStatus.status === "error" && (
-                <div className="flex items-start gap-2 bg-[#FFEBEE] border border-[#FFCDD2] rounded-lg p-3 text-xs font-medium text-[#D32F2F] mb-4">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  {importStatus.errorMessage}
-                </div>
-              )}
-
-              {importStatus.status === "running" && (
-                <div className="pt-2 flex items-center justify-between gap-3">
-                  <p className="text-[13px] font-medium text-text-secondary">Import is running in the background.</p>
-                  <button onClick={handleStopWorkable} className="flex items-center gap-1.5 bg-[#FFEBEE] hover:bg-[#FFCDD2] text-[#D32F2F] py-1.5 px-3 rounded-lg border border-[#FFCDD2]">
-                    <XCircle className="w-3.5 h-3.5" /> <span className="text-xs font-bold">Stop</span>
-                  </button>
-                </div>
-              )}
-
-              {importStatus.status === "stopped" && (
-                <div className="pt-2 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[14px] font-bold text-text-primary">Import stopped</p>
-                  </div>
-                  <button onClick={handleRetryWorkable} disabled={isWorkableImporting} className="flex items-center bg-primary-container text-on-primary py-1.5 px-3 rounded-lg">
-                    {isWorkableImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" fill="currentColor" />}
-                    <span className="text-[13px] font-bold ml-1">Resume</span>
-                  </button>
-                </div>
-              )}
-
-              {importStatus.status === "error" && (
-                <div className="pt-2 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[14px] font-bold text-text-primary">Import failed</p>
-                  </div>
-                  <button onClick={handleRetryWorkable} disabled={isWorkableImporting} className="flex items-center bg-primary-container text-on-primary py-1.5 px-3 rounded-lg">
-                    {isWorkableImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                    <span className="text-[13px] font-bold ml-1">Retry</span>
-                  </button>
-                </div>
-              )}
-
-              {importStatus.status === "done" && (
-                <div className="pt-2 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[14px] font-bold text-text-primary">Import complete!</p>
-                    <button onClick={handleClearHistory} className="bg-surface-container-high py-1.5 px-3 rounded-lg text-[12px] font-bold">
-                      Start New Import
-                    </button>
-                  </div>
-                  {importStatus.skipped > 0 && (
-                    <div className="flex items-center justify-between gap-3 bg-[#FFF3E0] border border-[#FFE0B2] rounded-lg p-2.5">
-                      <p className="text-xs font-bold text-[#E65100]">Skipped candidates (no CV).</p>
-                      <button onClick={handleRetrySkipped} disabled={isWorkableImporting} className="flex items-center gap-1.5 text-[#E65100]">
-                        {isWorkableImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                        <span className="text-[11px] font-bold">Retry Skipped</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="border-t border-border pt-4 mt-2">
-                <button onClick={handleClearHistory} className="text-[#D32F2F] text-xs font-bold flex items-center gap-1 hover:underline">
-                  <XCircle className="w-3.5 h-3.5" /> Clear History
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </Modal>
-
-      {/* Manual Upload Modal */}
-      <Modal
-        isOpen={isManualModalOpen}
-        onClose={() => { setIsManualModalOpen(false); setFiles([]); setSource("Manual"); setCampaignLabel(""); setAssignToJob(""); }}
-        title="Manual Bulk Upload"
-        maxWidth="max-w-4xl"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => { setIsManualModalOpen(false); setFiles([]); setSource("Manual"); setCampaignLabel(""); setAssignToJob(""); }}>Cancel</Button>
-            <Button onClick={handleManualUpload} disabled={files.length === 0 || isUploading}>
-              {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {isUploading ? "Uploading..." : "Upload Files"}
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col md:flex-row gap-6 py-2 min-w-[300px] md:min-w-[700px]">
-          {/* Left Side - File Uploader */}
-          <div className="flex-1 flex flex-col gap-4">
-            <div 
-              className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border rounded-lg bg-surface-container-low cursor-pointer hover:bg-surface-container-high transition-colors h-40"
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-            >
-              <Upload className="w-8 h-8 text-text-secondary mb-2" />
-              <p className="text-sm font-medium text-text-primary">Drag & drop CV files here</p>
-              <p className="text-xs text-text-secondary mt-1 mb-4">Support PDF, DOCX, PNG</p>
-              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>Select Files</Button>
-              <input ref={fileInputRef} type="file" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" className="hidden" onChange={handleFileSelect} />
-            </div>
-            
-            {files.length > 0 && (
-              <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto pr-2 bg-surface border border-border p-3 rounded-lg shadow-sm custom-scrollbar">
-                <span className="text-xs font-bold text-text-secondary mb-1">Selected Files ({files.length})</span>
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between bg-surface-container-low p-2 rounded-md border border-border">
-                    <span className="text-[13px] text-text-primary truncate" title={f.name}>{f.name}</span>
-                    <button onClick={(e) => { e.stopPropagation(); setFiles(prev => prev.filter((_, idx) => idx !== i)); }} className="text-[#BA1A1A] hover:bg-red-50 dark:hover:bg-red-900/30 p-1 rounded">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Right Side - Tagging */}
-          <div className="w-full md:w-[280px] shrink-0 bg-surface border border-border rounded-lg p-5 shadow-sm flex flex-col gap-4 h-fit">
-            <span className="text-xs font-bold text-text-secondary border-b border-border pb-2">TAG THIS UPLOAD</span>
-            
-            <div className="flex flex-col gap-1 w-full relative">
-              <span className="text-text-disabled text-[11px] font-bold">CV SOURCE</span>
-              <div className="w-full relative">
-                <div
-                  className="flex items-center bg-surface rounded-md border border-border w-full cursor-pointer hover:bg-surface-container-high py-[9px] px-3"
-                  onClick={() => setShowSourceDropdown(!showSourceDropdown)}
-                >
-                  <span className={`text-[13px] ${source ? "text-text-primary" : "text-text-disabled"}`}>
-                    {source || "Select Source..."}
-                  </span>
-                </div>
-                {showSourceDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-full bg-surface rounded-md border border-border shadow-lg z-10 max-h-40 overflow-y-auto custom-scrollbar">
-                    {SOURCE_OPTIONS.map((opt) => (
-                      <div
-                        key={opt}
-                        className="py-2 px-[13px] text-[13px] text-text-primary hover:bg-background cursor-pointer"
-                        onClick={() => { setSource(opt); setShowSourceDropdown(false); }}
-                      >
-                        {opt}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1 w-full">
-              <span className="text-text-disabled text-[11px] font-bold">CAMPAIGN LABEL</span>
-              <input
-                type="text"
-                placeholder="e.g. Q4 Hiring Sprint"
-                value={campaignLabel}
-                onChange={(e) => setCampaignLabel(e.target.value)}
-                className="text-text-primary bg-surface text-[13px] py-[9px] px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 w-full">
-              <span className="text-text-disabled text-[11px] font-bold">ASSIGN TO JOB</span>
-              <input
-                type="text"
-                placeholder="Search open roles..."
-                value={assignToJob}
-                onChange={(e) => setAssignToJob(e.target.value)}
-                className="text-text-primary bg-surface text-[13px] py-[9px] px-3 rounded-md border border-border w-full focus:outline-none focus:border-primary-container"
-              />
-            </div>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

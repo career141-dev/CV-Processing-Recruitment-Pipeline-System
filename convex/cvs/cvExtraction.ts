@@ -78,6 +78,28 @@ import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
 import mammoth from "mammoth";
+// Polyfill DOMMatrix for Node.js environment required by pdfjs-dist
+if (typeof globalThis.DOMMatrix === "undefined") {
+  (globalThis as any).DOMMatrix = class DOMMatrix {
+    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+    m11 = 1; m12 = 0; m21 = 0; m22 = 1; m41 = 0; m42 = 0;
+    constructor(init?: any) {
+      if (Array.isArray(init) && init.length >= 6) {
+        this.a = this.m11 = init[0];
+        this.b = this.m12 = init[1];
+        this.c = this.m21 = init[2];
+        this.d = this.m22 = init[3];
+        this.e = this.m41 = init[4];
+        this.f = this.m42 = init[5];
+      }
+    }
+    multiply() { return this; }
+    translate() { return this; }
+    scale() { return this; }
+    inverse() { return this; }
+  };
+}
+
 // Tesseract OCR removed due to Convex V8 runtime worker thread incompatibility
 import {
   deriveNoticePeriodDays,
@@ -367,6 +389,12 @@ function ensureDOMMatrixPolyfill() {
       }
     }
     (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+    if (typeof global !== "undefined") {
+      (global as any).DOMMatrix = DOMMatrixPolyfill;
+    }
+    if (typeof (globalThis as any).window !== "undefined") {
+      (globalThis as any).window.DOMMatrix = DOMMatrixPolyfill;
+    }
   }
 }
 
@@ -720,7 +748,8 @@ function parseJsonRobustly(content: string): Record<string, unknown> | null {
 export async function callOpenRouterLLM(
   ctx: ActionCtx,
   rawText: string,
-  cvUploadId?: Id<"cvUploads">
+  cvUploadId?: Id<"cvUploads">,
+  sourceChannel?: string
 ): Promise<CvExtractionResult | null> {
   const MAX_CHARS = 15000;
   const textToSend =
@@ -789,7 +818,9 @@ JSON Target Schema:
             response.usage.completion_tokens,
             true,
             undefined,
-            cvUploadId
+            cvUploadId,
+            undefined,
+            sourceChannel
           );
         }
 
@@ -841,7 +872,9 @@ JSON Target Schema:
     0,
     false,
     lastMessage,
-    cvUploadId
+    cvUploadId,
+    undefined,
+    sourceChannel
   );
   return null;
 }
@@ -1055,7 +1088,7 @@ export async function runCvExtraction(
 
       // First try: call OpenRouter LLM (OPENROUTER_PRIMARY_MODEL) with extracted text
       let [extractedData, embeddingResult] = await Promise.all([
-        callOpenRouterLLM(ctx, cappedRawText, cvUploadId).catch((err) => {
+        callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
           console.warn("[CvExtraction] First call to callOpenRouterLLM failed:", err.message || err);
           return null;
         }),
@@ -1080,7 +1113,7 @@ export async function runCvExtraction(
                 ? cleanedVision.slice(0, MAX_RAW_TEXT_LENGTH)
                 : cleanedVision;
               console.log(`[CvExtraction] Vision OCR transcribed ${cappedRawText.length} characters. Passing raw text back to DeepSeek V4 Flash for candidate detail extraction...`);
-              extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId);
+              extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel);
             }
           }
         } catch (visionFallbackErr: any) {
@@ -1139,6 +1172,7 @@ export async function runCvExtraction(
         parsingConfidence,
         isParsed: true,
         embedding,
+        extractionModel: OPENROUTER_PRIMARY_MODEL,
       });
 
       if (extracted.referees && extracted.referees.length > 0) {

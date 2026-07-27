@@ -28,11 +28,25 @@ type ReverseMatchResult = {
 // Triggered automatically on publish (when reverseMatchOnPublish is true) and via
 // the manual "rescan" button. Scores candidates with AI and saves a ranked shortlist.
 export const runReverseMatch = action({
-  args: { jobId: v.id("jobs") },
+  args: {
+    jobId: v.id("jobs"),
+    customPreferences: v.optional(v.string()),
+  },
   handler: async (ctx, args): Promise<void> => {
     try {
       const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
       if (!job) return;
+
+      if (args.customPreferences !== undefined) {
+        await ctx.runMutation(internal.jobs.jobs.updateTaPreferencesInternal, {
+          jobId: args.jobId,
+          taPreferences: args.customPreferences,
+        });
+      }
+
+      const activePreferences = args.customPreferences !== undefined
+        ? args.customPreferences
+        : job.taPreferences;
 
       const minScore = job.minMatchScoreToShow ?? 60;
 
@@ -41,6 +55,11 @@ export const runReverseMatch = action({
       const terms: string[] = [];
       if (job.title) terms.push(job.title);
       for (const s of (job.requiredSkills ?? []).slice(0, 4)) terms.push(s);
+      if (activePreferences && activePreferences.trim()) {
+        for (const t of activePreferences.split(/[\n,;]+/).map((s: string) => s.trim()).filter(s => s.length > 2).slice(0, 3)) {
+          terms.push(t);
+        }
+      }
       if (terms.length === 0 && job.jobDescription) {
         for (const t of job.jobDescription
           .split(/[\n,;]+/)
@@ -111,6 +130,7 @@ export const runReverseMatch = action({
 
       const jobReq = {
         title: job.title,
+        taPreferences: activePreferences || null,
         requiredSkills: job.requiredSkills ?? [],
         niceToHaveSkills: job.niceToHaveSkills ?? [],
         seniority: job.seniorityLevel ?? null,

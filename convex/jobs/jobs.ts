@@ -828,6 +828,30 @@ export const saveReverseMatchResults = internalMutation({
   },
 });
 
+export const updateTaPreferences = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    taPreferences: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      taPreferences: args.taPreferences,
+    });
+  },
+});
+
+export const updateTaPreferencesInternal = internalMutation({
+  args: {
+    jobId: v.id("jobs"),
+    taPreferences: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      taPreferences: args.taPreferences,
+    });
+  },
+});
+
 export const getActiveJobsBasicInfo = query({
   args: {},
   handler: async (ctx) => {

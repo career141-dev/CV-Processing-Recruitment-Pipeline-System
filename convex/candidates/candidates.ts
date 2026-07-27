@@ -350,6 +350,7 @@ export const updateCandidateFields = mutation({
     isParsed: v.optional(v.boolean()),
     parsingConfidence: v.optional(v.any()),
     embedding: v.optional(v.array(v.float64())),
+    extractionModel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { candidateId, rawText, jobHistory, embedding, ...candidateArgs } = args;
@@ -480,6 +481,7 @@ export const createCandidate = mutation({
     isParsed: v.optional(v.boolean()),
     parsingConfidence: v.optional(v.any()),
     embedding: v.optional(v.array(v.float64())),
+    extractionModel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // 4-Factor Deduplication (Agent 6)

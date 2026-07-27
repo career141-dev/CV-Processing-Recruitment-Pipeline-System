@@ -6,6 +6,7 @@ export const createImportJob = internalMutation({
   args: {
     userId: v.string(),
     totalCandidates: v.number(),
+    maxCandidates: v.optional(v.number()),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
   },
@@ -13,6 +14,7 @@ export const createImportJob = internalMutation({
     return await ctx.db.insert("workableImports", {
       status: "running",
       totalCandidates: args.totalCandidates,
+      maxCandidates: args.maxCandidates,
       imported: 0,
       skipped: 0,
       failed: 0,
@@ -32,6 +34,7 @@ export const updateImportJob = internalMutation({
     deduplicated: v.optional(v.number()),
     failed: v.optional(v.number()),
     totalCandidates: v.optional(v.number()),
+    maxCandidates: v.optional(v.number()),
     status: v.optional(
       v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped"))
     ),
@@ -61,6 +64,27 @@ export const getLatestImportJob = internalQuery({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.query("workableImports").order("desc").first();
+  },
+});
+
+export const stopAllRunningWorkableImports = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const runningJobs = await ctx.db
+      .query("workableImports")
+      .filter((q) => q.eq(q.field("status"), "running"))
+      .collect();
+
+    let stoppedCount = 0;
+    for (const job of runningJobs) {
+      await ctx.db.patch(job._id, {
+        status: "stopped",
+        errorMessage: "Import stopped by user.",
+      });
+      stoppedCount++;
+    }
+
+    return { stoppedCount, message: `Stopped ${stoppedCount} running Workable import jobs.` };
   },
 });
 
@@ -114,13 +138,20 @@ export const clearImportHistory = mutation({
 });
 
 export const getLatestImportStatus = query({
-  args: { userId: v.string() },
+  args: { userId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const job = await ctx.db
-      .query("workableImports")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .first();
+    let job = null;
+    const uid = args.userId;
+    if (uid) {
+      job = await ctx.db
+        .query("workableImports")
+        .withIndex("by_user", (q) => q.eq("userId", uid))
+        .order("desc")
+        .first();
+    }
+    if (!job) {
+      job = await ctx.db.query("workableImports").order("desc").first();
+    }
     if (!job) return null;
     return { ...job, deduplicated: job.deduplicated ?? 0 };
   },

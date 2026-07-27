@@ -171,6 +171,7 @@ export default defineSchema({
     scoreWeightLocation: v.optional(v.number()), // default 5
     minMatchScoreToShow: v.optional(v.number()), // default 60
     reverseMatchOnPublish: v.optional(v.boolean()),
+    taPreferences: v.optional(v.string()),
 
     reverseMatchStatus: v.optional(v.union(
       v.literal("running"), v.literal("done"), v.literal("error")
@@ -574,6 +575,7 @@ export default defineSchema({
     doNotContactReason: v.optional(v.string()),
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
+    extractionModel: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -586,6 +588,7 @@ export default defineSchema({
     .index("by_linkedinUrl", ["linkedinUrl"])
     .index("by_overallStatus", ["overallStatus"])
     .index("by_lastUpdatedAt", ["lastUpdatedAt"])
+    .index("by_extractionModel", ["extractionModel"])
     .searchIndex("search_skills", {
       searchField: "skills",
     })
@@ -1083,11 +1086,11 @@ export default defineSchema({
   workableImports: defineTable({
     status: v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped")),
     totalCandidates: v.number(),
+    maxCandidates: v.optional(v.number()),
     imported: v.number(),
     skipped: v.number(),
     deduplicated: v.optional(v.number()),
     failed: v.number(),
-    maxCandidates: v.optional(v.number()),
     userId: v.string(),
     startedAt: v.string(),
     errorMessage: v.optional(v.string()),
@@ -1107,6 +1110,28 @@ export default defineSchema({
     startedAt: v.string(),
     errorMessage: v.optional(v.string()),
     lastCursor: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
+
+  zipImportJobs: defineTable({
+    userId: v.string(),
+    urls: v.array(v.string()),
+    currentUrlIndex: v.number(),
+    currentFileIndex: v.number(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("stopped"),
+      v.literal("done"),
+      v.literal("error")
+    ),
+    totalFound: v.number(),
+    imported: v.number(),
+    duplicates: v.number(),
+    notCv: v.number(),
+    errors: v.number(),
+    startedAt: v.string(),
+    updatedAt: v.string(),
+    errorMessage: v.optional(v.string()),
   }).index("by_user", ["userId"]),
 
   // ─── Hercules Tables Merged Below ───
@@ -1354,13 +1379,14 @@ export default defineSchema({
     fileName: v.optional(v.string()),
     candidateName: v.optional(v.string()),
     provider: v.optional(v.string()), // 'openrouter' | 'nvidia'
-    sourceChannel: v.optional(v.string()),
+    sourceChannel: v.optional(v.string()), // 'Workable' | 'Email' | 'WhatsApp' | 'Manual'
   })
     .index("by_timestamp", ["timestamp"])
     .index("by_taskType", ["taskType"])
     .index("by_model", ["model"])
     .index("by_cvUploadId", ["cvUploadId"])
-    .index("by_provider", ["provider"]),
+    .index("by_provider", ["provider"])
+    .index("by_sourceChannel", ["sourceChannel"]),
 
   // Rolling aggregate cache for getTokenMetrics — updated on every log write.
   // Replaces the O(n) .collect() scan with an O(1) singleton read.
