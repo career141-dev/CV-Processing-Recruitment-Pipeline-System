@@ -11,15 +11,13 @@ export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
 export const OPENROUTER_SCANNED_CV_MODEL = "google/gemma-4-26b-a4b-it:free";
 
 export const OPENROUTER_FALLBACK_MODELS = [
-  "deepseek/deepseek-chat",
-  "meta-llama/llama-3.3-70b-instruct",
   OPENROUTER_PRIMARY_MODEL,
+  OPENROUTER_SCANNED_CV_MODEL,
 ];
 
 export const OPENROUTER_CV_FALLBACK_MODELS = [
-  "deepseek/deepseek-chat",
-  "meta-llama/llama-3.3-70b-instruct",
   OPENROUTER_CV_EXTRACTION_MODEL,
+  OPENROUTER_SCANNED_CV_MODEL,
 ];
 
 // Model configuration mapping

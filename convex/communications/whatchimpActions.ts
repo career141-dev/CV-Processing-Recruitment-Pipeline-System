@@ -16,7 +16,7 @@ export const handlePreApplicationChat = internalAction({
       if (!job) return;
 
       const openai = getOpenAI("jd_matching"); // Use a fast chat model
-      const model = getModelForTask("jd_matching") || "meta/llama-3.1-70b-instruct";
+      const model = getModelForTask("jd_matching") || "deepseek/deepseek-v4-flash";
 
       const systemPrompt = `You are an intelligent recruitment assistant for Career141. 
 The candidate is interested in the "${job.title}" position. 
