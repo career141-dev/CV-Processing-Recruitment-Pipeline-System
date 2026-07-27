@@ -595,19 +595,7 @@ export async function extractText(
       throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
     }
 
-    let pageImages: string[] = [];
-    try {
-      const extractImagesWithTimeout = Promise.race([
-        extractImagesFromPdfBuffer(buffer, 5),
-        new Promise<string[]>((_, reject) =>
-          setTimeout(() => reject(new Error("PDF image extraction timed out after 15s")), 15000)
-        ),
-      ]);
-      pageImages = await extractImagesWithTimeout;
-    } catch (imgErr) {
-      console.warn(`[extractText] PDF image extraction failed or timed out:`, imgErr);
-    }
-
+    const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
     if (!pageImages || pageImages.length === 0) {
       if (pdfText && pdfText.trim().length > 0) {
         console.warn(`[extractText] Scanned PDF image extraction returned 0 images. Falling back to pdfText (${pdfText.trim().length} chars).`);

@@ -85,7 +85,17 @@ export const evaluateFollowUpStage = internalMutation({
         app.followUpNoticePeriod === true ||
         (app.followUpNoticePeriod === undefined && candidate.noticePeriodDays !== undefined);
 
-      const allFourComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
+      let customQuestionsComplete = true;
+      const customQuestions = job.customFollowUpQuestions || [];
+      const customAnswers = app.customFollowUpAnswers || {};
+      for (const q of customQuestions) {
+        if (!customAnswers[q]) {
+          customQuestionsComplete = false;
+          break;
+        }
+      }
+
+      const allFourComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod && customQuestionsComplete;
 
       if (allFourComplete) {
         // All data collected — auto-advance to Second Shortlist immediately
@@ -102,7 +112,9 @@ export const evaluateFollowUpStage = internalMutation({
               stage: "second_shortlist",
               enteredAt: new Date().toISOString(),
               changedBy: "system" as any,
-              note: "Auto-advanced from Follow-up: All 4 data points confirmed.",
+              note: customQuestions.length > 0 
+                ? "Auto-advanced from Follow-up: All standard data and custom questions confirmed."
+                : "Auto-advanced from Follow-up: All 4 standard data points confirmed.",
             },
           ],
         });
@@ -118,6 +130,88 @@ export const evaluateFollowUpStage = internalMutation({
       const timeInStage = now - enteredAt;
       const daysInStage = Math.floor(timeInStage / (24 * 60 * 60 * 1000));
 
+      const isDynamicMode = typeof job.maxFollowUpDays === "number" && job.maxFollowUpDays > 0;
+
+      if (isDynamicMode) {
+        // --- NEW DYNAMIC FLOW ---
+        const maxDaysMs = job.maxFollowUpDays! * 24 * 60 * 60 * 1000;
+
+        // 1. Check expiration
+        if (timeInStage >= maxDaysMs && !allFollowUpsPaused) {
+          // move to unresponsive
+          await ctx.db.patch(app._id, {
+            currentStage: "unresponsive",
+            lastStageChangedAt: now,
+            stageHistory: [
+              ...(app.stageHistory ?? []),
+              {
+                stage: "unresponsive",
+                enteredAt: new Date().toISOString(),
+                changedBy: "system" as any,
+                note: `Auto-moved to Unresponsive: Profile still incomplete after ${job.maxFollowUpDays} days.`,
+              },
+            ],
+          });
+          await ctx.db.patch(app._id, {
+            followUpState: {
+              lastContactDay: app.followUpState?.lastContactDay ?? 0,
+              firstChannelUsed: app.followUpState?.firstChannelUsed,
+              replyChannel: "unresponsive",
+            }
+          });
+          await adjustJobStageStat(ctx, app.jobId, "follow_up", "unresponsive");
+          await syncCandidateOverallStatus(ctx, app.candidateId);
+          continue;
+        }
+
+        // 2. Check if a dynamic message is scheduled and it's time to send
+        if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt && app.nextFollowUpMessage) {
+          // Check attempt count
+          const currentAttempts = app.followUpAttemptCount || 0;
+          if (job.maxFollowUpAttempts && currentAttempts >= job.maxFollowUpAttempts) {
+             console.log(`[Dynamic Follow-up] Max attempts reached for ${candidate.fullName}. Skipping message.`);
+             await ctx.db.patch(app._id, { nextFollowUpScheduledAt: undefined });
+             continue; 
+          }
+
+          if (!whatsappFollowUpPaused) { 
+            const commId = await ctx.db.insert("communications", {
+              candidateId: app.candidateId,
+              jobId: app.jobId,
+              applicationId: app._id,
+              direction: "outbound",
+              channel: "whatsapp",
+              subject: `Follow-up: Missing info for your ${job.title} application`,
+              body: app.nextFollowUpMessage,
+              deliveryStatus: "pending",
+              sentAt: now,
+              stoppedSequence: false,
+              sequenceDay: daysInStage,
+            });
+
+            await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+              communicationId: commId,
+              candidateId: app.candidateId,
+              jobId: app.jobId,
+              body: app.nextFollowUpMessage,
+            });
+
+            // Clear the schedule and increment attempt count
+            await ctx.db.patch(app._id, {
+              nextFollowUpScheduledAt: undefined,
+              nextFollowUpMessage: undefined,
+              followUpAttemptCount: currentAttempts + 1,
+            });
+
+            console.log(`[Dynamic Follow-up] Sent scheduled message to ${candidate.fullName}`);
+          }
+        }
+        
+        // Skip legacy logic for this candidate
+        continue;
+      }
+
+      // --- LEGACY STATIC FLOW ---
       // 1. First, check if 7 days have elapsed without collecting all required fields.
       // If 7 days elapsed, move to Unresponsive (not rejected)
       // DA will manually call these candidates using the Unresponsive sub-section
@@ -338,9 +432,9 @@ export const evaluateFollowUpStage = internalMutation({
   },
 });
 
-crons.hourly(
+crons.interval(
   "evaluate-follow-up",
-  { minuteUTC: 0 },
+  { minutes: 15 },
   internal.crons.evaluateFollowUpStage
 );
 

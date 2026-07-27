@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { User, Users, Bot, Puzzle, Mail, CreditCard, History, Database, RefreshCw } from 'lucide-react';
 import { useUser } from '@clerk/nextjs';
@@ -11,8 +11,8 @@ import { Card } from '@/components/ui/Card';
 import { useRole } from '@/hooks/useRole';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
-
 import { IntegrationsTab } from '@/components/settings/tabs/IntegrationsTab';
+import { MessageTemplatesTab } from '@/components/settings/tabs/MessageTemplatesTab';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile');
@@ -22,6 +22,14 @@ export default function SettingsPage() {
   const fullName = `${firstName} ${lastName}`;
   const email = user?.primaryEmailAddress?.emailAddress || 'admin@career141.com';
   const initial = firstName.charAt(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, []);
 
   const { role, isAdmin, isTAManager } = useRole();
   const showAdminTabs = isAdmin || isTAManager;
@@ -50,7 +58,8 @@ export default function SettingsPage() {
       { id: 'team', label: 'Team Members', icon: <Users size={18} /> },
       { id: 'ai', label: 'AI Agent Config', icon: <Bot size={18} /> },
       { id: 'integrations', label: 'Channel Integrations', icon: <Puzzle size={18} /> },
-      { id: 'email', label: 'Email Templates', icon: <Mail size={18} /> },
+      { id: 'templates', label: 'Message Templates', icon: <Mail size={18} /> },
+      { id: 'email', label: 'Email Config', icon: <Mail size={18} /> },
       { id: 'billing', label: 'Billing & Plan', icon: <CreditCard size={18} /> },
       { id: 'audit', label: 'Audit Log', icon: <History size={18} /> },
     ] : []),
@@ -84,6 +93,10 @@ export default function SettingsPage() {
 
           {activeTab === 'integrations' && (
             <IntegrationsTab />
+          )}
+
+          {activeTab === 'templates' && (
+            <MessageTemplatesTab />
           )}
 
           {activeTab === 'email' && (

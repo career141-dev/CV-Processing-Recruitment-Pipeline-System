@@ -162,14 +162,16 @@ export const getCandidate = query({
 export const updateCandidateDetails = mutation({
   args: {
     candidateId: v.id("candidates"),
+    applicationId: v.optional(v.id("applications")),
     currentSalary: v.optional(v.number()),
     expectedSalary: v.optional(v.number()),
     noticePeriodDays: v.optional(v.number()),
     noticePeriod: v.optional(v.string()),
     candidateQuestions: v.optional(v.string()),
+    customFollowUpAnswers: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
-    const { candidateId, ...updates } = args;
+    const { candidateId, applicationId, customFollowUpAnswers, ...updates } = args;
     
     // Filter out undefined values to prevent overwriting existing data with empty AI intake payloads
     const definedUpdates = Object.fromEntries(
@@ -178,6 +180,10 @@ export const updateCandidateDetails = mutation({
 
     if (Object.keys(definedUpdates).length > 0) {
       await ctx.db.patch(candidateId, definedUpdates);
+    }
+
+    if (applicationId && customFollowUpAnswers) {
+      await ctx.db.patch(applicationId, { customFollowUpAnswers });
     }
 
     // Sync follow-up flags on all candidate applications
@@ -546,12 +552,17 @@ export const createCandidate = mutation({
         phoneClean = args.phone.replace(/[^0-9]/g, "");
       }
 
-      await ctx.db.patch(existingCandidateId, {
-        ...candidateArgs,
-        pastJobTitles,
-        phoneClean,
-        status: "new",
-      });
+      // Filter out undefined values to prevent data loss on merge
+      const definedUpdates = Object.fromEntries(
+        Object.entries({
+          ...candidateArgs,
+          pastJobTitles,
+          phoneClean,
+          status: "new",
+        }).filter(([_, v]) => v !== undefined)
+      );
+
+      await ctx.db.patch(existingCandidateId, definedUpdates);
 
       if (rawText || jobHistory || embedding) {
         const existingResume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId as any)).first();
@@ -559,7 +570,7 @@ export const createCandidate = mutation({
           const updatedEmbedding = embedding ?? existingResume.embedding;
           await ctx.db.patch(existingResume._id, { 
             rawText: rawText ?? existingResume.rawText, 
-            jobHistory,
+            jobHistory: jobHistory ?? existingResume.jobHistory,
             embedding: updatedEmbedding,
             hasEmbedding: !!(updatedEmbedding && updatedEmbedding.length > 0)
           });
@@ -1199,7 +1210,7 @@ export const bulkDeleteCandidates = mutation({
   }
 });
 
-export const isCandidateInFollowUp = query({
+export const getActiveFollowUpApplication = query({
   args: { candidateId: v.id("candidates") },
   handler: async (ctx, args) => {
     const activeApp = await ctx.db
@@ -1215,7 +1226,7 @@ export const isCandidateInFollowUp = query({
         )
       )
       .first();
-    return !!activeApp;
+    return activeApp;
   },
 });
 

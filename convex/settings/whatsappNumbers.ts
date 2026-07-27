@@ -1,0 +1,59 @@
+import { v } from "convex/values";
+import { query, mutation } from "../_generated/server";
+
+export const list = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("whatsappNumbers").collect();
+  },
+});
+
+export const isTaNumber = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    const cleanPhone = args.phone.startsWith('+') ? args.phone : `+${args.phone.replace(/[^0-9]/g, '')}`;
+    const existing = await ctx.db
+      .query("whatsappNumbers")
+      .withIndex("by_phone", (q) => q.eq("phone", cleanPhone))
+      .first();
+    return !!existing;
+  }
+});
+
+export const add = mutation({
+  args: {
+    name: v.string(),
+    phone: v.string(),
+    whatchimpPhoneId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Basic formatting for phone
+    const cleanPhone = args.phone.startsWith('+') ? args.phone : `+${args.phone.replace(/[^0-9]/g, '')}`;
+    
+    // Check if it already exists
+    const existing = await ctx.db
+      .query("whatsappNumbers")
+      .withIndex("by_phone", (q) => q.eq("phone", cleanPhone))
+      .first();
+
+    if (existing) {
+      throw new Error("This WhatsApp number is already registered.");
+    }
+
+    return await ctx.db.insert("whatsappNumbers", {
+      name: args.name,
+      phone: cleanPhone,
+      whatchimpPhoneId: args.whatchimpPhoneId,
+      createdAt: new Date().toISOString(),
+    });
+  },
+});
+
+export const remove = mutation({
+  args: {
+    id: v.id("whatsappNumbers"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
+  },
+});
