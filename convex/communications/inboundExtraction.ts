@@ -45,10 +45,10 @@ MISSING DETAILS: ${missingFields.join(", ")}
 
 To understand the TA's tone, look at their templates:
 INITIAL OUTREACH TEMPLATE:
-"${job.followUpInitialTemplate || 'Hi, please provide your missing details.'}"
+"${(job.followUpInitialTemplate || 'Hi, please provide your missing details.').substring(0, 300)}"
 
 SAMPLE FOLLOW-UP TEMPLATE:
-"${job.followUpSampleTemplate || 'Just checking in on the missing details. Please provide them at your earliest convenience.'}"
+"${(job.followUpSampleTemplate || 'Just checking in on the missing details. Please provide them at your earliest convenience.').substring(0, 300)}"
 
 Your job is to analyze the candidate's chat message and output a JSON object.
 Rules:
