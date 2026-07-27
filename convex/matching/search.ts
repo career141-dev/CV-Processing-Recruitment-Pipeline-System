@@ -4,7 +4,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { logLLMUsage, OPENROUTER_PRIMARY_MODEL } from "../lib/llm";
 import { extractSearchRequirements, buildSearchTerms, type SearchRequirements } from "../lib/jdParser";
-import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, distinct, type ScoredCandidate } from "../cvs/cvScoring";
+import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, scoreBatchWithLLM, buildDeterministicTaReason, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
 export const searchCandidates = query({
   args: {
@@ -461,39 +461,86 @@ export const aiSearch = action({
         (b.overallScore - a.overallScore)
       );
 
-    // LLM-based re-scoring for top candidates (skip if query is empty)
+    // LLM-based re-scoring for candidates (skip if query is empty)
     let finalRanked: typeof ranked = [];
     if (!isQueryEmpty) {
-      const llmPool = selectLlmPool(ranked);
-      const llmScored = await Promise.all(
-        llmPool.map(async (cv) => {
-          try {
-            const { result: llmScore, usage } = await scoreWithLLM(cv.cv, effectiveReq);
-            tokenLogs.push({
-              taskType: "jd_matching",
-              model: usage.model,
-              promptTokens: usage.promptTokens,
-              completionTokens: usage.completionTokens,
-              success: true,
-              cvUploadId: (cv.cv as any).cvUploadId ?? undefined,
-            });
-            return { ...cv, llmScore };
-          } catch (err) {
-            tokenLogs.push({
-              taskType: "jd_matching",
-              model: OPENROUTER_PRIMARY_MODEL,
-              promptTokens: 0,
-              completionTokens: 0,
-              success: false,
-              error: err instanceof Error ? err.message : String(err),
-              cvUploadId: (cv.cv as any).cvUploadId ?? undefined,
-            });
-            return { ...cv, llmScore: { score: 0, reason: "LLM scoring failed." } };
-          }
-        })
-      );
+      // Deterministic Score Gating:
+      // 1. High confidence matches (>= 85%): Zero-token bypass with auto-template
+      // 2. Low confidence matches (< 50%): Zero-token bypass
+      // 3. Ambiguous score range (50%-84%): Single-call batch LLM scoring (max 10)
+      const highConfidence: typeof ranked = [];
+      const lowConfidence: typeof ranked = [];
+      const ambiguousPool: typeof ranked = [];
 
-      finalRanked = llmScored
+      for (const candidate of ranked) {
+        if (candidate.overallScore >= 85) {
+          highConfidence.push({
+            ...candidate,
+            llmScore: {
+              score: candidate.overallScore,
+              reason: buildDeterministicTaReason(candidate, effectiveReq),
+            },
+          });
+        } else if (candidate.overallScore < 50) {
+          lowConfidence.push({
+            ...candidate,
+            llmScore: {
+              score: candidate.overallScore,
+              reason: buildDeterministicTaReason(candidate, effectiveReq),
+            },
+          });
+        } else {
+          ambiguousPool.push(candidate);
+        }
+      }
+
+      const batchToScore = ambiguousPool.slice(0, 10);
+      const remainingAmbiguous = ambiguousPool.slice(10).map((c) => ({
+        ...c,
+        llmScore: {
+          score: c.overallScore,
+          reason: buildDeterministicTaReason(c, effectiveReq),
+        },
+      }));
+
+      let scoredAmbiguousBatch: typeof batchToScore = [];
+      if (batchToScore.length > 0) {
+        try {
+          const { evaluations, usage } = await scoreBatchWithLLM(batchToScore, effectiveReq);
+          tokenLogs.push({
+            taskType: "jd_matching",
+            model: usage.model,
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            success: true,
+          });
+
+          scoredAmbiguousBatch = batchToScore.map((c) => {
+            const evalResult = evaluations.get(c.index);
+            const score = evalResult ? evalResult.score : c.overallScore;
+            const reason = evalResult ? evalResult.reason : buildDeterministicTaReason(c, effectiveReq);
+            return {
+              ...c,
+              llmScore: { score, reason },
+            };
+          });
+        } catch (err) {
+          tokenLogs.push({
+            taskType: "jd_matching",
+            model: OPENROUTER_PRIMARY_MODEL,
+            promptTokens: 0,
+            completionTokens: 0,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          scoredAmbiguousBatch = batchToScore.map((c) => ({
+            ...c,
+            llmScore: { score: c.overallScore, reason: buildDeterministicTaReason(c, effectiveReq) },
+          }));
+        }
+      }
+
+      finalRanked = [...highConfidence, ...scoredAmbiguousBatch, ...remainingAmbiguous, ...lowConfidence]
         .sort((a, b) =>
           (Number(b.llmScore?.score ?? 0) - Number(a.llmScore?.score ?? 0)) ||
           ((b.cv as any).vectorScore ?? 0) - ((a.cv as any).vectorScore ?? 0) || // Tie-breaker 1: Vector score
@@ -502,7 +549,10 @@ export const aiSearch = action({
         );
     } else {
       // Filter-only search: skip LLM and sort by overall score
-      finalRanked = ranked.sort((a, b) => b.overallScore - a.overallScore);
+      finalRanked = ranked.map((c) => ({
+        ...c,
+        llmScore: { score: c.overallScore, reason: buildDeterministicTaReason(c, effectiveReq) },
+      })).sort((a, b) => b.overallScore - a.overallScore);
     }
 
     const results = finalRanked

@@ -196,7 +196,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
       isOpen={isOpen}
       onClose={onClose}
       title="Edit Job Details"
-      maxWidth="max-w-3xl"
+      maxWidth="max-w-5xl"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
@@ -217,7 +217,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.title}
               onChange={handleChange}
               required
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             />
           </div>
 
@@ -230,7 +230,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.clientName}
               onChange={handleChange}
               required
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             />
           </div>
 
@@ -243,7 +243,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.clientIndustry}
               onChange={handleChange}
               required
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             />
           </div>
 
@@ -256,7 +256,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.location}
               onChange={handleChange}
               required
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             />
           </div>
 
@@ -270,7 +270,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               onChange={handleChange}
               required
               min="0"
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             />
           </div>
 
@@ -282,7 +282,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.seniorityLevel}
               onChange={handleChange}
               required
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             >
               {SENIORITY_LEVELS.map(lvl => (
                 <option key={lvl.value} value={lvl.value}>{lvl.label}</option>
@@ -298,7 +298,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.recruitmentType}
               onChange={handleChange}
               required
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             >
               {RECRUITMENT_TYPES.map(type => (
                 <option key={type.value} value={type.value}>{type.label}</option>
@@ -309,25 +309,27 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
           {/* Required Skills */}
           <div className="flex flex-col gap-1 col-span-2">
             <label className="text-xs font-semibold text-text-secondary">Required Skills (comma separated) *</label>
-            <input
-              type="text"
+            <textarea
               name="requiredSkills"
               value={formData.requiredSkills}
               onChange={handleChange}
               required
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              rows={3}
+              placeholder="e.g. React.js, Node.js, TypeScript, PostgreSQL"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container leading-relaxed font-sans resize-y min-h-[80px]"
             />
           </div>
 
           {/* Nice to Have Skills */}
           <div className="flex flex-col gap-1 col-span-2">
             <label className="text-xs font-semibold text-text-secondary">Nice to Have Skills (comma separated)</label>
-            <input
-              type="text"
+            <textarea
               name="niceToHaveSkills"
               value={formData.niceToHaveSkills}
               onChange={handleChange}
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+              rows={3}
+              placeholder="e.g. AWS, Docker, GraphQL, Redis"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container leading-relaxed font-sans resize-y min-h-[80px]"
             />
           </div>
 
@@ -339,8 +341,9 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.jobDescription}
               onChange={handleChange}
               required
-              rows={5}
-              className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container resize-none"
+              rows={10}
+              placeholder="Enter detailed job description, responsibilities, and requirements..."
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container leading-relaxed font-sans resize-y min-h-[220px]"
             />
           </div>
 

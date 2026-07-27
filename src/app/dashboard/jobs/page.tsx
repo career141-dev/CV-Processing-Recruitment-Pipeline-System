@@ -38,9 +38,20 @@ export default function JobsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<any>(null);
   const [sortConfig, setSortConfig] = useState<{ key: keyof Job | '', direction: 'asc' | 'desc' }>({ key: '', direction: 'asc' });
+
+  // Pagination & Filter States
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const ITEMS_PER_PAGE = 15;
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('All Status');
+  const [sourceFilter, setSourceFilter] = useState<string>('All Sources');
+  const [taFilter, setTaFilter] = useState<string>('All TAs');
+  const [clientFilter, setClientFilter] = useState<string>('All Clients');
+
   const router = useRouter();
   
   const dbJobs = useQuery(api.jobs.jobs.list);
+  const jobCounts = useQuery(api.jobs.jobs.getJobCounts);
   const deleteJob = useMutation(api.jobs.jobs.deleteJob);
   const updateJobStatus = useMutation(api.jobs.jobs.updateJobStatus);
 
@@ -133,16 +144,43 @@ export default function JobsPage() {
     }
   };
 
+  const uniqueClients = Array.from(new Set(formattedJobs.map(j => j.client))).filter(Boolean);
+  const uniqueTAs = Array.from(new Set(formattedJobs.map(j => j.taAssigned))).filter(Boolean) as string[];
+
   const filteredJobs = formattedJobs.filter(job => {
-    if (activeTab === 'All Jobs') return true;
-    if (activeTab === 'Active') return job.status === 'Active';
-    if (activeTab === 'On Hold') return job.status === 'On Hold';
-    if (activeTab === 'Fins') return job.status === 'Fins';
-    if (activeTab === 'Lost') return job.status === 'Lost';
+    // Tab filter
+    if (activeTab === 'Active' && job.status !== 'Active') return false;
+    if (activeTab === 'On Hold' && job.status !== 'On Hold') return false;
+    if (activeTab === 'Fins' && job.status !== 'Fins') return false;
+    if (activeTab === 'Lost' && job.status !== 'Lost') return false;
+
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = job.title.toLowerCase().includes(q);
+      const matchClient = job.client.toLowerCase().includes(q);
+      const matchKeyword = job.keyword.toLowerCase().includes(q);
+      const matchLocation = job.location.toLowerCase().includes(q);
+      if (!matchTitle && !matchClient && !matchKeyword && !matchLocation) return false;
+    }
+
+    // Filter dropdowns
+    if (statusFilter !== 'All Status' && job.status !== statusFilter) return false;
+    if (sourceFilter !== 'All Sources' && !job.sources.some(s => s.id === sourceFilter)) return false;
+    if (taFilter !== 'All TAs' && job.taAssigned !== taFilter) return false;
+    if (clientFilter !== 'All Clients' && job.client !== clientFilter) return false;
+
     return true;
   });
 
   const getTabCount = (tabName: string) => {
+    if (jobCounts) {
+      if (tabName === 'All Jobs') return jobCounts.all;
+      if (tabName === 'Active') return jobCounts.active;
+      if (tabName === 'On Hold') return jobCounts.onHold;
+      if (tabName === 'Fins') return jobCounts.closed;
+      if (tabName === 'Lost') return jobCounts.lost;
+    }
     if (tabName === 'All Jobs') return formattedJobs.length;
     return formattedJobs.filter(j => j.status === tabName).length;
   };
@@ -177,6 +215,14 @@ export default function JobsPage() {
     if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
     return 0;
   });
+
+  // Pagination Calculations
+  const totalItems = filteredJobs.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
+
+  const paginatedJobs = sortedJobs.slice(startIndex, endIndex);
 
   const SortableHeader = ({ label, sortKey }: { label: string, sortKey: keyof Job }) => (
     <th 
@@ -218,22 +264,74 @@ export default function JobsPage() {
         <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
           <div className="relative w-full md:w-[280px]">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled text-[18px]">search</span>
-            <input className="w-full pl-10 pr-3 py-2 bg-surface border border-border rounded-lg text-[13px] focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-[#1B5E20] transition-all" placeholder="Search jobs, clients, keywords..." type="text" />
+            <input 
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-10 pr-3 py-2 bg-surface border border-border rounded-lg text-[13px] focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-[#1B5E20] transition-all" 
+              placeholder="Search jobs, clients, keywords..." 
+              type="text" 
+            />
           </div>
           <div className="flex flex-wrap gap-2">
-            <select className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer">
+            <select 
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer"
+            >
               <option>All Status</option>
               <option>Active</option>
               <option>On Hold</option>
+              <option>Fins</option>
+              <option>Lost</option>
             </select>
-            <select className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer">
+
+            <select 
+              value={sourceFilter}
+              onChange={(e) => {
+                setSourceFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer"
+            >
               <option>All Sources</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="email">Email</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="portal">Career Portal</option>
             </select>
-            <select className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer">
+
+            <select 
+              value={taFilter}
+              onChange={(e) => {
+                setTaFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer"
+            >
               <option>All TAs</option>
+              {uniqueTAs.map(ta => (
+                <option key={ta} value={ta}>{ta}</option>
+              ))}
             </select>
-            <select className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer">
+
+            <select 
+              value={clientFilter}
+              onChange={(e) => {
+                setClientFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="py-2 pl-3 pr-8 bg-surface border border-border rounded-lg text-[13px] text-text-secondary focus:outline-none focus:border-primary-container appearance-none cursor-pointer"
+            >
               <option>All Clients</option>
+              {uniqueClients.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -267,7 +365,11 @@ export default function JobsPage() {
               return (
                 <span 
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    setCurrentPage(1);
+                    setSelectedJobs([]);
+                  }}
                   className={`${isActive ? 'text-primary-container border-b-2 border-primary-container pb-1' : 'text-text-secondary hover:text-text-primary pb-1'} cursor-pointer whitespace-nowrap flex items-center gap-2 transition-colors`}
                 >
                   {tab} 
@@ -306,7 +408,7 @@ export default function JobsPage() {
                     </td>
                   </tr>
                 ) : null}
-                {sortedJobs.map((job) => (
+                {paginatedJobs.map((job) => (
                   <tr key={job.id} className="hover:bg-[#F1F8E9] transition-colors group">
                     <td className="px-5 py-3"><input checked={selectedJobs.includes(job.id)} onChange={() => handleSelectJob(job.id)} className="rounded border-border text-primary-container focus:ring-[#1B5E20] w-4 h-4 cursor-pointer mt-0.5" type="checkbox" /></td>
                     <td className="px-5 py-3 font-medium text-text-primary whitespace-nowrap">
@@ -424,12 +526,12 @@ export default function JobsPage() {
         ) : (
           /* Grid View Container */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 min-h-[400px] items-start">
-            {sortedJobs.length === 0 ? (
+            {filteredJobs.length === 0 ? (
               <div className="col-span-full py-12 text-center text-text-secondary bg-surface rounded-xl border border-border">
                 No jobs found in this category.
               </div>
             ) : null}
-            {sortedJobs.map((job) => (
+            {paginatedJobs.map((job) => (
               <div 
                 key={job.id} 
                 onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
@@ -558,17 +660,55 @@ export default function JobsPage() {
         {/* Pagination Footer */}
         <div className={`p-4 flex flex-col sm:flex-row justify-between items-center gap-4 ${viewMode === 'list' ? 'border-t border-border bg-surface' : 'bg-transparent mt-2'}`}>
           <span className="text-[13px] text-text-secondary bg-surface px-3 py-1.5 rounded-lg border border-border shadow-sm">
-            Showing 1–{Math.min(8, filteredJobs.length)} of {filteredJobs.length} jobs
+            {totalItems === 0 
+              ? "Showing 0 of 0 jobs" 
+              : `Showing ${startIndex + 1}–${endIndex} of ${totalItems} jobs (Page ${currentPage} of ${totalPages})`}
           </span>
           <div className="flex items-center gap-1 bg-surface p-1 rounded-lg border border-border shadow-sm">
-            <button className="px-3 py-1 rounded text-text-disabled cursor-not-allowed text-[13px] font-medium hover:bg-surface-container-low transition-colors">Prev</button>
-            <button className="w-8 h-8 rounded-md bg-primary-container text-on-primary text-[13px] font-medium flex items-center justify-center shadow-sm">1</button>
-            {filteredJobs.length > 8 && (
-               <button className="w-8 h-8 rounded-md hover:bg-surface-container text-text-secondary text-[13px] font-medium flex items-center justify-center transition-colors">2</button>
-            )}
-            <button className={`px-3 py-1 rounded transition-colors text-[13px] font-medium ${filteredJobs.length > 8 ? 'text-text-primary hover:bg-surface-container' : 'text-text-disabled cursor-not-allowed'}`}>Next</button>
+            <button 
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={`px-3 py-1 rounded text-[13px] font-medium transition-colors ${
+                currentPage === 1 ? 'text-text-disabled cursor-not-allowed' : 'text-text-primary hover:bg-surface-container-low'
+              }`}
+            >
+              Prev
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+              .map((p, i, arr) => {
+                const prevPage = arr[i - 1];
+                const showEllipsis = prevPage && p - prevPage > 1;
+                return (
+                  <React.Fragment key={p}>
+                    {showEllipsis && <span className="px-1 text-text-disabled text-xs">...</span>}
+                    <button
+                      onClick={() => setCurrentPage(p)}
+                      className={`w-8 h-8 rounded-md text-[13px] font-medium flex items-center justify-center transition-colors shadow-sm ${
+                        currentPage === p
+                          ? 'bg-primary-container text-on-primary font-bold'
+                          : 'text-text-secondary hover:bg-surface-container'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  </React.Fragment>
+                );
+              })}
+
+            <button 
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className={`px-3 py-1 rounded text-[13px] font-medium transition-colors ${
+                currentPage >= totalPages ? 'text-text-disabled cursor-not-allowed' : 'text-text-primary hover:bg-surface-container-low'
+              }`}
+            >
+              Next
+            </button>
           </div>
         </div>
+
         
         <EditJobModal
           isOpen={isEditModalOpen}

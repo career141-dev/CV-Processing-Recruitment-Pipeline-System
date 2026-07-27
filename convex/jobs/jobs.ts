@@ -1,4 +1,5 @@
 import { mutation, query, internalMutation } from "../_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import type { Id } from "../_generated/dataModel";
 import { v } from "convex/values";
 import { requireRole, requireUser } from "../lib/permissions";
@@ -721,6 +722,87 @@ export const list = query({
     return jobsWithStats;
   },
 });
+
+export const listPaginated = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+    status: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let q = ctx.db.query("jobs").order("desc");
+
+    if (args.status && args.status !== "All Jobs" && args.status !== "all") {
+      let mappedStatus = args.status.toLowerCase();
+      if (args.status === "On Hold") mappedStatus = "on_hold";
+      if (args.status === "Fins") mappedStatus = "filled";
+      if (args.status === "Lost") mappedStatus = "cancelled";
+      if (args.status === "Active") mappedStatus = "active";
+      if (args.status === "Draft") mappedStatus = "draft";
+
+      q = ctx.db.query("jobs")
+        .withIndex("by_status", (q) => q.eq("status", mappedStatus as any))
+        .order("desc");
+    }
+
+    const page = await q.paginate(args.paginationOpts);
+
+    const STAGE_PRIORITY = [
+      "placed", "offer", "client_review", "director_shortlist",
+      "second_shortlist", "interview", "ai_call", "ta_shortlist", "new_cvs"
+    ];
+
+    const jobsWithStats = page.page.map((job) => {
+      const stageCounts: Record<string, number> = job.stageCounts || {};
+      const newCvsCount = stageCounts["new_cvs"] || 0;
+      const totalApplications = job.totalApplications || 0;
+
+      let dominantStage = "new_cvs";
+      for (const stage of STAGE_PRIORITY) {
+        if (stageCounts[stage] && stageCounts[stage] > 0) {
+          dominantStage = stage;
+          break;
+        }
+      }
+
+      return {
+        ...job,
+        newCvsCount,
+        totalApplications,
+        dominantStage,
+        stageCounts,
+      };
+    });
+
+    return {
+      ...page,
+      page: jobsWithStats,
+    };
+  },
+});
+
+export const getJobCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    const jobs = await ctx.db.query("jobs").collect();
+    let all = jobs.length;
+    let active = 0;
+    let onHold = 0;
+    let closed = 0;
+    let lost = 0;
+    let draft = 0;
+
+    for (const j of jobs) {
+      if (j.status === "active") active++;
+      else if (j.status === "on_hold") onHold++;
+      else if (j.status === "filled") closed++;
+      else if (j.status === "cancelled") lost++;
+      else if (j.status === "draft") draft++;
+    }
+
+    return { all, active, onHold, closed, lost, draft };
+  },
+});
+
 
 
 export const getJob = query({

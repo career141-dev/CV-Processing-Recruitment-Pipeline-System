@@ -269,6 +269,7 @@ export type ScoredCandidate = {
   missingRequired: string[];
   matchedPreferred: string[];
   reason: string;
+  llmScore?: { score: number; reason: string };
 };
 
 const skillSynonyms: Record<string, string[]> = {
@@ -516,3 +517,138 @@ export function selectLlmPool(candidates: ScoredCandidate[]): ScoredCandidate[] 
     ...topBySkills.filter((c) => !seenIds.has(c.cv._id)),
   ];
 }
+
+export function buildDeterministicTaReason(candidate: ScoredCandidate, req: SearchRequirements): string {
+  const name = candidate.cv.fullName || "Candidate";
+  const title = candidate.cv.currentTitle || "Professional";
+  const exp = candidate.cv.yearsOfExperience ?? (candidate.cv as any).totalExperienceYears;
+  const matched = (candidate.matchedRequired || []).slice(0, 4);
+  const missing = (candidate.missingRequired || []).slice(0, 3);
+
+  let parts: string[] = [];
+  if (candidate.overallScore >= 85) {
+    parts.push(`Strong TA match for ${req.title || "the role"}. ${name} shows high domain alignment as a ${title}.`);
+  } else if (candidate.overallScore >= 60) {
+    parts.push(`Suitable candidate with relevant background as a ${title}.`);
+  } else {
+    parts.push(`Partial alignment match for ${req.title || "the role"} based on background as a ${title}.`);
+  }
+
+  if (matched.length > 0) parts.push(`Key matching skills: ${matched.join(", ")}.`);
+  if (exp != null) parts.push(`Brings ${exp} years of total professional experience.`);
+  if (missing.length > 0) parts.push(`Skill gaps to note: ${missing.join(", ")}.`);
+
+  return parts.join(" ");
+}
+
+export type BatchScoreResult = {
+  evaluations: Map<number, { score: number; reason: string }>;
+  usage: { promptTokens: number; completionTokens: number; model: string };
+};
+
+export async function scoreBatchWithLLM(
+  candidates: ScoredCandidate[],
+  req: SearchRequirements
+): Promise<BatchScoreResult> {
+  if (candidates.length === 0) {
+    return {
+      evaluations: new Map(),
+      usage: { promptTokens: 0, completionTokens: 0, model: getModelForTask("jd_matching") },
+    };
+  }
+
+  const model = getModelForTask("jd_matching");
+  const openai = getOpenAI("jd_matching");
+
+  const reqSkills = Array.isArray(req.requiredSkills) ? req.requiredSkills.join(", ") : "Not specified";
+  const prefSkills = Array.isArray(req.preferredSkills) ? req.preferredSkills.join(", ") : "None";
+  const jdSnippet = req.summary ? String(req.summary).slice(0, 350) : "";
+
+  const candidateSerializedList = candidates.map((c) => {
+    const cvObj = c.cv || {};
+    const name = cvObj.fullName || `Candidate #${c.index}`;
+    const title = cvObj.currentTitle || (cvObj as any).currentJobTitle || "Not specified";
+    const employer = cvObj.currentEmployer ? `@ ${cvObj.currentEmployer}` : "";
+    const exp = cvObj.yearsOfExperience ?? (cvObj as any).totalExperienceYears ?? "N/A";
+    const skills = Array.isArray(cvObj.skills)
+      ? cvObj.skills.map((s: any) => (typeof s === "object" ? s.value : String(s))).slice(0, 10).join(", ")
+      : "Not specified";
+
+    return `[ID: ${c.index}] ${name} | ${title} ${employer} | ${exp} yrs exp | Skills: ${skills}`;
+  });
+
+  const promptText = [
+    `JOB REQUIREMENTS:`,
+    `Title: ${req.title || "Not specified"}`,
+    `Required Skills: ${reqSkills}`,
+    `Preferred Skills: ${prefSkills}`,
+    `Min Experience: ${req.minYearsExperience ?? "Not specified"} years`,
+    `Seniority: ${req.seniority || "Not specified"}`,
+    `Industry: ${req.industry || "Not specified"}`,
+    jdSnippet ? `Summary: ${jdSnippet}` : "",
+    ``,
+    `CANDIDATE POOL TO EVALUATE:`,
+    ...candidateSerializedList,
+  ].filter(Boolean).join("\n");
+
+  const systemPrompt = `You are a Senior Talent Acquisition (TA) Recruiter. Evaluate how well EACH candidate in the candidate pool aligns with the job requirements. Return ONLY a JSON object mapping candidate IDs to evaluation result objects:
+{
+  "evaluations": [
+    {
+      "id": number,
+      "score": number (0-100),
+      "reason": "1-2 sentence TA evaluation highlighting key matching skills, experience, and role fit."
+    }
+  ]
+}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model,
+      temperature: 0.1,
+      max_tokens: 800,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: promptText },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const content = response.choices[0]?.message?.content ?? '{"evaluations":[]}';
+    const inputTokens = response.usage?.prompt_tokens || 0;
+    const outputTokens = response.usage?.completion_tokens || 0;
+
+    const resultMap = new Map<number, { score: number; reason: string }>();
+
+    try {
+      const parsed = JSON.parse(content) as { evaluations?: { id?: number; score?: number; reason?: string }[] };
+      const evals = parsed.evaluations || [];
+      for (const item of evals) {
+        if (typeof item.id === "number") {
+          resultMap.set(item.id, {
+            score: Math.min(100, Math.max(0, item.score ?? 50)),
+            reason: item.reason || "Evaluated by AI matching engine against job requirements.",
+          });
+        }
+      }
+    } catch (parseError) {
+      console.error("[scoreBatchWithLLM] Error parsing JSON output:", parseError);
+    }
+
+    return {
+      evaluations: resultMap,
+      usage: {
+        promptTokens: inputTokens,
+        completionTokens: outputTokens,
+        model,
+      },
+    };
+  } catch (err) {
+    console.error("[scoreBatchWithLLM] LLM call error:", err);
+    return {
+      evaluations: new Map(),
+      usage: { promptTokens: 0, completionTokens: 0, model },
+    };
+  }
+}
+
