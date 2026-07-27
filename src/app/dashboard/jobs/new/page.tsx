@@ -592,6 +592,7 @@ export default function CreateJobWizard() {
         maxFollowUpAttempts: formData.maxFollowUpAttempts,
         customFollowUpQuestions: formData.customFollowUpQuestions,
         agent3TriggerStages: formData.agent3TriggerStages,
+        agent3AfterDay7: "move_to_unresponsive",
         
         agent5Enabled: false,
         agent5Trigger: "manual_only",

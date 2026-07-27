@@ -158,7 +158,6 @@ export function SmartTemplateEditor({ value, onChange, requiredVariables = [], r
           onDrop={handleDrop}
           className="w-full text-sm p-3 bg-transparent text-text-primary outline-none font-mono leading-relaxed overflow-y-auto whitespace-pre-wrap break-words"
           style={{ minHeight, maxHeight: '300px' }}
-          placeholder={placeholder}
           data-placeholder={placeholder}
         />
         
