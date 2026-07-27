@@ -324,6 +324,10 @@ export const createApplication = mutation({
     jobId: v.id("jobs"),
     cvFileId: v.optional(v.id("cvUploads")),
     sourceChannel: v.string(),
+    metaCampaignId: v.optional(v.string()),
+    metaSourceUrl: v.optional(v.string()),
+    metaSourceId: v.optional(v.string()),
+    metaHeadline: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Check if application already exists for this candidate and job
@@ -364,6 +368,13 @@ export const createApplication = mutation({
         if (updates.currentStage) {
           await adjustJobStageStat(ctx, args.jobId, existing.currentStage, updates.currentStage);
           await syncCandidateOverallStatus(ctx, args.candidateId);
+          
+          if (existing.sourceChannel === "whatsapp" && updates.currentStage === "matched_candidates") {
+            await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
+              applicationId: existing._id,
+              eventName: "QualifiedLead"
+            });
+          }
         }
         
         if (updates.cvFileId && candidate) {
@@ -399,11 +410,24 @@ export const createApplication = mutation({
       isActive: true,
       lastStageChangedAt: now,
       createdAt: now,
+      metaCampaignId: args.metaCampaignId,
+      metaAdId: args.metaSourceId, // Store sourceId as AdId
+      metaConversionSentFor: [],
     });
     
     await adjustJobStageStat(ctx, args.jobId, null, initialStage as any, true);
     await adjustGlobalStat(ctx, "new_application");
     await syncCandidateOverallStatus(ctx, args.candidateId);
+    
+    // Trigger Meta Conversions API
+    if (args.sourceChannel === "whatsapp") {
+      const eventName = initialStage === "matched_candidates" ? "QualifiedLead" : "Lead";
+      await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
+        applicationId: appId,
+        eventName: eventName
+      });
+    }
+
     return appId;
   },
 });

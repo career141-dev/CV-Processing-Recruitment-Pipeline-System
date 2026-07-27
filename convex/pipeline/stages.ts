@@ -61,8 +61,12 @@ export const moveToTAShortlist = mutation({
       notes: "Moved directly to follow-up on TA shortlist confirm (unified single pipeline path).",
       createdAt: now,
     });
-
     await syncCandidateOverallStatus(ctx, entry.candidateId);
+    
+    await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
+      applicationId: args.applicationId,
+      eventName: "QualifiedLead",
+    });
   },
 });
 
@@ -166,7 +170,22 @@ export const setPipelineStage = mutation({
     await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, newStage);
     if (newStage === "placed") {
       await adjustGlobalStat(ctx, "placement");
+      await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
+        applicationId: applicationId,
+        eventName: "Hire",
+      });
+    } else if (newStage === "interview") {
+      await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
+        applicationId: applicationId,
+        eventName: "Schedule",
+      });
+    } else if (newStage === "ta_shortlist" || newStage === "matched_candidates" || newStage === "second_shortlist") {
+      await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
+        applicationId: applicationId,
+        eventName: "QualifiedLead",
+      });
     }
+
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });
@@ -282,6 +301,12 @@ export const clientApprove = mutation({
       }],
     });
     await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "interview");
+    
+    await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
+      applicationId: args.applicationId,
+      eventName: "Schedule",
+    });
+
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });

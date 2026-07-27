@@ -75,6 +75,8 @@ import type * as matching_agent2 from "../matching/agent2.js";
 import type * as matching_queries from "../matching/queries.js";
 import type * as matching_reverse from "../matching/reverse.js";
 import type * as matching_search from "../matching/search.js";
+import type * as meta_conversions from "../meta/conversions.js";
+import type * as meta_trigger from "../meta/trigger.js";
 import type * as pipeline_followUpHelper from "../pipeline/followUpHelper.js";
 import type * as pipeline_headhunt from "../pipeline/headhunt.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
@@ -164,6 +166,8 @@ declare const fullApi: ApiFromModules<{
   "matching/queries": typeof matching_queries;
   "matching/reverse": typeof matching_reverse;
   "matching/search": typeof matching_search;
+  "meta/conversions": typeof meta_conversions;
+  "meta/trigger": typeof meta_trigger;
   "pipeline/followUpHelper": typeof pipeline_followUpHelper;
   "pipeline/headhunt": typeof pipeline_headhunt;
   "pipeline/ingestion": typeof pipeline_ingestion;

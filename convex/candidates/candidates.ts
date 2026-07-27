@@ -717,6 +717,13 @@ export const getCvUploadStatus = query({
   },
 });
 
+export const getCvUpload = query({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.cvUploadId);
+  },
+});
+
 export const findCandidateByHash = query({
   args: { fileHash: v.string() },
   handler: async (ctx, args) => {

@@ -930,9 +930,9 @@ export async function runCvExtraction(
   const { storageId, fileType, sourceChannel, cvUploadId, workableCandidateId, skipLLM, preExtractedData } = args;
 
   // Check if upload is still valid/running, abort if already marked failed or cancelled
-  const uploadStatus = await ctx.runQuery(api.candidates.candidates.getCvUploadStatus, { cvUploadId });
-  if (!uploadStatus || uploadStatus === "failed" || uploadStatus === "failed_retry" || uploadStatus === "cancelled") {
-    console.log(`[CvExtraction] Aborting extraction for upload ${cvUploadId} because status is: ${uploadStatus}`);
+  const cvUpload = await ctx.runQuery(api.candidates.candidates.getCvUpload, { cvUploadId });
+  if (!cvUpload || cvUpload.status === "failed" || cvUpload.status === "failed_retry" || cvUpload.status === "cancelled") {
+    console.log(`[CvExtraction] Aborting extraction for upload ${cvUploadId} because status is: ${cvUpload?.status}`);
     return null;
   }
 
@@ -988,6 +988,10 @@ export async function runCvExtraction(
           jobId: jobId as any,
           cvFileId: cvUploadId,
           sourceChannel: sourceChannel ?? "manual_upload",
+          metaCampaignId: cvUpload.campaignLabel,
+          metaSourceUrl: cvUpload.metaSourceUrl,
+          metaSourceId: cvUpload.metaSourceId,
+          metaHeadline: cvUpload.metaHeadline,
         });
 
         // Trigger scoring for this duplicate CV on the new job too
@@ -1219,6 +1223,10 @@ export async function runCvExtraction(
         jobId: jobId as any,
         cvFileId: cvUploadId,
         sourceChannel: sourceChannel ?? "manual_upload",
+        metaCampaignId: cvUpload?.campaignLabel,
+        metaSourceUrl: cvUpload?.metaSourceUrl,
+        metaSourceId: cvUpload?.metaSourceId,
+        metaHeadline: cvUpload?.metaHeadline,
       });
 
       if (!skipLLM) {
@@ -1464,6 +1472,8 @@ export const matchExtractedCandidateToActiveJobs = internalAction({
       });
       if (!candidate) return;
 
+      const cvUpload = args.cvUploadId ? await ctx.runQuery(api.candidates.candidates.getCvUpload, { cvUploadId: args.cvUploadId }) : null;
+
       const jobsListContext = activeJobs
         .map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName}`)
         .join("\n");
@@ -1511,6 +1521,10 @@ Respond ONLY with a valid JSON object in this exact format:
               jobId: resultObj.matchedJobId as any,
               cvFileId: args.cvUploadId,
               sourceChannel: args.sourceChannel,
+              metaCampaignId: cvUpload?.campaignLabel,
+              metaSourceUrl: cvUpload?.metaSourceUrl,
+              metaSourceId: cvUpload?.metaSourceId,
+              metaHeadline: cvUpload?.metaHeadline,
             });
 
             await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {

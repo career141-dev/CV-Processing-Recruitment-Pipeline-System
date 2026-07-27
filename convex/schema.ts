@@ -417,6 +417,9 @@ export default defineSchema({
     fileHash: v.optional(v.string()),
     source: v.optional(v.string()),
     campaignLabel: v.optional(v.string()),
+    metaSourceUrl: v.optional(v.string()),
+    metaSourceId: v.optional(v.string()),
+    metaHeadline: v.optional(v.string()),
     assignToJob: v.optional(v.string()),
     uploadedBy: v.string(),
     status: v.string(),
@@ -691,6 +694,10 @@ export default defineSchema({
       editedBy: v.id("users"),
       editedAt: v.string(),
     }))),
+    metaCampaignId: v.optional(v.string()),
+    metaAdsetId: v.optional(v.string()),
+    metaAdId: v.optional(v.string()),
+    metaConversionSentFor: v.optional(v.array(v.string())),
   })
     .index("by_jobId", ["jobId"])
     .index("by_job_stage", ["jobId", "currentStage"])
@@ -1344,6 +1351,9 @@ export default defineSchema({
     jobId: v.id("jobs"),
     keyword: v.string(),
     lastInteractionAt: v.number(),
+    metaSourceUrl: v.optional(v.string()),
+    metaSourceId: v.optional(v.string()),
+    metaHeadline: v.optional(v.string()),
   }).index("by_phone", ["phone"]),
 
   systemStats: defineTable({
