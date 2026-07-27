@@ -18,6 +18,7 @@ import { formatDistanceToNow, format } from 'date-fns';
 import { useUser } from '@clerk/nextjs';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
 import { SendBulkFollowUpModal } from '@/components/outreach/SendBulkFollowUpModal';
+import { CandidateTimelineDrawer } from '@/components/candidates/CandidateTimelineDrawer';
 import { toast } from 'sonner';
 
 const PIPELINE_STAGES = [
@@ -566,7 +567,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   );
 };
 
-const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
+const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any, onViewTimeline: (id: Id<"applications">) => void }) => {
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState<string>('');
@@ -691,12 +692,22 @@ const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
           </span>
         </td>
         <td className="p-4 text-right">
-          <button 
-            onClick={() => setIsLoggingCall(true)}
-            className="text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap"
-          >
-            Log Call
-          </button>
+          <div className="flex flex-col items-end gap-1.5">
+            <button 
+              onClick={() => onViewTimeline(u.applicationId)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-border rounded-[6px] text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
+              title="View Timeline"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              Timeline
+            </button>
+            <button 
+              onClick={() => setIsLoggingCall(true)}
+              className="text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap"
+            >
+              Log Call
+            </button>
+          </div>
         </td>
       </tr>
     );
@@ -1087,6 +1098,7 @@ export default function JobDetailPage() {
   const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
+  const [timelineAppId, setTimelineAppId] = useState<Id<"applications"> | null>(null);
   const [activeSourceFilter, setActiveSourceFilter] = useState<'All Sources' | 'LinkedIn' | 'WhatsApp'>('All Sources');
   const [currentPage, setCurrentPage] = useState(1);
   const [matchesPage, setMatchesPage] = useState(1);
@@ -1833,7 +1845,17 @@ export default function JobDetailPage() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex flex-col items-end gap-1.5">
-                        {renderKanbanDropdown(item.id, 'follow_up')}
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => setTimelineAppId(item.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-border rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary transition-colors"
+                            title="View Timeline"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            Timeline
+                          </button>
+                          {renderKanbanDropdown(item.id, 'follow_up')}
+                        </div>
                         <button
                           disabled={sendingWhatsAppId === item.id}
                           onClick={async () => {
@@ -1967,7 +1989,7 @@ export default function JobDetailPage() {
                       </tr>
                     ) : (
                       unresponsiveList.map((u: any) => (
-                        <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} />
+                        <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} onViewTimeline={setTimelineAppId} />
                       ))
                     )}
                     </tbody>
@@ -2628,6 +2650,11 @@ export default function JobDetailPage() {
             followUpExpectedSalary: (app as any).followUpExpectedSalary,
             followUpNoticePeriod: (app as any).followUpNoticePeriod,
           }))}
+      />
+
+      <CandidateTimelineDrawer 
+        applicationId={timelineAppId} 
+        onClose={() => setTimelineAppId(null)} 
       />
     </div>
   );
