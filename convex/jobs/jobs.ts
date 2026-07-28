@@ -902,20 +902,14 @@ export const saveReverseMatchResults = internalMutation({
         // Agent 2 — Current-Role Level & Role-Family Gate Fields
         currentRoleRank: v.optional(v.number()),
         currentRoleRankLabel: v.optional(v.string()),
-        currentRoleConfidence: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+        currentRoleConfidence: v.optional(v.string()),
         usedFallbackTitle: v.optional(v.boolean()),
-        currentRoleGate: v.optional(v.union(
-          v.literal("pass"), v.literal("pass_with_penalty"),
-          v.literal("excluded_overqualified"), v.literal("skipped_other")
-        )),
+        currentRoleGate: v.optional(v.string()),
         currentRolePenalty: v.optional(v.number()),
         seniorityConflict: v.optional(v.boolean()),
         exclusionReason: v.optional(v.union(v.string(), v.null())),
         roleFamily: v.optional(v.string()),
-        roleFamilyMatch: v.optional(v.union(
-          v.literal("exact"), v.literal("synonym"),
-          v.literal("adjacent"), v.literal("unrelated")
-        )),
+        roleFamilyMatch: v.optional(v.string()),
         locationGate: v.optional(v.string()),
         locationPenalty: v.optional(v.number()),
         locationStatus: v.optional(v.string()),
