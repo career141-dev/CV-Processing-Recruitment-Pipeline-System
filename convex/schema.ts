@@ -173,6 +173,11 @@ export default defineSchema({
     reverseMatchOnPublish: v.optional(v.boolean()),
     taPreferences: v.optional(v.string()),
     roleFamily: v.optional(v.string()),
+    roleFamilyCacheFingerprint: v.optional(v.string()),
+    usedFallbackTitle: v.optional(v.boolean()),
+    currentRoleRank: v.optional(v.number()),
+    currentRoleRankLabel: v.optional(v.string()),
+    currentRoleConfidence: v.optional(v.string()),
 
     reverseMatchStatus: v.optional(v.union(
       v.literal("running"), v.literal("done"), v.literal("error")
