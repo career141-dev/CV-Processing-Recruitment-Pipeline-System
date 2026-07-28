@@ -172,6 +172,7 @@ export default defineSchema({
     minMatchScoreToShow: v.optional(v.number()), // default 60
     reverseMatchOnPublish: v.optional(v.boolean()),
     taPreferences: v.optional(v.string()),
+    roleFamily: v.optional(v.string()),
 
     reverseMatchStatus: v.optional(v.union(
       v.literal("running"), v.literal("done"), v.literal("error")
