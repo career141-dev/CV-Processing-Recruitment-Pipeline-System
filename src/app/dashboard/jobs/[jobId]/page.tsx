@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -18,7 +18,9 @@ import { formatDistanceToNow, format } from 'date-fns';
 import { useUser } from '@clerk/nextjs';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
 import { SendBulkFollowUpModal } from '@/components/outreach/SendBulkFollowUpModal';
+import { CandidateTimelineDrawer } from '@/components/candidates/CandidateTimelineDrawer';
 import { toast } from 'sonner';
+import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
@@ -33,8 +35,8 @@ const PIPELINE_STAGES = [
   { id: "rejected", label: "Rejected" },
 ];
 
-// Stages that can be manually moved to — new_cvs excluded (entry point only, not a target)
-const MOVEABLE_STAGES = PIPELINE_STAGES.filter(s => s.id !== "new_cvs" && s.id !== "director_shortlist" && s.id !== "client_review");
+// Stages that can be manually moved to
+const MOVEABLE_STAGES = PIPELINE_STAGES.filter(s => s.id !== "director_shortlist" && s.id !== "client_review");
 
 // AI call status → color config
 const AI_CALL_STATUS: Record<string, { label: string; color: string; bg: string; pulse?: boolean }> = {
@@ -152,6 +154,7 @@ const CandidateNameDisplay = ({ name, cvUploadId, doNotContact, candidateId }: {
 
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
+  const { showError } = useErrorPopup();
   const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
   const createApplication = useMutation(api.applications.applications.createApplication);
   const removeApplication = useMutation(api.applications.applications.removeApplication);
@@ -187,7 +190,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
       });
       onNavigate();
     } catch (e: any) {
-      alert("Failed to shortlist: " + e.message);
+      showError(e, { title: "Shortlist Failed" });
     } finally {
       setIsShortlisting(false);
     }
@@ -201,7 +204,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
     try {
       await removeApplication({ applicationId: applicationForCandidate._id });
     } catch (e: any) {
-      alert("Failed to revert: " + e.message);
+      showError(e, { title: "Revert Shortlist Failed" });
     } finally {
       setIsShortlisting(false);
     }
@@ -381,6 +384,7 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
 
 
 const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, renderKanbanDropdown: any }) => {
+  const { showError } = useErrorPopup();
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState<string>('');
@@ -434,7 +438,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
       setIsLoggingCall(false);
       setCvFile(null);
     } catch (e: any) {
-      alert('Failed to save log: ' + e.message);
+      showError(e, { title: "Failed to Save Call Log" });
     } finally {
       setIsSaving(false);
     }
@@ -444,7 +448,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
     try {
       await setPipelineStage({ applicationId: item.id, newStage: "follow_up" });
     } catch (e: any) {
-      alert("Failed to move to follow-up: " + e.message);
+      showError(e, { title: "Stage Transition Failed" });
     }
   };
 
@@ -548,6 +552,10 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
         )}
       </td>
       
+      <td className="p-4 align-top">
+        <AiReasonDisplay reason={item.scoreReason} />
+      </td>
+      
       <td className="p-4 text-right align-top">
         <div className="flex flex-col items-end gap-2">
           <button
@@ -574,7 +582,253 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   );
 };
 
-const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
+const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp }: any) => {
+  const { user } = useUser();
+  const [isLoggingCall, setIsLoggingCall] = useState(false);
+  const [outcome, setOutcome] = useState('');
+  const [currentSalary, setCurrentSalary] = useState(item.currentSalary !== '—' ? item.currentSalary : '');
+  const [expectedSalary, setExpectedSalary] = useState(item.expectedSalary !== '—' ? item.expectedSalary : '');
+  const [noticePeriod, setNoticePeriod] = useState(item.noticePeriod !== '—' ? item.noticePeriod : '');
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+
+  const logManualCall = useMutation(api.applications.applications.logManualCall);
+  const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
+  const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
+
+  const handleSaveLog = async () => {
+    setIsSaving(true);
+    try {
+      const parsedCurrentSalary = currentSalary ? parseFloat(String(currentSalary).replace(/[^0-9.]/g, '')) : undefined;
+      const parsedExpectedSalary = expectedSalary ? parseFloat(String(expectedSalary).replace(/[^0-9.]/g, '')) : undefined;
+      const parsedNoticePeriod = noticePeriod ? parseInt(String(noticePeriod).replace(/[^0-9]/g, '')) : undefined;
+
+      let cvUploadId: any = undefined;
+      if (cvFile && user?.id) {
+        let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: cvFile.name, contentType: cvFile.type });
+        const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
+        if (!resp.ok) throw new Error(`Failed to upload to R2: ${resp.status} ${resp.statusText}`);
+        cvUploadId = await saveUpload({
+          s3Key, storageProvider: "r2", fileName: cvFile.name, fileSize: cvFile.size, fileType: cvFile.type, source: "Manual", uploadedBy: user.id,
+        });
+      }
+
+      await logManualCall({
+        applicationId: item.id, candidateId: item.candidateId, outcome,
+        currentSalary: isNaN(parsedCurrentSalary as number) ? undefined : parsedCurrentSalary,
+        expectedSalary: isNaN(parsedExpectedSalary as number) ? undefined : parsedExpectedSalary,
+        noticePeriodDays: isNaN(parsedNoticePeriod as number) ? undefined : parsedNoticePeriod,
+        cvUploadId,
+      });
+      setIsLoggingCall(false);
+      setCvFile(null);
+    } catch (e: any) {
+      showError(e, { title: "Failed to Save Call Log" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const daysInStage = Math.floor((item.timeInStageRaw || 0) / (1000 * 60 * 60 * 24));
+  const daysLeft = Math.max(0, 7 - daysInStage);
+  const isDbMatch = item.sourceChannel === 'database' || item.sourceChannel === 'headhunting';
+  const hasCV = item.followUpCvReceived === true || (item.followUpCvReceived === undefined && !!item.cvUploadId);
+  const hasCurrentSalary = item.followUpCurrentSalary === true || (item.followUpCurrentSalary === undefined && item.currentSalary !== '—');
+  const hasExpectedSalary = item.followUpExpectedSalary === true || (item.followUpExpectedSalary === undefined && item.expectedSalary !== '—');
+  const hasNoticePeriod = item.followUpNoticePeriod === true || (item.followUpNoticePeriod === undefined && item.noticePeriod !== '—');
+  const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
+
+  const flagItem = (label: string, done: boolean) => (
+    <div className="flex items-center gap-1 text-[11px]">
+      {done ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-orange-400 shrink-0" />}
+      <span className={done ? 'text-green-700 dark:text-green-400' : 'text-orange-600 font-medium'}>{label}</span>
+    </div>
+  );
+
+  if (isLoggingCall) {
+    return (
+      <tr className="border-b border-border">
+        <td colSpan={6} className="p-4">
+          <div className="bg-surface-container rounded-lg border border-border p-4 shadow-sm relative w-full">
+            <button onClick={() => setIsLoggingCall(false)} className="absolute top-3 right-3 text-text-tertiary hover:text-text-primary"><X className="w-4 h-4" /></button>
+            <div className="flex items-center gap-2 mb-3">
+              <Phone className="w-4 h-4 text-primary" />
+              <span className="font-semibold text-text-primary">Logging manual call for {item.name}</span>
+            </div>
+            <select value={outcome} onChange={e => setOutcome(e.target.value)} className="bg-surface border border-border rounded px-2 py-2 text-[13px] focus:outline-none focus:border-primary-container max-w-xs block mb-3">
+              <option value="" disabled>Select Outcome...</option>
+              <option value="Interested">Interested (Advance candidate)</option>
+              <option value="Not Interested">Not Interested (Reject candidate)</option>
+              <option value="No Answer">No Answer</option>
+            </select>
+            {outcome === "Interested" && (
+              <div className="grid grid-cols-2 gap-3 max-w-lg mt-2 mb-3">
+                <div>
+                  <label className="block text-[11px] text-text-secondary mb-1">Current Salary</label>
+                  <input type="text" placeholder="e.g. 50000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-text-secondary mb-1">Expected Salary</label>
+                  <input type="text" placeholder="e.g. 60000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-text-secondary mb-1">Notice Period (Days)</label>
+                  <input type="text" placeholder="e.g. 30" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
+                </div>
+                <div className="col-span-2 mt-2">
+                  <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5"><Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)</label>
+                  <input type="file" onChange={e => setCvFile(e.target.files?.[0] || null)} className="w-full text-[11px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-surface-container-high file:text-text-primary hover:file:bg-border transition-colors cursor-pointer" />
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
+              <button onClick={() => setIsLoggingCall(false)} className="text-[12px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5">Cancel</button>
+              <button onClick={handleSaveLog} disabled={isSaving || !outcome} className="text-[12px] font-medium bg-primary text-on-primary px-4 py-1.5 rounded-[4px] hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm">{isSaving ? "Saving..." : "Save Call Log"}</button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
+      <td className="p-4 font-medium align-top">
+        <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
+        {allComplete && (
+          <div className="mt-1 text-[10px] text-green-600 font-medium flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" /> All complete — advancing to 2nd Shortlist
+          </div>
+        )}
+      </td>
+      <td className="p-4 align-top">
+        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${isDbMatch ? 'bg-blue-500/10 text-blue-600' : 'bg-green-500/10 text-green-600'}`}>
+          {isDbMatch ? 'DB Match' : 'External'}
+        </span>
+      </td>
+      <td className="p-4 align-top">
+        {(() => {
+          const lastDay = item.followUpState?.lastContactDay ?? -1;
+          const contactStatus =
+            lastDay === -1 ? { label: 'Not Contacted Yet', sub: 'Awaiting sequence start', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/30' }
+            : lastDay === 0 ? { label: '1st Outreach Sent', sub: 'WhatsApp + Email — Day 1', color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400', dot: 'bg-blue-500' }
+            : lastDay === 4 ? { label: '2nd Reminder Sent', sub: 'WhatsApp + Email — Day 5', color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400', dot: 'bg-yellow-500' }
+            : lastDay === 6 ? { label: 'Final Reminder Sent', sub: 'WhatsApp + Email — Day 7', color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500 animate-pulse' }
+            : { label: `Day ${lastDay} Contacted`, sub: 'WhatsApp + Email', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/50' };
+
+          return (
+            <div className="flex flex-col gap-1">
+              <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit ${contactStatus.color}`}>
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${contactStatus.dot}`} />
+                {contactStatus.label}
+              </span>
+              <span className="text-[10px] text-text-secondary pl-1 flex items-center gap-1">
+                {contactStatus.sub}
+              </span>
+            </div>
+          );
+        })()}
+      </td>
+      <td className="p-4 align-top">
+        <div className="flex flex-col gap-1">
+          {flagItem('CV', hasCV)}
+          {flagItem('Current Salary', hasCurrentSalary)}
+          {flagItem('Expected Salary', hasExpectedSalary)}
+          {flagItem('Notice Period', hasNoticePeriod)}
+        </div>
+      </td>
+      <td className="p-4 align-top">
+        <div className={`inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1 rounded-full ${
+          daysLeft <= 1 ? 'bg-error/10 text-error' :
+          daysLeft <= 3 ? 'bg-yellow-500/10 text-yellow-600' :
+          'bg-surface-container text-text-secondary'
+        }`}>
+          <Clock className="w-3 h-3" />
+          {daysLeft === 0 ? 'Expires today' : `${daysLeft}d left`}
+        </div>
+      </td>
+      <td className="p-4 text-right align-top">
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setTimelineAppId(item.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-border rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary transition-colors" title="View Timeline">
+              <Clock className="w-3.5 h-3.5" /> Timeline
+            </button>
+            {renderKanbanDropdown(item.id, 'follow_up')}
+          </div>
+          
+          <button onClick={() => setIsLoggingCall(true)} className="mt-1 text-[12px] font-medium text-primary hover:text-primary-container inline-flex items-center gap-1 self-end transition-colors">
+            <Phone className="w-3.5 h-3.5" /> Log Call
+          </button>
+
+          <button disabled={sendingWhatsAppId === item.id} onClick={async () => {
+            setSendingWhatsAppId(item.id);
+            try {
+              const result = await triggerWhatsAppFollowUp({ applicationId: item.id });
+              if (result?.communicationId) {
+                let isSent = false;
+                let errorMessage = "";
+                for (let i = 0; i < 5; i++) {
+                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, { communicationId: result.communicationId });
+                  if (statusRes) {
+                    if (statusRes.deliveryStatus === "sent") { isSent = true; break; }
+                    else if (statusRes.deliveryStatus === "failed") { errorMessage = statusRes.errorMessage || "Unknown error"; break; }
+                  }
+                }
+                if (isSent) { toast.success("WhatsApp follow-up sent successfully!"); }
+                else if (errorMessage) { showError(new Error(errorMessage), { title: "WhatsApp Delivery Failed" }); }
+                else { toast.info("WhatsApp follow-up is queued. It should deliver shortly."); }
+              } else {
+                toast.success("WhatsApp follow-up initiated successfully!");
+              }
+            } catch (err: any) {
+              console.error(err); showError(err, { title: "Failed to Send WhatsApp" });
+            } finally {
+              setSendingWhatsAppId(null);
+            }
+          }} className="inline-flex items-center text-[11px] font-bold text-green-600 hover:text-green-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer">
+            {sendingWhatsAppId === item.id ? "Sending..." : "Send WhatsApp"}
+          </button>
+          <button disabled={sendingEmailId === item.id} onClick={async () => {
+            setSendingEmailId(item.id);
+            try {
+              const result = await triggerEmailFollowUp({ applicationId: item.id });
+              if (result?.communicationId) {
+                let isSent = false;
+                let errorMessage = "";
+                for (let i = 0; i < 5; i++) {
+                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, { communicationId: result.communicationId });
+                  if (statusRes) {
+                    if (statusRes.deliveryStatus === "sent") { isSent = true; break; }
+                    else if (statusRes.deliveryStatus === "failed") { errorMessage = statusRes.errorMessage || "Unknown error"; break; }
+                  }
+                }
+                if (isSent) { toast.success("Email follow-up sent successfully!"); }
+                else if (errorMessage) { showError(new Error(errorMessage), { title: "Email Delivery Failed" }); }
+                else { toast.info("Email follow-up is queued. It should deliver shortly."); }
+              } else {
+                toast.success("Email follow-up initiated successfully!");
+              }
+            } catch (err: any) {
+              console.error(err); showError(err, { title: "Failed to Send Email" });
+            } finally {
+              setSendingEmailId(null);
+            }
+          }} className="inline-flex items-center text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer">
+            {sendingEmailId === item.id ? "Sending..." : "Send Email"}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+};
+
+
+const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any, onViewTimeline: (id: Id<"applications">) => void }) => {
+  const { showError } = useErrorPopup();
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState<string>('');
@@ -626,7 +880,7 @@ const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
       setIsLoggingCall(false);
       setCvFile(null);
     } catch (e: any) {
-      alert('Failed to save log: ' + e.message);
+      showError(e, { title: "Failed to Save Call Log" });
     } finally {
       setIsSaving(false);
     }
@@ -699,12 +953,22 @@ const UnresponsiveCandidateRow = ({ u, api }: { u: any, api: any }) => {
           </span>
         </td>
         <td className="p-4 text-right">
-          <button 
-            onClick={() => setIsLoggingCall(true)}
-            className="text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap"
-          >
-            Log Call
-          </button>
+          <div className="flex flex-col items-end gap-1.5">
+            <button 
+              onClick={() => onViewTimeline(u.applicationId)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-border rounded-[6px] text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
+              title="View Timeline"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              Timeline
+            </button>
+            <button 
+              onClick={() => setIsLoggingCall(true)}
+              className="text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap"
+            >
+              Log Call
+            </button>
+          </div>
         </td>
       </tr>
     );
@@ -1087,6 +1351,7 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
 };
 
 export default function JobDetailPage() {
+  const { showError } = useErrorPopup();
   const params = useParams();
   const router = useRouter();
   const { user } = useUser();
@@ -1095,9 +1360,12 @@ export default function JobDetailPage() {
   const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
+  const [timelineAppId, setTimelineAppId] = useState<Id<"applications"> | null>(null);
   const [activeSourceFilter, setActiveSourceFilter] = useState<'All Sources' | 'LinkedIn' | 'WhatsApp'>('All Sources');
   const [currentPage, setCurrentPage] = useState(1);
   const [matchesPage, setMatchesPage] = useState(1);
+  const [isRescoring, setIsRescoring] = useState<Record<string, boolean>>({});
+  const [isBulkRescoring, setIsBulkRescoring] = useState(false);
   const itemsPerPage = 6;
 
   // Modal state
@@ -1108,14 +1376,16 @@ export default function JobDetailPage() {
   const job = useQuery(api.jobs.jobs.getJob, { jobId });
   const jobChannels = useQuery(api.jobs.jobs.getJobChannels, { jobId });
   
-  // Fetch candidates via applications
-  const applications = useQuery(api.applications.applications.getByJobId, { jobId });
-  const filteredMatches = (job?.reverseMatchResults || []).filter((match: any) => !applications?.some(app => app.candidateId === match.cvId));
+  const rawApplications = useQuery(api.applications.applications.getByJobId, { jobId });
+  const applications = rawApplications ? (rawApplications.filter(Boolean) as any[]) : [];
+  const filteredMatches = (job?.reverseMatchResults || []).filter((match: any) => !applications.some(app => app && app.candidateId === match.cvId));
   const unresponsiveCandidates = useQuery(api.applications.applications.getUnresponsiveForJob, { jobId: job?._id || jobId });
   const allUsers = useQuery(api.users.users.getAllUsers);
   const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
   const rejectApplication = useMutation(api.applications.applications.rejectApplication);
+  const removeApplication = useMutation(api.applications.applications.removeApplication);
+  const processCvScoring = useAction(api.cvs.cvScoringActions.processCvScoring);
   const triggerAiCallMutation = useMutation(api.applications.applications.triggerAiCall);
   const directorApproveMutation = useMutation(api.pipeline.stages.directorApprove);
   const directorRejectMutation = useMutation(api.pipeline.stages.directorReject);
@@ -1131,7 +1401,9 @@ export default function JobDetailPage() {
   
   const runReverseMatch = useAction(api.matching.agent2.runReverseMatch);
   const updateTaPreferencesMutation = useMutation(api.jobs.jobs.updateTaPreferences);
+  const publishJob = useMutation(api.jobs.jobs.publishJob);
   const [isScanning, setIsScanning] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
   const [customPreferencesText, setCustomPreferencesText] = useState("");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -1140,6 +1412,20 @@ export default function JobDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const processCvIngestion = useMutation(api.pipeline.ingestion.processCvIngestion);
+
+  const handlePublishJob = async () => {
+    setIsPublishing(true);
+    const toastId = toast.loading("Publishing job...");
+    try {
+      await publishJob({ jobId });
+      toast.success("Job published successfully!", { id: toastId });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to publish job", { id: toastId });
+      showError(e, { title: "Publish Failed" });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   const handleScanDatabase = async (customPrompt?: string) => {
     setIsScanning(true);
@@ -1221,7 +1507,7 @@ export default function JobDetailPage() {
   const [sortOrder, setSortOrder] = useState<'score' | 'time'>('score');
   const [copiedLink, setCopiedLink] = useState(false);
   const copyPublicLink = () => {
-    alert("Public apply URL feature not enabled yet.");
+    toast.info("Public apply URL feature not enabled yet.");
   };
 
   // Reset pagination on tab change
@@ -1229,7 +1515,7 @@ export default function JobDetailPage() {
     setCurrentPage(1);
   }, [activePipelineTab, activeMainTab]);
 
-  if (job === undefined || applications === undefined) {
+  if (job === undefined || rawApplications === undefined) {
     return <div className="p-8">Loading...</div>;
   }
 
@@ -1272,7 +1558,7 @@ export default function JobDetailPage() {
     try {
       await rejectApplication({ applicationId: rejectModal.itemId as Id<"applications">, reason, stage: rejectModal.stage });
     } catch (e: any) {
-      alert('Failed to reject: ' + e.message);
+      showError(e, { title: "Rejection Failed" });
     }
   };
 
@@ -1280,7 +1566,7 @@ export default function JobDetailPage() {
     try {
       await triggerAiCallMutation({ applicationId: appId as Id<"applications"> });
     } catch (e: any) {
-      alert('Failed to trigger AI call: ' + e.message);
+      showError(e, { title: "Failed to Trigger AI Call" });
     }
   };
   
@@ -1288,7 +1574,69 @@ export default function JobDetailPage() {
     try {
       await setPipelineStage({ applicationId: appId as Id<"applications">, newStage });
     } catch (e: any) {
-      alert("Error changing stage: " + e.message);
+      showError(e, { title: "Stage Transition Failed" });
+    }
+  };
+
+  const handleDeleteApplication = async (appId: string) => {
+    if (!window.confirm("Are you sure you want to completely delete this candidate's application from this job? This action cannot be undone.")) return;
+    try {
+      await removeApplication({ applicationId: appId as Id<"applications"> });
+      toast.success("Candidate application deleted from this job.");
+    } catch (e: any) {
+      showError(e, { title: "Failed to Delete Application" });
+    }
+  };
+
+  const handleRescore = async (candidateId: string) => {
+    setIsRescoring(prev => ({ ...prev, [candidateId]: true }));
+    const toastId = toast.loading("Rescoring candidate against updated job requirements...");
+    try {
+      await processCvScoring({ candidateId: candidateId as Id<"candidates">, jobId: jobId as Id<"jobs"> });
+      toast.success("Candidate rescored successfully!", { id: toastId });
+    } catch (e: any) {
+      toast.error("Failed to rescore candidate", { id: toastId });
+      showError(e, { title: "Rescore Failed" });
+    } finally {
+      setIsRescoring(prev => ({ ...prev, [candidateId]: false }));
+    }
+  };
+
+  const handleBulkRescore = async () => {
+    const pipelineApps = applications.filter(a => a.currentStage !== 'new_cvs' && a.currentStage !== 'rejected' && a.candidateId);
+    if (pipelineApps.length === 0) {
+      toast.info("No candidates in the active pipeline to rescore.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to rescore all ${pipelineApps.length} active pipeline candidates against the current job requirements? This may take a few moments.`)) return;
+
+    setIsBulkRescoring(true);
+    const toastId = toast.loading(`Rescoring ${pipelineApps.length} candidates...`);
+    
+    try {
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (const app of pipelineApps) {
+        try {
+          await processCvScoring({ candidateId: app.candidateId as Id<"candidates">, jobId: jobId as Id<"jobs"> });
+          successCount++;
+        } catch (e) {
+          console.error(`Failed to rescore candidate ${app.candidateId}:`, e);
+          errorCount++;
+        }
+      }
+      
+      if (errorCount === 0) {
+        toast.success(`Successfully rescored all ${successCount} pipeline candidates!`, { id: toastId });
+      } else {
+        toast.warning(`Rescored ${successCount} candidates, but ${errorCount} failed.`, { id: toastId });
+      }
+    } catch (e: any) {
+      toast.error("Failed to execute bulk rescore", { id: toastId });
+      showError(e, { title: "Bulk Rescore Failed" });
+    } finally {
+      setIsBulkRescoring(false);
     }
   };
 
@@ -1366,28 +1714,26 @@ export default function JobDetailPage() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-[8px] border border-primary overflow-hidden shadow-sm">
-              <button 
-                onClick={() => handleScanDatabase()}
-                disabled={isScanning}
-                className="bg-surface text-primary px-3 py-1.5 text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1.5 disabled:opacity-50 border-r border-primary/30"
-                title="Rescan database with standard job description"
-              >
-                <Bot className="w-4 h-4 text-primary" /> {isScanning ? "Scanning..." : "Scan Database"}
-              </button>
-              <button
-                onClick={() => {
-                  setCustomPreferencesText(job?.taPreferences || "");
-                  setIsPreferenceModalOpen(true);
-                }}
-                disabled={isScanning}
-                className="bg-surface text-primary px-2 py-1.5 text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center justify-center disabled:opacity-50"
-                title="Add custom preferences or required skills before rescanning"
-              >
-                <ChevronDown className="w-4 h-4" />
-              </button>
-            </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setCustomPreferencesText(job?.taPreferences || "");
+                setIsPreferenceModalOpen(true);
+              }}
+              disabled={isScanning}
+              className="bg-surface text-text-secondary border border-border px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-surface-bright transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+              title="Add custom preferences or required skills before rescanning"
+            >
+              <MessageSquarePlus className="w-4 h-4" /> Add Preferences
+            </button>
+            <button 
+              onClick={() => handleScanDatabase()}
+              disabled={isScanning}
+              className="bg-primary text-on-primary px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+              title="Rescan database with standard job description"
+            >
+              <Bot className="w-4 h-4" /> {isScanning ? "Scanning..." : "Scan Database"}
+            </button>
           </div>
         </div>
 
@@ -1531,7 +1877,7 @@ export default function JobDetailPage() {
                           <AiReasonDisplay reason={(app as any).aiMatchExplanation || (app.candidate as any)?.summary} />
                         </td>
                         <td className="p-4 text-right">
-                          <div className="flex justify-end">
+                          <div className="flex justify-end items-center gap-2">
                             <select 
                               className="appearance-none bg-primary text-on-primary border border-transparent rounded-[6px] px-3 py-1.5 text-[12px] font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer shadow-sm text-center min-w-[120px]"
                               onChange={(e) => handleStageChange(app._id, e.target.value)}
@@ -1542,6 +1888,21 @@ export default function JobDetailPage() {
                                 <option key={s.id} value={s.id}>{s.label}</option>
                               ))}
                             </select>
+                            <button
+                              onClick={() => handleRescore(app.candidateId)}
+                              disabled={isRescoring[app.candidateId]}
+                              className="p-1.5 text-text-secondary hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
+                              title="Rescore against updated requirements"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${isRescoring[app.candidateId] ? 'animate-spin' : ''}`} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteApplication(app._id)}
+                              className="p-1.5 text-text-secondary hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                              title="Delete Candidate Application"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1638,9 +1999,9 @@ export default function JobDetailPage() {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const currentItems = itemsToRender.slice(startIndex, startIndex + itemsPerPage);
 
-    // Issue #6: Use MOVEABLE_STAGES — new_cvs excluded from dropdown targets
-    const renderKanbanDropdown = (itemId: string, defaultStage: string) => (
-      <div className="flex justify-end">
+    // Use MOVEABLE_STAGES for dropdown targets
+    const renderKanbanDropdown = (itemId: string, defaultStage: string, candidateId?: string) => (
+      <div className="flex justify-end items-center gap-2">
         <select 
           className="appearance-none bg-primary text-on-primary border border-transparent rounded-[6px] px-3 py-1.5 text-[12px] font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer shadow-sm text-center min-w-[120px]"
           onChange={(e) => handleStageChange(itemId, e.target.value)}
@@ -1651,6 +2012,23 @@ export default function JobDetailPage() {
             <option key={s.id} value={s.id}>{s.label}</option>
           ))}
         </select>
+        {candidateId && (
+          <button
+            onClick={() => handleRescore(candidateId)}
+            disabled={isRescoring[candidateId]}
+            className="p-1.5 text-text-secondary hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
+            title="Rescore against updated requirements"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRescoring[candidateId] ? 'animate-spin' : ''}`} />
+          </button>
+        )}
+        <button
+          onClick={() => handleDeleteApplication(itemId)}
+          className="p-1.5 text-text-secondary hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+          title="Delete Candidate Application"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       </div>
     );
 
@@ -1669,28 +2047,26 @@ export default function JobDetailPage() {
               <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                 <th className="p-4">Candidate</th>
                 <th className="p-4">Status / Score</th>
+                <th className="p-4">AI Reason</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="text-[13px] text-text-primary divide-y divide-border">
               {currentItems.length === 0 ? (
-                <tr><td colSpan={3} className="p-8 text-center text-text-secondary">No candidates in TA Shortlist.</td></tr>
+                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No candidates in TA Shortlist.</td></tr>
               ) : currentItems.map((item: any) => {
-                if (item.currentStage === 'matched_candidates') {
-                  return (
-                    <MatchedCandidateRow key={item.id} item={item} renderKanbanDropdown={renderKanbanDropdown} />
-                  );
-                }
                 return (
-                  <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
-                    <td className="p-4 font-medium">
-                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
-                    </td>
-                    <td className="p-4"><ScoreRing score={item.score} /></td>
-                    <td className="p-4 text-right">
-                      {renderKanbanDropdown(item.id, 'ta_shortlist')}
-                    </td>
-                  </tr>
+                  <FollowUpCandidateRow 
+                    key={item.id} 
+                    item={item} 
+                    api={api}
+                    convex={convex}
+                    showError={showError}
+                    setTimelineAppId={setTimelineAppId}
+                    renderKanbanDropdown={renderKanbanDropdown}
+                    triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
+                    triggerEmailFollowUp={triggerEmailFollowUp}
+                  />
                 );
               })}
             </tbody>
@@ -1747,197 +2123,18 @@ export default function JobDetailPage() {
               {currentItems.length === 0 ? (
                 <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No candidates in Follow-up.</td></tr>
               ) : currentItems.map((item: any) => {
-                const daysInStage = Math.floor((item.timeInStageRaw || 0) / (1000 * 60 * 60 * 24));
-                const daysLeft = Math.max(0, 7 - daysInStage);
-                const isDbMatch = item.sourceChannel === 'database' || item.sourceChannel === 'headhunting';
-
-                // Prefer per-application flags; fall back to candidate field presence for legacy records
-                const hasCV = item.followUpCvReceived === true || (item.followUpCvReceived === undefined && !!item.cvUploadId);
-                const hasCurrentSalary = item.followUpCurrentSalary === true || (item.followUpCurrentSalary === undefined && item.currentSalary !== '—');
-                const hasExpectedSalary = item.followUpExpectedSalary === true || (item.followUpExpectedSalary === undefined && item.expectedSalary !== '—');
-                const hasNoticePeriod = item.followUpNoticePeriod === true || (item.followUpNoticePeriod === undefined && item.noticePeriod !== '—');
-                const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
-
-                const flagItem = (label: string, done: boolean) => (
-                  <div className="flex items-center gap-1 text-[11px]">
-                    {done
-                      ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                      : <XCircle className="w-3.5 h-3.5 text-orange-400 shrink-0" />}
-                    <span className={done ? 'text-green-700 dark:text-green-400' : 'text-orange-600 font-medium'}>{label}</span>
-                  </div>
-                );
-
                 return (
-                  <tr key={item.id} className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
-                    <td className="p-4 font-medium">
-                      <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
-                      {allComplete && (
-                        <div className="mt-1 text-[10px] text-green-600 font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> All complete — advancing to 2nd Shortlist
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                        isDbMatch ? 'bg-blue-500/10 text-blue-600' : 'bg-green-500/10 text-green-600'
-                      }`}>
-                        {isDbMatch ? 'DB Match' : 'External'}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      {(() => {
-                        const lastDay = item.followUpState?.lastContactDay ?? -1;
-                        const contactStatus =
-                          lastDay === -1
-                            ? { label: 'Not Contacted Yet', sub: 'Awaiting sequence start', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/30' }
-                            : lastDay === 0
-                            ? { label: '1st Outreach Sent', sub: 'WhatsApp + Email — Day 1', color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400', dot: 'bg-blue-500' }
-                            : lastDay === 4
-                            ? { label: '2nd Reminder Sent', sub: 'WhatsApp + Email — Day 5', color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400', dot: 'bg-yellow-500' }
-                            : lastDay === 6
-                            ? { label: 'Final Reminder Sent', sub: 'WhatsApp + Email — Day 7', color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500 animate-pulse' }
-                            : { label: `Day ${lastDay} Contacted`, sub: 'WhatsApp + Email', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/50' };
-
-                        return (
-                          <div className="flex flex-col gap-1">
-                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit ${contactStatus.color}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${contactStatus.dot}`} />
-                              {contactStatus.label}
-                            </span>
-                            <span className="text-[10px] text-text-secondary pl-1 flex items-center gap-1">
-                              {lastDay >= 0 && (
-                                <>
-                                  <svg className="w-2.5 h-2.5 text-green-500" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                                  </svg>
-                                  <svg className="w-2.5 h-2.5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                    <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 7L2 7"/>
-                                  </svg>
-                                </>
-                              )}
-                              {contactStatus.sub}
-                            </span>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="p-4">
-                      <div className="flex flex-col gap-1">
-                        {flagItem('CV', hasCV)}
-                        {flagItem('Current Salary', hasCurrentSalary)}
-                        {flagItem('Expected Salary', hasExpectedSalary)}
-                        {flagItem('Notice Period', hasNoticePeriod)}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className={`inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1 rounded-full ${
-                        daysLeft <= 1 ? 'bg-error/10 text-error' :
-                        daysLeft <= 3 ? 'bg-yellow-500/10 text-yellow-600' :
-                        'bg-surface-container text-text-secondary'
-                      }`}>
-                        <Clock className="w-3 h-3" />
-                        {daysLeft === 0 ? 'Expires today' : `${daysLeft}d left`}
-                      </div>
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex flex-col items-end gap-1.5">
-                        {renderKanbanDropdown(item.id, 'follow_up')}
-                        <button
-                          disabled={sendingWhatsAppId === item.id}
-                          onClick={async () => {
-                            setSendingWhatsAppId(item.id);
-                            try {
-                              const result = await triggerWhatsAppFollowUp({ applicationId: item.id });
-                              if (result?.communicationId) {
-                                let isSent = false;
-                                let errorMessage = "";
-                                // Poll status up to 5 times (5 seconds)
-                                for (let i = 0; i < 5; i++) {
-                                  await new Promise((resolve) => setTimeout(resolve, 1000));
-                                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, {
-                                    communicationId: result.communicationId,
-                                  });
-                                  if (statusRes) {
-                                    if (statusRes.deliveryStatus === "sent") {
-                                      isSent = true;
-                                      break;
-                                    } else if (statusRes.deliveryStatus === "failed") {
-                                      errorMessage = statusRes.errorMessage || "Unknown error";
-                                      break;
-                                    }
-                                  }
-                                }
-                                if (isSent) {
-                                  alert("WhatsApp follow-up sent successfully!");
-                                } else if (errorMessage) {
-                                  alert(`WhatsApp delivery failed: ${errorMessage}`);
-                                } else {
-                                  alert("WhatsApp follow-up is queued. It should deliver shortly.");
-                                }
-                              } else {
-                                alert("WhatsApp follow-up initiated successfully!");
-                              }
-                            } catch (err: any) {
-                              console.error(err);
-                              alert(`Failed to send WhatsApp: ${err.message}`);
-                            } finally {
-                              setSendingWhatsAppId(null);
-                            }
-                          }}
-                          className="inline-flex items-center text-[11px] font-bold text-green-600 hover:text-green-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer"
-                        >
-                          {sendingWhatsAppId === item.id ? "Sending..." : "Send WhatsApp"}
-                        </button>
-
-                        <button
-                          disabled={sendingEmailId === item.id}
-                          onClick={async () => {
-                            setSendingEmailId(item.id);
-                            try {
-                              const result = await triggerEmailFollowUp({ applicationId: item.id });
-                              if (result?.communicationId) {
-                                let isSent = false;
-                                let errorMessage = "";
-                                // Poll status up to 5 times (5 seconds)
-                                for (let i = 0; i < 5; i++) {
-                                  await new Promise((resolve) => setTimeout(resolve, 1000));
-                                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, {
-                                    communicationId: result.communicationId,
-                                  });
-                                  if (statusRes) {
-                                    if (statusRes.deliveryStatus === "sent") {
-                                      isSent = true;
-                                      break;
-                                    } else if (statusRes.deliveryStatus === "failed") {
-                                      errorMessage = statusRes.errorMessage || "Unknown error";
-                                      break;
-                                    }
-                                  }
-                                }
-                                if (isSent) {
-                                  alert("Email follow-up sent successfully!");
-                                } else if (errorMessage) {
-                                  alert(`Email delivery failed: ${errorMessage}`);
-                                } else {
-                                  alert("Email follow-up is queued. It should deliver shortly.");
-                                }
-                              } else {
-                                alert("Email follow-up initiated successfully!");
-                              }
-                            } catch (err: any) {
-                              console.error(err);
-                              alert(`Failed to send Email: ${err.message}`);
-                            } finally {
-                              setSendingEmailId(null);
-                            }
-                          }}
-                          className="inline-flex items-center text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer"
-                        >
-                          {sendingEmailId === item.id ? "Sending..." : "Send Email"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <FollowUpCandidateRow 
+                    key={item.id} 
+                    item={item} 
+                    api={api}
+                    convex={convex}
+                    showError={showError}
+                    setTimelineAppId={setTimelineAppId}
+                    renderKanbanDropdown={renderKanbanDropdown}
+                    triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
+                    triggerEmailFollowUp={triggerEmailFollowUp}
+                  />
                 );
               })}
             </tbody>
@@ -1975,7 +2172,7 @@ export default function JobDetailPage() {
                       </tr>
                     ) : (
                       unresponsiveList.map((u: any) => (
-                        <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} />
+                        <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} onViewTimeline={setTimelineAppId} />
                       ))
                     )}
                     </tbody>
@@ -2066,7 +2263,7 @@ export default function JobDetailPage() {
                     {/* Issue #7: Gated Director actions — no free-form dropdown */}
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={async () => { try { await directorApproveMutation({ applicationId: item.id }); } catch(e: any) { alert(e.message); } }}
+                        onClick={async () => { try { await directorApproveMutation({ applicationId: item.id }); } catch(e: any) { showError(e, { title: "Director Approval Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Approve
@@ -2080,7 +2277,7 @@ export default function JobDetailPage() {
                       <button
                         onClick={async () => {
                           const note = window.prompt('Note for TA (changes requested):');
-                          if (note) { try { await directorRequestChangesMutation({ applicationId: item.id, note }); } catch(e: any) { alert(e.message); } }
+                          if (note) { try { await directorRequestChangesMutation({ applicationId: item.id, note }); } catch(e: any) { showError(e, { title: "Request Changes Failed" }); } }
                         }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium border border-border text-text-secondary px-3 py-1.5 rounded-[6px] hover:bg-surface-container transition-colors"
                       >
@@ -2117,13 +2314,13 @@ export default function JobDetailPage() {
                     {/* Issue #7: Gated Client actions */}
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={async () => { try { await clientApproveMutation({ applicationId: item.id }); } catch(e: any) { alert(e.message); } }}
+                        onClick={async () => { try { await clientApproveMutation({ applicationId: item.id }); } catch(e: any) { showError(e, { title: "Client Selection Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Select for Interview
                       </button>
                       <button
-                        onClick={async () => { try { await clientHoldMutation({ applicationId: item.id, note: 'Client placed on hold' }); } catch(e: any) { alert(e.message); } }}
+                        onClick={async () => { try { await clientHoldMutation({ applicationId: item.id, note: 'Client placed on hold' }); } catch(e: any) { showError(e, { title: "Client Hold Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium border border-yellow-500/40 text-yellow-600 px-3 py-1.5 rounded-[6px] hover:bg-yellow-500/10 transition-colors"
                       >
                         ⏸ Hold
@@ -2438,6 +2635,15 @@ export default function JobDetailPage() {
               >
                 <QrCode className="w-4 h-4" /> Ad QR Code
               </button>
+              {job.status === 'draft' && (
+                <button 
+                  onClick={handlePublishJob}
+                  disabled={isPublishing}
+                  className="bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" /> {isPublishing ? "Publishing..." : "Publish Job"}
+                </button>
+              )}
               <button 
                 onClick={() => setIsEditModalOpen(true)}
                 className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
@@ -2446,6 +2652,14 @@ export default function JobDetailPage() {
               </button>
               <button className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1">
                 <Download className="w-4 h-4" /> Export CVs
+              </button>
+              <button 
+                onClick={handleBulkRescore}
+                disabled={isBulkRescoring}
+                className="border border-border text-text-primary hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isBulkRescoring ? 'animate-spin' : ''}`} /> 
+                {isBulkRescoring ? 'Rescoring...' : 'Rescore Pipeline'}
               </button>
               <button className="border border-border text-text-primary hover:bg-surface-container px-2 py-1.5 rounded-[8px] transition-colors flex items-center">
                 <MoreVertical className="w-4 h-4" />
@@ -2636,6 +2850,11 @@ export default function JobDetailPage() {
             followUpExpectedSalary: (app as any).followUpExpectedSalary,
             followUpNoticePeriod: (app as any).followUpNoticePeriod,
           }))}
+      />
+
+      <CandidateTimelineDrawer 
+        applicationId={timelineAppId} 
+        onClose={() => setTimelineAppId(null)} 
       />
     </div>
   );

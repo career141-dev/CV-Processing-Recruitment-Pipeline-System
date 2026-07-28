@@ -158,6 +158,7 @@ export const createDraftJob = mutation({
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
     muteDefaultWhatsappReply: v.optional(v.boolean()),
     pausedChannels: v.optional(v.array(v.string())),
+    outreachWhatsAppNumber: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
@@ -201,6 +202,7 @@ export const createDraftJob = mutation({
       clientContactEmail: args.clientContactEmail,
       supportingRecruiterIds: args.supportingRecruiterIds,
       muteDefaultWhatsappReply: false,
+      outreachWhatsAppNumber: args.outreachWhatsAppNumber,
       
       scoreWeightSkills: 35,
       scoreWeightExperience: 15,
@@ -278,6 +280,7 @@ export const updateJobDetails = mutation({
     supportingRecruiterIds: v.optional(v.array(v.id("users"))),
     muteDefaultWhatsappReply: v.optional(v.boolean()),
     pausedChannels: v.optional(v.array(v.string())),
+    outreachWhatsAppNumber: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter", "test_ta"]);
@@ -417,6 +420,14 @@ export const updateJobChannels = mutation({
     }
 
     if (!job) return { success: true };
+
+    const newlyPausedChannels = args.channels
+      .filter((ch) => !ch.isEnabled)
+      .map((ch) => ch.channelType);
+      
+    await ctx.db.patch(args.jobId, {
+      pausedChannels: newlyPausedChannels,
+    });
 
     const waChannel = args.channels.find((c) => (c.channelType === "whatsapp" || c.channelType === "whatsapp_campaign") && c.isEnabled);
     const emailChannel = args.channels.find((c) => c.channelType === "email_campaign" && c.isEnabled);

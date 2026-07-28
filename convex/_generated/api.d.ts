@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as addDemoCandidate from "../addDemoCandidate.js";
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
 import type * as admin_backfillEmbeddingFlags from "../admin/backfillEmbeddingFlags.js";
 import type * as admin_backfillTokenCache from "../admin/backfillTokenCache.js";
@@ -32,6 +33,7 @@ import type * as candidates_derivations from "../candidates/derivations.js";
 import type * as candidates_profile from "../candidates/profile.js";
 import type * as candidates_refereeActions from "../candidates/refereeActions.js";
 import type * as candidates_referees from "../candidates/referees.js";
+import type * as candidates_timeline from "../candidates/timeline.js";
 import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
 import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
@@ -76,12 +78,16 @@ import type * as matching_agent2 from "../matching/agent2.js";
 import type * as matching_queries from "../matching/queries.js";
 import type * as matching_reverse from "../matching/reverse.js";
 import type * as matching_search from "../matching/search.js";
+import type * as meta_conversions from "../meta/conversions.js";
+import type * as meta_trigger from "../meta/trigger.js";
 import type * as pipeline_followUpHelper from "../pipeline/followUpHelper.js";
 import type * as pipeline_headhunt from "../pipeline/headhunt.js";
 import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as scratchQuery from "../scratchQuery.js";
+import type * as seedTestJobAndCandidates from "../seedTestJobAndCandidates.js";
+import type * as seedTimeline from "../seedTimeline.js";
 import type * as settings_whatsappNumbers from "../settings/whatsappNumbers.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
@@ -98,6 +104,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  addDemoCandidate: typeof addDemoCandidate;
   "admin/activateReactDev": typeof admin_activateReactDev;
   "admin/backfillEmbeddingFlags": typeof admin_backfillEmbeddingFlags;
   "admin/backfillTokenCache": typeof admin_backfillTokenCache;
@@ -122,6 +129,7 @@ declare const fullApi: ApiFromModules<{
   "candidates/profile": typeof candidates_profile;
   "candidates/refereeActions": typeof candidates_refereeActions;
   "candidates/referees": typeof candidates_referees;
+  "candidates/timeline": typeof candidates_timeline;
   "candidates/updateAllExp": typeof candidates_updateAllExp;
   "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
   "communications/emailAgent": typeof communications_emailAgent;
@@ -166,12 +174,16 @@ declare const fullApi: ApiFromModules<{
   "matching/queries": typeof matching_queries;
   "matching/reverse": typeof matching_reverse;
   "matching/search": typeof matching_search;
+  "meta/conversions": typeof meta_conversions;
+  "meta/trigger": typeof meta_trigger;
   "pipeline/followUpHelper": typeof pipeline_followUpHelper;
   "pipeline/headhunt": typeof pipeline_headhunt;
   "pipeline/ingestion": typeof pipeline_ingestion;
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
   scratchQuery: typeof scratchQuery;
+  seedTestJobAndCandidates: typeof seedTestJobAndCandidates;
+  seedTimeline: typeof seedTimeline;
   "settings/whatsappNumbers": typeof settings_whatsappNumbers;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;

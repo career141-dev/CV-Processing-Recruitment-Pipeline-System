@@ -8,11 +8,13 @@ import { api } from "../../../../../convex/_generated/api";
 import { Loader2, ShieldAlert, Mail, MessageSquare, Sparkles, Clock, Eye, Edit3, Check } from "lucide-react";
 import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'sonner';
+import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 import { SmartTemplateEditor } from '@/components/ui/SmartTemplateEditor';
 import { Modal } from '@/components/ui/Modal';
 import { MessageTemplatesTab } from '@/components/settings/tabs/MessageTemplatesTab';
 
 export default function CreateJobWizard() {
+  const { showError } = useErrorPopup();
   const router = useRouter();
   const { canCreateJob, isLoaded } = usePermissions();
   const [currentStep, setCurrentStep] = useState(1);
@@ -87,6 +89,7 @@ export default function CreateJobWizard() {
 
     // Step 2: Channel Setup
     jobKeyword: '',
+    outreachWhatsAppNumber: '',
     muteDefaultWhatsappReply: false,
     linkedinEmail: 'linkedin@career141.com',
     linkedinEmailSaved: false,
@@ -407,6 +410,7 @@ export default function CreateJobWizard() {
 
       const primaryRecruiterObj = recruiterPool.find(m => m.fullName === formData.primaryRecruiter);
       const primaryRecruiterId = primaryRecruiterObj?._id || recruiterPool[0]?._id;
+      const isAssignedTAExplicit = !!primaryRecruiterObj;
 
       const directorPool = (availableDirectors && availableDirectors.length > 0) ? availableDirectors : (allUsers || []);
       const directorObj = directorPool.find(m => m.fullName === formData.director);
@@ -438,13 +442,14 @@ export default function CreateJobWizard() {
         clientContactName: formData.clientContactName || undefined,
         clientContactEmail: formData.clientContactEmail || undefined,
         muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
+        isAssignedTAExplicit: isAssignedTAExplicit,
       });
 
       toast.success("Job saved as draft successfully");
       router.push(`/dashboard/jobs`);
     } catch (error: any) {
       setPublishError(error.message || "Failed to save draft. Please try again.");
-    } finally {
+      showError(error, { title: "Failed to Save Draft" });
       setIsDrafting(false);
     }
   };
@@ -524,10 +529,11 @@ export default function CreateJobWizard() {
       });
       setCreatedJobId(jobId);
 
-      if (formData.muteDefaultWhatsappReply) {
+      if (formData.muteDefaultWhatsappReply || formData.outreachWhatsAppNumber) {
         await updateJobDetails({
           jobId,
-          muteDefaultWhatsappReply: true,
+          muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
+          outreachWhatsAppNumber: formData.outreachWhatsAppNumber || undefined,
         });
       }
 
@@ -592,7 +598,7 @@ export default function CreateJobWizard() {
         maxFollowUpAttempts: formData.maxFollowUpAttempts,
         customFollowUpQuestions: formData.customFollowUpQuestions,
         agent3TriggerStages: formData.agent3TriggerStages,
-        agent3AfterDay7: "move_to_unresponsive",
+        agent3AfterDay7: "mark_unresponsive",
         
         agent5Enabled: false,
         agent5Trigger: "manual_only",
@@ -637,6 +643,7 @@ export default function CreateJobWizard() {
     } catch (err: any) {
       console.error("Publishing error:", err);
       setPublishError(err.message || "An unexpected error occurred while publishing.");
+      showError(err, { title: "Failed to Publish Job" });
     } finally {
       setIsPublishing(false);
     }
@@ -1080,6 +1087,24 @@ export default function CreateJobWizard() {
             )}
           </div>
           <p className="text-xs text-text-secondary mt-2">Required for routing applicants to this job (used only in Meta Campaigns).</p>
+        </div>
+
+        <div className="bg-surface border border-border rounded-xl p-5 shadow-sm">
+          <label className="block text-sm font-medium text-text-primary mb-2">TA Outreach WhatsApp Number (Agent 3 Follow-ups)</label>
+          <select
+            name="outreachWhatsAppNumber"
+            value={formData.outreachWhatsAppNumber}
+            onChange={e => updateFormData('outreachWhatsAppNumber', e.target.value)}
+            className="w-full max-w-md border border-border rounded-md px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+          >
+            <option value="">-- Use Default Campaign Number --</option>
+            {whatChimpNumbersDB.map((num: any) => (
+              <option key={num._id} value={num.phone}>
+                {num.name} ({num.phone})
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-text-secondary mt-2">Select your designated Business WhatsApp number to be used as the sender for automated candidate outreach on this job.</p>
         </div>
 
         <div className="space-y-4">

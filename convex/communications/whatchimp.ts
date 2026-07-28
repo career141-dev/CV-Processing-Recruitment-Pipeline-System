@@ -67,6 +67,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
               phone: cleanSender,
               jobId: job._id,
               keyword: firstWord,
+              metaSourceUrl: message.referral?.source_url,
+              metaSourceId: message.referral?.source_id,
+              metaHeadline: message.referral?.headline,
             });
 
             const apiToken = process.env.WHATCHIMP_API_TOKEN;
@@ -246,6 +249,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       // 4. Extract keyword if message text is present
       let resolvedJobId: string | null | undefined = null;
       let isPaused = false;
+      let metaSourceUrl, metaSourceId, metaHeadline;
 
       if (text) {
         const upperText = text.toUpperCase();
@@ -266,6 +270,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         });
         if (session) {
           resolvedJobId = session.jobId;
+          metaSourceUrl = session.metaSourceUrl;
+          metaSourceId = session.metaSourceId;
+          metaHeadline = session.metaHeadline;
           console.log(`[WhatChimp Webhook] Resolved job ID ${resolvedJobId} from session for +${cleanFrom}`);
           // Delete session now that it is consumed
           await ctx.runMutation(api.communications.whatchimp.deleteSession, {
@@ -297,6 +304,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         fileName,
         fileType: mimeType || "application/pdf",
         fileSizeBytes,
+        metaSourceUrl,
+        metaSourceId,
+        metaHeadline,
       });
       console.log(`[WhatChimp Webhook] Ingested CV for candidate +${cleanFrom} (jobId: ${resolvedJobId}). Result:`, ingestionResult);
 
@@ -358,6 +368,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           phone: cleanFrom,
           jobId: matchedJob._id,
           keyword: matchedKeyword,
+          metaSourceUrl: body.referral?.source_url || body.user_message?.referral?.source_url,
+          metaSourceId: body.referral?.source_id || body.user_message?.referral?.source_id,
+          metaHeadline: body.referral?.headline || body.user_message?.referral?.headline,
         });
 
         const apiToken = process.env.WHATCHIMP_API_TOKEN;
@@ -407,6 +420,9 @@ export const upsertSession = mutation({
     phone: v.string(),
     jobId: v.id("jobs"),
     keyword: v.string(),
+    metaSourceUrl: v.optional(v.string()),
+    metaSourceId: v.optional(v.string()),
+    metaHeadline: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -420,6 +436,9 @@ export const upsertSession = mutation({
         jobId: args.jobId,
         keyword: args.keyword,
         lastInteractionAt: now,
+        metaSourceUrl: args.metaSourceUrl ?? existing.metaSourceUrl,
+        metaSourceId: args.metaSourceId ?? existing.metaSourceId,
+        metaHeadline: args.metaHeadline ?? existing.metaHeadline,
       });
       return existing._id;
     } else {
@@ -428,6 +447,9 @@ export const upsertSession = mutation({
         jobId: args.jobId,
         keyword: args.keyword,
         lastInteractionAt: now,
+        metaSourceUrl: args.metaSourceUrl,
+        metaSourceId: args.metaSourceId,
+        metaHeadline: args.metaHeadline,
       });
     }
   },
@@ -534,7 +556,18 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
       console.log(`[PreApp Chat] Replying to +${args.phone}: ${replyMessage.substring(0, 100)}...`);
 
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
-      const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      
+      const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
+      let phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      if (outboundNumber) {
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+          targetWhatsAppNumber: outboundNumber 
+        });
+        if (fetchedId) {
+          phoneNumberId = fetchedId;
+          console.log(`[PreApp Chat] Using dynamically resolved phone ID ${phoneNumberId} for job outreach number ${outboundNumber}`);
+        }
+      }
       
       if (apiToken && phoneNumberId) {
         const params = new URLSearchParams();

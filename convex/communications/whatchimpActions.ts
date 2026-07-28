@@ -1,6 +1,6 @@
 "use node";
 import { internalAction } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { getOpenAI, getModelForTask } from "../lib/llm";
 
@@ -43,7 +43,18 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
       console.log(`[PreApp Chat] Replying to +${args.phone}: ${replyMessage.substring(0, 100)}...`);
 
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
-      const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      
+      const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
+      let phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      if (outboundNumber) {
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+          targetWhatsAppNumber: outboundNumber 
+        });
+        if (fetchedId) {
+          phoneNumberId = fetchedId;
+          console.log(`[PreApp Chat] Using dynamically resolved phone ID ${phoneNumberId} for job outreach number ${outboundNumber}`);
+        }
+      }
       
       if (apiToken && phoneNumberId) {
         const params = new URLSearchParams();

@@ -44,6 +44,9 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     job?._id ? { jobId: job._id } : 'skip'
   );
 
+  // Fetch authorized WhatsApp numbers for outreach
+  const whatsappNumbers = useQuery(api.settings.whatsappNumbers.list) || [];
+
   // All possible channels — always shown in the Edit modal
   // Channels that were never configured appear as OFF; toggling ON creates them on save
   const ALL_CHANNELS = [
@@ -76,6 +79,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     jobDescription: '',
     muteDefaultWhatsappReply: false,
     pausedChannels: [] as string[],
+    outreachWhatsAppNumber: '',
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -95,6 +99,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         jobDescription: job.jobDescription || '',
         muteDefaultWhatsappReply: job.muteDefaultWhatsappReply || false,
         pausedChannels: job.pausedChannels || [],
+        outreachWhatsAppNumber: job.outreachWhatsAppNumber || '',
       });
     }
   }, [job, isOpen]);
@@ -157,6 +162,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         experienceMinYears: formData.experienceMinYears,
         description: formData.jobDescription,
         muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
+        outreachWhatsAppNumber: formData.outreachWhatsAppNumber || undefined,
       });
 
       // Save ALL channel states — creates new channels if toggled ON for the first time,
@@ -345,6 +351,25 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               placeholder="Enter detailed job description, responsibilities, and requirements..."
               className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container leading-relaxed font-sans resize-y min-h-[220px]"
             />
+          </div>
+
+          {/* TA Outreach WhatsApp Number */}
+          <div className="flex flex-col gap-1 col-span-2">
+            <label className="text-xs font-semibold text-text-secondary">TA Outreach WhatsApp Number (Agent 3 Follow-ups)</label>
+            <select
+              name="outreachWhatsAppNumber"
+              value={formData.outreachWhatsAppNumber}
+              onChange={handleChange}
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+            >
+              <option value="">-- Use Default Campaign Number --</option>
+              {whatsappNumbers.map(num => (
+                <option key={num._id} value={num.phone}>
+                  {num.name} ({num.phone})
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-text-secondary mt-0.5">Select your designated Business WhatsApp number to be used as the sender for automated candidate outreach on this job.</p>
           </div>
 
           {/* Mute Default WhatsApp Reply */}

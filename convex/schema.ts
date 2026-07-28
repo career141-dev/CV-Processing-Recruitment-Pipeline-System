@@ -172,6 +172,12 @@ export default defineSchema({
     minMatchScoreToShow: v.optional(v.number()), // default 60
     reverseMatchOnPublish: v.optional(v.boolean()),
     taPreferences: v.optional(v.string()),
+    roleFamily: v.optional(v.string()),
+    roleFamilyCacheFingerprint: v.optional(v.string()),
+    usedFallbackTitle: v.optional(v.boolean()),
+    currentRoleRank: v.optional(v.number()),
+    currentRoleRankLabel: v.optional(v.string()),
+    currentRoleConfidence: v.optional(v.string()),
 
     roleFamily: v.optional(v.string()),
     roleFamilyCacheFingerprint: v.optional(v.string()),
@@ -194,15 +200,14 @@ export default defineSchema({
       candidateName: v.optional(v.string()),
       candidateRole: v.optional(v.string()),
       candidateExp: v.optional(v.number()),
-
       // Agent 2 — Current-Role Level & Role-Family Gate Fields
       currentRoleRank: v.optional(v.number()),
       currentRoleRankLabel: v.optional(v.string()),
-      currentRoleConfidence: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+      currentRoleConfidence: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"), v.string())),
       usedFallbackTitle: v.optional(v.boolean()),
       currentRoleGate: v.optional(v.union(
         v.literal("pass"), v.literal("pass_with_penalty"),
-        v.literal("excluded_overqualified"), v.literal("skipped_other")
+        v.literal("excluded_overqualified"), v.literal("skipped_other"), v.string()
       )),
       currentRolePenalty: v.optional(v.number()),
       seniorityConflict: v.optional(v.boolean()),
@@ -210,8 +215,21 @@ export default defineSchema({
       roleFamily: v.optional(v.string()),
       roleFamilyMatch: v.optional(v.union(
         v.literal("exact"), v.literal("synonym"),
-        v.literal("adjacent"), v.literal("unrelated")
+        v.literal("adjacent"), v.literal("unrelated"), v.string()
       )),
+      currentRoleCacheFingerprint: v.optional(v.string()),
+
+      // Dimension Breakdown Gate Fields
+      seniorityGate: v.optional(v.string()),
+      seniorityPenalty: v.optional(v.number()),
+      experienceGate: v.optional(v.string()),
+      experiencePenalty: v.optional(v.number()),
+      industryGate: v.optional(v.string()),
+      industryPenalty: v.optional(v.number()),
+      locationGate: v.optional(v.string()),
+      locationPenalty: v.optional(v.number()),
+      skillsGate: v.optional(v.string()),
+      skillsPenalty: v.optional(v.number()),
     }))),
 
 
@@ -266,6 +284,9 @@ export default defineSchema({
       v.literal("retry_after_2hrs"),
       v.literal("notify_ta")),
     agent5HideCompany: v.optional(v.boolean()),
+
+    // Agent 3 — Outbound TA Identity
+    outreachWhatsAppNumber: v.optional(v.string()),
 
     // SLA Thresholds (days)
     slaNoNewCvsDays: v.optional(v.number()),
@@ -439,6 +460,9 @@ export default defineSchema({
     fileHash: v.optional(v.string()),
     source: v.optional(v.string()),
     campaignLabel: v.optional(v.string()),
+    metaSourceUrl: v.optional(v.string()),
+    metaSourceId: v.optional(v.string()),
+    metaHeadline: v.optional(v.string()),
     assignToJob: v.optional(v.string()),
     uploadedBy: v.string(),
     status: v.string(),
@@ -539,6 +563,12 @@ export default defineSchema({
     firstSeenAt: v.optional(v.number()),
     lastUpdatedAt: v.optional(v.number()),
     parsingConfidence: v.optional(v.any()),
+    usedFallbackTitle: v.optional(v.boolean()),
+    currentRoleCacheFingerprint: v.optional(v.string()),
+    currentRoleConfidence: v.optional(v.string()),
+    currentRoleRankLabel: v.optional(v.string()),
+    currentRoleRank: v.optional(v.number()),
+    roleFamily: v.optional(v.string()),
     fieldsNeedingReview: v.optional(v.array(v.string())),
     isDuplicateOf: v.optional(v.id("candidates")),
     mergedInto: v.optional(v.id("candidates")),
@@ -721,6 +751,9 @@ export default defineSchema({
       editedBy: v.id("users"),
       editedAt: v.string(),
     }))),
+    metaCampaignId: v.optional(v.string()),
+    metaAdsetId: v.optional(v.string()),
+    metaAdId: v.optional(v.string()),
     metaConversionSentFor: v.optional(v.array(v.string())),
   })
     .index("by_jobId", ["jobId"])
@@ -1375,6 +1408,9 @@ export default defineSchema({
     jobId: v.id("jobs"),
     keyword: v.string(),
     lastInteractionAt: v.number(),
+    metaSourceUrl: v.optional(v.string()),
+    metaSourceId: v.optional(v.string()),
+    metaHeadline: v.optional(v.string()),
   }).index("by_phone", ["phone"]),
 
   systemStats: defineTable({
