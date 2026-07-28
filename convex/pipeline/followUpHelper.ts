@@ -1,6 +1,7 @@
 import { Id } from "../_generated/dataModel";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { internal } from "../_generated/api";
+import { adjustJobStageStat } from "../jobs/stats";
 
 /**
  * Checks per-application follow-up completion flags.
@@ -19,7 +20,7 @@ export async function checkAndAdvanceFollowUp(
     .collect();
 
   for (const app of apps) {
-    const isFollowUp = app.currentStage === "follow_up";
+    const isFollowUp = app.currentStage === "follow_up" || app.currentStage === "ta_shortlist";
     const isAutoRejected = app.currentStage === "rejected" && app.taRejectionReason === "Did not complete requirements within 7-day window";
 
     if (!isFollowUp && !isAutoRejected) continue;
@@ -69,6 +70,7 @@ export async function checkAndAdvanceFollowUp(
           },
         ],
       });
+      await adjustJobStageStat(ctx, app.jobId, app.currentStage, "second_shortlist");
       await syncCandidateOverallStatus(ctx, candidateId);
     }
   }
