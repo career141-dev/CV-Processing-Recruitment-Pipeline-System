@@ -2608,62 +2608,66 @@ export default function JobDetailPage() {
                 <div className="text-[11px] text-text-secondary">AI Avg Score</div>
               </div>
             </div>
-            <div className="flex gap-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                accept=".pdf,.docx"
-                className="hidden"
-              />
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="bg-primary text-on-primary hover:bg-primary/90 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
-              >
-                {isUploading ? (
-                  <>Uploading...</>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" /> Upload CV
-                  </>
-                )}
-              </button>
-              <button 
-                onClick={() => alert("QR feature not implemented yet.")}
-                className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
-              >
-                <QrCode className="w-4 h-4" /> Ad QR Code
-              </button>
-              {job.status === 'draft' && (
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex gap-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".pdf,.docx"
+                  className="hidden"
+                />
                 <button 
-                  onClick={handlePublishJob}
-                  disabled={isPublishing}
-                  className="bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="bg-primary text-on-primary hover:bg-primary/90 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
                 >
-                  <Send className="w-4 h-4" /> {isPublishing ? "Publishing..." : "Publish Job"}
+                  {isUploading ? (
+                    <>Uploading...</>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" /> Upload CV
+                    </>
+                  )}
                 </button>
-              )}
-              <button 
-                onClick={() => setIsEditModalOpen(true)}
-                className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
-              >
-                <Edit className="w-4 h-4" /> Edit Job
-              </button>
-              <button className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1">
-                <Download className="w-4 h-4" /> Export CVs
-              </button>
-              <button 
-                onClick={handleBulkRescore}
-                disabled={isBulkRescoring}
-                className="border border-border text-text-primary hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
-              >
-                <RefreshCw className={`w-4 h-4 ${isBulkRescoring ? 'animate-spin' : ''}`} /> 
-                {isBulkRescoring ? 'Rescoring...' : 'Rescore Pipeline'}
-              </button>
-              <button className="border border-border text-text-primary hover:bg-surface-container px-2 py-1.5 rounded-[8px] transition-colors flex items-center">
-                <MoreVertical className="w-4 h-4" />
-              </button>
+                <button 
+                  onClick={() => alert("QR feature not implemented yet.")}
+                  className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
+                >
+                  <QrCode className="w-4 h-4" /> Ad QR Code
+                </button>
+                {job.status === 'draft' && (
+                  <button 
+                    onClick={handlePublishJob}
+                    disabled={isPublishing}
+                    className="bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" /> {isPublishing ? "Publishing..." : "Publish Job"}
+                  </button>
+                )}
+                <button 
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
+                >
+                  <Edit className="w-4 h-4" /> Edit Job
+                </button>
+                <button className="border border-border text-text-primary hover:bg-surface-container px-2 py-1.5 rounded-[8px] transition-colors flex items-center">
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1">
+                  <Download className="w-4 h-4" /> Export CVs
+                </button>
+                <button 
+                  onClick={handleBulkRescore}
+                  disabled={isBulkRescoring}
+                  className="border border-border text-text-primary hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isBulkRescoring ? 'animate-spin' : ''}`} /> 
+                  {isBulkRescoring ? 'Rescoring...' : 'Rescore Pipeline'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
