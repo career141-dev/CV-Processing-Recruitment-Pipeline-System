@@ -179,9 +179,6 @@ export default defineSchema({
     currentRoleRankLabel: v.optional(v.string()),
     currentRoleConfidence: v.optional(v.string()),
 
-    roleFamily: v.optional(v.string()),
-    roleFamilyCacheFingerprint: v.optional(v.string()),
-
     reverseMatchStatus: v.optional(v.union(
       v.literal("running"), v.literal("done"), v.literal("error")
     )),
@@ -311,7 +308,6 @@ export default defineSchema({
     embedding: v.optional(v.array(v.number())),
 
     // Timestamps
-    outreachWhatsAppNumber: v.optional(v.string()),
     createdAt: v.string(),
     publishedAt: v.optional(v.string()),
     filledAt: v.optional(v.string()),
@@ -575,14 +571,6 @@ export default defineSchema({
     vectorEmbeddingId: v.optional(v.string()),
     pastJobTitles: v.optional(v.array(v.string())),
     sector: v.optional(v.string()),
-
-    // Agent 2 — Current-Role & Role-Family Classification Cache
-    currentRoleRank: v.optional(v.number()),
-    currentRoleRankLabel: v.optional(v.string()),
-    currentRoleConfidence: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
-    roleFamily: v.optional(v.string()),
-    currentRoleCacheFingerprint: v.optional(v.string()),
-    usedFallbackTitle: v.optional(v.boolean()),
     overallStatus: v.optional(
       v.union(
         v.literal("active"),
