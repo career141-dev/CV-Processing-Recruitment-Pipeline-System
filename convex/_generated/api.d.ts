@@ -85,6 +85,7 @@ import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
 import type * as scratchQuery from "../scratchQuery.js";
+import type * as seedTestJobAndCandidates from "../seedTestJobAndCandidates.js";
 import type * as seedTimeline from "../seedTimeline.js";
 import type * as settings_whatsappNumbers from "../settings/whatsappNumbers.js";
 import type * as stats_stats from "../stats/stats.js";
@@ -179,6 +180,7 @@ declare const fullApi: ApiFromModules<{
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/stages": typeof pipeline_stages;
   scratchQuery: typeof scratchQuery;
+  seedTestJobAndCandidates: typeof seedTestJobAndCandidates;
   seedTimeline: typeof seedTimeline;
   "settings/whatsappNumbers": typeof settings_whatsappNumbers;
   "stats/stats": typeof stats_stats;

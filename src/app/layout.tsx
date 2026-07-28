@@ -5,6 +5,7 @@ import { ConvexClientProvider } from "./ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "./providers";
+import { ErrorPopupProvider } from "@/components/ui/ErrorPopupProvider";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,7 +35,9 @@ export default function RootLayout({
         <ClerkProvider afterSignOutUrl="/sign-in">
           <ThemeProvider>
             <ConvexClientProvider>
-              {children}
+              <ErrorPopupProvider>
+                {children}
+              </ErrorPopupProvider>
               <Toaster position="bottom-right" richColors />
             </ConvexClientProvider>
           </ThemeProvider>

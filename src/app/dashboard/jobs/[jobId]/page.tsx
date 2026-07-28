@@ -20,6 +20,7 @@ import { EditJobModal } from '@/components/jobs/EditJobModal';
 import { SendBulkFollowUpModal } from '@/components/outreach/SendBulkFollowUpModal';
 import { CandidateTimelineDrawer } from '@/components/candidates/CandidateTimelineDrawer';
 import { toast } from 'sonner';
+import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
@@ -153,6 +154,7 @@ const CandidateNameDisplay = ({ name, cvUploadId, doNotContact, candidateId }: {
 
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
+  const { showError } = useErrorPopup();
   const candidate = useQuery(api.candidates.candidates.getCandidate, { id: match.cvId as Id<"candidates"> });
   const createApplication = useMutation(api.applications.applications.createApplication);
   const removeApplication = useMutation(api.applications.applications.removeApplication);
@@ -188,7 +190,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
       });
       onNavigate();
     } catch (e: any) {
-      alert("Failed to shortlist: " + e.message);
+      showError(e, { title: "Shortlist Failed" });
     } finally {
       setIsShortlisting(false);
     }
@@ -202,7 +204,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
     try {
       await removeApplication({ applicationId: applicationForCandidate._id });
     } catch (e: any) {
-      alert("Failed to revert: " + e.message);
+      showError(e, { title: "Revert Shortlist Failed" });
     } finally {
       setIsShortlisting(false);
     }
@@ -374,6 +376,7 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
 
 
 const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, renderKanbanDropdown: any }) => {
+  const { showError } = useErrorPopup();
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState<string>('');
@@ -427,7 +430,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
       setIsLoggingCall(false);
       setCvFile(null);
     } catch (e: any) {
-      alert('Failed to save log: ' + e.message);
+      showError(e, { title: "Failed to Save Call Log" });
     } finally {
       setIsSaving(false);
     }
@@ -437,7 +440,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
     try {
       await setPipelineStage({ applicationId: item.id, newStage: "follow_up" });
     } catch (e: any) {
-      alert("Failed to move to follow-up: " + e.message);
+      showError(e, { title: "Stage Transition Failed" });
     }
   };
 
@@ -568,6 +571,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
 };
 
 const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any, onViewTimeline: (id: Id<"applications">) => void }) => {
+  const { showError } = useErrorPopup();
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState<string>('');
@@ -619,7 +623,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
       setIsLoggingCall(false);
       setCvFile(null);
     } catch (e: any) {
-      alert('Failed to save log: ' + e.message);
+      showError(e, { title: "Failed to Save Call Log" });
     } finally {
       setIsSaving(false);
     }
@@ -1090,6 +1094,7 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
 };
 
 export default function JobDetailPage() {
+  const { showError } = useErrorPopup();
   const params = useParams();
   const router = useRouter();
   const { user } = useUser();
@@ -1225,7 +1230,7 @@ export default function JobDetailPage() {
   const [sortOrder, setSortOrder] = useState<'score' | 'time'>('score');
   const [copiedLink, setCopiedLink] = useState(false);
   const copyPublicLink = () => {
-    alert("Public apply URL feature not enabled yet.");
+    toast.info("Public apply URL feature not enabled yet.");
   };
 
   // Reset pagination on tab change
@@ -1276,7 +1281,7 @@ export default function JobDetailPage() {
     try {
       await rejectApplication({ applicationId: rejectModal.itemId as Id<"applications">, reason, stage: rejectModal.stage });
     } catch (e: any) {
-      alert('Failed to reject: ' + e.message);
+      showError(e, { title: "Rejection Failed" });
     }
   };
 
@@ -1284,7 +1289,7 @@ export default function JobDetailPage() {
     try {
       await triggerAiCallMutation({ applicationId: appId as Id<"applications"> });
     } catch (e: any) {
-      alert('Failed to trigger AI call: ' + e.message);
+      showError(e, { title: "Failed to Trigger AI Call" });
     }
   };
   
@@ -1292,7 +1297,7 @@ export default function JobDetailPage() {
     try {
       await setPipelineStage({ applicationId: appId as Id<"applications">, newStage });
     } catch (e: any) {
-      alert("Error changing stage: " + e.message);
+      showError(e, { title: "Stage Transition Failed" });
     }
   };
 
@@ -1882,18 +1887,18 @@ export default function JobDetailPage() {
                                   }
                                 }
                                 if (isSent) {
-                                  alert("WhatsApp follow-up sent successfully!");
+                                  toast.success("WhatsApp follow-up sent successfully!");
                                 } else if (errorMessage) {
-                                  alert(`WhatsApp delivery failed: ${errorMessage}`);
+                                  showError(new Error(errorMessage), { title: "WhatsApp Delivery Failed" });
                                 } else {
-                                  alert("WhatsApp follow-up is queued. It should deliver shortly.");
+                                  toast.info("WhatsApp follow-up is queued. It should deliver shortly.");
                                 }
                               } else {
-                                alert("WhatsApp follow-up initiated successfully!");
+                                toast.success("WhatsApp follow-up initiated successfully!");
                               }
                             } catch (err: any) {
                               console.error(err);
-                              alert(`Failed to send WhatsApp: ${err.message}`);
+                              showError(err, { title: "Failed to Send WhatsApp" });
                             } finally {
                               setSendingWhatsAppId(null);
                             }
@@ -1929,18 +1934,18 @@ export default function JobDetailPage() {
                                   }
                                 }
                                 if (isSent) {
-                                  alert("Email follow-up sent successfully!");
+                                  toast.success("Email follow-up sent successfully!");
                                 } else if (errorMessage) {
-                                  alert(`Email delivery failed: ${errorMessage}`);
+                                  showError(new Error(errorMessage), { title: "Email Delivery Failed" });
                                 } else {
-                                  alert("Email follow-up is queued. It should deliver shortly.");
+                                  toast.info("Email follow-up is queued. It should deliver shortly.");
                                 }
                               } else {
-                                alert("Email follow-up initiated successfully!");
+                                toast.success("Email follow-up initiated successfully!");
                               }
                             } catch (err: any) {
                               console.error(err);
-                              alert(`Failed to send Email: ${err.message}`);
+                              showError(err, { title: "Failed to Send Email" });
                             } finally {
                               setSendingEmailId(null);
                             }
@@ -2080,7 +2085,7 @@ export default function JobDetailPage() {
                     {/* Issue #7: Gated Director actions — no free-form dropdown */}
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={async () => { try { await directorApproveMutation({ applicationId: item.id }); } catch(e: any) { alert(e.message); } }}
+                        onClick={async () => { try { await directorApproveMutation({ applicationId: item.id }); } catch(e: any) { showError(e, { title: "Director Approval Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Approve
@@ -2094,7 +2099,7 @@ export default function JobDetailPage() {
                       <button
                         onClick={async () => {
                           const note = window.prompt('Note for TA (changes requested):');
-                          if (note) { try { await directorRequestChangesMutation({ applicationId: item.id, note }); } catch(e: any) { alert(e.message); } }
+                          if (note) { try { await directorRequestChangesMutation({ applicationId: item.id, note }); } catch(e: any) { showError(e, { title: "Request Changes Failed" }); } }
                         }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium border border-border text-text-secondary px-3 py-1.5 rounded-[6px] hover:bg-surface-container transition-colors"
                       >
@@ -2131,13 +2136,13 @@ export default function JobDetailPage() {
                     {/* Issue #7: Gated Client actions */}
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={async () => { try { await clientApproveMutation({ applicationId: item.id }); } catch(e: any) { alert(e.message); } }}
+                        onClick={async () => { try { await clientApproveMutation({ applicationId: item.id }); } catch(e: any) { showError(e, { title: "Client Selection Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Select for Interview
                       </button>
                       <button
-                        onClick={async () => { try { await clientHoldMutation({ applicationId: item.id, note: 'Client placed on hold' }); } catch(e: any) { alert(e.message); } }}
+                        onClick={async () => { try { await clientHoldMutation({ applicationId: item.id, note: 'Client placed on hold' }); } catch(e: any) { showError(e, { title: "Client Hold Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium border border-yellow-500/40 text-yellow-600 px-3 py-1.5 rounded-[6px] hover:bg-yellow-500/10 transition-colors"
                       >
                         ⏸ Hold

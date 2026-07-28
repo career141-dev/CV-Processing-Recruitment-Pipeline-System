@@ -80,8 +80,17 @@ export const getByJobId = query({
 
     const applications = rawApps.filter(app => app.isActive !== false);
 
-    const enriched = await Promise.all(applications.map(async (app) => {
+    const enriched = (await Promise.all(applications.map(async (app) => {
       const dbCandidate = await ctx.db.get(app.candidateId);
+      
+      const cvUploadId = dbCandidate?.cvUploadId || app.candidateCvUploadId;
+      if (cvUploadId) {
+        const cvUpload = await ctx.db.get(cvUploadId as any);
+        if (cvUpload && (cvUpload as any).isMissingMigrationFile) {
+          return null; // Hide candidates that are pending migration
+        }
+      }
+
       let candidateObj: any = dbCandidate ? {
         ...dbCandidate,
         fullName: dbCandidate.fullName || app.candidateName || "Unknown Candidate",
@@ -89,7 +98,7 @@ export const getByJobId = query({
         phone: dbCandidate.phone || app.candidatePhone,
         currentTitle: dbCandidate.currentJobTitle || dbCandidate.currentTitle || app.candidateTitle,
         totalExperienceYears: dbCandidate.totalExperienceYears ?? app.candidateExperience,
-        cvUploadId: dbCandidate.cvUploadId || app.candidateCvUploadId,
+        cvUploadId: cvUploadId,
         currentSalary: dbCandidate.currentSalary ?? app.candidateCurrentSalary,
         expectedSalary: dbCandidate.expectedSalary ?? app.candidateExpectedSalary,
         noticePeriodDays: dbCandidate.noticePeriodDays ?? app.candidateNoticePeriodDays,
@@ -100,7 +109,7 @@ export const getByJobId = query({
         phone: app.candidatePhone,
         currentTitle: app.candidateTitle,
         totalExperienceYears: app.candidateExperience,
-        cvUploadId: app.candidateCvUploadId,
+        cvUploadId: cvUploadId,
         currentSalary: app.candidateCurrentSalary,
         expectedSalary: app.candidateExpectedSalary,
         noticePeriodDays: app.candidateNoticePeriodDays,
@@ -109,9 +118,9 @@ export const getByJobId = query({
       return {
         ...app,
         candidate: candidateObj,
-        cv: app.cvFileName ? { fileName: app.cvFileName } : (dbCandidate?.cvUploadId ? { storageId: dbCandidate.cvUploadId } : null),
+        cv: app.cvFileName ? { fileName: app.cvFileName } : (cvUploadId ? { storageId: cvUploadId } : null),
       };
-    }));
+    }))).filter(Boolean);
 
     return enriched;
 
