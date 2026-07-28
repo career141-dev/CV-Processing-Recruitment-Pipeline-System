@@ -2237,8 +2237,6 @@ export default function JobDetailPage() {
             </div>
           </div>
         );
-          </div>
-        );
         break;
       case '2nd Shortlist':
         tableContent = (
