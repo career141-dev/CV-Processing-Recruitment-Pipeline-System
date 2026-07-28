@@ -523,6 +523,7 @@ export default defineSchema({
     firstSeenAt: v.optional(v.number()),
     lastUpdatedAt: v.optional(v.number()),
     parsingConfidence: v.optional(v.any()),
+    usedFallbackTitle: v.optional(v.boolean()),
     fieldsNeedingReview: v.optional(v.array(v.string())),
     isDuplicateOf: v.optional(v.id("candidates")),
     mergedInto: v.optional(v.id("candidates")),

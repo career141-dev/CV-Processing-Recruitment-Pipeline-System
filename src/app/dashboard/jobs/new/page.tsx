@@ -410,6 +410,7 @@ export default function CreateJobWizard() {
 
       const primaryRecruiterObj = recruiterPool.find(m => m.fullName === formData.primaryRecruiter);
       const primaryRecruiterId = primaryRecruiterObj?._id || recruiterPool[0]?._id;
+      const isAssignedTAExplicit = !!primaryRecruiterObj;
 
       const directorPool = (availableDirectors && availableDirectors.length > 0) ? availableDirectors : (allUsers || []);
       const directorObj = directorPool.find(m => m.fullName === formData.director);
@@ -441,6 +442,7 @@ export default function CreateJobWizard() {
         clientContactName: formData.clientContactName || undefined,
         clientContactEmail: formData.clientContactEmail || undefined,
         muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
+        isAssignedTAExplicit: isAssignedTAExplicit,
       });
 
       toast.success("Job saved as draft successfully");
@@ -448,7 +450,6 @@ export default function CreateJobWizard() {
     } catch (error: any) {
       setPublishError(error.message || "Failed to save draft. Please try again.");
       showError(error, { title: "Failed to Save Draft" });
-    } finally {
       setIsDrafting(false);
     }
   };
