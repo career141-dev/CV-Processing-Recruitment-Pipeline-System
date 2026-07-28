@@ -527,6 +527,7 @@ export default defineSchema({
     currentRoleCacheFingerprint: v.optional(v.string()),
     currentRoleConfidence: v.optional(v.string()),
     currentRoleRankLabel: v.optional(v.string()),
+    currentRoleRank: v.optional(v.number()),
     roleFamily: v.optional(v.string()),
     fieldsNeedingReview: v.optional(v.array(v.string())),
     isDuplicateOf: v.optional(v.id("candidates")),
