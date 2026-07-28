@@ -1119,7 +1119,10 @@ export const getCandidateByEmail = query({
 });
 
 export const deleteCandidate = mutation({
-  args: { candidateId: v.id("candidates") },
+  args: { 
+    candidateId: v.id("candidates"),
+    preserveUpload: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     // Cascade delete related records
     const candidateId = args.candidateId;
@@ -1154,7 +1157,7 @@ export const deleteCandidate = mutation({
       .collect();
     for (const cv of cvs) {
       // Also delete the original cvUploads record to allow re-ingestion
-      if (cv.storageId) {
+      if (cv.storageId && !args.preserveUpload) {
         const uploads = await ctx.db.query("cvUploads")
           .withIndex("by_storageId", (q: any) => q.eq("storageId", cv.storageId))
           .collect();
@@ -1167,7 +1170,7 @@ export const deleteCandidate = mutation({
 
     // Get candidate to check for direct cvUploadId (Agent 1 architecture)
     const candidate = await ctx.db.get(candidateId);
-    if (candidate && candidate.cvUploadId) {
+    if (candidate && candidate.cvUploadId && !args.preserveUpload) {
       const upload = await ctx.db.get(candidate.cvUploadId);
       if (upload) {
         if (upload.storageId) {

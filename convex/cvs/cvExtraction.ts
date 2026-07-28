@@ -1292,7 +1292,10 @@ export async function runCvExtraction(
     // Clean up the blank candidate stub since extraction failed
     if (candidateId) {
       console.log(`[CvExtraction] Extraction failed, cleaning up blank candidate: ${candidateId}`);
-      await ctx.runMutation(api.candidates.candidates.deleteCandidate, { candidateId });
+      await ctx.runMutation(api.candidates.candidates.deleteCandidate, { 
+        candidateId,
+        preserveUpload: true
+      });
     }
 
     if (shouldRetry) {
