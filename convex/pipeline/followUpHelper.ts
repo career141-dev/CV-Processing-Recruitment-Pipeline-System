@@ -20,7 +20,7 @@ export async function checkAndAdvanceFollowUp(
     .collect();
 
   for (const app of apps) {
-    const isFollowUp = app.currentStage === "follow_up";
+    const isFollowUp = app.currentStage === "follow_up" || app.currentStage === "ta_shortlist";
     const isAutoRejected = app.currentStage === "rejected" && app.taRejectionReason === "Did not complete requirements within 7-day window";
 
     if (!isFollowUp && !isAutoRejected) continue;

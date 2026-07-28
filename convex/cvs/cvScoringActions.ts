@@ -65,14 +65,14 @@ export const saveMatchScore = internalMutation({
       trigger: "search",
     } as any);
 
-    // If score >= minimum required, auto-advance pipeline to follow_up (skipping ta_shortlist)
+    // If score >= minimum required, auto-advance pipeline to ta_shortlist
     if (args.score >= args.minMatchScoreToShow && app.currentStage === "new_cvs") {
       await ctx.db.patch(args.applicationId, {
-        currentStage: "follow_up",
+        currentStage: "ta_shortlist",
         lastStageChangedAt: Date.now(),
         followUpEnteredAt: Date.now(),
       });
-      await adjustJobStageStat(ctx, args.jobId, "new_cvs", "follow_up");
+      await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
       await syncCandidateOverallStatus(ctx, args.candidateId);
       
       // We must call the outreach scheduler so Day 0 WhatsApp/Email starts immediately

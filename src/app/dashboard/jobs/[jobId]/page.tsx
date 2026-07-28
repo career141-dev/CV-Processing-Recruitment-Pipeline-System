@@ -2843,7 +2843,7 @@ export default function JobDetailPage() {
         onClose={() => setIsBulkFollowUpOpen(false)}
         jobTitle={job?.title || 'the position'}
         applications={applications
-          .filter(a => a.currentStage === 'follow_up')
+          .filter(a => a.currentStage === 'follow_up' || a.currentStage === 'ta_shortlist')
           .map(app => ({
             id: app._id,
             name: app.candidate?.fullName || 'Unknown Candidate',
