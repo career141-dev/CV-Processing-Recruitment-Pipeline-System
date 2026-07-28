@@ -200,6 +200,18 @@ export default defineSchema({
       roleFamilyMatch: v.optional(v.string()),
       currentRoleRank: v.optional(v.number()),
       currentRoleCacheFingerprint: v.optional(v.string()),
+      seniorityConflict: v.optional(v.boolean()),
+      usedFallbackTitle: v.optional(v.boolean()),
+      seniorityGate: v.optional(v.string()),
+      seniorityPenalty: v.optional(v.number()),
+      experienceGate: v.optional(v.string()),
+      experiencePenalty: v.optional(v.number()),
+      industryGate: v.optional(v.string()),
+      industryPenalty: v.optional(v.number()),
+      locationGate: v.optional(v.string()),
+      locationPenalty: v.optional(v.number()),
+      skillsGate: v.optional(v.string()),
+      skillsPenalty: v.optional(v.number()),
     }))),
 
 
