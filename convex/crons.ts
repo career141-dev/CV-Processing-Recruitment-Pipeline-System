@@ -23,9 +23,13 @@ export const evaluateFollowUpStage = internalMutation({
     const emailFollowUpPaused = toggles?.emailFollowUp === false;
     const allFollowUpsPaused = whatsappFollowUpPaused && emailFollowUpPaused;
 
-    const followUpApps = await ctx.db.query("applications")
+    const followUpOnly = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .take(200); // Safety cap: process max 200 per hourly run to avoid timeouts
+      .collect();
+    const taShortlistOnly = await ctx.db.query("applications")
+      .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
+      .collect();
+    const followUpApps = [...followUpOnly, ...taShortlistOnly].slice(0, 200);
 
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -118,15 +122,13 @@ export const evaluateFollowUpStage = internalMutation({
             },
           ],
         });
-        await adjustJobStageStat(ctx, app.jobId, "follow_up", "second_shortlist");
+        await adjustJobStageStat(ctx, app.jobId, app.currentStage, "second_shortlist");
         await syncCandidateOverallStatus(ctx, app.candidateId);
         continue;
       }
 
-      // Skip if followUpEnteredAt is not set (outreach has not been manually triggered by TA yet)
-      if (!app.followUpEnteredAt) continue;
-
-      const enteredAt = app.followUpEnteredAt;
+      // Fallback to lastStageChangedAt or _creationTime if followUpEnteredAt is not set
+      const enteredAt = app.followUpEnteredAt || app.lastStageChangedAt || app._creationTime;
       const timeInStage = now - enteredAt;
       const daysInStage = Math.floor(timeInStage / (24 * 60 * 60 * 1000));
 
@@ -159,7 +161,7 @@ export const evaluateFollowUpStage = internalMutation({
               replyChannel: "unresponsive",
             }
           });
-          await adjustJobStageStat(ctx, app.jobId, "follow_up", "unresponsive");
+          await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
           await syncCandidateOverallStatus(ctx, app.candidateId);
           continue;
         }
@@ -238,7 +240,7 @@ export const evaluateFollowUpStage = internalMutation({
             replyChannel: "unresponsive",
           }
         });
-        await adjustJobStageStat(ctx, app.jobId, "follow_up", "unresponsive");
+        await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
         await syncCandidateOverallStatus(ctx, app.candidateId);
         continue;
       }

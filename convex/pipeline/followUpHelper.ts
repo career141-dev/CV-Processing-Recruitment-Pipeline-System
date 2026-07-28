@@ -1,6 +1,7 @@
 import { Id } from "../_generated/dataModel";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { internal } from "../_generated/api";
+import { adjustJobStageStat } from "../jobs/stats";
 
 /**
  * Checks per-application follow-up completion flags.
@@ -69,6 +70,7 @@ export async function checkAndAdvanceFollowUp(
           },
         ],
       });
+      await adjustJobStageStat(ctx, app.jobId, app.currentStage, "second_shortlist");
       await syncCandidateOverallStatus(ctx, candidateId);
     }
   }

@@ -26,6 +26,7 @@ export const moveToTAShortlist = mutation({
 
     await ctx.db.patch(args.applicationId, {
       currentStage: "follow_up",
+      followUpEnteredAt: now,
       stageHistory: [
         ...(entry.stageHistory ?? []),
         {
@@ -157,7 +158,7 @@ export const setPipelineStage = mutation({
       }
     }
 
-    await ctx.db.patch(applicationId, {
+    const patchObj: Record<string, any> = {
       currentStage: newStage as any,
       lastStageChangedAt: Date.now(),
       stageHistory: [...(entry.stageHistory ?? []), {
@@ -166,7 +167,11 @@ export const setPipelineStage = mutation({
         changedBy: user._id,
         note: note,
       }],
-    });
+    };
+    if (newStage === "follow_up" || newStage === "ta_shortlist") {
+      patchObj.followUpEnteredAt = Date.now();
+    }
+    await ctx.db.patch(applicationId, patchObj);
     await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, newStage);
     if (newStage === "placed") {
       await adjustGlobalStat(ctx, "placement");
