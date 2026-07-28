@@ -76,6 +76,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     niceToHaveSkills: '',
     seniorityLevel: 'mid_level',
     experienceMinYears: 0,
+    experienceMaxYears: '' as number | string,
     jobDescription: '',
     muteDefaultWhatsappReply: false,
     pausedChannels: [] as string[],
@@ -96,6 +97,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         niceToHaveSkills: (job.niceToHaveSkills || []).join(', '),
         seniorityLevel: job.seniorityLevel || 'mid_level',
         experienceMinYears: job.experienceMinYears || 0,
+        experienceMaxYears: job.experienceMaxYears !== undefined && job.experienceMaxYears !== null ? String(job.experienceMaxYears) : '',
         jobDescription: job.jobDescription || '',
         muteDefaultWhatsappReply: job.muteDefaultWhatsappReply || false,
         pausedChannels: job.pausedChannels || [],
@@ -129,7 +131,11 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'experienceMinYears' ? parseInt(value) || 0 : value
+      [name]: name === 'experienceMinYears'
+        ? (parseInt(value) || 0)
+        : name === 'experienceMaxYears'
+        ? (value === '' ? '' : parseInt(value) || 0)
+        : value
     }));
   };
 
@@ -160,6 +166,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         niceToHaveSkills: niceToHaveSkillsArr,
         seniorityLevel: formData.seniorityLevel,
         experienceMinYears: formData.experienceMinYears,
+        experienceMaxYears: formData.experienceMaxYears === '' ? undefined : Number(formData.experienceMaxYears),
         description: formData.jobDescription,
         muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
         outreachWhatsAppNumber: formData.outreachWhatsAppNumber || undefined,
@@ -275,6 +282,20 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               value={formData.experienceMinYears}
               onChange={handleChange}
               required
+              min="0"
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+            />
+          </div>
+
+          {/* Experience Max Years */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-text-secondary">Max Experience (Years)</label>
+            <input
+              type="number"
+              name="experienceMaxYears"
+              placeholder="e.g. 5 (Optional)"
+              value={formData.experienceMaxYears}
+              onChange={handleChange}
               min="0"
               className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
             />
