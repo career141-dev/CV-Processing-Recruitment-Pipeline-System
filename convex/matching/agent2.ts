@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel.d.ts";
-import { mapJobSeniorityTo10LevelRank, checkSeniorityConflict, scoreCandidateAgainstRequirements } from "../cvs/cvScoring";
+import { mapJobSeniorityTo10LevelRank, checkSeniorityConflict, scoreCandidateAgainstRequirements, getSkillDomain } from "../cvs/cvScoring";
 import { classifyJobRoleFamily, classifyCurrentRolesBatch } from "../lib/currentRoleClassifier";
 
 /**
@@ -696,7 +696,26 @@ Return ONLY valid JSON matching this schema:
           const expYears = cv.totalExperienceYears || cv.yearsOfExperience;
           const matchedList = (scored.matchedRequired || []).slice(0, 4);
           const missingList = (scored.missingRequired || []).slice(0, 3);
-          
+
+          // Determine job's primary skill domain for match confidence
+          const jobSkillDomains = new Set(
+            reqSkills.map((s: string) => getSkillDomain(s)).filter((d: string) => d !== "unknown")
+          );
+          const primaryJobDomain = jobSkillDomains.size > 0 ? [...jobSkillDomains][0] : "unknown";
+
+          // Check how many matched skills align with the job's domain
+          const matchedDomains = new Set(
+            (scored.matchedRequired || []).map((s: string) => getSkillDomain(s))
+          );
+          const domainAlignedMatches = [...matchedDomains].filter((d: string) => d === primaryJobDomain).length;
+          const totalMatches = matchedList.length;
+
+          let matchConfidence: "high" | "medium" | "low" = "low";
+          if (domainAlignedMatches >= 3) matchConfidence = "high";
+          else if (domainAlignedMatches >= 1) matchConfidence = "medium";
+          // If job has no known domain skills (e.g. all custom), default to medium
+          if (primaryJobDomain === "unknown" && totalMatches > 0) matchConfidence = "medium";
+
           let aiReasonParts: string[] = [];
           
           if (activePreferences && activePreferences.trim()) {
@@ -713,6 +732,10 @@ Return ONLY valid JSON matching this schema:
 
           if (matchedList.length > 0) {
             aiReasonParts.push(`Key matching skills: ${matchedList.join(", ")}.`);
+            // Flag weak/tangential skill matches
+            if (matchConfidence === "low" && totalMatches > 0) {
+              aiReasonParts.push(`Note: Matched skills may be tangentially related — verify domain relevance.`);
+            }
           }
           if (expYears) {
             aiReasonParts.push(`Brings ${expYears} years of total professional experience.`);

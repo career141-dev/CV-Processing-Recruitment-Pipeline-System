@@ -223,38 +223,77 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
 }
 
 function normalizeSkillForComparison(value: string): string {
-  return normalizeText(value)
-    .replace(/\bnode js\b/g, "nodejs")
-    .replace(/\breact js\b/g, "reactjs")
-    .replace(/\bvue js\b/g, "vuejs")
-    .replace(/\bnext js\b/g, "nextjs")
-    .replace(/\bpower bi\b/g, "powerbi")
-    .replace(/\bms excel\b/g, "excel")
-    .replace(/\bmicrosoft excel\b/g, "excel")
-    .replace(/\bsql server\b/g, "sql")
-    .replace(/\bdata analysis\b/g, "analytics")
+  // Protect tech chars that normalizeText would strip: + # .
+  let s = value
+    .replace(/\+\+/g, "\x00PLUSPLUS\x00")
+    .replace(/#/g, "\x00SHARP\x00")
+    .replace(/\./g, "\x00DOT\x00");
+
+  s = normalizeText(s)
+    .replace(/\bnode\s*dot\s*js\b/g, "nodejs")
+    .replace(/\breact\s*dot\s*js\b/g, "reactjs")
+    .replace(/\bvue\s*dot\s*js\b/g, "vuejs")
+    .replace(/\bnext\s*dot\s*js\b/g, "nextjs")
+    .replace(/\bnode\s*js\b/g, "nodejs")
+    .replace(/\breact\s*js\b/g, "reactjs")
+    .replace(/\bvue\s*js\b/g, "vuejs")
+    .replace(/\bnext\s*js\b/g, "nextjs")
+    .replace(/\bpower\s*bi\b/g, "powerbi")
+    .replace(/\bms\s*excel\b/g, "excel")
+    .replace(/\bmicrosoft\s*excel\b/g, "excel")
+    .replace(/\bsql\s*server\b/g, "sql")
+    .replace(/\bdata\s*analysis\b/g, "analytics");
+
+  // Restore protected chars
+  s = s
+    .replace(/\x00PLUSPLUS\x00/g, "++")
+    .replace(/\x00SHARP\x00/g, "#")
+    .replace(/\x00DOT\x00/g, ".")
     .trim();
+
+  return s;
 }
 
 function skillMatches(requiredSkill: string, candidateSkills: string[]): string | null {
-  const requiredNorm = normalizeSkillForComparison(requiredSkill);
+  // Normalize through synonym map first (e.g. "tea auction" → "Tea Trading", "mysql" → "SQL")
+  const requiredNormalized = normaliseSkill(requiredSkill);
+  const requiredNorm = normalizeSkillForComparison(requiredNormalized);
   if (!requiredNorm) return null;
 
+  const requiredDomain = getSkillDomain(requiredSkill);
+  const MIN_SUBSTRING_LEN = 3;
+
   for (const candidateSkill of candidateSkills) {
-    const candidateNorm = normalizeSkillForComparison(candidateSkill);
+    const candidateNormalized = normaliseSkill(candidateSkill);
+    const candidateNorm = normalizeSkillForComparison(candidateNormalized);
     if (!candidateNorm) continue;
+
+    // Exact match always wins
     if (candidateNorm === requiredNorm) return candidateSkill;
-    if (candidateNorm.includes(requiredNorm) || requiredNorm.includes(candidateNorm)) return candidateSkill;
+
+    // Domain gate: if both skills have known domains and they differ, skip
+    // This prevents "C" (programming) from matching "Contract Negotiation" (business)
+    const candidateDomain = getSkillDomain(candidateSkill);
+    if (requiredDomain !== "unknown" && candidateDomain !== "unknown" && requiredDomain !== candidateDomain) {
+      continue;
+    }
+
+    // Substring match: only allowed when BOTH strings are >= MIN_SUBSTRING_LEN characters
+    if (requiredNorm.length >= MIN_SUBSTRING_LEN && candidateNorm.length >= MIN_SUBSTRING_LEN) {
+      if (candidateNorm.includes(requiredNorm) || requiredNorm.includes(candidateNorm)) return candidateSkill;
+    }
 
     const requiredTokens = skillTokens(requiredNorm);
     const candidateTokens = skillTokens(candidateNorm);
     if (requiredTokens.length === 0 || candidateTokens.length === 0) continue;
 
-    const requiredSet = new Set(requiredTokens);
-    const candidateSet = new Set(candidateTokens);
+    // Token overlap: only use tokens that are >= MIN_SUBSTRING_LEN to avoid noise from short tokens
+    const requiredSet = new Set(requiredTokens.filter((t) => t.length >= MIN_SUBSTRING_LEN));
+    const candidateSet = new Set(candidateTokens.filter((t) => t.length >= MIN_SUBSTRING_LEN));
+    if (requiredSet.size === 0 || candidateSet.size === 0) continue;
+
     const overlap = [...requiredSet].filter((token) => candidateSet.has(token)).length;
     const score = overlap / Math.max(requiredSet.size, candidateSet.size);
-    // Loosened threshold from 0.75 to 0.6 to capture more true multi-word skill matches, subject to validation
     if (score >= 0.6) return candidateSkill;
   }
 
@@ -266,10 +305,24 @@ export function scoreSkills(requiredSkills: string[], preferredSkills: string[],
   const missingRequired: string[] = [];
   const matchedPreferred: string[] = [];
 
+  // Deduplicate by normalized value to avoid counting same candidate skill multiple times
+  // e.g. "C" programming language matching against multiple job requirements
+  const matchedNormalizedSet = new Set<string>();
+
   for (const skill of distinct(requiredSkills)) {
     const match = skillMatches(skill, candidateSkills);
-    if (match) matchedRequired.push(match);
-    else missingRequired.push(skill);
+    if (match) {
+      const matchNorm = normalizeSkillForComparison(match);
+      if (!matchedNormalizedSet.has(matchNorm)) {
+        matchedRequired.push(match);
+        matchedNormalizedSet.add(matchNorm);
+      } else {
+        // Same candidate skill matched against a different requirement — count the requirement as missing
+        missingRequired.push(skill);
+      }
+    } else {
+      missingRequired.push(skill);
+    }
   }
 
   for (const skill of distinct(preferredSkills)) {
@@ -562,36 +615,371 @@ export type ScoredCandidate = {
 };
 
 const skillSynonyms: Record<string, string[]> = {
-  JavaScript: ["js", "javascript", "node.js", "node", "nodejs"],
-  React: ["reactjs", "react.js", "react native"],
+  // ── Programming Languages ──
+  JavaScript: ["js", "javascript", "node", "nodejs"],
   Python: ["python3", "python2", "py"],
-  SQL: ["mysql", "postgresql", "postgres", "mssql", "sql server"],
-  Excel: ["ms excel", "microsoft excel", "spreadsheets"],
-  "Power BI": ["powerbi", "power-bi", "microsoft power bi"],
   "C#": ["c sharp", "csharp"],
-  AWS: ["amazon web services", "amazon aws"],
-  Azure: ["microsoft azure", "ms azure"],
-  "UI/UX": ["ux design", "ui design", "user experience", "user interface"],
+  "C++": ["c++", "cpp"],
   TypeScript: ["ts", "typescript", "type script"],
   Java: ["java", "j2ee", "jee"],
-  Vue: ["vue", "vuejs", "vue.js"],
-  Angular: ["angular", "angularjs", "angular.js"],
-  DevOps: ["devops", "ci/cd", "cicd", "pipelines"],
-  Docker: ["docker", "container", "containers", "containerization"],
-  Kubernetes: ["k8s", "kubernetes"],
-  Git: ["git", "github", "gitlab"],
-  HTML: ["html", "html5"],
-  CSS: ["css", "css3", "sass", "scss"],
-  NoSQL: ["mongodb", "mongo", "nosql", "redis", "elasticsearch"],
-  "Project Management": ["project manager", "project management", "pmp", "agile", "scrum"],
   Go: ["go", "golang"],
-  "C++": ["c++", "cpp"],
   PHP: ["php", "laravel", "symfony"],
   Ruby: ["ruby", "rails", "ror"],
-  Figma: ["figma", "figma design"],
-  QA: ["qa", "quality assurance", "testing", "manual testing", "automation testing", "selenium"],
-  HR: ["hr", "human resources", "recruitment", "talent acquisition"],
+  Swift: ["swift", "swiftui", "swift ios"],
+  Kotlin: ["kotlin", "kotlin android"],
+  Scala: ["scala"],
+  R: ["r programming", "r studio"],
+  Rust: ["rust", "rustlang"],
+  Perl: ["perl"],
+  "C": ["c programming", "ansi c", "embedded c"],
+
+  // ── Frameworks & Libraries ──
+  React: ["reactjs", "react.js", "react native"],
+  Vue: ["vue", "vuejs", "vue.js"],
+  Angular: ["angular", "angularjs", "angular.js"],
+  "Node.js": ["nodejs", "node js", "express", "expressjs"],
+  NextJS: ["next js", "next.js", "nextjs"],
+  Django: ["django", "django rest framework", "drf"],
+  Laravel: ["laravel"],
+  Spring: ["spring", "spring boot", "springboot"],
+  Flutter: ["flutter", "flutter dart"],
+  "React Native": ["react native", "react-native"],
+
+  // ── Data & Databases ──
+  SQL: ["mysql", "postgresql", "postgres", "mssql", "sql server", "mariadb", "sqlite"],
+  NoSQL: ["mongodb", "mongo", "nosql", "redis", "elasticsearch", "cassandra", "dynamodb"],
+  Excel: ["ms excel", "microsoft excel", "spreadsheets", "google sheets"],
+  "Power BI": ["powerbi", "power-bi", "microsoft power bi"],
+  Tableau: ["tableau", "tableau desktop"],
+  "Data Analysis": ["analytics", "data analytics", "data analysis", "business intelligence", "bi"],
+  "Machine Learning": ["ml", "machine learning", "deep learning", "artificial intelligence", "ai", "nlp", "natural language processing"],
+  "Data Science": ["data science", "data scientist", "data engineering"],
+  Pandas: ["pandas", "data manipulation"],
+  TensorFlow: ["tensorflow", "keras"],
+  PyTorch: ["pytorch", "torch"],
+
+  // ── Cloud & Infrastructure ──
+  AWS: ["amazon web services", "amazon aws", "ec2", "s3", "lambda"],
+  Azure: ["microsoft azure", "ms azure", "azure devops"],
+  GCP: ["google cloud platform", "google cloud", "gcloud"],
+  Docker: ["docker", "container", "containers", "containerization"],
+  Kubernetes: ["k8s", "kubernetes"],
+  DevOps: ["devops", "ci/cd", "cicd", "pipelines", "jenkins", "gitlab ci"],
+  Git: ["git", "github", "gitlab", "bitbucket"],
+  Linux: ["linux", "ubuntu", "centos", "redhat", "unix"],
+  Terraform: ["terraform", "infrastructure as code", "iac"],
+  "CI/CD": ["ci/cd", "cicd", "continuous integration", "continuous deployment", "jenkins", "github actions"],
+
+  // ── Frontend & Design ──
+  HTML: ["html", "html5"],
+  CSS: ["css", "css3", "sass", "scss", "less", "tailwind", "tailwindcss"],
+  "UI/UX": ["ux design", "ui design", "user experience", "user interface", "figma", "sketch", "adobe xd"],
+  Figma: ["figma", "figma design", "figma prototyping"],
+  "Web Design": ["web design", "responsive design", "mobile first"],
+
+  // ── Business & Trade ──
+  Negotiation: ["negotiation", "contract negotiation", "pricing negotiation", "deal negotiation", "commercial negotiation"],
+  Sales: ["sales", "tea sales", "international sales", "business sales", "b2b sales", "b2c sales", "field sales", "inside sales", "revenue generation"],
+  "Business Development": ["business development", "new business", "client acquisition", "market development", "partnership development", "biz dev"],
+  "Account Management": ["account management", "key account management", "client management", "relationship management"],
+  "Customer Relationship": ["crm", "customer relationship", "customer relationship management", "client retention"],
+  Marketing: ["marketing", "digital marketing", "content marketing", "social media marketing", "seo", "sem", "ppc", "brand management"],
+  "Market Research": ["market research", "market analysis", "market trends", "competitive analysis", "competitor analysis"],
+  Finance: ["finance", "financial analysis", "accounting", "budgeting", "forecasting", "p&l", "profit and loss"],
+  "Financial Modeling": ["financial modeling", "financial model", "valuation", "dcf"],
+  "Risk Management": ["risk management", "risk assessment", "compliance", "regulatory"],
+  Strategy: ["strategy", "strategic planning", "corporate strategy", "business strategy"],
+  Consulting: ["consulting", "management consulting", "business consulting", "advisory"],
+  "Project Management": ["project manager", "project management", "pmp", "agile", "scrum", "kanban", "waterfall", "prince2"],
+  "Product Management": ["product management", "product owner", "product strategy", "roadmap management"],
+  Operations: ["operations", "operations management", "process improvement", "lean", "six sigma"],
+  "Quality Assurance": ["qa", "quality assurance", "quality control", "iso", "iso 9001", "six sigma"],
+  HR: ["hr", "human resources", "recruitment", "talent acquisition", "people operations", "compensation and benefits"],
+  Admin: ["admin", "administration", "office management", "facilities management"],
+  Legal: ["legal", "law", "compliance", "contract law", "corporate law", "regulatory affairs"],
+
+  // ── Trade & Supply Chain ──
+  "Tea Trading": ["tea trading", "tea auction", "tea brokering", "tea market", "tea commerce"],
+  "Tea Grading": ["tea grading", "tea tasting", "tea evaluation", "tea characteristics"],
+  Export: ["export", "tea export", "export documentation", "export trade", "exports", "international export"],
+  Import: ["import", "import documentation", "import trade", "imports"],
+  "International Trade": ["international trade", "global trade", "cross-border trade", "foreign trade", "overseas trade"],
+  "Supply Chain": ["supply chain", "supply chain management", "scm"],
+  Logistics: ["logistics", "freight", "shipping", "shipment", "warehousing", "distribution", "3pl", "last mile delivery"],
+  Procurement: ["procurement", "purchasing", "sourcing", "vendor management", "supplier management", "vendor relations"],
+  "Inventory Management": ["inventory management", "stock management", "warehouse management", "wms"],
+  "Customs Clearance": ["customs", "customs clearance", "customs documentation", "incoterms", "hs code"],
+  "Trade Compliance": ["trade compliance", "export compliance", "sanctions", "embargo"],
+
+  // ── Soft Skills ──
+  Communication: ["communication", "interpersonal skills", "presentation skills", "verbal communication", "written communication", "public speaking"],
+  Leadership: ["leadership", "team lead", "team leadership", "people management", "people leadership", "management"],
+  "Team Management": ["team management", "team building", "team coordination", "cross-functional team"],
+  "Problem Solving": ["problem solving", "analytical thinking", "critical thinking", "troubleshooting"],
+  "Time Management": ["time management", "prioritization", "multitasking"],
+  "Adaptability": ["adaptability", "flexibility", "agility", "resilience"],
+  "Attention to Detail": ["attention to detail", "detail oriented", "meticulous"],
+  "Stakeholder Management": ["stakeholder management", "stakeholder engagement", "executive communication"],
+  "Networking": ["networking", "relationship building", "professional networking"],
+  "Presentation": ["presentation", "public speaking", "pitching", "storytelling"],
+  "Conflict Resolution": ["conflict resolution", "conflict management", "mediation"],
+  "Decision Making": ["decision making", "strategic decision", "data driven decisions"],
+  "Creativity": ["creativity", "creative thinking", "innovation", "design thinking"],
+  "Work Ethic": ["work ethic", "self motivation", "initiative", "proactivity"],
+  "Emotional Intelligence": ["emotional intelligence", "eq", "empathy", "self awareness"],
+
+  // ── Industry / Domain ──
+  Banking: ["banking", "retail banking", "corporate banking", "investment banking", "wholesale banking"],
+  Insurance: ["insurance", "underwriting", "claims", "actuarial"],
+  Telecom: ["telecom", "telecommunications", "network engineering"],
+  Healthcare: ["healthcare", "medical", "clinical", "pharma", "pharmaceutical", "biotech"],
+  Education: ["education", "teaching", "training", "curriculum development", "instructional design"],
+  RealEstate: ["real estate", "property management", "realty", "property valuation"],
+  Manufacturing: ["manufacturing", "production", "assembly", "lean manufacturing", "plc", "scada"],
+  Construction: ["construction", "civil engineering", "project execution", "site management"],
+  Energy: ["energy", "oil and gas", "renewable energy", "solar", "power generation"],
+  "FMCG": ["fmcg", "fast moving consumer goods", "consumer goods", "retail", "distribution"],
+  Hospitality: ["hospitality", "hotel management", "f&b", "food and beverage", "tourism"],
+  Aviation: ["aviation", "airline", "aircraft", "flight operations", "airport"],
+  Shipping: ["shipping", "marine", "maritime", "vessel", "port operations"],
+  Agriculture: ["agriculture", "farming", "agronomy", "plantation", "horticulture"],
+  "Plantation": ["plantation", "estate management", "crop management", "tea estate", "rubber estate"],
 };
+
+// ── Skill Domain Taxonomy ──────────────────────────────────────────────────
+// Maps normalized skill names to their domain. Used by skillMatches() to
+// prevent cross-domain false positives (e.g. "C" programming matching
+// "Contract Negotiation" via substring).
+const SKILL_DOMAINS: Record<string, string> = {
+  // Programming Languages
+  "c": "programming", "c++": "programming", "c#": "programming",
+  "java": "programming", "python": "programming", "javascript": "programming",
+  "typescript": "programming", "php": "programming", "ruby": "programming",
+  "go": "programming", "golang": "programming", "rust": "programming",
+  "swift": "programming", "kotlin": "programming", "scala": "programming",
+  "r": "programming", "perl": "programming", "objective c": "programming",
+  "vb": "programming", "vba": "programming", "matlab": "programming",
+  "sql": "programming", "plsql": "programming", "t sql": "programming",
+
+  // Frameworks & Libraries
+  "react": "framework", "reactjs": "framework", "react.js": "framework",
+  "react native": "framework", "angular": "framework", "angularjs": "framework",
+  "vue": "framework", "vuejs": "framework", "vue.js": "framework",
+  "nodejs": "framework", "node.js": "framework", "express": "framework",
+  "nextjs": "framework", "next.js": "framework", "nuxt": "framework",
+  "django": "framework", "flask": "framework", "fastapi": "framework",
+  "spring": "framework", "spring boot": "framework", "springboot": "framework",
+  "laravel": "framework", "symfony": "framework", "codeigniter": "framework",
+  "ruby on rails": "framework", "rails": "framework",
+  "flutter": "framework", "dart": "framework",
+  "swiftui": "framework", "uikit": "framework",
+  "tensorflow": "framework", "keras": "framework", "pytorch": "framework",
+  "pandas": "framework", "numpy": "framework", "scipy": "framework",
+  "spark": "framework", "hadoop": "framework", "kafka": "framework",
+
+  // Data & Analytics
+  "mysql": "data", "postgresql": "data", "postgres": "data",
+  "mssql": "data", "sql server": "data", "mariadb": "data",
+  "sqlite": "data", "oracle db": "data", "oracle database": "data",
+  "mongodb": "data", "mongo": "data", "redis": "data",
+  "elasticsearch": "data", "cassandra": "data", "dynamodb": "data",
+  "nosql": "data", "couchdb": "data", "neo4j": "data",
+  "excel": "data", "microsoft excel": "data", "ms excel": "data",
+  "google sheets": "data", "spreadsheets": "data",
+  "powerbi": "data", "power bi": "data", "tableau": "data",
+  "looker": "data", "qlik": "data", "google data studio": "data",
+  "data analysis": "data", "analytics": "data", "business intelligence": "data",
+  "bi": "data", "data warehousing": "data", "etl": "data",
+  "data science": "data", "machine learning": "data", "deep learning": "data",
+  "artificial intelligence": "data", "ai": "data", "nlp": "data",
+  "natural language processing": "data", "computer vision": "data",
+
+  // Cloud & Infrastructure
+  "aws": "infrastructure", "amazon web services": "infrastructure",
+  "azure": "infrastructure", "microsoft azure": "infrastructure",
+  "gcp": "infrastructure", "google cloud": "infrastructure",
+  "docker": "infrastructure", "kubernetes": "infrastructure", "k8s": "infrastructure",
+  "jenkins": "infrastructure", "gitlab ci": "infrastructure", "github actions": "infrastructure",
+  "terraform": "infrastructure", "ansible": "infrastructure", "puppet": "infrastructure",
+  "git": "infrastructure", "github": "infrastructure", "gitlab": "infrastructure",
+  "bitbucket": "infrastructure", "svn": "infrastructure",
+  "linux": "infrastructure", "ubuntu": "infrastructure", "centos": "infrastructure",
+  "redhat": "infrastructure", "unix": "infrastructure", "windows server": "infrastructure",
+  "nginx": "infrastructure", "apache": "infrastructure", "iis": "infrastructure",
+  "ci/cd": "infrastructure", "cicd": "infrastructure", "devops": "infrastructure",
+  "maven": "infrastructure", "gradle": "infrastructure", "npm": "infrastructure",
+
+  // Frontend & Design
+  "html": "design", "html5": "design",
+  "css": "design", "css3": "design", "sass": "design", "scss": "design",
+  "less": "design", "tailwind": "design", "tailwindcss": "design", "bootstrap": "design",
+  "figma": "design", "sketch": "design", "adobe xd": "design", "zeplin": "design",
+  "ux design": "design", "ui design": "design", "user experience": "design",
+  "user interface": "design", "web design": "design", "responsive design": "design",
+  "photoshop": "design", "illustrator": "design", "indesign": "design",
+  "after effects": "design", "premiere pro": "design",
+
+  // QA & Testing
+  "selenium": "qa", "cypress": "qa", "playwright": "qa", "puppeteer": "qa",
+  "jest": "qa", "mocha": "qa", "chai": "qa", "junit": "qa", "testng": "qa",
+  "jmeter": "qa", "postman": "qa", "soapui": "qa",
+  "manual testing": "qa", "automation testing": "qa", "performance testing": "qa",
+  "load testing": "qa", "security testing": "qa", "penetration testing": "qa",
+  "uat": "qa", "regression testing": "qa", "smoke testing": "qa",
+  "quality assurance": "qa", "quality control": "qa", "test automation": "qa",
+
+  // Business & Commercial
+  "negotiation": "business", "contract negotiation": "business",
+  "pricing negotiation": "business", "deal negotiation": "business",
+  "commercial negotiation": "business",
+  "sales": "business", "b2b sales": "business", "b2c sales": "business",
+  "field sales": "business", "inside sales": "business", "key account sales": "business",
+  "international sales": "business", "tea sales": "business",
+  "business development": "business", "new business": "business",
+  "client acquisition": "business", "market development": "business",
+  "partnership development": "business", "biz dev": "business",
+  "account management": "business", "key account management": "business",
+  "client management": "business", "relationship management": "business",
+  "customer relationship": "business", "crm": "business",
+  "customer relationship management": "business", "client retention": "business",
+  "revenue generation": "business", "target achievement": "business",
+  "kpi": "business", "okr": "business",
+  "marketing": "business", "digital marketing": "business",
+  "content marketing": "business", "social media marketing": "business",
+  "seo": "business", "sem": "business", "ppc": "business",
+  "brand management": "business", "product marketing": "business",
+  "market research": "business", "market analysis": "business",
+  "market trends": "business", "competitive analysis": "business",
+  "competitor analysis": "business", "swot analysis": "business",
+  "pricing": "business", "commercial": "business",
+  "commercial acumen": "business", "business acumen": "business",
+  "strategy": "business", "strategic planning": "business",
+  "business strategy": "business", "corporate strategy": "business",
+  "consulting": "business", "management consulting": "business",
+  "business consulting": "business", "advisory": "business",
+  "finance": "business", "financial analysis": "business",
+  "accounting": "business", "budgeting": "business", "forecasting": "business",
+  "p&l": "business", "profit and loss": "business",
+  "financial modeling": "business", "valuation": "business", "dcf": "business",
+  "risk management": "business", "risk assessment": "business",
+  "compliance": "business", "regulatory": "business",
+  "legal": "business", "law": "business", "contract law": "business",
+  "corporate law": "business", "regulatory affairs": "business",
+
+  // Trade & Supply Chain
+  "tea trading": "trade", "tea auction": "trade", "tea brokering": "trade",
+  "tea market": "trade", "tea commerce": "trade",
+  "tea grading": "trade", "tea tasting": "trade", "tea evaluation": "trade",
+  "tea characteristics": "trade",
+  "export": "trade", "tea export": "trade", "export documentation": "trade",
+  "export trade": "trade", "exports": "trade", "international export": "trade",
+  "import": "trade", "import documentation": "trade", "import trade": "trade",
+  "international trade": "trade", "global trade": "trade",
+  "cross-border trade": "trade", "foreign trade": "trade", "overseas trade": "trade",
+  "supply chain": "trade", "supply chain management": "trade", "scm": "trade",
+  "logistics": "trade", "freight": "trade", "shipping": "trade",
+  "shipment": "trade", "warehousing": "trade", "distribution": "trade",
+  "3pl": "trade", "last mile delivery": "trade",
+  "procurement": "trade", "purchasing": "trade", "sourcing": "trade",
+  "vendor management": "trade", "supplier management": "trade", "vendor relations": "trade",
+  "inventory management": "trade", "stock management": "trade",
+  "warehouse management": "trade", "wms": "trade",
+  "customs": "trade", "customs clearance": "trade", "customs documentation": "trade",
+  "incoterms": "trade", "hs code": "trade",
+  "trade compliance": "trade", "export compliance": "trade",
+  "sanctions": "trade", "embargo": "trade",
+  "trade fairs": "trade", "trade exhibitions": "trade", "exhibitions": "trade",
+
+  // Operations & Management
+  "project management": "operations", "pmp": "operations", "prince2": "operations",
+  "agile": "operations", "scrum": "operations", "kanban": "operations",
+  "waterfall": "operations", "lean": "operations", "six sigma": "operations",
+  "process improvement": "operations", "kaizen": "operations",
+  "product management": "operations", "product owner": "operations",
+  "product strategy": "operations", "roadmap management": "operations",
+  "operations": "operations", "operations management": "operations",
+  "business process": "operations", "workflow optimization": "operations",
+  "iso": "operations", "iso 9001": "operations", "iso 14001": "operations",
+  "change management": "operations", "continuous improvement": "operations",
+
+  // HR & People
+  "hr": "people", "human resources": "people", "recruitment": "people",
+  "talent acquisition": "people", "people operations": "people",
+  "compensation and benefits": "people", "c&b": "people",
+  "employee engagement": "people", "learning and development": "people",
+  "l&d": "people", "training and development": "people",
+  "performance management": "people", "employee relations": "people",
+  "organizational development": "people", "od": "people",
+  "workforce planning": "people", "succession planning": "people",
+  "diversity and inclusion": "people", "d&i": "people",
+
+  // Soft Skills
+  "communication": "soft_skills", "interpersonal skills": "soft_skills",
+  "presentation skills": "soft_skills", "verbal communication": "soft_skills",
+  "written communication": "soft_skills", "public speaking": "soft_skills",
+  "leadership": "soft_skills", "team lead": "soft_skills",
+  "team leadership": "soft_skills", "people management": "soft_skills",
+  "people leadership": "soft_skills", "management": "soft_skills",
+  "team management": "soft_skills", "team building": "soft_skills",
+  "team coordination": "soft_skills", "cross-functional team": "soft_skills",
+  "problem solving": "soft_skills", "analytical thinking": "soft_skills",
+  "critical thinking": "soft_skills", "troubleshooting": "soft_skills",
+  "time management": "soft_skills", "prioritization": "soft_skills",
+  "multitasking": "soft_skills",
+  "adaptability": "soft_skills", "flexibility": "soft_skills",
+  "resilience": "soft_skills",
+  "attention to detail": "soft_skills", "detail oriented": "soft_skills",
+  "meticulous": "soft_skills",
+  "stakeholder management": "soft_skills", "stakeholder engagement": "soft_skills",
+  "executive communication": "soft_skills",
+  "networking": "soft_skills", "relationship building": "soft_skills",
+  "professional networking": "soft_skills",
+  "presentation": "soft_skills", "pitching": "soft_skills", "storytelling": "soft_skills",
+  "conflict resolution": "soft_skills", "conflict management": "soft_skills",
+  "mediation": "soft_skills",
+  "decision making": "soft_skills", "strategic decision": "soft_skills",
+  "data driven decisions": "soft_skills",
+  "creativity": "soft_skills", "creative thinking": "soft_skills",
+  "innovation": "soft_skills", "design thinking": "soft_skills",
+  "work ethic": "soft_skills", "self motivation": "soft_skills",
+  "initiative": "soft_skills", "proactivity": "soft_skills",
+  "emotional intelligence": "soft_skills", "eq": "soft_skills",
+  "empathy": "soft_skills", "self awareness": "soft_skills",
+
+  // Industry / Domain Specializations
+  "banking": "industry", "retail banking": "industry", "corporate banking": "industry",
+  "investment banking": "industry", "wholesale banking": "industry",
+  "insurance": "industry", "underwriting": "industry", "actuarial": "industry",
+  "telecom": "industry", "telecommunications": "industry",
+  "healthcare": "industry", "medical": "industry", "clinical": "industry",
+  "pharma": "industry", "pharmaceutical": "industry", "biotech": "industry",
+  "education": "industry", "teaching": "industry", "training": "industry",
+  "curriculum development": "industry", "instructional design": "industry",
+  "real estate": "industry", "property management": "industry",
+  "manufacturing": "industry", "production": "industry", "assembly": "industry",
+  "lean manufacturing": "industry", "plc": "industry", "scada": "industry",
+  "construction": "industry", "civil engineering": "industry",
+  "energy": "industry", "oil and gas": "industry", "renewable energy": "industry",
+  "solar": "industry", "power generation": "industry",
+  "fmcg": "industry", "fast moving consumer goods": "industry",
+  "consumer goods": "industry", "retail": "industry",
+  "hospitality": "industry", "hotel management": "industry",
+  "f&b": "industry", "food and beverage": "industry", "tourism": "industry",
+  "aviation": "industry", "airline": "industry", "aircraft": "industry",
+  "marine": "industry", "maritime": "industry",
+  "agriculture": "industry", "farming": "industry", "agronomy": "industry",
+  "plantation": "industry", "tea estate": "industry", "rubber estate": "industry",
+  "estate management": "industry", "crop management": "industry",
+  "automotive": "industry", "defence": "industry", "mining": "industry",
+};
+
+export function getSkillDomain(skill: string): string {
+  const canonical = normaliseSkill(skill);
+  const norm = normalizeSkillForComparison(skill);
+  const rawLower = skill.toLowerCase().trim();
+  const canonicalLower = canonical.toLowerCase().trim();
+  return SKILL_DOMAINS[norm] ?? SKILL_DOMAINS[rawLower] ?? SKILL_DOMAINS[canonicalLower] ?? "unknown";
+}
 
 export function normaliseSkill(skill: string): string {
   const lower = skill.toLowerCase().trim();
@@ -854,6 +1242,23 @@ export function buildDeterministicTaReason(candidate: ScoredCandidate, req: Sear
   const matched = (candidate.matchedRequired || []).slice(0, 4);
   const missing = (candidate.missingRequired || []).slice(0, 3);
 
+  // Determine job's primary skill domain for match confidence
+  const reqSkills = req.requiredSkills ?? [];
+  const jobSkillDomains = new Set(
+    reqSkills.map((s: string) => getSkillDomain(s)).filter((d: string) => d !== "unknown")
+  );
+  const primaryJobDomain = jobSkillDomains.size > 0 ? [...jobSkillDomains][0] : "unknown";
+
+  const matchedDomains = new Set(
+    (candidate.matchedRequired || []).map((s: string) => getSkillDomain(s))
+  );
+  const domainAlignedMatches = [...matchedDomains].filter((d: string) => d === primaryJobDomain).length;
+
+  let matchConfidence: "high" | "medium" | "low" = "low";
+  if (domainAlignedMatches >= 3) matchConfidence = "high";
+  else if (domainAlignedMatches >= 1) matchConfidence = "medium";
+  if (primaryJobDomain === "unknown" && matched.length > 0) matchConfidence = "medium";
+
   let parts: string[] = [];
   if (candidate.overallScore >= 85) {
     parts.push(`Strong TA match for ${req.title || "the role"}. ${name} shows high domain alignment as a ${title}.`);
@@ -863,7 +1268,12 @@ export function buildDeterministicTaReason(candidate: ScoredCandidate, req: Sear
     parts.push(`Partial alignment match for ${req.title || "the role"} based on background as a ${title}.`);
   }
 
-  if (matched.length > 0) parts.push(`Key matching skills: ${matched.join(", ")}.`);
+  if (matched.length > 0) {
+    parts.push(`Key matching skills: ${matched.join(", ")}.`);
+    if (matchConfidence === "low") {
+      parts.push(`Note: Matched skills may be tangentially related — verify domain relevance.`);
+    }
+  }
   if (exp != null) parts.push(`Brings ${exp} years of total professional experience.`);
   if (missing.length > 0) parts.push(`Skill gaps to note: ${missing.join(", ")}.`);
 
