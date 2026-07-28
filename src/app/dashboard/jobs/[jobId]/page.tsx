@@ -1117,9 +1117,9 @@ export default function JobDetailPage() {
   const job = useQuery(api.jobs.jobs.getJob, { jobId });
   const jobChannels = useQuery(api.jobs.jobs.getJobChannels, { jobId });
   
-  // Fetch candidates via applications
-  const applications = useQuery(api.applications.applications.getByJobId, { jobId });
-  const filteredMatches = (job?.reverseMatchResults || []).filter((match: any) => !applications?.some(app => app.candidateId === match.cvId));
+  const rawApplications = useQuery(api.applications.applications.getByJobId, { jobId });
+  const applications = rawApplications ? (rawApplications.filter(Boolean) as any[]) : [];
+  const filteredMatches = (job?.reverseMatchResults || []).filter((match: any) => !applications.some(app => app && app.candidateId === match.cvId));
   const unresponsiveCandidates = useQuery(api.applications.applications.getUnresponsiveForJob, { jobId: job?._id || jobId });
   const allUsers = useQuery(api.users.users.getAllUsers);
   const recruiter = job ? allUsers?.find(u => u._id === job.primaryRecruiterId) : null;
@@ -1238,7 +1238,7 @@ export default function JobDetailPage() {
     setCurrentPage(1);
   }, [activePipelineTab, activeMainTab]);
 
-  if (job === undefined || applications === undefined) {
+  if (job === undefined || rawApplications === undefined) {
     return <div className="p-8">Loading...</div>;
   }
 
