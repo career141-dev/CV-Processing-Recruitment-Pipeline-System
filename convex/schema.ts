@@ -225,6 +225,7 @@ export default defineSchema({
       industryPenalty: v.optional(v.number()),
       locationGate: v.optional(v.string()),
       locationPenalty: v.optional(v.number()),
+      locationStatus: v.optional(v.string()),
       skillsGate: v.optional(v.string()),
       skillsPenalty: v.optional(v.number()),
     }))),

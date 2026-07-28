@@ -742,7 +742,7 @@ Return ONLY valid JSON matching this schema:
             candidateRole: cv.currentTitle ?? cv.currentJobTitle ?? undefined,
             candidateExp: cv.yearsOfExperience ?? cv.totalExperienceYears ?? undefined,
 
-            // 10 Audit Log Fields
+            // 10+ Audit Log Fields
             currentRoleRank: candRank ?? undefined,
             currentRoleRankLabel: classRes.rankLabel,
             currentRoleConfidence: classRes.confidence,
@@ -753,18 +753,26 @@ Return ONLY valid JSON matching this schema:
             exclusionReason,
             roleFamily: classRes.roleFamily,
             roleFamilyMatch: classRes.roleFamilyMatch,
+
+            // Location Gate Audit Fields
+            locationStatus: scored.locationStatus,
+            locationGate: scored.locationGate,
+            locationPenalty: scored.locationPenalty,
           };
         });
 
       // Sort all candidates by overall score descending (highest score to lowest/good score)
       matchResults.sort((a, b) => b.overallScore - a.overallScore);
 
-      // Strict Filter Gate: Exclude match scores below 60% AND hard-excluded overqualified current roles
+      // Strict Filter Gate: Exclude match scores below 60% AND hard-excluded overqualified roles / location mismatches
       const safetyFloor = 60;
       const validMatches = matchResults.filter(r => {
         if (r.overallScore < safetyFloor) return false;
         if (r.currentRoleGate === "excluded_overqualified" && !appliedCandidateIds.has(r.cvId)) {
           return false; // Hard exclude new candidates whose current role level exceeds job target rank
+        }
+        if (r.locationGate === "excluded_mismatch" && !appliedCandidateIds.has(r.cvId)) {
+          return false; // Hard exclude candidates with explicit location mismatch
         }
         return true;
       });

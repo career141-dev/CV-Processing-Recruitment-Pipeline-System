@@ -916,6 +916,9 @@ export const saveReverseMatchResults = internalMutation({
           v.literal("exact"), v.literal("synonym"),
           v.literal("adjacent"), v.literal("unrelated")
         )),
+        locationGate: v.optional(v.string()),
+        locationPenalty: v.optional(v.number()),
+        locationStatus: v.optional(v.string()),
       })
     ),
     status: v.union(v.literal("done"), v.literal("error"), v.literal("running")),
@@ -947,6 +950,9 @@ export const saveReverseMatchResults = internalMutation({
         exclusionReason: r.exclusionReason,
         roleFamily: r.roleFamily,
         roleFamilyMatch: r.roleFamilyMatch,
+        locationGate: r.locationGate,
+        locationPenalty: r.locationPenalty,
+        locationStatus: r.locationStatus,
       })),
     };
 

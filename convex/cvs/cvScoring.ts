@@ -315,17 +315,203 @@ function scoreIndustry(jobIndustry: string | null, candidateIndustries?: string[
   return matched ? 100 : 45;
 }
 
+// Canonical City to Country & Region Mapping
+const GEOGRAPHIC_CITY_TO_COUNTRY_MAP: Record<string, string> = {
+  // Sri Lanka
+  colombo: "sri lanka",
+  kandy: "sri lanka",
+  galle: "sri lanka",
+  jaffna: "sri lanka",
+  negombo: "sri lanka",
+  kurunegala: "sri lanka",
+  dehiwala: "sri lanka",
+  moratuwa: "sri lanka",
+  gampaha: "sri lanka",
+  katunayake: "sri lanka",
+  batticaloa: "sri lanka",
+  trincomalee: "sri lanka",
+  matara: "sri lanka",
+  anuradhapura: "sri lanka",
+  ratnapura: "sri lanka",
+  badulla: "sri lanka",
+  "nuwara eliya": "sri lanka",
+  hambantota: "sri lanka",
+  kalutara: "sri lanka",
+  kotte: "sri lanka",
+  "mount lavinia": "sri lanka",
+  "sri lanka": "sri lanka",
+  lanka: "sri lanka",
+  "western province": "sri lanka",
+  "central province": "sri lanka",
+  "southern province": "sri lanka",
+
+  // United Arab Emirates (UAE)
+  dubai: "united arab emirates",
+  "abu dhabi": "united arab emirates",
+  sharjah: "united arab emirates",
+  ajman: "united arab emirates",
+  "ras al khaimah": "united arab emirates",
+  fujairah: "united arab emirates",
+  "al ain": "united arab emirates",
+  uae: "united arab emirates",
+  "united arab emirates": "united arab emirates",
+
+  // Saudi Arabia (KSA)
+  riyadh: "saudi arabia",
+  jeddah: "saudi arabia",
+  dammam: "saudi arabia",
+  khobar: "saudi arabia",
+  mecca: "saudi arabia",
+  medina: "saudi arabia",
+  jubail: "saudi arabia",
+  ksa: "saudi arabia",
+  "saudi arabia": "saudi arabia",
+
+  // Qatar
+  doha: "qatar",
+  "al rayyan": "qatar",
+  "al wakrah": "qatar",
+  qatar: "qatar",
+
+  // Singapore
+  singapore: "singapore",
+
+  // Malaysia
+  "kuala lumpur": "malaysia",
+  penang: "malaysia",
+  "johor bahru": "malaysia",
+  malaysia: "malaysia",
+
+  // Australia
+  sydney: "australia",
+  melbourne: "australia",
+  brisbane: "australia",
+  perth: "australia",
+  adelaide: "australia",
+  australia: "australia",
+
+  // United Kingdom / UK
+  london: "united kingdom",
+  manchester: "united kingdom",
+  birmingham: "united kingdom",
+  uk: "united kingdom",
+  "united kingdom": "united kingdom",
+  england: "united kingdom",
+  scotland: "united kingdom",
+
+  // Canada
+  toronto: "canada",
+  vancouver: "canada",
+  montreal: "canada",
+  canada: "canada",
+
+  // USA
+  "new york": "united states",
+  "san francisco": "united states",
+  chicago: "united states",
+  austin: "united states",
+  usa: "united states",
+  "united states": "united states",
+};
+
+export interface LocationEvaluationResult {
+  score: number;
+  status: "match" | "region_match" | "different" | "not specified";
+  gate: "pass" | "region_pass" | "unspecified_pass" | "remote_pass" | "excluded_mismatch";
+  penalty: number;
+}
+
+export function evaluateLocationMatch(
+  jobLocationStr: string | null | undefined,
+  candLocationStr?: string | null
+): LocationEvaluationResult {
+  const normJob = normalizeText(jobLocationStr || "");
+  const normCand = normalizeText(candLocationStr || "");
+
+  // 1. Remote / Unspecified Job Location
+  if (!normJob || normJob.includes("remote") || normJob.includes("anywhere") || normJob.includes("work from home")) {
+    return { score: 100, status: "match", gate: "remote_pass", penalty: 0 };
+  }
+
+  // 2. Unspecified Candidate Location
+  if (!normCand) {
+    return { score: 60, status: "not specified", gate: "unspecified_pass", penalty: 0 };
+  }
+
+  // 3. Direct String Identity / Substring Match
+  if (normCand === normJob || normCand.includes(normJob) || normJob.includes(normCand)) {
+    return { score: 100, status: "match", gate: "pass", penalty: 0 };
+  }
+
+  // 4. Token & Geographic Knowledge Resolution
+  const jobTokens = tokenize(normJob);
+  const candTokens = tokenize(normCand);
+
+  let jobCountry: string | null = null;
+  let candCountry: string | null = null;
+
+  for (const token of jobTokens) {
+    if (GEOGRAPHIC_CITY_TO_COUNTRY_MAP[token]) {
+      jobCountry = GEOGRAPHIC_CITY_TO_COUNTRY_MAP[token];
+      break;
+    }
+  }
+  if (!jobCountry) {
+    for (const [key, country] of Object.entries(GEOGRAPHIC_CITY_TO_COUNTRY_MAP)) {
+      if (normJob.includes(key)) {
+        jobCountry = country;
+        break;
+      }
+    }
+  }
+
+  for (const token of candTokens) {
+    if (GEOGRAPHIC_CITY_TO_COUNTRY_MAP[token]) {
+      candCountry = GEOGRAPHIC_CITY_TO_COUNTRY_MAP[token];
+      break;
+    }
+  }
+  if (!candCountry) {
+    for (const [key, country] of Object.entries(GEOGRAPHIC_CITY_TO_COUNTRY_MAP)) {
+      if (normCand.includes(key)) {
+        candCountry = country;
+        break;
+      }
+    }
+  }
+
+  // Bi-Directional Country Match (e.g. Cand "Colombo" -> Sri Lanka vs Job "Sri Lanka" -> Sri Lanka)
+  if (jobCountry && candCountry && jobCountry === candCountry) {
+    const isJobCountryOnly = normJob === jobCountry || normJob === "lanka";
+    const isCandCountryOnly = normCand === candCountry || normCand === "lanka";
+
+    if (isJobCountryOnly || isCandCountryOnly) {
+      return { score: 100, status: "match", gate: "pass", penalty: 0 };
+    }
+
+    // Both specified different cities in the same country (e.g. "Colombo" vs "Kandy")
+    return { score: 85, status: "region_match", gate: "region_pass", penalty: 0 };
+  }
+
+  // Token Overlap check for sub-regions/districts
+  const jobSet = new Set(jobTokens);
+  const candSet = new Set(candTokens);
+  const overlap = [...jobSet].filter((t) => candSet.has(t)).length;
+  if (overlap > 0) {
+    return { score: 85, status: "region_match", gate: "region_pass", penalty: 0 };
+  }
+
+  // If both countries are identified and explicitly different (e.g. Sri Lanka vs UAE)
+  if (jobCountry && candCountry && jobCountry !== candCountry) {
+    return { score: 0, status: "different", gate: "excluded_mismatch", penalty: -30 };
+  }
+
+  // Fallback explicit mismatch
+  return { score: 0, status: "different", gate: "excluded_mismatch", penalty: -30 };
+}
+
 function scoreLocation(jobLocation: string | null, candidateLocation?: string | null): number {
-  if (!jobLocation) return 100;
-  if (!candidateLocation) return 65;
-  const jobNorm = normalizeText(jobLocation);
-  const candidateNorm = normalizeText(candidateLocation);
-  if (!jobNorm || !candidateNorm) return 65;
-  if (candidateNorm === jobNorm || candidateNorm.includes(jobNorm) || jobNorm.includes(candidateNorm)) return 100;
-  const jobTokens = new Set(tokenize(jobNorm));
-  const candidateTokens = new Set(tokenize(candidateNorm));
-  const overlap = [...jobTokens].filter((token) => candidateTokens.has(token)).length;
-  return overlap > 0 ? 78 : 55;
+  return evaluateLocationMatch(jobLocation, candidateLocation).score;
 }
 
 function buildCandidateTitleText(cv: {
@@ -365,7 +551,9 @@ export type ScoredCandidate = {
   industryScore: number;
   locationScore: number;
   overallScore: number;
-  locationStatus: "match" | "different" | "not specified";
+  locationStatus: "match" | "region_match" | "different" | "not specified";
+  locationGate?: string;
+  locationPenalty?: number;
   matchedRequired: string[];
   missingRequired: string[];
   matchedPreferred: string[];
@@ -459,14 +647,11 @@ export function scoreCandidateAgainstRequirements(
   const hasMissingRequired = requiredSkills.length > 0 && skillScores.missingRequired.length > 0;
   const skillScore = skillScores.score;
   const industryScore = scoreIndustry(req.industry, cv.industries ?? null);
-  const locationScore = scoreLocation(req.location, cv.location ?? null);
-  const locationStatus: ScoredCandidate["locationStatus"] =
-    !req.location ? "match"
-      : !cv.location ? "not specified"
-      : normalizeText(req.location).includes(normalizeText(cv.location ?? ""))
-        || normalizeText(cv.location ?? "").includes(normalizeText(req.location))
-        ? "match"
-        : "different";
+  const locEval = evaluateLocationMatch(req.location, cv.location);
+  const locationScore = locEval.score;
+  const locationStatus = locEval.status;
+  const locationGate = locEval.gate;
+  const locationPenalty = locEval.penalty;
 
   let overallScore: number;
   if (normalizedJobSeniority === "intern" || normalizedJobSeniority === "entry_level" || req.title?.toLowerCase().includes("intern")) {
@@ -551,6 +736,8 @@ export function scoreCandidateAgainstRequirements(
     locationScore,
     overallScore,
     locationStatus,
+    locationGate,
+    locationPenalty,
     matchedRequired: skillScores.matchedRequired,
     missingRequired: skillScores.missingRequired,
     matchedPreferred: skillScores.matchedPreferred,
