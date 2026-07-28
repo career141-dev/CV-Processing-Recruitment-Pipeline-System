@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, Plus
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -589,6 +589,7 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
   const [currentSalary, setCurrentSalary] = useState(item.currentSalary !== '—' ? item.currentSalary : '');
   const [expectedSalary, setExpectedSalary] = useState(item.expectedSalary !== '—' ? item.expectedSalary : '');
   const [noticePeriod, setNoticePeriod] = useState(item.noticePeriod !== '—' ? item.noticePeriod : '');
+  const [customFields, setCustomFields] = useState<{key: string, value: string}[]>([]);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
@@ -601,9 +602,20 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
   const handleSaveLog = async () => {
     setIsSaving(true);
     try {
-      const parsedCurrentSalary = currentSalary ? parseFloat(String(currentSalary).replace(/[^0-9.]/g, '')) : undefined;
-      const parsedExpectedSalary = expectedSalary ? parseFloat(String(expectedSalary).replace(/[^0-9.]/g, '')) : undefined;
-      const parsedNoticePeriod = noticePeriod ? parseInt(String(noticePeriod).replace(/[^0-9]/g, '')) : undefined;
+      const parseField = (val: string | number) => {
+        if (!val) return undefined;
+        const str = String(val).trim();
+        // If it only contains numbers, commas, and dots, parse it as a number
+        if (/^[\d,.]+$/.test(str)) {
+          const num = parseFloat(str.replace(/,/g, ''));
+          return isNaN(num) ? str : num;
+        }
+        return str; // Otherwise keep it as a string
+      };
+
+      const finalCurrentSalary = parseField(currentSalary);
+      const finalExpectedSalary = parseField(expectedSalary);
+      const finalNoticePeriod = parseField(noticePeriod);
 
       let cvUploadId: any = undefined;
       if (cvFile && user?.id) {
@@ -617,9 +629,10 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
 
       await logManualCall({
         applicationId: item.id, candidateId: item.candidateId, outcome,
-        currentSalary: isNaN(parsedCurrentSalary as number) ? undefined : parsedCurrentSalary,
-        expectedSalary: isNaN(parsedExpectedSalary as number) ? undefined : parsedExpectedSalary,
-        noticePeriodDays: isNaN(parsedNoticePeriod as number) ? undefined : parsedNoticePeriod,
+        currentSalary: finalCurrentSalary,
+        expectedSalary: finalExpectedSalary,
+        noticePeriodDays: finalNoticePeriod,
+        customCallFields: customFields.length > 0 ? customFields : undefined,
         cvUploadId,
       });
       setIsLoggingCall(false);
@@ -676,6 +689,53 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
                 <div>
                   <label className="block text-[11px] text-text-secondary mb-1">Notice Period (Days)</label>
                   <input type="text" placeholder="e.g. 30" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
+                </div>
+                <div className="col-span-2 mt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-[11px] font-medium text-text-secondary">Additional Fields</label>
+                    <button 
+                      onClick={() => setCustomFields([...customFields, {key: '', value: ''}])}
+                      className="text-[11px] font-medium text-primary hover:text-primary/80 flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" /> Add Field
+                    </button>
+                  </div>
+                  {customFields.map((field, idx) => (
+                    <div key={idx} className="flex gap-2 mb-2 items-start">
+                      <input 
+                        type="text" 
+                        placeholder="Field Name (e.g. Reason for Leaving)" 
+                        className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
+                        value={field.key} 
+                        onChange={e => {
+                          const newFields = [...customFields];
+                          newFields[idx].key = e.target.value;
+                          setCustomFields(newFields);
+                        }} 
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Value" 
+                        className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
+                        value={field.value} 
+                        onChange={e => {
+                          const newFields = [...customFields];
+                          newFields[idx].value = e.target.value;
+                          setCustomFields(newFields);
+                        }} 
+                      />
+                      <button 
+                        onClick={() => {
+                          const newFields = [...customFields];
+                          newFields.splice(idx, 1);
+                          setCustomFields(newFields);
+                        }}
+                        className="p-1.5 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
                 <div className="col-span-2 mt-2">
                   <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5"><Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)</label>
@@ -835,6 +895,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
   const [currentSalary, setCurrentSalary] = useState(u.currentSalary != null ? u.currentSalary : '');
   const [expectedSalary, setExpectedSalary] = useState(u.expectedSalary != null ? u.expectedSalary : '');
   const [noticePeriod, setNoticePeriod] = useState(u.noticePeriodDays != null ? u.noticePeriodDays : '');
+  const [customFields, setCustomFields] = useState<{key: string, value: string}[]>([]);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -845,9 +906,19 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
   const handleSaveLog = async () => {
     setIsSaving(true);
     try {
-      const parsedCurrentSalary = currentSalary ? parseFloat(String(currentSalary).replace(/[^0-9.]/g, '')) : undefined;
-      const parsedExpectedSalary = expectedSalary ? parseFloat(String(expectedSalary).replace(/[^0-9.]/g, '')) : undefined;
-      const parsedNoticePeriod = noticePeriod ? parseInt(String(noticePeriod).replace(/[^0-9]/g, '')) : undefined;
+      const parseField = (val: string | number) => {
+        if (!val) return undefined;
+        const str = String(val).trim();
+        if (/^[\d,.]+$/.test(str)) {
+          const num = parseFloat(str.replace(/,/g, ''));
+          return isNaN(num) ? str : num;
+        }
+        return str;
+      };
+
+      const finalCurrentSalary = parseField(currentSalary);
+      const finalExpectedSalary = parseField(expectedSalary);
+      const finalNoticePeriod = parseField(noticePeriod);
 
       let cvUploadId: Id<"cvUploads"> | undefined = undefined;
       if (cvFile && user?.id) {
@@ -857,7 +928,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
           throw new Error(`Failed to upload to R2: ${resp.status} ${resp.statusText}`);
         }
         
-        let cvUploadId = await saveUpload({
+        cvUploadId = await saveUpload({
           s3Key,
           storageProvider: "r2",
           fileName: cvFile.name,
@@ -872,9 +943,10 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
         applicationId: u.applicationId,
         candidateId: u.candidateId,
         outcome,
-        currentSalary: isNaN(parsedCurrentSalary as number) ? undefined : parsedCurrentSalary,
-        expectedSalary: isNaN(parsedExpectedSalary as number) ? undefined : parsedExpectedSalary,
-        noticePeriodDays: isNaN(parsedNoticePeriod as number) ? undefined : parsedNoticePeriod,
+        currentSalary: finalCurrentSalary,
+        expectedSalary: finalExpectedSalary,
+        noticePeriodDays: finalNoticePeriod,
+        customCallFields: customFields.length > 0 ? customFields : undefined,
         cvUploadId,
       });
       setIsLoggingCall(false);
@@ -1009,6 +1081,54 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
                 <input type="text" placeholder="e.g. 30" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
               </div>
               
+              <div className="col-span-2 mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[11px] font-medium text-text-secondary">Additional Fields</label>
+                  <button 
+                    onClick={() => setCustomFields([...customFields, {key: '', value: ''}])}
+                    className="text-[11px] font-medium text-primary hover:text-primary/80 flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> Add Field
+                  </button>
+                </div>
+                {customFields.map((field, idx) => (
+                  <div key={idx} className="flex gap-2 mb-2 items-start">
+                    <input 
+                      type="text" 
+                      placeholder="Field Name" 
+                      className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
+                      value={field.key} 
+                      onChange={e => {
+                        const newFields = [...customFields];
+                        newFields[idx].key = e.target.value;
+                        setCustomFields(newFields);
+                      }} 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Value" 
+                      className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
+                      value={field.value} 
+                      onChange={e => {
+                        const newFields = [...customFields];
+                        newFields[idx].value = e.target.value;
+                        setCustomFields(newFields);
+                      }} 
+                    />
+                    <button 
+                      onClick={() => {
+                        const newFields = [...customFields];
+                        newFields.splice(idx, 1);
+                        setCustomFields(newFields);
+                      }}
+                      className="p-1.5 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
               <div className="col-span-2 mt-2">
                 <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5">
                   <Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)
@@ -2077,108 +2197,46 @@ export default function JobDetailPage() {
         const unresponsiveList = unresponsiveCandidates ?? [];
         tableContent = (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 border-b border-border">
-              <button
-                onClick={() => setActiveFollowUpTab('active')}
-                className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors ${
-                  activeFollowUpTab === 'active' 
-                    ? 'border-primary text-primary' 
-                    : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'
-                }`}
-              >
-                Current Follow-up ({currentItems.length})
-              </button>
-              <button
-                onClick={() => setActiveFollowUpTab('unresponsive')}
-                className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeFollowUpTab === 'unresponsive' 
-                    ? 'border-orange-500 text-orange-600 dark:text-orange-400' 
-                    : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'
-                }`}
-              >
-                Unresponsive After 7 Days
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  activeFollowUpTab === 'unresponsive'
-                    ? 'bg-orange-500/20 text-orange-700 dark:text-orange-400'
-                    : 'bg-surface-container text-text-secondary'
-                }`}>
-                  {unresponsiveList.length}
+            <div className="border border-orange-200 dark:border-orange-800/50 rounded-xl overflow-hidden mt-2">
+              <div className="flex items-center justify-between px-5 py-3.5 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800/50">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-orange-500" />
+                  <span className="text-[13px] font-semibold text-orange-700 dark:text-orange-400">Unresponsive After 7 Days — Manual Call Required</span>
+                </div>
+                <span className="text-[11px] text-orange-600/70 dark:text-orange-400/60">
+                  No reply to WhatsApp &amp; Email after 7 days
                 </span>
-              </button>
-            </div>
+              </div>
 
-            {activeFollowUpTab === 'active' ? (
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse bg-surface">
                 <thead>
                   <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
                     <th className="p-4">Candidate</th>
-                    <th className="p-4">Source</th>
-                    <th className="p-4">Contact Status</th>
-                <th className="p-4">4-Field Completion</th>
-                <th className="p-4">Days Remaining</th>
-                <th className="p-4 text-right">Move To Stage</th>
-              </tr>
-            </thead>
-            <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.length === 0 ? (
-                <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No candidates in Follow-up.</td></tr>
-              ) : currentItems.map((item: any) => {
-                return (
-                  <FollowUpCandidateRow 
-                    key={item.id} 
-                    item={item} 
-                    api={api}
-                    convex={convex}
-                    showError={showError}
-                    setTimelineAppId={setTimelineAppId}
-                    renderKanbanDropdown={renderKanbanDropdown}
-                    triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
-                    triggerEmailFollowUp={triggerEmailFollowUp}
-                  />
-                );
-              })}
-            </tbody>
-          </table>
-            ) : (
-              <div className="border border-orange-200 dark:border-orange-800/50 rounded-xl overflow-hidden mt-2">
-                <div className="flex items-center justify-between px-5 py-3.5 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800/50">
-                  <div className="flex items-center gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-orange-500" />
-                    <span className="text-[13px] font-semibold text-orange-700 dark:text-orange-400">Unresponsive — Manual Call Required</span>
-                  </div>
-                  <span className="text-[11px] text-orange-600/70 dark:text-orange-400/60">
-                    No reply to WhatsApp &amp; Email after 7 days
-                  </span>
-                </div>
-
-                <table className="w-full text-left border-collapse bg-surface">
-                  <thead>
-                    <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                      <th className="p-4">Candidate</th>
-                      <th className="p-4">Phone</th>
-                      <th className="p-4">Current Salary</th>
-                      <th className="p-4">Expected Salary</th>
-                      <th className="p-4">Notice Period</th>
-                      <th className="p-4">Days Unresponsive</th>
-                      <th className="p-4 text-right">Action</th>
+                    <th className="p-4">Phone</th>
+                    <th className="p-4">Current Salary</th>
+                    <th className="p-4">Expected Salary</th>
+                    <th className="p-4">Notice Period</th>
+                    <th className="p-4">Days Unresponsive</th>
+                    <th className="p-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[13px] text-text-primary divide-y divide-border">
+                  {unresponsiveList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-5 py-8 text-center text-[13px] text-text-secondary">
+                        No unresponsive candidates — great work! 🎉
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="text-[13px] text-text-primary divide-y divide-border">
-                    {unresponsiveList.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="px-5 py-8 text-center text-[13px] text-text-secondary">
-                          No unresponsive candidates — great work! 🎉
-                        </td>
-                      </tr>
-                    ) : (
-                      unresponsiveList.map((u: any) => (
-                        <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} onViewTimeline={setTimelineAppId} />
-                      ))
-                    )}
-                    </tbody>
-                  </table>
-              </div>
-            )}
+                  ) : (
+                    unresponsiveList.map((u: any) => (
+                      <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} onViewTimeline={setTimelineAppId} />
+                    ))
+                  )}
+                  </tbody>
+                </table>
+            </div>
+          </div>
+        );
           </div>
         );
         break;

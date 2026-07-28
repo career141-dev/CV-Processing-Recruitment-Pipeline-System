@@ -446,20 +446,58 @@ export const logManualCall = mutation({
     applicationId: v.id("applications"),
     candidateId: v.id("candidates"),
     outcome: v.string(), // "Interested", "Not Interested", "No Answer"
-    currentSalary: v.optional(v.number()),
-    expectedSalary: v.optional(v.number()),
-    noticePeriodDays: v.optional(v.number()),
+    currentSalary: v.optional(v.union(v.number(), v.string())),
+    expectedSalary: v.optional(v.union(v.number(), v.string())),
+    noticePeriodDays: v.optional(v.union(v.number(), v.string())),
     cvUploadId: v.optional(v.id("cvUploads")),
+    customCallFields: v.optional(v.array(v.object({ key: v.string(), value: v.string() }))),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
 
     // 1. Update candidate global profile
     const candidateUpdates: any = {};
-    if (args.currentSalary !== undefined) candidateUpdates.currentSalary = args.currentSalary;
-    if (args.expectedSalary !== undefined) candidateUpdates.expectedSalary = args.expectedSalary;
-    if (args.noticePeriodDays !== undefined) candidateUpdates.noticePeriodDays = args.noticePeriodDays;
+    let customCallFields = args.customCallFields || [];
+
+    if (args.currentSalary !== undefined) {
+      if (typeof args.currentSalary === 'number') {
+        candidateUpdates.currentSalary = args.currentSalary;
+      } else if (args.currentSalary.trim()) {
+        customCallFields.push({ key: "Current Salary (Note)", value: args.currentSalary.trim() });
+      }
+    }
+    
+    if (args.expectedSalary !== undefined) {
+      if (typeof args.expectedSalary === 'number') {
+        candidateUpdates.expectedSalary = args.expectedSalary;
+      } else if (args.expectedSalary.trim()) {
+        customCallFields.push({ key: "Expected Salary (Note)", value: args.expectedSalary.trim() });
+      }
+    }
+    
+    if (args.noticePeriodDays !== undefined) {
+      if (typeof args.noticePeriodDays === 'number') {
+        candidateUpdates.noticePeriodDays = args.noticePeriodDays;
+      } else if (args.noticePeriodDays.trim()) {
+        customCallFields.push({ key: "Notice Period (Note)", value: args.noticePeriodDays.trim() });
+      }
+    }
+
     if (args.cvUploadId) candidateUpdates.cvUploadId = args.cvUploadId;
+
+    // Save custom fields from TA call into candidate's customCallData
+    if (customCallFields.length > 0) {
+      const existing = (await ctx.db.get(args.candidateId)) as any;
+      const prevCustom = existing?.customCallData || {};
+      const merged: Record<string, string> = { ...prevCustom };
+      for (const field of customCallFields) {
+        if (field.key.trim() && field.value.trim()) {
+          merged[field.key.trim()] = field.value.trim();
+        }
+      }
+      candidateUpdates.customCallData = merged;
+    }
+
     if (Object.keys(candidateUpdates).length > 0) {
       await ctx.db.patch(args.candidateId, candidateUpdates);
     }
@@ -480,6 +518,17 @@ export const logManualCall = mutation({
 
     // For "Interested" or "No Answer" — update per-application flags first
     await updateFollowUpFlags(ctx, args.applicationId, candidate);
+    
+    // Manually force flags if they were provided as strings
+    const manualFlags: Record<string, boolean> = {};
+    if (typeof args.currentSalary === 'string' && args.currentSalary.trim()) manualFlags.followUpCurrentSalary = true;
+    if (typeof args.expectedSalary === 'string' && args.expectedSalary.trim()) manualFlags.followUpExpectedSalary = true;
+    if (typeof args.noticePeriodDays === 'string' && args.noticePeriodDays.trim()) manualFlags.followUpNoticePeriod = true;
+    
+    if (Object.keys(manualFlags).length > 0) {
+      await ctx.db.patch(args.applicationId, manualFlags);
+    }
+
     const updatedApp = await ctx.db.get(args.applicationId);
 
     const allComplete =

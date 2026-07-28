@@ -1484,7 +1484,10 @@ export const matchExtractedCandidateToActiveJobs = internalAction({
 
       const cvUpload = args.cvUploadId ? await ctx.runQuery(api.candidates.candidates.getCvUpload, { cvUploadId: args.cvUploadId }) : null;
 
-      const jobsListContext = activeJobs
+      const eligibleJobs = activeJobs.filter((j: any) => !j.pausedChannels?.includes(args.sourceChannel));
+      if (eligibleJobs.length === 0) return;
+
+      const jobsListContext = eligibleJobs
         .map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName}`)
         .join("\n");
 
