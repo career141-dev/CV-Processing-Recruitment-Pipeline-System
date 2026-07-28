@@ -22,6 +22,8 @@ export const getRecentUploads = query({
   },
 });
 
+
+
 export const getCvUploadsForIT = query({
   args: {},
   handler: async (ctx) => {
@@ -49,6 +51,8 @@ export const getItJobDetails = query({
       .first();
   },
 });
+
+
 
 export const getApplicationsForIT = query({
   args: {},
@@ -288,3 +292,6 @@ export const reprocessSingleUpload = action({
     return { success: true };
   },
 });
+
+
+

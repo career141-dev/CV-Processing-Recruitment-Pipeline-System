@@ -12,6 +12,7 @@ export type SearchRequirements = {
   requiredSkills: string[];
   preferredSkills: string[];
   minYearsExperience: number | null;
+  maxYearsExperience?: number | null;
   industry: string | null;
   seniority: string | null;
   location: string | null;

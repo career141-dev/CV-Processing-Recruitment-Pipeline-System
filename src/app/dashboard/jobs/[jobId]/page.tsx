@@ -342,15 +342,17 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <a
-                  href={(cvUpload.url || "").replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-primary transition-colors px-3 py-1.5 rounded-[6px] border border-border hover:bg-surface-container"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  ↗ Open in new tab
-                </a>
+                {cvUpload?.url && (
+                  <a
+                    href={cvUpload.url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-primary transition-colors px-3 py-1.5 rounded-[6px] border border-border hover:bg-surface-container"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    ↗ Open in new tab
+                  </a>
+                )}
                 <button
                   onClick={() => setIsOpen(false)}
                   className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-surface-container transition-colors text-text-secondary hover:text-text-primary"
@@ -361,11 +363,17 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
             </div>
             {/* CV iframe */}
             <div className="flex-1 overflow-hidden">
-              <iframe
-                src={`${(cvUpload.url || "").replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}#toolbar=1&view=FitH`}
-                className="w-full h-full border-0"
-                title="CV Preview"
-              />
+              {cvUpload?.url ? (
+                <iframe
+                  src={`${cvUpload.url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}#toolbar=1&view=FitH`}
+                  className="w-full h-full border-0"
+                  title="CV Preview"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-text-secondary text-sm">
+                  <span>No CV file available for preview.</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

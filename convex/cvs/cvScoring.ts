@@ -44,28 +44,77 @@ function inferSeniorityFromText(text: string): string | null {
   return null;
 }
 
-function seniorityRank(value?: string | null): number {
-  switch ((value ?? "").toLowerCase()) {
-    case "intern": return 0;
-    case "junior": return 1;
-    case "mid": return 2;
-    case "senior": return 3;
-    case "lead": return 4;
-    case "executive": return 5;
-    default: return -1;
+function extractTitleSeniorityToken(title: string): string | null {
+  const norm = normalizeText(title);
+  if (/\bintern\b/.test(norm)) return "intern";
+  if (/\bjunior\b|\bjr\b|\bentry level\b/.test(norm)) return "junior";
+  if (/\bsenior\b|\bsr\b/.test(norm)) return "senior";
+  if (/\blead\b|\bprincipal\b|\bstaff\b|\bmanager\b/.test(norm)) return "lead";
+  if (/\bdirector\b|\bhead\b|\bvp\b|\bchief\b|\bcto\b|\bceo\b/.test(norm)) return "executive";
+  return null;
+}
+
+export function seniorityRank(value?: string | null): number {
+  const s = (value ?? "").toLowerCase().trim();
+  if (s === "intern") return 0;
+  if (s === "junior" || s === "jr" || s === "entry_level" || s === "entry") return 1;
+  if (s === "mid" || s === "mid_level") return 2;
+  if (s === "senior" || s === "sr" || s === "senior_executive") return 3;
+  if (s === "lead" || s === "principal" || s === "staff" || s === "manager" || s === "senior_manager" || s === "agm") return 4;
+  if (s === "executive" || s === "director" || s === "c_suite" || s === "vp" || s === "gm") return 5;
+  return -1;
+}
+
+export function calculateAsymmetricSeniorityScore(jobSeniority?: string | null, candidateSeniority?: string | null): number {
+  if (!jobSeniority) return candidateSeniority ? 80 : 72;
+  if (!candidateSeniority) return 70;
+
+  const jRank = seniorityRank(jobSeniority);
+  const cRank = seniorityRank(candidateSeniority);
+
+  if (jRank < 0 || cRank < 0) return 70;
+
+  const d = cRank - jRank;
+  if (d === 0) return 100;
+
+  if (d > 0) {
+    // Over-qualification penalty (exponential continuous decay with floor at 5)
+    return Math.max(5, Math.round(100 * Math.exp(-0.45 * Math.pow(d, 1.4))));
+  } else {
+    // Under-qualification penalty (linear decay with floor at 10)
+    return Math.max(10, Math.round(100 - 22 * Math.abs(d)));
   }
 }
 
-function yearsScore(candidateYears: number | null | undefined, minimumYears: number | null): number {
-  if (minimumYears == null) return candidateYears == null ? 75 : 92;
-  if (candidateYears == null) return 65;
-  if (candidateYears >= minimumYears) return 100;
-  const gap = minimumYears - candidateYears;
-  if (gap <= 1) return 88;
-  if (gap <= 2) return 76;
-  if (gap <= 3) return 64;
-  if (gap <= 5) return 50;
-  return 35;
+function yearsScore(
+  candidateYears: number | null | undefined,
+  minimumYears: number | null,
+  maximumYears?: number | null
+): number {
+  if (candidateYears == null) {
+    if (minimumYears == null) return 75;
+    return 65;
+  }
+
+  // Under-qualification check (below minimum required years)
+  if (minimumYears != null && candidateYears < minimumYears) {
+    const gap = minimumYears - candidateYears;
+    if (gap <= 1) return 88;
+    if (gap <= 2) return 76;
+    if (gap <= 3) return 64;
+    if (gap <= 5) return 50;
+    return 35;
+  }
+
+  // Over-qualification check (exceeds maximum threshold)
+  if (maximumYears != null && candidateYears > maximumYears) {
+    const excess = candidateYears - maximumYears;
+    if (excess <= 1) return 90;
+    // Continuous exponential decay for excess experience above maximum threshold
+    return Math.max(15, Math.round(100 * Math.exp(-0.30 * excess)));
+  }
+
+  return 100;
 }
 
 function textContainsEither(a: string, b: string): boolean {
@@ -90,32 +139,44 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
   const candidateNorm = normalizeText(cleanedCandidate);
   if (!candidateNorm) return 55;
 
+  const candSeniorityToken = extractTitleSeniorityToken(candidateTitleText);
+
   let best = 0;
   for (const jobTitle of jobTitles) {
+    const jobSeniorityToken = extractTitleSeniorityToken(jobTitle);
     const cleanedJob = stripSeniorityWords(jobTitle);
     const jobNorm = normalizeText(cleanedJob);
     if (!jobNorm) continue;
 
+    let baseScore = 55;
     if (candidateNorm === jobNorm) {
-      return 100;
+      baseScore = 100;
+    } else if (textContainsEither(candidateNorm, jobNorm)) {
+      baseScore = 92;
+    } else {
+      const jobTokens = titleTokens(cleanedJob);
+      const candidateTokens = titleTokens(cleanedCandidate);
+      if (jobTokens.length > 0 && candidateTokens.length > 0) {
+        const jobTokenSet = new Set(jobTokens);
+        const candidateTokenSet = new Set(candidateTokens);
+        const overlap = [...jobTokenSet].filter((token) => candidateTokenSet.has(token)).length;
+        const coverage = overlap / jobTokenSet.size;
+        const reciprocal = overlap / candidateTokenSet.size;
+        const blended = (coverage * 0.7) + (reciprocal * 0.3);
+        baseScore = 55 + Math.round(blended * 40);
+      }
     }
 
-    if (textContainsEither(candidateNorm, jobNorm)) {
-      best = Math.max(best, 92);
+    // Fix title-stripping overlap bug: if candidate and job titles explicitly specify conflicting seniority levels, apply adjustment factor
+    if (jobSeniorityToken && candSeniorityToken && jobSeniorityToken !== candSeniorityToken) {
+      const jRank = seniorityRank(jobSeniorityToken);
+      const cRank = seniorityRank(candSeniorityToken);
+      if (jRank >= 0 && cRank >= 0 && cRank > jRank) {
+        baseScore = Math.round(baseScore * 0.70);
+      }
     }
 
-    const jobTokens = titleTokens(cleanedJob);
-    const candidateTokens = titleTokens(cleanedCandidate);
-    if (jobTokens.length === 0 || candidateTokens.length === 0) continue;
-
-    const jobTokenSet = new Set(jobTokens);
-    const candidateTokenSet = new Set(candidateTokens);
-    const overlap = [...jobTokenSet].filter((token) => candidateTokenSet.has(token)).length;
-    const coverage = overlap / jobTokenSet.size;
-    const reciprocal = overlap / candidateTokenSet.size;
-    const blended = (coverage * 0.7) + (reciprocal * 0.3);
-    const score = 55 + Math.round(blended * 40);
-    best = Math.max(best, score);
+    best = Math.max(best, baseScore);
   }
 
   return Math.max(45, Math.min(100, Math.round(best || 55)));
@@ -317,7 +378,11 @@ export function normaliseSkill(skill: string): string {
 
 export function scoreCandidateAgainstRequirements(
   cv: ScoredCandidate["cv"],
-  req: SearchRequirements,
+  req: SearchRequirements & {
+    maxYearsExperience?: number | null;
+    negativeKeywords?: string[];
+    overrideSeniority?: string | null;
+  },
   index: number
 ): ScoredCandidate {
   const candidateTitleText = buildCandidateTitleText(cv);
@@ -326,18 +391,23 @@ export function scoreCandidateAgainstRequirements(
   const preferredSkills = (req.preferredSkills ?? req.niceToHaveSkills ?? []).map(normaliseSkill);
   const jobTitleVariants = distinct([req.title, ...(req.alternativeTitles ?? [])]);
   const candidateSeniority = cv.seniorityLevel ?? inferSeniorityFromText(candidateTitleText);
-  const jobSeniority = req.seniority ?? inferSeniorityFromText(`${req.title} ${req.summary}`);
+  const jobSeniority = req.overrideSeniority ?? req.seniority ?? inferSeniorityFromText(`${req.title} ${req.summary}`);
+
+  // Auto-infer maxYearsExperience for intern / entry-level roles if not specified
+  let effectiveMaxYears = req.maxYearsExperience ?? null;
+  const normalizedJobSeniority = (jobSeniority ?? "").toLowerCase();
+  if (
+    effectiveMaxYears == null &&
+    (normalizedJobSeniority === "intern" || normalizedJobSeniority === "entry_level" || req.title?.toLowerCase().includes("intern"))
+  ) {
+    effectiveMaxYears = 1.5;
+  }
 
   const titleScore = scoreTitleMatchImpl(jobTitleVariants, candidateTitleText);
-  const seniorityScore = jobSeniority
-    ? (candidateSeniority
-      ? Math.max(58, 100 - Math.abs(seniorityRank(jobSeniority) - seniorityRank(candidateSeniority)) * 12)
-      : 72)
-    : (candidateSeniority ? 80 : 72);
-  const experienceScore = yearsScore(cv.yearsOfExperience ?? null, req.minYearsExperience);
+  const seniorityScore = calculateAsymmetricSeniorityScore(jobSeniority, candidateSeniority);
+  const experienceScore = yearsScore(cv.yearsOfExperience ?? null, req.minYearsExperience, effectiveMaxYears);
   const skillScores = scoreSkills(requiredSkills, preferredSkills, candidateSkills);
   const hasMissingRequired = requiredSkills.length > 0 && skillScores.missingRequired.length > 0;
-  // Loosen skill score: do not penalise to 0 if a required skill is missing, just use computed coverage score
   const skillScore = skillScores.score;
   const industryScore = scoreIndustry(req.industry, cv.industries ?? null);
   const locationScore = scoreLocation(req.location, cv.location ?? null);
@@ -349,9 +419,16 @@ export function scoreCandidateAgainstRequirements(
         ? "match"
         : "different";
 
-  // Prioritise Experience and Title/Seniority/Skills if experience is mentioned
   let overallScore: number;
-  if (req.minYearsExperience != null) {
+  if (normalizedJobSeniority === "intern" || normalizedJobSeniority === "entry_level" || req.title?.toLowerCase().includes("intern")) {
+    // For Intern / Entry Level roles, give higher weight to Seniority & Experience alignment
+    overallScore = Math.round(
+      (seniorityScore * 0.35) +
+      (experienceScore * 0.25) +
+      (titleScore * 0.20) +
+      (skillScore * 0.20)
+    );
+  } else if (req.minYearsExperience != null) {
     overallScore = Math.round(
       (experienceScore * 0.30) +
       (titleScore * 0.30) +
@@ -360,12 +437,23 @@ export function scoreCandidateAgainstRequirements(
     );
   } else {
     overallScore = Math.round(
-      (titleScore * 0.32) +
-      (skillScore * 0.28) +
+      (titleScore * 0.30) +
+      (skillScore * 0.26) +
+      (seniorityScore * 0.22) +
       (experienceScore * 0.16) +
-      (seniorityScore * 0.12) +
       (industryScore * 0.06)
     );
+  }
+
+  // Apply negative keywords penalty if TA feedback extracted negative keywords
+  if (req.negativeKeywords && req.negativeKeywords.length > 0) {
+    const candidateTextNorm = normalizeText(`${candidateTitleText} ${(cv.skills || []).join(" ")}`);
+    for (const negWord of req.negativeKeywords) {
+      if (candidateTextNorm.includes(normalizeText(negWord))) {
+        overallScore = Math.max(5, overallScore - 30);
+        break;
+      }
+    }
   }
 
   // Incorporate vectorScore if present
