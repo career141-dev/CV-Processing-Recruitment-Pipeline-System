@@ -197,6 +197,9 @@ export default defineSchema({
       currentRoleRankLabel: v.optional(v.string()),
       exclusionReason: v.optional(v.union(v.null(), v.string())),
       roleFamily: v.optional(v.string()),
+      roleFamilyMatch: v.optional(v.string()),
+      currentRoleRank: v.optional(v.number()),
+      currentRoleCacheFingerprint: v.optional(v.string()),
     }))),
 
 
