@@ -1268,3 +1268,34 @@ export const countHeavyCandidates = query({
     };
   },
 });
+
+export const updateCandidateRoleCacheBatch = mutation({
+  args: {
+    updates: v.array(
+      v.object({
+        candidateId: v.id("candidates"),
+        currentRoleRank: v.union(v.number(), v.null()),
+        currentRoleRankLabel: v.string(),
+        currentRoleConfidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+        roleFamily: v.string(),
+        currentRoleCacheFingerprint: v.string(),
+        usedFallbackTitle: v.boolean(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    for (const update of args.updates) {
+      const cand = await ctx.db.get(update.candidateId);
+      if (cand) {
+        await ctx.db.patch(update.candidateId, {
+          currentRoleRank: update.currentRoleRank ?? undefined,
+          currentRoleRankLabel: update.currentRoleRankLabel,
+          currentRoleConfidence: update.currentRoleConfidence,
+          roleFamily: update.roleFamily,
+          currentRoleCacheFingerprint: update.currentRoleCacheFingerprint,
+          usedFallbackTitle: update.usedFallbackTitle,
+        });
+      }
+    }
+  },
+});

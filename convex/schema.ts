@@ -173,6 +173,9 @@ export default defineSchema({
     reverseMatchOnPublish: v.optional(v.boolean()),
     taPreferences: v.optional(v.string()),
 
+    roleFamily: v.optional(v.string()),
+    roleFamilyCacheFingerprint: v.optional(v.string()),
+
     reverseMatchStatus: v.optional(v.union(
       v.literal("running"), v.literal("done"), v.literal("error")
     )),
@@ -191,6 +194,24 @@ export default defineSchema({
       candidateName: v.optional(v.string()),
       candidateRole: v.optional(v.string()),
       candidateExp: v.optional(v.number()),
+
+      // Agent 2 — Current-Role Level & Role-Family Gate Fields
+      currentRoleRank: v.optional(v.number()),
+      currentRoleRankLabel: v.optional(v.string()),
+      currentRoleConfidence: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+      usedFallbackTitle: v.optional(v.boolean()),
+      currentRoleGate: v.optional(v.union(
+        v.literal("pass"), v.literal("pass_with_penalty"),
+        v.literal("excluded_overqualified"), v.literal("skipped_other")
+      )),
+      currentRolePenalty: v.optional(v.number()),
+      seniorityConflict: v.optional(v.boolean()),
+      exclusionReason: v.optional(v.union(v.string(), v.null())),
+      roleFamily: v.optional(v.string()),
+      roleFamilyMatch: v.optional(v.union(
+        v.literal("exact"), v.literal("synonym"),
+        v.literal("adjacent"), v.literal("unrelated")
+      )),
     }))),
 
 
@@ -524,6 +545,14 @@ export default defineSchema({
     vectorEmbeddingId: v.optional(v.string()),
     pastJobTitles: v.optional(v.array(v.string())),
     sector: v.optional(v.string()),
+
+    // Agent 2 — Current-Role & Role-Family Classification Cache
+    currentRoleRank: v.optional(v.number()),
+    currentRoleRankLabel: v.optional(v.string()),
+    currentRoleConfidence: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+    roleFamily: v.optional(v.string()),
+    currentRoleCacheFingerprint: v.optional(v.string()),
+    usedFallbackTitle: v.optional(v.boolean()),
     overallStatus: v.optional(
       v.union(
         v.literal("active"),

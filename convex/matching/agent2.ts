@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel.d.ts";
+import { mapJobSeniorityTo10LevelRank, checkSeniorityConflict, scoreCandidateAgainstRequirements } from "../cvs/cvScoring";
+import { classifyJobRoleFamily, classifyCurrentRolesBatch } from "../lib/currentRoleClassifier";
 
 /**
  * Helper to get vector embeddings from NVIDIA API
@@ -518,11 +520,112 @@ Return ONLY valid JSON matching this schema:
         }
       }
 
-      // 6. Run scoring engine logic
-      const { scoreCandidateAgainstRequirements } = await import("../cvs/cvScoring.js");
+      // 6. Current-Role Level Gate & Role-Family Classification
+      // Derive/retrieve job role family & fingerprint
+      const currentJobFingerprint = `${job.title} | ${(job.jobDescription || "").slice(0, 100)} | ${job.seniorityLevel}`;
+      let jobRoleFamily = job.roleFamily || "other";
+      if (!job.roleFamily || job.roleFamilyCacheFingerprint !== currentJobFingerprint) {
+        const jobClassified = await classifyJobRoleFamily(job.title, job.jobDescription, job.seniorityLevel);
+        jobRoleFamily = jobClassified.roleFamily;
+      }
+
+      const jobRank = mapJobSeniorityTo10LevelRank(job.seniorityLevel);
+
+      // Identify candidates needing classification (fingerprint checking)
+      const candidatesToClassify: any[] = [];
+      const candidateClassificationCache = new Map<string, any>();
+
+      for (const item of enrichedCandidates) {
+        const cv = item.candidate;
+        const candFingerprint = `${cv.currentJobTitle || cv.currentTitle || ""} | ${cv.currentEmployer || ""} | ${cv.sector || ""}`;
+        if (
+          cv.currentRoleCacheFingerprint === candFingerprint &&
+          (cv.currentRoleRank !== undefined || cv.currentRoleConfidence === "low") &&
+          cv.roleFamily
+        ) {
+          candidateClassificationCache.set(cv._id.toString(), {
+            candidateId: cv._id.toString(),
+            rank: cv.currentRoleRank ?? null,
+            rankLabel: cv.currentRoleRankLabel || "Unclassified",
+            confidence: cv.currentRoleConfidence || "high",
+            reasoning: "Cached current-role classification",
+            usedFallbackTitle: cv.usedFallbackTitle || false,
+            roleFamily: cv.roleFamily,
+            roleFamilyMatch: (cv.roleFamily === jobRoleFamily) ? "exact" : (cv.roleFamily === "other" || jobRoleFamily === "other") ? "synonym" : "unrelated",
+            exclusionReason: null,
+          });
+        } else {
+          candidatesToClassify.push(cv);
+        }
+      }
+
+      // Run LLM classification for un-cached candidates in batches of 20
+      if (candidatesToClassify.length > 0) {
+        const newClassifications = await classifyCurrentRolesBatch(candidatesToClassify, job.title, jobRoleFamily);
+        const dbUpdates: any[] = [];
+
+        newClassifications.forEach((res, cid) => {
+          const cidStr = cid.toString();
+          candidateClassificationCache.set(cidStr, res);
+          const candObj = candidatesMap.get(cidStr);
+          if (candObj) {
+            const candFingerprint = `${candObj.currentJobTitle || candObj.currentTitle || ""} | ${candObj.currentEmployer || ""} | ${candObj.sector || ""}`;
+            dbUpdates.push({
+              candidateId: candObj._id,
+              currentRoleRank: res.rank,
+              currentRoleRankLabel: res.rankLabel,
+              currentRoleConfidence: res.confidence,
+              roleFamily: res.roleFamily,
+              currentRoleCacheFingerprint: candFingerprint,
+              usedFallbackTitle: res.usedFallbackTitle,
+            });
+          }
+        });
+
+        if (dbUpdates.length > 0) {
+          await ctx.runMutation(api.candidates.candidates.updateCandidateRoleCacheBatch, { updates: dbUpdates });
+        }
+      }
+
       const matchResults = enrichedCandidates
-        .map(c => {
+        .map((c, index) => {
           const cv = c.candidate;
+          const cvIdStr = cv._id.toString();
+
+          const classRes = candidateClassificationCache.get(cvIdStr) || {
+            rank: null,
+            rankLabel: "Unclassified",
+            confidence: "low",
+            reasoning: "Fail-open default",
+            usedFallbackTitle: false,
+            roleFamily: "unknown",
+            roleFamilyMatch: "synonym",
+            exclusionReason: null,
+          };
+
+          const candRank = classRes.rank;
+          let currentRoleGate: "pass" | "pass_with_penalty" | "excluded_overqualified" | "skipped_other" = "pass";
+          let currentRolePenalty = 0;
+          let exclusionReason: string | null = null;
+
+          if (jobRank === null) {
+            currentRoleGate = "skipped_other";
+          } else if (candRank === null) {
+            currentRoleGate = "pass";
+          } else {
+            const delta = jobRank - candRank;
+            if (delta < 0) {
+              currentRoleGate = "excluded_overqualified";
+              exclusionReason = classRes.exclusionReason || `Candidate's current role level (${classRes.rankLabel}) exceeds target job level.`;
+            } else if (delta === 0 || delta === 1) {
+              currentRoleGate = "pass";
+            } else {
+              currentRoleGate = "pass_with_penalty";
+              currentRolePenalty = Math.max(-40, -12 * (delta - 1));
+            }
+          }
+
+          const seniorityConflict = checkSeniorityConflict(candRank, cv.seniorityLevel);
 
           const cvPayload = {
             _id: cv._id,
@@ -569,7 +672,9 @@ Return ONLY valid JSON matching this schema:
             seniority: job.seniorityLevel,
             summary: job.jobDescription,
             keywords: [],
-          });
+            currentRolePenalty,
+            roleFamilyMatch: classRes.roleFamilyMatch,
+          }, index);
 
           // Normalize NVIDIA E5 vector similarity score (typical range ~0.35 to 0.75) to human-intuitive 0-100%
           const rawVector = c.vectorScore ?? 0.4;
@@ -636,15 +741,33 @@ Return ONLY valid JSON matching this schema:
             candidateName: cv.fullName ?? undefined,
             candidateRole: cv.currentTitle ?? cv.currentJobTitle ?? undefined,
             candidateExp: cv.yearsOfExperience ?? cv.totalExperienceYears ?? undefined,
+
+            // 10 Audit Log Fields
+            currentRoleRank: candRank ?? undefined,
+            currentRoleRankLabel: classRes.rankLabel,
+            currentRoleConfidence: classRes.confidence,
+            usedFallbackTitle: classRes.usedFallbackTitle,
+            currentRoleGate,
+            currentRolePenalty,
+            seniorityConflict,
+            exclusionReason,
+            roleFamily: classRes.roleFamily,
+            roleFamilyMatch: classRes.roleFamilyMatch,
           };
         });
 
       // Sort all candidates by overall score descending (highest score to lowest/good score)
       matchResults.sort((a, b) => b.overallScore - a.overallScore);
 
-      // Strict Filter Gate: Exclude match scores below 60% as requested by the user
+      // Strict Filter Gate: Exclude match scores below 60% AND hard-excluded overqualified current roles
       const safetyFloor = 60;
-      const validMatches = matchResults.filter(r => r.overallScore >= safetyFloor);
+      const validMatches = matchResults.filter(r => {
+        if (r.overallScore < safetyFloor) return false;
+        if (r.currentRoleGate === "excluded_overqualified" && !appliedCandidateIds.has(r.cvId)) {
+          return false; // Hard exclude new candidates whose current role level exceeds job target rank
+        }
+        return true;
+      });
 
       // Slice the top 30 ordered highest to lowest (strictly filtering only matches >= 60)
       const newTop30 = validMatches.slice(0, 30);
@@ -659,6 +782,8 @@ Return ONLY valid JSON matching this schema:
 
       await ctx.runMutation(internal.jobs.jobs.saveReverseMatchResults, {
         jobId: args.jobId,
+        roleFamily: jobRoleFamily,
+        roleFamilyCacheFingerprint: currentJobFingerprint,
         results: finalResults,
         status: "done",
       });

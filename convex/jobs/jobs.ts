@@ -866,6 +866,8 @@ export const getByKeyword = query({
 export const saveReverseMatchResults = internalMutation({
   args: {
     jobId: v.id("jobs"),
+    roleFamily: v.optional(v.string()),
+    roleFamilyCacheFingerprint: v.optional(v.string()),
     results: v.array(
       v.object({
         cvId: v.string(),
@@ -885,12 +887,30 @@ export const saveReverseMatchResults = internalMutation({
         candidateName: v.optional(v.string()),
         candidateRole: v.optional(v.string()),
         candidateExp: v.optional(v.number()),
+
+        // Agent 2 — Current-Role Level & Role-Family Gate Fields
+        currentRoleRank: v.optional(v.number()),
+        currentRoleRankLabel: v.optional(v.string()),
+        currentRoleConfidence: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+        usedFallbackTitle: v.optional(v.boolean()),
+        currentRoleGate: v.optional(v.union(
+          v.literal("pass"), v.literal("pass_with_penalty"),
+          v.literal("excluded_overqualified"), v.literal("skipped_other")
+        )),
+        currentRolePenalty: v.optional(v.number()),
+        seniorityConflict: v.optional(v.boolean()),
+        exclusionReason: v.optional(v.union(v.string(), v.null())),
+        roleFamily: v.optional(v.string()),
+        roleFamilyMatch: v.optional(v.union(
+          v.literal("exact"), v.literal("synonym"),
+          v.literal("adjacent"), v.literal("unrelated")
+        )),
       })
     ),
     status: v.union(v.literal("done"), v.literal("error"), v.literal("running")),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.jobId, {
+    const patchObj: any = {
       reverseMatchStatus: args.status,
       reverseMatchedAt: new Date().toISOString(),
       reverseMatchResults: args.results.map((r) => ({
@@ -905,8 +925,24 @@ export const saveReverseMatchResults = internalMutation({
         candidateName: r.candidateName,
         candidateRole: r.candidateRole,
         candidateExp: r.candidateExp,
+
+        currentRoleRank: r.currentRoleRank,
+        currentRoleRankLabel: r.currentRoleRankLabel,
+        currentRoleConfidence: r.currentRoleConfidence,
+        usedFallbackTitle: r.usedFallbackTitle,
+        currentRoleGate: r.currentRoleGate,
+        currentRolePenalty: r.currentRolePenalty,
+        seniorityConflict: r.seniorityConflict,
+        exclusionReason: r.exclusionReason,
+        roleFamily: r.roleFamily,
+        roleFamilyMatch: r.roleFamilyMatch,
       })),
-    });
+    };
+
+    if (args.roleFamily !== undefined) patchObj.roleFamily = args.roleFamily;
+    if (args.roleFamilyCacheFingerprint !== undefined) patchObj.roleFamilyCacheFingerprint = args.roleFamilyCacheFingerprint;
+
+    await ctx.db.patch(args.jobId, patchObj);
   },
 });
 

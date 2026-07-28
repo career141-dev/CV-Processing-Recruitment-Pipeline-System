@@ -65,6 +65,7 @@ import type * as jobs_jobs from "../jobs/jobs.js";
 import type * as jobs_stats from "../jobs/stats.js";
 import type * as lib_activityLog from "../lib/activityLog.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_currentRoleClassifier from "../lib/currentRoleClassifier.js";
 import type * as lib_graphClient from "../lib/graphClient.js";
 import type * as lib_jdParser from "../lib/jdParser.js";
 import type * as lib_llm from "../lib/llm.js";
@@ -154,6 +155,7 @@ declare const fullApi: ApiFromModules<{
   "jobs/stats": typeof jobs_stats;
   "lib/activityLog": typeof lib_activityLog;
   "lib/auth": typeof lib_auth;
+  "lib/currentRoleClassifier": typeof lib_currentRoleClassifier;
   "lib/graphClient": typeof lib_graphClient;
   "lib/jdParser": typeof lib_jdParser;
   "lib/llm": typeof lib_llm;

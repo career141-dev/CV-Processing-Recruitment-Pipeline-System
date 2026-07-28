@@ -134,6 +134,46 @@ export function stripSeniorityWords(text: string): string {
   return result.replace(/\s+/g, " ").trim();
 }
 
+export function mapJobSeniorityTo10LevelRank(seniorityLevel?: string | null): number | null {
+  if (!seniorityLevel) return null;
+  const s = seniorityLevel.toLowerCase().trim().replace(/[\s-]/g, "_");
+  if (s.includes("entry") || s.includes("intern")) return 0;
+  if (s === "mid_level" || s === "mid") return 1;
+  if (s === "executive") return 2;
+  if (s === "senior_executive") return 3;
+  if (s === "manager") return 4;
+  if (s === "senior_manager") return 5;
+  if (s === "agm" || s.includes("assistant_general")) return 6;
+  if (s === "gm" || s.includes("general_manager")) return 7;
+  if (s === "director") return 8;
+  if (s === "c_suite" || s.includes("vp") || s.includes("chief")) return 9;
+  return null; // "other", custom, or unmapped -> skip gate
+}
+
+export function checkSeniorityConflict(
+  currentRoleRank: number | null,
+  candidateSeniority6?: string | null
+): boolean {
+  if (currentRoleRank === null || !candidateSeniority6) return false;
+  const s = candidateSeniority6.toLowerCase().trim();
+
+  let minRank = 0;
+  let maxRank = 9;
+
+  if (s === "intern") { minRank = 0; maxRank = 0; }
+  else if (s === "junior") { minRank = 0; maxRank = 1; }
+  else if (s === "mid") { minRank = 1; maxRank = 2; }
+  else if (s === "senior") { minRank = 3; maxRank = 4; }
+  else if (s === "lead") { minRank = 4; maxRank = 5; }
+  else if (s === "executive") { minRank = 6; maxRank = 9; }
+  else { return false; }
+
+  if (currentRoleRank < minRank - 1 || currentRoleRank > maxRank + 1) {
+    return true;
+  }
+  return false;
+}
+
 function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): number {
   const cleanedCandidate = stripSeniorityWords(candidateTitleText);
   const candidateNorm = normalizeText(cleanedCandidate);
@@ -382,6 +422,8 @@ export function scoreCandidateAgainstRequirements(
     maxYearsExperience?: number | null;
     negativeKeywords?: string[];
     overrideSeniority?: string | null;
+    currentRolePenalty?: number;
+    roleFamilyMatch?: "exact" | "synonym" | "adjacent" | "unrelated";
   },
   index: number
 ): ScoredCandidate {
@@ -403,7 +445,14 @@ export function scoreCandidateAgainstRequirements(
     effectiveMaxYears = 1.5;
   }
 
-  const titleScore = scoreTitleMatchImpl(jobTitleVariants, candidateTitleText);
+  // Title Match Dimension incorporating Role-Family Equivalence multiplier
+  const baseTitleScore = scoreTitleMatchImpl(jobTitleVariants, candidateTitleText);
+  let roleFamilyMultiplier = 1.0;
+  if (req.roleFamilyMatch === "adjacent") roleFamilyMultiplier = 0.65;
+  else if (req.roleFamilyMatch === "unrelated") roleFamilyMultiplier = 0.15;
+
+  const titleScore = Math.round(roleFamilyMultiplier * Math.max(baseTitleScore, 70));
+
   const seniorityScore = calculateAsymmetricSeniorityScore(jobSeniority, candidateSeniority);
   const experienceScore = yearsScore(cv.yearsOfExperience ?? null, req.minYearsExperience, effectiveMaxYears);
   const skillScores = scoreSkills(requiredSkills, preferredSkills, candidateSkills);
@@ -454,6 +503,11 @@ export function scoreCandidateAgainstRequirements(
         break;
       }
     }
+  }
+
+  // Apply Current-Role Level Gate soft penalty if candidate is 2+ levels below job target rank
+  if (typeof req.currentRolePenalty === "number" && req.currentRolePenalty < 0) {
+    overallScore = Math.max(0, overallScore + req.currentRolePenalty);
   }
 
   // Incorporate vectorScore if present
