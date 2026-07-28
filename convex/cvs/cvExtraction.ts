@@ -1495,9 +1495,10 @@ export const matchExtractedCandidateToActiveJobs = internalAction({
 Your task is to analyze an extracted candidate profile and determine which active job posting they match best.
 
 CRITICAL ROUTING RULES:
-1. Perform semantic matching between the candidate's extracted title, skills, and experience against active job titles.
-2. If the candidate is a Video Editor (e.g. skills include Video Editing, Premiere Pro, After Effects, Capcut), match them to the Video Editor job if open.
-3. Only match if there is a clear, confident alignment with an active job. Otherwise, return null.
+1. Match only if the candidate's skills, title, and background clearly align with the job function.
+2. Do NOT cross-match different job functions: a Talent Acquisition / HR candidate must NOT be matched to a developer or tech role, a sales candidate must NOT go to an engineering role, etc.
+3. If the candidate is a Video Editor (skills include Video Editing, Premiere Pro, After Effects, CapCut), match to the Video Editor job if open.
+4. Only match if there is clear, confident alignment. If in doubt, return null — it is better to leave a candidate unrouted than to put them in the wrong pipeline.
 
 ACTIVE JOBS:
 ${jobsListContext}

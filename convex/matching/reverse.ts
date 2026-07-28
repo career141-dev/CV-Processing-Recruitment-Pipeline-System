@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel.d.ts";
+import type { Doc, Id } from "../_generated/dataModel";
 import { getOpenAI, getModelForTask } from "../lib/llm";
 
 
@@ -103,16 +103,16 @@ export const runReverseMatch = action({
       }
 
       // Batch fetch full candidate documents in a single query
-      const allCandidates = await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
+      const allCandidates: Doc<"candidates">[] = await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
         candidateIds,
       });
-      const candidateMap = new Map(allCandidates.map(c => [c._id.toString(), c]));
+      const candidateMap = new Map<string, Doc<"candidates">>(allCandidates.map((c: Doc<"candidates">) => [c._id.toString(), c]));
 
       // Compact candidate payload for the scoring model (cap at 40).
-      const pool = candidateIds.slice(0, 40).map(id => candidateMap.get(id.toString())).filter(Boolean);
+      const pool: Doc<"candidates">[] = candidateIds.slice(0, 40).map(id => candidateMap.get(id.toString())).filter((c): c is Doc<"candidates"> => c !== undefined);
       
       const allResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
-        candidateIds: pool.map(c => c!._id)
+        candidateIds: pool.map((c: Doc<"candidates">) => c._id)
       });
       const resumeMap = new Map(allResumes.map((r: any) => [r.candidateId, r]));
 

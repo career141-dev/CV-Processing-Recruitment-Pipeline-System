@@ -538,42 +538,38 @@ export default function CreateJobWizard() {
       }
 
       // Step 2: updateJobChannels
+      // Step 2: updateJobChannels
       const channelsPayload: any[] = [];
-      if (formData.channels.whatsapp) {
-        channelsPayload.push({
-          channelType: "whatsapp",
-          isEnabled: true,
-          whatsappNumber: formData.commonWhatsAppNumber || undefined,
-        });
-      }
-      if (formData.channels.linkedin) {
-        channelsPayload.push({
-          channelType: "linkedin",
-          isEnabled: true,
-          emailInbox: formData.linkedinEmail || undefined,
-        });
-      }
-      if (formData.channels.metaCampaign) {
-        channelsPayload.push({
-          channelType: "meta_campaign",
-          isEnabled: true,
-          whatsappNumber: (formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : formData.commonWhatsAppNumber) || undefined,
-        });
-      }
-      if (formData.channels.emailCampaign) {
-        channelsPayload.push({
-          channelType: "email_campaign",
-          isEnabled: true,
-          emailInbox: formData.emailInbox || undefined,
-        });
-      }
-      if (formData.channels.workable) {
-        channelsPayload.push({
-          channelType: "workable",
-          isEnabled: true,
-          workableJobId: formData.workableJobId || undefined,
-        });
-      }
+      
+      channelsPayload.push({
+        channelType: "whatsapp",
+        isEnabled: !!formData.channels.whatsapp,
+        whatsappNumber: formData.commonWhatsAppNumber || undefined,
+      });
+
+      channelsPayload.push({
+        channelType: "linkedin",
+        isEnabled: !!formData.channels.linkedin,
+        emailInbox: formData.linkedinEmail || undefined,
+      });
+
+      channelsPayload.push({
+        channelType: "meta_campaign",
+        isEnabled: !!formData.channels.metaCampaign,
+        whatsappNumber: (formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : formData.commonWhatsAppNumber) || undefined,
+      });
+
+      channelsPayload.push({
+        channelType: "email_campaign",
+        isEnabled: !!formData.channels.emailCampaign,
+        emailInbox: formData.emailInbox || undefined,
+      });
+
+      channelsPayload.push({
+        channelType: "workable",
+        isEnabled: !!formData.channels.workable,
+        workableJobId: formData.workableJobId || undefined,
+      });
 
       await updateJobChannels({
         jobId,
