@@ -525,7 +525,7 @@ Return ONLY valid JSON matching this schema:
       const currentJobFingerprint = `${job.title} | ${(job.jobDescription || "").slice(0, 100)} | ${job.seniorityLevel}`;
       let jobRoleFamily = job.roleFamily || "other";
       if (!job.roleFamily || job.roleFamilyCacheFingerprint !== currentJobFingerprint) {
-        const jobClassified = await classifyJobRoleFamily(job.title, job.jobDescription, job.seniorityLevel);
+        const jobClassified = await classifyJobRoleFamily(ctx, job.title, job.jobDescription, job.seniorityLevel);
         jobRoleFamily = jobClassified.roleFamily;
       }
 
@@ -561,7 +561,7 @@ Return ONLY valid JSON matching this schema:
 
       // Run LLM classification for un-cached candidates in batches of 20
       if (candidatesToClassify.length > 0) {
-        const newClassifications = await classifyCurrentRolesBatch(candidatesToClassify, job.title, jobRoleFamily);
+        const newClassifications = await classifyCurrentRolesBatch(ctx, candidatesToClassify, job.title, jobRoleFamily);
         const dbUpdates: any[] = [];
 
         newClassifications.forEach((res, cid) => {

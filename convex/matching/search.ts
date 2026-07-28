@@ -608,9 +608,7 @@ export const aiSearch = action({
 export const parseNLQuery = action({
   args: { query: v.string() },
   handler: async (ctx, args) => {
-    const { getOpenAI, getModelForTask, logLLMUsage } = await import("../lib/llm");
-    const openai = getOpenAI("jd_extraction");
-    const model = getModelForTask("jd_extraction");
+    const { executeLLMWithNvidiaFallback } = await import("../lib/llm");
 
     const FILTER_SCHEMA = {
       skills: ["string"],
@@ -621,52 +619,23 @@ export const parseNLQuery = action({
       seniority: "Junior | Mid | Senior | Lead | Director",
     };
 
-    let response: any;
-    try {
-      response = await openai.chat.completions.create({
-        model,
-        messages: [{
-          role: "user",
-          content: `Extract search filters from this query as JSON: "${args.query}"\nSchema: ${JSON.stringify(FILTER_SCHEMA)}\nRespond ONLY with valid JSON. Do not add markdown backticks.`
-        }],
-        temperature: 0,
-        max_tokens: 500,
-        response_format: { type: "json_object" },
-      });
-    } catch (err: any) {
-      await logLLMUsage(
-        ctx,
-        "jd_matching",
-        model,
-        0,
-        0,
-        false,
-        `OpenRouter API Error: ${err.message || String(err)}`
-      );
-      throw new Error("OpenRouter API query parse failed");
-    }
-
-    const promptTokens = response.usage?.prompt_tokens ?? 0;
-    const completionTokens = response.usage?.completion_tokens ?? 0;
-    await logLLMUsage(
-      ctx,
-      "jd_matching",
-      model,
-      promptTokens,
-      completionTokens,
-      true
-    );
+    const { content } = await executeLLMWithNvidiaFallback(ctx, "jd_extraction", {
+      messages: [{
+        role: "user",
+        content: `Extract search filters from this query as JSON: "${args.query}"\nSchema: ${JSON.stringify(FILTER_SCHEMA)}\nRespond ONLY with valid JSON. Do not add markdown backticks.`
+      }],
+      temperature: 0,
+      max_tokens: 500,
+      response_format: { type: "json_object" },
+    });
 
     try {
-      let content = response.choices[0].message.content;
-      // Strip markdown code blocks if any
-      content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(content);
+      return JSON.parse(content || "{}");
     } catch (e) {
       console.error("Failed to parse LLM response:", e);
       return {};
     }
-  }
+  },
 });
 
 export const semanticSearch = action({

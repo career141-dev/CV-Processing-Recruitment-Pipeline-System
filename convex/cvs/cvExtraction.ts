@@ -109,7 +109,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, executeLLMWithNvidiaFallback, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -766,23 +766,10 @@ export async function callOpenRouterLLM(
       ? rawText.slice(0, MAX_CHARS).replace(/\s+\S*$/, "")
       : rawText;
 
-  // TEMP: remove multi-model fallback once OPENROUTER credits added — see OPENROUTER_CV_EXTRACTION_MODEL
-  const modelsToTry = OPENROUTER_CV_FALLBACK_MODELS;
-  let lastMessage = "";
-
-  for (const model of modelsToTry) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const openai = getOpenAI("cv_structuring");
-        const response = await openai.chat.completions.create({
-          model,
-          temperature: 0,
-          max_tokens: 4096,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: `Extract candidate information from the CV text provided by the user and return it as a JSON object.
+  const messages: any[] = [
+    {
+      role: "system",
+      content: `Extract candidate information from the CV text provided by the user and return it as a JSON object.
 CRITICAL INSTRUCTION: If the document is NOT a CV, Resume, or Candidate Profile (e.g., if it is an email signature, company brochure, invoice, cover letter without a CV, or random text), you MUST return an empty JSON object: {}
 1. Return only valid JSON. No markdown, no backticks, no explanation.
 2. If a field is not found, return null. Never invent or guess.
@@ -810,82 +797,43 @@ JSON Target Schema:
   "jobHistory": [{ "company": null, "title": null, "startDate": null, "endDate": null, "description": null, "confidence": 0.0 }],
   "referees": [{ "name": null, "designation": null, "company": null, "contactNo": null, "email": null, "relationship": null, "notes": null }]
 }`
-            },
-            {
-              role: "user",
-              content: `CV TEXT:\n${textToSend}`
-            }
-          ],
-        });
-
-        if (response.usage) {
-          await logLLMUsage(
-            ctx,
-            "cv_structuring",
-            model,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            true,
-            undefined,
-            cvUploadId,
-            undefined,
-            sourceChannel
-          );
-        }
-
-        const content = response.choices[0]?.message?.content;
-        if (!content) return null;
-
-        const parsed = parseJsonRobustly(content);
-        if (!parsed) return null;
-
-        if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
-          throw new Error("NOT_A_CV");
-        }
-
-        try {
-          return cvExtractionSchema.parse(parsed);
-        } catch (e) {
-          console.error("Zod parse error:", e);
-          return null;
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`[callOpenRouterLLM] Call failed with model ${model} (attempt ${attempt}):`, message);
-        lastMessage = message;
-
-        if (
-          message.includes("403") ||
-          message.toLowerCase().includes("insufficient") ||
-          message.toLowerCase().includes("balance") ||
-          message.toLowerCase().includes("credits") ||
-          message.includes("NOT_A_CV")
-        ) {
-          throw error;
-        }
-
-        const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests");
-        if (isRateLimit) {
-          console.warn(`[callOpenRouterLLM] Rate limit (429) on ${model}. Trying next fallback model...`);
-          break;
-        }
-      }
+    },
+    {
+      role: "user",
+      content: `CV TEXT:\n${textToSend}`
     }
-  }
+  ];
 
-  await logLLMUsage(
-    ctx,
-    "cv_structuring",
-    OPENROUTER_CV_EXTRACTION_MODEL,
-    0,
-    0,
-    false,
-    lastMessage,
-    cvUploadId,
-    undefined,
-    sourceChannel
-  );
-  return null;
+  try {
+    const { content } = await executeLLMWithNvidiaFallback(ctx, "cv_structuring", {
+      messages,
+      temperature: 0,
+      max_tokens: 4096,
+      response_format: { type: "json_object" },
+      cvUploadId,
+      sourceChannel,
+    });
+
+    if (!content) return null;
+    const parsed = parseJsonRobustly(content);
+    if (!parsed) return null;
+
+    if (Object.keys(parsed).length === 0 || (!parsed.fullName && !parsed.email && !parsed.phone && !parsed.skills && !parsed.jobHistory)) {
+      throw new Error("NOT_A_CV");
+    }
+
+    try {
+      return cvExtractionSchema.parse(parsed);
+    } catch (e) {
+      console.error("Zod parse error:", e);
+      return null;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "NOT_A_CV") throw error;
+    console.error("[callOpenRouterLLM] CV extraction failed on primary and fallback LLM:", message);
+    return null;
+  }
 }
 
 

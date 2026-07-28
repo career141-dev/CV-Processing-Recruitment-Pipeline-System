@@ -47,6 +47,22 @@ export function getOpenAI(taskType: TaskType): OpenAI {
   });
 }
 
+export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
+
+export function getNvidiaOpenAI(): OpenAI {
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) {
+    throw new Error("NVIDIA_API_KEY is not set");
+  }
+
+  return new OpenAI({
+    baseURL: "https://integrate.api.nvidia.com/v1",
+    apiKey,
+    timeout: 45000,
+    maxRetries: 0,
+  });
+}
+
 export function getModelForTask(taskType: TaskType): string {
   return MODEL_CONFIG[taskType];
 }
@@ -233,5 +249,121 @@ export async function callNvidiaVisionOCR(
   );
 
   throw new Error(`Vision OCR failed to extract text from candidate document: ${lastError}`);
+}
+
+export interface LLMCompletionOptions {
+  messages: Array<OpenAI.Chat.Completions.ChatCompletionMessageParam>;
+  temperature?: number;
+  max_tokens?: number;
+  response_format?: { type: "json_object" | "text" };
+  cvUploadId?: Id<"cvUploads">;
+  sourceChannel?: string;
+}
+
+export async function executeLLMWithNvidiaFallback(
+  ctx: ActionCtx,
+  taskType: TaskType | string,
+  options: LLMCompletionOptions
+): Promise<{ content: string; provider: "openrouter" | "nvidia"; model: string }> {
+  const primaryModel = getModelForTask(taskType as TaskType) || OPENROUTER_PRIMARY_MODEL;
+  
+  // 1. Try Primary OpenRouter Call
+  try {
+    const openai = getOpenAI(taskType as TaskType);
+    const response = await openai.chat.completions.create({
+      model: primaryModel,
+      messages: options.messages,
+      temperature: options.temperature ?? 0.1,
+      max_tokens: options.max_tokens ?? 4096,
+      ...(options.response_format ? { response_format: options.response_format } : {}),
+    });
+
+    if (response.usage) {
+      await logLLMUsage(
+        ctx,
+        taskType,
+        primaryModel,
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+        true,
+        undefined,
+        options.cvUploadId,
+        "openrouter",
+        options.sourceChannel
+      );
+    }
+
+    const content = response.choices[0]?.message?.content?.trim() || "";
+    if (content) {
+      return { content, provider: "openrouter", model: primaryModel };
+    }
+  } catch (openRouterError: any) {
+    const errorMsg = openRouterError?.message || String(openRouterError);
+    console.warn(`[executeLLMWithNvidiaFallback] Primary OpenRouter call (${primaryModel}) failed for task "${taskType}": ${errorMsg}. Failing over to NVIDIA Llama 3.1 70B...`);
+    
+    await logLLMUsage(
+      ctx,
+      taskType,
+      primaryModel,
+      0,
+      0,
+      false,
+      `Primary OpenRouter Failed: ${errorMsg}`,
+      options.cvUploadId,
+      "openrouter",
+      options.sourceChannel
+    );
+  }
+
+  // 2. Fallback to NVIDIA API (Llama 3.1 70B Instruct)
+  try {
+    const nvidiaOpenAI = getNvidiaOpenAI();
+    const response = await nvidiaOpenAI.chat.completions.create({
+      model: NVIDIA_FALLBACK_MODEL,
+      messages: options.messages,
+      temperature: options.temperature ?? 0.1,
+      max_tokens: options.max_tokens ?? 4096,
+      ...(options.response_format ? { response_format: options.response_format } : {}),
+    });
+
+    if (response.usage) {
+      await logLLMUsage(
+        ctx,
+        taskType,
+        NVIDIA_FALLBACK_MODEL,
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+        true,
+        undefined,
+        options.cvUploadId,
+        "nvidia",
+        options.sourceChannel
+      );
+    }
+
+    const content = response.choices[0]?.message?.content?.trim() || "";
+    if (content) {
+      return { content, provider: "nvidia", model: NVIDIA_FALLBACK_MODEL };
+    }
+    throw new Error("NVIDIA Llama 3.1 70B returned empty response");
+  } catch (nvidiaError: any) {
+    const errorMsg = nvidiaError?.message || String(nvidiaError);
+    console.error(`[executeLLMWithNvidiaFallback] Fallback NVIDIA call (${NVIDIA_FALLBACK_MODEL}) also failed for task "${taskType}": ${errorMsg}`);
+    
+    await logLLMUsage(
+      ctx,
+      taskType,
+      NVIDIA_FALLBACK_MODEL,
+      0,
+      0,
+      false,
+      `Fallback NVIDIA Failed: ${errorMsg}`,
+      options.cvUploadId,
+      "nvidia",
+      options.sourceChannel
+    );
+
+    throw new Error(`LLM execution failed on both OpenRouter and NVIDIA fallback: ${errorMsg}`);
+  }
 }
 

@@ -1,6 +1,6 @@
 "use node";
 
-import { getModelForTask, getOpenAI } from "./llm";
+import { executeLLMWithNvidiaFallback } from "./llm";
 
 export interface CandidateForRoleClassification {
   _id: string;
@@ -30,14 +30,12 @@ const BATCH_SIZE = 20;
  * Classify a job's function into a normalized role family slug.
  */
 export async function classifyJobRoleFamily(
+  ctx: any,
   jobTitle: string,
   jobDescription?: string,
   seniorityLevel?: string
 ): Promise<{ roleFamily: string; reasoning: string }> {
   try {
-    const model = getModelForTask("jd_matching");
-    const openai = getOpenAI("jd_matching");
-
     const prompt = `Analyze this job posting and assign a normalized role family slug (snake_case).
 Examples: software_engineering, qa_testing, devops_cloud, data_ai, product_management, design_uiux, fmcg_sales, B2B_sales, finance_accounting, hr_recruitment, marketing, operations_logistics, civil_engineering, textile_merchandising, tea_trading, medical_nursing, legal, executive_management, other.
 If the job function is specialized or non-standard, assign a descriptive snake_case tag or "other".
@@ -52,26 +50,17 @@ Return ONLY valid JSON matching:
   "reasoning": "short explanation"
 }`;
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Job role family 8s hard timeout")), 8000)
-    );
+    const { content } = await executeLLMWithNvidiaFallback(ctx, "jd_matching", {
+      messages: [
+        { role: "system", content: "You are an expert talent acquisition classifier." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 500,
+      response_format: { type: "json_object" },
+    });
 
-    const response = await Promise.race([
-      openai.chat.completions.create({
-        model,
-        temperature: 0.1,
-        max_tokens: 500,
-        messages: [
-          { role: "system", content: "You are an expert talent acquisition classifier." },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
-      }),
-      timeoutPromise,
-    ]);
-
-    const content = response.choices[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(content || "{}");
     const roleFamily = typeof parsed.roleFamily === "string" && parsed.roleFamily.trim()
       ? parsed.roleFamily.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_")
       : "other";
@@ -94,6 +83,7 @@ Return ONLY valid JSON matching:
  * Max batch size = 20. Fail-open error isolation applied per candidate.
  */
 export async function classifyCurrentRolesBatch(
+  ctx: any,
   candidates: CandidateForRoleClassification[],
   jobTitle: string,
   jobRoleFamily: string
@@ -103,80 +93,55 @@ export async function classifyCurrentRolesBatch(
   if (candidates.length === 0) return resultMap;
 
   // Cap un-cached candidate classifications to top 20 candidates (1 chunk max per reverse match run)
-  const cappedCandidates = candidates.slice(0, 20);
-
-  const chunks: CandidateForRoleClassification[][] = [];
-  for (let i = 0; i < cappedCandidates.length; i += BATCH_SIZE) {
-    chunks.push(cappedCandidates.slice(i, i + BATCH_SIZE));
-  }
-
-  // Execute chunk classification with 12s hard timeout protection
-  const chunkResultMaps = await Promise.all(
-    chunks.map((chunk) => processSingleChunk(chunk, jobTitle, jobRoleFamily))
-  );
-
-  chunkResultMaps.forEach((chunkMap) => {
-    chunkMap.forEach((val, key) => resultMap.set(key, val));
-  });
-
-  return resultMap;
-}
-
-async function processSingleChunk(
-  chunk: CandidateForRoleClassification[],
-  jobTitle: string,
-  jobRoleFamily: string
-): Promise<Map<string, CandidateRoleClassificationResult>> {
-  const resultMap = new Map<string, CandidateRoleClassificationResult>();
-
-  // Build candidate input payload
-  const candidateInputs = chunk.map((c) => {
-    let titleToUse = c.currentJobTitle && c.currentJobTitle.trim() ? c.currentJobTitle.trim() : null;
+  const candidateInputs = candidates.slice(0, BATCH_SIZE).map((c) => {
+    let titleToUse = c.currentJobTitle;
     let usedFallback = false;
 
-    if (!titleToUse && Array.isArray(c.pastJobTitles) && c.pastJobTitles.length > 0) {
+    if (!titleToUse && c.pastJobTitles && c.pastJobTitles.length > 0) {
       titleToUse = c.pastJobTitles[0];
       usedFallback = true;
     }
 
     return {
-      candidateId: c._id,
+      candidateId: c._id.toString(),
       title: titleToUse || "Unspecified Role",
-      employer: c.currentEmployer || null,
-      sector: c.sector || null,
-      totalExpYears: c.totalExperienceYears ?? null,
+      employer: c.currentEmployer || "Unspecified Employer",
+      sector: c.sector || "Unspecified Sector",
+      experienceYears: c.totalExperienceYears ?? 0,
       usedFallback,
     };
   });
 
-  const prompt = `You are a Senior Talent Acquisition Specialist classifying current corporate role levels and role family equivalences.
+  const prompt = `You are a corporate executive taxonomy engine. Evaluate the candidate's CURRENT role title, employer context, and experience level for:
+1. "rank": Integer from 0 to 9 representing their corporate seniority level:
+   - 0: Intern / Apprentice
+   - 1: Entry-Level / Junior Individual Contributor (0-2 yrs)
+   - 2: Mid-Level Individual Contributor (2-5 yrs)
+   - 3: Senior Individual Contributor / Technical Lead / Specialist (5-8+ yrs)
+   - 4: Lead / Assistant Manager / Team Lead (first-line supervisor)
+   - 5: Manager / Section Head (manages teams/budget)
+   - 6: Senior Manager / Head of Department (manages managers or large business unit)
+   - 7: Assistant General Manager (AGM) / Deputy General Manager (DGM)
+   - 8: General Manager (GM) / Vice President (VP) / Country Manager
+   - 9: Director / C-Suite (CEO, CTO, CFO, Managing Director)
 
-TARGET JOB DETAILS:
-- Job Title: "${jobTitle}"
-- Job Role Family: "${jobRoleFamily}"
+2. "roleFamily": Assign a normalized snake_case role family slug representing candidate's CURRENT function (e.g. software_engineering, qa_testing, devops_cloud, data_ai, product_management, design_uiux, fmcg_sales, B2B_sales, finance_accounting, hr_recruitment, marketing, operations_logistics, civil_engineering, textile_merchandising, tea_trading, medical_nursing, legal, executive_management, other).
 
-CANONICAL 10-LEVEL RANK TAXONOMY (Corporate Ladder):
-0  entry_level      (Intern, Graduate Trainee, Junior Developer, Assistant, Entry-Level)
-1  mid_level        (Software Engineer, Executive, Specialist, Designer, Analyst, Developer)
-2  executive        (Senior Engineer, Executive, Lead Designer, Senior Specialist)
-3  senior_executive (Senior Executive, Assistant Manager, Specialist Lead)
-4  manager          (Manager, Product Manager, QA Manager, Sales Manager, Team Lead)
-5  senior_manager   (Senior Manager, Head of Department, Lead Specialist)
-6  agm              (Assistant General Manager, Associate Director)
-7  gm               (General Manager, Country Manager)
-8  director         (Director, Senior Director, Head of Function)
-9  c_suite          (VP, C-Suite, CEO, CTO, Founder, President)
+3. "roleFamilyMatch": Evaluate equivalence between candidate's roleFamily and Target Job Role Family ("${jobRoleFamily}"):
+   - "exact": Direct match (e.g. candidate is software_engineering for software_engineering job)
+   - "synonym": Functionally equivalent / alternate title for same domain (e.g. B2B_sales vs fmcg_sales, or devops_cloud vs software_engineering)
+   - "adjacent": Transferable domain / close cousin (e.g. qa_testing for software_engineering, or product_management for software_engineering)
+   - "unrelated": Completely different non-transferable domain (e.g. civil_engineering or tea_trading for software_engineering)
 
-ROLE-FAMILY MATCH TIERS against Target Job ("${jobTitle}", "${jobRoleFamily}"):
-- "exact": Identical function & title scope (e.g. Software Engineer -> Software Engineer).
-- "synonym": Recognized equivalent function (e.g. Software Developer <-> Software Engineer, Full Stack Developer <-> Full Stack Engineer).
-- "adjacent": Related but distinct function (e.g. Backend Developer applying to Full Stack, or QA Engineer / DevOps applying to Software Engineer).
-- "unrelated": Different function entirely (e.g. Sales Executive or HR Officer applying to Software Engineer).
+4. "exclusionReason": Set to null IF rank <= 7. BUT if rank >= 8 (GM, Director, C-Suite) AND target job title is non-executive ("${jobTitle}"), return a clear string explaining over-qualification.
 
-CANDIDATES TO CLASSIFY:
+Target Job Title: "${jobTitle}"
+Target Job Role Family: "${jobRoleFamily}"
+
+Candidates to evaluate (JSON map by candidate ID):
 ${JSON.stringify(candidateInputs, null, 2)}
 
-Return ONLY valid JSON with keys matching candidateId exactly:
+Return ONLY valid JSON matching:
 {
   "<candidateId>": {
     "rank": 0-9 (integer),
@@ -190,29 +155,17 @@ Return ONLY valid JSON with keys matching candidateId exactly:
 }`;
 
   try {
-    const model = getModelForTask("jd_matching");
-    const openai = getOpenAI("jd_matching");
+    const { content } = await executeLLMWithNvidiaFallback(ctx, "jd_matching", {
+      messages: [
+        { role: "system", content: "You are an expert talent acquisition classifier. Output valid JSON only." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 1800,
+      response_format: { type: "json_object" },
+    });
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("LLM candidate classification 12s hard timeout reached")), 12000)
-    );
-
-    const response = await Promise.race([
-      openai.chat.completions.create({
-        model,
-        temperature: 0.1,
-        max_tokens: 1800,
-        messages: [
-          { role: "system", content: "You are an expert talent acquisition classifier. Output valid JSON only." },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
-      }),
-      timeoutPromise,
-    ]);
-
-    const content = response.choices[0]?.message?.content ?? "{}";
-    const parsedObj = JSON.parse(content);
+    const parsedObj = JSON.parse(content || "{}");
 
     for (const item of candidateInputs) {
       const cid = item.candidateId;
