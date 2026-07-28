@@ -191,6 +191,11 @@ export default defineSchema({
       candidateName: v.optional(v.string()),
       candidateRole: v.optional(v.string()),
       candidateExp: v.optional(v.number()),
+      currentRoleConfidence: v.optional(v.string()),
+      currentRoleGate: v.optional(v.string()),
+      currentRolePenalty: v.optional(v.number()),
+      currentRoleRankLabel: v.optional(v.string()),
+      exclusionReason: v.optional(v.union(v.null(), v.string())),
     }))),
 
 
