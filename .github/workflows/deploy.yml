@@ -53,8 +53,8 @@ jobs:
             DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
             echo "      Disk usage: ${DISK_USAGE}%"
             if [ "$DISK_USAGE" -gt 85 ]; then
-              echo "      WARNING: Disk above 85%! Pruning old Docker images..."
-              docker image prune -f || true
+              echo "      WARNING: Disk above 85%! Performing DEEP Docker Clean..."
+              docker system prune -a --volumes -f || true
             fi
 
             # ── Check available memory ────────────────────────────────────
