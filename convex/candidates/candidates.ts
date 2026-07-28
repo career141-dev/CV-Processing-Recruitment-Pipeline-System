@@ -1165,6 +1165,22 @@ export const deleteCandidate = mutation({
       await ctx.db.delete(cv._id);
     }
 
+    // Get candidate to check for direct cvUploadId (Agent 1 architecture)
+    const candidate = await ctx.db.get(candidateId);
+    if (candidate && candidate.cvUploadId) {
+      const upload = await ctx.db.get(candidate.cvUploadId);
+      if (upload) {
+        if (upload.storageId) {
+          try {
+            await ctx.storage.delete(upload.storageId);
+          } catch (e) {
+            console.error("Failed to delete from storage", e);
+          }
+        }
+        await ctx.db.delete(candidate.cvUploadId);
+      }
+    }
+
     // Finally, delete the candidate
     await ctx.db.delete(candidateId);
   }
@@ -1212,6 +1228,21 @@ export const bulkDeleteCandidates = mutation({
           }
         }
         await ctx.db.delete(cv._id);
+      }
+
+      const candidate = await ctx.db.get(candidateId);
+      if (candidate && candidate.cvUploadId) {
+        const upload = await ctx.db.get(candidate.cvUploadId);
+        if (upload) {
+          if (upload.storageId) {
+            try {
+              await ctx.storage.delete(upload.storageId);
+            } catch (e) {
+              console.error("Failed to delete from storage", e);
+            }
+          }
+          await ctx.db.delete(candidate.cvUploadId);
+        }
       }
 
       await ctx.db.delete(candidateId);
