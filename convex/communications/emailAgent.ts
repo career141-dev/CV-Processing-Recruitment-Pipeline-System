@@ -103,20 +103,27 @@ async function fetchAttachmentContent(inboxEmail: string, messageId: string, att
   }
 }
 
-async function fetchUnreadEmails(inboxEmail: string, lastFetch: string | null) {
+async function fetchInboxEmails(inboxEmail: string, lastFetch: string | null, ignoreReadStatus: boolean = false) {
   const token = await getGraphToken();
   if (!token) return [];
 
-  console.log(`[EmailAgent] Fetching emails for ${inboxEmail} since ${lastFetch || '14 days ago'}`);
+  const isSanjeevInbox = inboxEmail.toLowerCase().includes("sanjeev");
+  const bypassReadCheck = ignoreReadStatus || isSanjeevInbox;
+
+  console.log(`[EmailAgent] Fetching emails for ${inboxEmail} (bypassReadCheck=${bypassReadCheck}) since ${lastFetch || '30 days ago'}`);
   try {
-    let cutoffDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-    if (lastFetch) {
+    let cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    if (lastFetch && !isSanjeevInbox) {
       const lastFetchTime = new Date(lastFetch).getTime();
-      cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 14 * 24 * 60 * 60 * 1000)).toISOString();
+      cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 30 * 24 * 60 * 60 * 1000)).toISOString();
     }
 
-    // Filter by isRead eq false to avoid processing read emails repeatedly on every 5-min poll cycle
-    let url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false and receivedDateTime ge ${cutoffDate}&$select=id,subject,body,from,hasAttachments,isRead&$top=100`;
+    let filterClause = `hasAttachments eq true and receivedDateTime ge ${cutoffDate}`;
+    if (!bypassReadCheck) {
+      filterClause = `isRead eq false and ` + filterClause;
+    }
+
+    let url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/mailFolders/inbox/messages?$filter=${filterClause}&$select=id,subject,body,from,hasAttachments,isRead,receivedDateTime&$top=100&$orderby=receivedDateTime desc`;
     
     const allMessages: any[] = [];
 
@@ -131,7 +138,7 @@ async function fetchUnreadEmails(inboxEmail: string, lastFetch: string | null) {
       }
 
       const data = await response.json();
-      const messages = (data.value || []).filter((m: any) => !m.isRead);
+      const messages = data.value || [];
       allMessages.push(...messages);
       
       // Handle pagination if more emails exist
@@ -150,7 +157,7 @@ async function markEmailAsRead(inboxEmail: string, messageId: string) {
   if (!token) return;
 
   try {
-    const response = await fetch(`https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}`, {
+    const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/messages/${messageId}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -180,9 +187,10 @@ async function sendConfirmationEmail(toEmail: string, jobId: string) {
 export const pollEmailInbox = action({
   args: { 
     inboxEmail: v.string(), 
-    jobId: v.optional(v.id("jobs")) 
+    jobId: v.optional(v.id("jobs")),
+    ignoreReadStatus: v.optional(v.boolean()),
   },
-  handler: async (ctx, { inboxEmail, jobId }) => {
+  handler: async (ctx, { inboxEmail, jobId, ignoreReadStatus }) => {
     const targetInboxEmail = inboxEmail;
     console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail}`);
     
@@ -193,12 +201,12 @@ export const pollEmailInbox = action({
     const currentFetchTime = new Date().toISOString();
     await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime, inboxEmail: targetInboxEmail });
 
-    // 1. Fetch unread emails
-    const messages = await fetchUnreadEmails(targetInboxEmail, lastFetch);
+    // 1. Fetch inbox emails (including read emails for Sanjeev or when ignoreReadStatus is true)
+    const messages = await fetchInboxEmails(targetInboxEmail, lastFetch, ignoreReadStatus ?? false);
     if ((messages as any[]).length > 0) {
-      console.log(`[EmailAgent] Found ${(messages as any[]).length} unread messages.`);
+      console.log(`[EmailAgent] Found ${(messages as any[]).length} target messages in ${targetInboxEmail}.`);
     } else {
-      console.log(`[EmailAgent] No unread messages found.`);
+      console.log(`[EmailAgent] No matching messages found in ${targetInboxEmail}.`);
     }
     
     let currentExtractionDelayMs = 0; // Stagger AI extractions by 10s
@@ -374,6 +382,13 @@ Respond ONLY with a valid JSON object in this exact format:
           fileHash = Array.from(new Uint8Array(hashBuffer))
             .map(b => b.toString(16).padStart(2, "0"))
             .join("");
+
+          // Fast pre-check: skip if attachment hash already exists in cvUploads
+          const isAlreadyIngested = await ctx.runQuery(internal.communications.emailAgent.checkFileHashExists, { fileHash });
+          if (isAlreadyIngested) {
+            console.log(`[EmailAgent] Attachment ${attachment.name} (${fileHash.slice(0, 8)}) already ingested. Skipping upload.`);
+            continue;
+          }
 
           // Store in Cloudflare R2
           console.log("USING R2 NOW - UPLOADING TO CLOUDFLARE!");
@@ -744,6 +759,17 @@ export const updateLastEmailFetchTimestamp = internalMutation({
   }
 });
 
+export const checkFileHashExists = internalQuery({
+  args: { fileHash: v.string() },
+  handler: async (ctx, { fileHash }) => {
+    const existing = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_fileHash", (q) => q.eq("fileHash", fileHash))
+      .first();
+    return !!existing;
+  },
+});
+
 export const processSingleWeekendEmail = action({
   args: {
     targetInboxEmail: v.string(),
@@ -1014,6 +1040,23 @@ export const recoverMailboxCVs = action({
     return { success: true, totalMessagesChecked: allMessages.length, cvEmailsQueued: totalQueued };
   }
 });
+
+export const recoverSanjeevFullInbox = action({
+  args: {
+    targetJobId: v.optional(v.id("jobs")),
+    daysLookback: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const targetInboxEmail = "sanjeev@career141.com";
+    console.log(`[Sanjeev Full Recovery] Triggering recovery for ${targetInboxEmail}...`);
+    return await ctx.runAction(api.communications.emailAgent.recoverMailboxCVs, {
+      inboxEmail: targetInboxEmail,
+      targetJobId: args.targetJobId,
+      daysLookback: args.daysLookback ?? 60,
+    });
+  },
+});
+
 
 
 
