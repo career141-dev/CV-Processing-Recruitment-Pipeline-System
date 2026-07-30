@@ -421,12 +421,18 @@ export const updateJobChannels = mutation({
 
     if (!job) return { success: true };
 
-    const newlyPausedChannels = args.channels
-      .filter((ch) => !ch.isEnabled)
+    const enabledIds = args.channels
+      .filter((ch) => ch.isEnabled)
       .map((ch) => ch.channelType);
+
+    const paused: string[] = [];
+    if (!enabledIds.includes("whatsapp")) paused.push("whatsapp");
+    if (!enabledIds.includes("email_campaign")) paused.push("email");
+    if (!enabledIds.includes("linkedin")) paused.push("linkedin");
+    if (!enabledIds.includes("workable")) paused.push("portal");
       
     await ctx.db.patch(args.jobId, {
-      pausedChannels: newlyPausedChannels,
+      pausedChannels: paused,
     });
 
     const waChannel = args.channels.find((c) => (c.channelType === "whatsapp" || c.channelType === "whatsapp_campaign") && c.isEnabled);

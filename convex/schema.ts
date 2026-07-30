@@ -624,6 +624,7 @@ export default defineSchema({
     doNotContactReason: v.optional(v.string()),
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
+    customCallData: v.optional(v.any()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])

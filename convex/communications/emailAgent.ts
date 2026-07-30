@@ -284,7 +284,7 @@ export const pollEmailInbox = action({
           const openai = getOpenAI("email_routing");
           const model = getModelForTask("email_routing");
           
-          const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName}`).join("\n");
+          const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword || "None"}`).join("\n");
           
           const prompt = `You are an intelligent recruitment email router.
 Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
@@ -292,7 +292,7 @@ Your task is to analyze an incoming email (subject and body) from a candidate an
 CRITICAL ROUTING RULES:
 1. Perform semantic matching between the email subject/body and the active job "Title" (e.g. "Application for QA Manager" -> "Manager - Quality Assurance (Sweater)").
 2. Pay close attention to the EMAIL SUBJECT. Job board notifications usually include the exact or approximate job title in the subject line.
-3. Ignore job "Keywords" for matching. Do not use the keyword field to determine the match.
+3. If a job has a Keyword and it appears in the email subject or body, you can use it to confidently match the job.
 
 ACTIVE JOBS:
 ${jobsListContext}
@@ -339,6 +339,7 @@ Respond ONLY with a valid JSON object in this exact format:
       if (!resolvedJobId) {
         console.log(`[EmailAgent] No job match found for "${subject}". Routing to general DB pool.`);
       }
+
 
       // Loop over all CV attachments and process them
       let allCvAttachmentsProcessedSuccessfully = true;
@@ -756,7 +757,7 @@ export const processSingleWeekendEmail = action({
   },
   handler: async (ctx, args) => {
     // 1. AI Routing logic
-    let resolvedJobId = args.targetJobId ?? undefined;
+    let resolvedJobId: any = args.targetJobId ?? undefined;
     const subjectText = args.subject ?? "";
     const bodyText = args.emailBody ?? "";
     
@@ -766,9 +767,14 @@ export const processSingleWeekendEmail = action({
         try {
           const openai = getOpenAI("email_routing");
           const model = getModelForTask("email_routing");
-          const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\n");
+          const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword || "None"}`).join("\n");
           const prompt = `You are an intelligent recruitment email router.
 Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
+
+CRITICAL ROUTING RULES:
+1. Perform semantic matching between the email subject/body and the active job "Title".
+2. Pay close attention to the EMAIL SUBJECT. Job board notifications usually include the exact or approximate job title in the subject line.
+3. If a job has a Keyword and it appears in the email subject or body, you can use it to confidently match the job.
 
 ACTIVE JOBS:
 ${jobsListContext}
@@ -777,7 +783,9 @@ EMAIL SUBJECT: ${subjectText}
 EMAIL BODY: ${bodyText.substring(0, 2000)}
 
 Respond ONLY with a valid JSON object in this exact format:
-{ "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined" }`;
+{
+  "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined"
+}`;
 
         const completion = await openai.chat.completions.create({
           model: model,
@@ -790,13 +798,17 @@ Respond ONLY with a valid JSON object in this exact format:
           const resultObj = JSON.parse(resultStr);
           if (resultObj.matchedJobId) {
             const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
-            if (matchedJob && !matchedJob.pausedChannels?.includes("email")) {
-              resolvedJobId = resultObj.matchedJobId;
+            if (matchedJob) {
+              const weekendChannel = (args.targetInboxEmail.toLowerCase() === "linkedin@career141.com" || args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX) ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
+              if (!matchedJob.pausedChannels?.includes(weekendChannel)) {
+                resolvedJobId = resultObj.matchedJobId;
+                console.log(`[WeekendEmail] AI successfully routed email to job: ${resolvedJobId}`);
+              }
             }
           }
         }
-      } catch (e) {
-        console.error("[Weekend Recovery] AI Routing Error in background action", e);
+      } catch (error) {
+        console.error("[WeekendEmail] LLM routing failed", error);
       }
     }
     }

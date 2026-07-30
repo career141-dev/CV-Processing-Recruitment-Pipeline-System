@@ -209,7 +209,7 @@ export const aiSearch = action({
       const mapped = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
         resumeIds: vectorResults.map((r) => r._id),
       });
-      vectorCandidateIds = mapped.map((item) => ({
+      vectorCandidateIds = mapped.map((item: { resumeId: Id<"candidateResumes">; candidateId: Id<"candidates"> }) => ({
         candidateId: item.candidateId as Id<"candidates">,
         vectorScore: scoreByResumeId.get(item.resumeId as Id<"candidateResumes">) ?? 0,
       }));
