@@ -1046,7 +1046,7 @@ export const recoverSanjeevFullInbox = action({
     targetJobId: v.optional(v.id("jobs")),
     daysLookback: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ success: boolean; totalMessagesChecked: number; cvEmailsQueued: number }> => {
     const targetInboxEmail = "sanjeev@career141.com";
     console.log(`[Sanjeev Full Recovery] Triggering recovery for ${targetInboxEmail}...`);
     return await ctx.runAction(api.communications.emailAgent.recoverMailboxCVs, {

@@ -56,7 +56,7 @@ export const runReverseMatch = action({
       if (job.title) terms.push(job.title);
       for (const s of (job.requiredSkills ?? []).slice(0, 4)) terms.push(s);
       if (activePreferences && activePreferences.trim()) {
-        for (const t of activePreferences.split(/[\n,;]+/).map((s: string) => s.trim()).filter(s => s.length > 2).slice(0, 3)) {
+        for (const t of activePreferences.split(/[\n,;]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 2).slice(0, 3)) {
           terms.push(t);
         }
       }
