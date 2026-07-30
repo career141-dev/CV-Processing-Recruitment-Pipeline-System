@@ -13,6 +13,20 @@ import { getOpenAI, getModelForTask } from "../lib/llm";
 let _cachedToken: string | null = null;
 let _tokenExpiresAt = 0;
 
+async function safeFetchWithRetry(url: string, init: RequestInit, retries: number = 3): Promise<Response | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      return res;
+    } catch (err: any) {
+      console.warn(`[EmailAgent Network] Attempt ${attempt}/${retries} failed for URL (${url.slice(0, 70)}...):`, err.message || err);
+      if (attempt === retries) return null;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return null;
+}
+
 export async function getGraphToken(): Promise<string | null> {
   const tenantId = process.env.MS_GRAPH_TENANT_ID || process.env.MS_TENANT_ID;
   const clientId = process.env.MS_GRAPH_CLIENT_ID || process.env.MS_CLIENT_ID;
@@ -30,7 +44,7 @@ export async function getGraphToken(): Promise<string | null> {
   }
 
   try {
-    const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+    const response = await safeFetchWithRetry(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -41,8 +55,9 @@ export async function getGraphToken(): Promise<string | null> {
       }),
     });
 
-    if (!response.ok) {
-      console.error("[EmailAgent] Failed to fetch Graph token:", await response.text());
+    if (!response || !response.ok) {
+      const errorText = response ? await response.text() : "Network unreachable";
+      console.error("[EmailAgent] Failed to fetch Graph token:", errorText);
       return null;
     }
 
@@ -62,13 +77,13 @@ async function fetchMessageAttachments(inboxEmail: string, messageId: string) {
   if (!token) return [];
 
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments?$select=id,name,contentType,size`;
-    const response = await fetch(url, {
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/messages/${messageId}/attachments?$select=id,name,contentType,size`;
+    const response = await safeFetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (!response.ok) {
-      console.error(`[EmailAgent] Failed to fetch attachments for message ${messageId}:`, await response.text());
+    if (!response || !response.ok) {
+      console.error(`[EmailAgent] Failed to fetch attachments for message ${messageId}`);
       return [];
     }
 
@@ -85,13 +100,13 @@ async function fetchAttachmentContent(inboxEmail: string, messageId: string, att
   if (!token) return null;
 
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments/${attachmentId}`;
-    const response = await fetch(url, {
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/messages/${messageId}/attachments/${attachmentId}`;
+    const response = await safeFetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (!response.ok) {
-      console.error(`[EmailAgent] Failed to fetch attachment content for ${attachmentId}:`, await response.text());
+    if (!response || !response.ok) {
+      console.error(`[EmailAgent] Failed to fetch attachment content for ${attachmentId}`);
       return null;
     }
 
@@ -128,12 +143,12 @@ async function fetchInboxEmails(inboxEmail: string, lastFetch: string | null, ig
     const allMessages: any[] = [];
 
     while (url) {
-      const response = await fetch(url, {
+      const response = await safeFetchWithRetry(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!response.ok) {
-        console.error("[EmailAgent] Failed to fetch emails:", await response.text());
+      if (!response || !response.ok) {
+        console.error("[EmailAgent] Failed to fetch emails:", response ? await response.text() : "Network error");
         break;
       }
 
@@ -981,9 +996,10 @@ export const recoverMailboxCVs = action({
 
     const allMessages: any[] = [];
     while (url) {
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) {
-        console.error(`[Mailbox Recovery] Graph API error: ${await response.text()}`);
+      const response = await safeFetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response || !response.ok) {
+        const errorMsg = response ? await response.text() : "Network failure";
+        console.error(`[Mailbox Recovery] Graph API response error: ${errorMsg}`);
         break;
       }
       const data = await response.json();
