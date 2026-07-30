@@ -812,7 +812,7 @@ export const checkFileHashExists = query({
   },
 });
 
-export const processSingleWeekendEmail = action({
+export const processSingleRecoveredEmail = action({
   args: {
     targetInboxEmail: v.string(),
     messageId: v.string(),
@@ -867,16 +867,16 @@ Respond ONLY with a valid JSON object in this exact format:
           if (resultObj.matchedJobId) {
             const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
             if (matchedJob) {
-              const weekendChannel = (args.targetInboxEmail.toLowerCase() === "linkedin@career141.com" || args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX) ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
-              if (!matchedJob.pausedChannels?.includes(weekendChannel)) {
+              const channel = (args.targetInboxEmail.toLowerCase() === "linkedin@career141.com" || args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX) ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
+              if (!matchedJob.pausedChannels?.includes(channel)) {
                 resolvedJobId = resultObj.matchedJobId;
-                console.log(`[WeekendEmail] AI successfully routed email to job: ${resolvedJobId}`);
+                console.log(`[EmailRecovery] AI successfully routed email to job: ${resolvedJobId}`);
               }
             }
           }
         }
       } catch (error) {
-        console.error("[WeekendEmail] LLM routing failed", error);
+        console.error("[EmailRecovery] LLM routing failed", error);
       }
     }
     }
@@ -925,82 +925,8 @@ Respond ONLY with a valid JSON object in this exact format:
   }
 });
 
-export const recoverWeekendCVs = action({
-  args: {},
-  handler: async (ctx) => {
-    const token = await getGraphToken();
-    if (!token) throw new Error("No Graph token");
-
-    const inboxes = ["cv@career141.com", "job@career141.com", "linkedin@career141.com"];
-    // Weekend dates: July 18 and 19 2026.
-    const startWindow = "2026-07-18T00:00:00Z";
-    const endWindow = "2026-07-20T00:00:00Z";
-
-    let totalRecoveredEmails = 0;
-    let scheduleDelaySecs = 0; // Stagger jobs by 15 seconds
-
-    for (const targetInboxEmail of inboxes) {
-      console.log(`[Weekend Recovery] Checking ${targetInboxEmail}...`);
-      let url = `https://graph.microsoft.com/v1.0/users/${targetInboxEmail}/mailFolders/inbox/messages?$filter=receivedDateTime ge ${startWindow} and receivedDateTime lt ${endWindow}&$select=id,subject,body,from,hasAttachments&$top=100`;
-      
-      const allMessages: any[] = [];
-      while (url) {
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-        if (!response.ok) break;
-        const data = await response.json();
-        allMessages.push(...(data.value || []));
-        url = data["@odata.nextLink"];
-      }
-
-      console.log(`[Weekend Recovery] Found ${allMessages.length} messages in ${targetInboxEmail}. Queueing...`);
-
-      for (const message of allMessages) {
-        let attachments = message.attachments || [];
-        if (message.hasAttachments && attachments.length === 0) {
-          attachments = await fetchMessageAttachments(targetInboxEmail, message.id);
-        }
-
-        const cvAttachments = attachments.filter((a: any) =>
-          a.contentType?.includes("pdf") || a.contentType?.includes("msword") ||
-          a.contentType?.includes("officedocument.wordprocessingml") ||
-          a.name?.toLowerCase().endsWith(".pdf") || a.name?.toLowerCase().endsWith(".doc") ||
-          a.name?.toLowerCase().endsWith(".docx")
-        );
-
-        if (cvAttachments.length === 0) continue;
-
-        const subject = message.subject ?? "";
-        const emailBody = ((typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "")) || message.subject || "";
-        
-        // Pass essential metadata to the background task instead of full attachment content (it will fetch bytes later if needed)
-        const attachMeta = cvAttachments.map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          contentType: a.contentType,
-          contentBytes: a.contentBytes
-        }));
-
-        await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleWeekendEmail, {
-          targetInboxEmail,
-          messageId: message.id,
-          subject,
-          emailBody,
-          rawSender: message.from?.emailAddress?.address,
-          cvAttachments: attachMeta,
-          extractionDelayMs: 0,
-        });
-
-        scheduleDelaySecs += 15; // Queue one email every 15 seconds to avoid 429 Too Many Requests on AI Job Router
-        totalRecoveredEmails++;
-      }
-    }
-
-    console.log(`[Weekend Recovery] Completed Queueing. Scheduled ${totalRecoveredEmails} emails for delayed processing.`);
-    return { success: true, queued: totalRecoveredEmails };
-  }
-});
-
-export const processSingleBulkIngestionEmail = processSingleWeekendEmail;
+export const processSingleWeekendEmail = processSingleRecoveredEmail;
+export const processSingleBulkIngestionEmail = processSingleRecoveredEmail;
 
 export const recoverMailboxCVs = action({
   args: {
@@ -1068,7 +994,7 @@ export const recoverMailboxCVs = action({
         contentBytes: a.contentBytes
       }));
 
-      await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleWeekendEmail, {
+      await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleRecoveredEmail, {
         targetInboxEmail,
         messageId: message.id,
         subject,
