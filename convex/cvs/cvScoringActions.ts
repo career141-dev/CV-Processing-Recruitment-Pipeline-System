@@ -4,6 +4,9 @@ import { Id } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { adjustJobStageStat } from "../jobs/stats";
+import { initiateFollowUpOutreach } from "../pipeline/followUpHelper";
+import { scoreCandidateAgainstRequirements, scoreWithLLM } from "./cvScoring";
+import { getNvidiaOpenAI, NVIDIA_PRIMARY_MODEL } from "../lib/llm";
 
 // 1. Internal Query to get the necessary data for scoring
 export const getScoringData = internalQuery({
@@ -75,9 +78,8 @@ export const saveMatchScore = internalMutation({
       await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
       await syncCandidateOverallStatus(ctx, args.candidateId);
       
-      // We must call the outreach scheduler so Day 0 WhatsApp/Email starts immediately
-      const { initiateFollowUpOutreach } = await import("../pipeline/followUpHelper");
-      await initiateFollowUpOutreach(ctx, args.applicationId);
+      // Automated follow-up outreach disabled on TA shortlist move
+      // await initiateFollowUpOutreach(ctx, args.applicationId);
     }
   },
 });
@@ -127,7 +129,6 @@ export const processCvScoring = action({
     };
 
     // ── Step 3: Heuristic scoring (always runs — no API needed) ────────
-    const { scoreCandidateAgainstRequirements, scoreWithLLM } = await import("./cvScoring.js");
     const scored = scoreCandidateAgainstRequirements(candidate as any, req as any, 0);
 
     const weightedScore = Math.round(
@@ -190,7 +191,6 @@ export const processCvScoring = action({
 
     // ── TIER 1: NVIDIA NIM API (Llama 3.1 70B) — 3 retries ───────────────────
     let tier1Success = false;
-    const { getNvidiaOpenAI, NVIDIA_PRIMARY_MODEL } = await import("../lib/llm.js");
     let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: NVIDIA_PRIMARY_MODEL };
 
     for (let attempt = 1; attempt <= 3; attempt++) {

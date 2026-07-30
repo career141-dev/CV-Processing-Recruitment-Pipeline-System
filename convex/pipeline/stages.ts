@@ -58,8 +58,8 @@ export const moveToTAShortlist = mutation({
     });
     await syncCandidateOverallStatus(ctx, entry.candidateId);
     
-    // Initiate automated follow-up outreach immediately
-    await initiateFollowUpOutreach(ctx, args.applicationId);
+    // Automated follow-up outreach disabled on TA shortlist move
+    // await initiateFollowUpOutreach(ctx, args.applicationId);
 
     await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
       applicationId: args.applicationId,
@@ -188,7 +188,7 @@ export const setPipelineStage = mutation({
       });
     }
 
-    if (newStage === "ta_shortlist" || newStage === "follow_up" || newStage === "matched_candidates") {
+    if (newStage === "follow_up") {
       await initiateFollowUpOutreach(ctx, applicationId);
     }
 
