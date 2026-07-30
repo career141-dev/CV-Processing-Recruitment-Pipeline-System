@@ -487,5 +487,47 @@ export const getCvSourceBreakdown = query({
   },
 });
 
+export const lookupCandidateDetails = query({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    // Look at most recent 300 candidates first
+    const candidates = await ctx.db.query("candidates").order("desc").take(300);
+    const candidate = candidates.find(c => c.fullName?.toLowerCase().includes(args.name.toLowerCase()));
+    if (!candidate) return null;
+
+    const cvUpload = candidate.cvUploadId ? await ctx.db.get(candidate.cvUploadId) : null;
+    const application = await ctx.db.query("applications").withIndex("by_candidateId", (q) => q.eq("candidateId", candidate._id)).first();
+
+    return {
+      candidate: {
+        _id: candidate._id,
+        fullName: candidate.fullName,
+        email: candidate.email,
+        phone: candidate.phone,
+        currentTitle: candidate.currentTitle,
+        sourceChannel: candidate.sourceChannel,
+        _creationTime: candidate._creationTime,
+      },
+      cvUpload: cvUpload ? {
+        _id: cvUpload._id,
+        fileName: cvUpload.fileName,
+        source: cvUpload.source,
+        uploadedBy: cvUpload.uploadedBy,
+        campaignLabel: cvUpload.campaignLabel,
+        rawSender: (cvUpload as any).rawSender,
+        targetInboxEmail: (cvUpload as any).targetInboxEmail,
+        _creationTime: cvUpload._creationTime,
+      } : null,
+      application: application ? {
+        _id: application._id,
+        jobId: application.jobId,
+        currentStage: application.currentStage,
+        sourceChannel: application.sourceChannel,
+        _creationTime: application._creationTime,
+      } : null,
+    };
+  },
+});
+
 
 
