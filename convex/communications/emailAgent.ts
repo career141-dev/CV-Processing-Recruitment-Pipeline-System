@@ -747,30 +747,34 @@ export const processSingleWeekendEmail = action({
   args: {
     targetInboxEmail: v.string(),
     messageId: v.string(),
-    subject: v.string(),
-    emailBody: v.string(),
+    subject: v.optional(v.string()),
+    emailBody: v.optional(v.string()),
+    targetJobId: v.optional(v.id("jobs")),
     rawSender: v.optional(v.string()),
     cvAttachments: v.any(), // Array of simplified attachment metadata
     extractionDelayMs: v.number(),
   },
   handler: async (ctx, args) => {
     // 1. AI Routing logic
-    let resolvedJobId = undefined;
-    const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+    let resolvedJobId = args.targetJobId ?? undefined;
+    const subjectText = args.subject ?? "";
+    const bodyText = args.emailBody ?? "";
     
-    if (activeJobs.length > 0) {
-      try {
-        const openai = getOpenAI("email_routing");
-        const model = getModelForTask("email_routing");
-        const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\n");
-        const prompt = `You are an intelligent recruitment email router.
+    if (!resolvedJobId) {
+      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      if (activeJobs.length > 0) {
+        try {
+          const openai = getOpenAI("email_routing");
+          const model = getModelForTask("email_routing");
+          const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword}`).join("\n");
+          const prompt = `You are an intelligent recruitment email router.
 Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
 
 ACTIVE JOBS:
 ${jobsListContext}
 
-EMAIL SUBJECT: ${args.subject}
-EMAIL BODY: ${args.emailBody.substring(0, 2000)}
+EMAIL SUBJECT: ${subjectText}
+EMAIL BODY: ${bodyText.substring(0, 2000)}
 
 Respond ONLY with a valid JSON object in this exact format:
 { "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined" }`;
@@ -794,6 +798,7 @@ Respond ONLY with a valid JSON object in this exact format:
       } catch (e) {
         console.error("[Weekend Recovery] AI Routing Error in background action", e);
       }
+    }
     }
 
     // 2. Fetch attachments and store them
@@ -914,4 +919,7 @@ export const recoverWeekendCVs = action({
     return { success: true, queued: totalRecoveredEmails };
   }
 });
+
+export const processSingleBulkIngestionEmail = processSingleWeekendEmail;
+
 

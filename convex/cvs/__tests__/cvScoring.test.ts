@@ -2,12 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 // Use require() since tsx transpiles to CJS — no top-level await needed
-const {
+import {
   getSkillDomain,
   normaliseSkill,
   scoreSkills,
   buildDeterministicTaReason,
-} = require("../cvScoring") as typeof import("../cvScoring");
+} from "../cvScoring";
 
 // ─── getSkillDomain ────────────────────────────────────────────────────────
 

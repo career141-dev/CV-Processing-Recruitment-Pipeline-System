@@ -188,10 +188,10 @@ export const processCvScoring = action({
     let finalReason = buildHeuristicReason(); // safe default
     let scoringTier = "heuristic-smart";
 
-    // ── TIER 1: OpenRouter Primary Model — 3 retries ───────────────────
+    // ── TIER 1: NVIDIA NIM API (Llama 3.1 70B) — 3 retries ───────────────────
     let tier1Success = false;
-    const { getOpenAI, getModelForTask, OPENROUTER_PRIMARY_MODEL, OPENROUTER_SCANNED_CV_MODEL } = await import("../lib/llm.js");
-    let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: OPENROUTER_PRIMARY_MODEL };
+    const { getNvidiaOpenAI, NVIDIA_PRIMARY_MODEL } = await import("../lib/llm.js");
+    let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: NVIDIA_PRIMARY_MODEL };
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -200,7 +200,7 @@ export const processCvScoring = action({
         finalReason  = result.reason;
         tier1Usage   = usage;
         tier1Success = true;
-        scoringTier  = "openrouter-primary";
+        scoringTier  = "nvidia-primary";
         break;
       } catch {
         if (attempt < 3) {
@@ -217,26 +217,26 @@ export const processCvScoring = action({
         promptTokens:    tier1Usage.promptTokens,
         completionTokens: tier1Usage.completionTokens,
         success: tier1Success,
-        error:   tier1Success ? undefined : "Tier 1 (OpenRouter Primary) failed after 3 retries",
+        error:   tier1Success ? undefined : "Tier 1 (NVIDIA Llama 3.1 70B) failed after 3 retries",
         cvUploadId: candidate.cvUploadId ?? undefined,
       }]
     });
 
-    // ── TIER 2: OpenRouter Fallback Model (Gemma 4 26B Free) — only if Tier 1 failed ──────
+    // ── TIER 2: NVIDIA NIM Fallback — only if Tier 1 failed ──────
     if (!tier1Success) {
-      console.warn(`[Scoring] Tier 1 (${OPENROUTER_PRIMARY_MODEL}) failed for ${args.candidateId}. Trying Tier 2 fallback (${OPENROUTER_SCANNED_CV_MODEL})...`);
+      console.warn(`[Scoring] Tier 1 (${NVIDIA_PRIMARY_MODEL}) failed for ${args.candidateId}. Trying Tier 2 fallback (${NVIDIA_PRIMARY_MODEL})...`);
 
       let tier2Success = false;
-      const fallbackModel = OPENROUTER_SCANNED_CV_MODEL;
+      const fallbackModel = NVIDIA_PRIMARY_MODEL;
       let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: fallbackModel };
 
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const openai = getOpenAI("jd_matching");
+          const nvidia = getNvidiaOpenAI();
           const model  = fallbackModel;
 
           // Shorter prompt — reduces token usage and rate-limit pressure
-          const response = await openai.chat.completions.create({
+          const response = await nvidia.chat.completions.create({
             model,
             messages: [
               {
@@ -271,7 +271,7 @@ export const processCvScoring = action({
             model,
           };
           tier2Success = true;
-          scoringTier  = "openrouter-fallback";
+          scoringTier  = "nvidia-fallback";
           break;
         } catch {
           if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
@@ -286,7 +286,7 @@ export const processCvScoring = action({
           promptTokens:    tier2Usage.promptTokens,
           completionTokens: tier2Usage.completionTokens,
           success: tier2Success,
-          error:   tier2Success ? undefined : "Tier 2 (8B) also failed — using Tier 3 heuristic",
+          error:   tier2Success ? undefined : "Tier 2 (NVIDIA) also failed — using Tier 3 heuristic",
           cvUploadId: candidate.cvUploadId ?? undefined,
         }]
       });

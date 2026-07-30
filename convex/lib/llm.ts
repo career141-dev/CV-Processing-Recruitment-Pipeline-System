@@ -6,48 +6,47 @@ import type { ActionCtx } from "../_generated/server";
 
 export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
 
-export const OPENROUTER_PRIMARY_MODEL = "deepseek/deepseek-v4-flash";
-export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
-export const OPENROUTER_SCANNED_CV_MODEL = "google/gemma-4-26b-a4b-it:free";
-
-export const OPENROUTER_FALLBACK_MODELS = [
-  OPENROUTER_PRIMARY_MODEL,
-  OPENROUTER_SCANNED_CV_MODEL,
-];
-
-export const OPENROUTER_CV_FALLBACK_MODELS = [
-  OPENROUTER_CV_EXTRACTION_MODEL,
-  OPENROUTER_SCANNED_CV_MODEL,
-];
-
-// Model configuration mapping
-const MODEL_CONFIG = {
-  cv_structuring: OPENROUTER_CV_EXTRACTION_MODEL,
-  jd_extraction: OPENROUTER_PRIMARY_MODEL,
-  jd_matching: OPENROUTER_PRIMARY_MODEL,
-  email_routing: OPENROUTER_PRIMARY_MODEL,
-  cv_vision_ocr: OPENROUTER_SCANNED_CV_MODEL,
+export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
+  return taskType === "cv_structuring" || taskType === "cv_vision_ocr";
 };
 
-export function getOpenAI(taskType: TaskType): OpenAI {
-  const apiKey = process.env.OPENROUTER_API_KEY || "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";
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
+export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
+export const OPENROUTER_PRIMARY_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
+export const OPENROUTER_SCANNED_CV_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
+export const OPENROUTER_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
+export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
+export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.1-70b-instruct";
+export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
 
-  return new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey,
-    defaultHeaders: {
-      "HTTP-Referer": "https://career141.com",
-      "X-Title": "Career141 System",
-    },
-    timeout: 45000,
-    maxRetries: 0,
-  });
+export function getModelForTask(taskType: TaskType | string): string {
+  if (IS_CV_EXTRACTION_TASK(taskType)) {
+    return OPENROUTER_CV_EXTRACTION_MODEL;
+  }
+  return NVIDIA_PRIMARY_MODEL;
 }
 
-export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
+export function getOpenAI(taskType: TaskType | string): OpenAI {
+  if (IS_CV_EXTRACTION_TASK(taskType)) {
+    const apiKey = process.env.OPENROUTER_API_KEY || "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";
+    if (!apiKey) {
+      throw new Error("OPENROUTER_API_KEY is not set");
+    }
+
+    return new OpenAI({
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKey,
+      defaultHeaders: {
+        "HTTP-Referer": "https://career141.com",
+        "X-Title": "Career141 System",
+      },
+      timeout: 45000,
+      maxRetries: 0,
+    });
+  }
+
+  // Non-CV extractions use NVIDIA NIM API to preserve OpenRouter credits
+  return getNvidiaOpenAI();
+}
 
 export function getNvidiaOpenAI(): OpenAI {
   const apiKey = process.env.NVIDIA_API_KEY;
@@ -61,10 +60,6 @@ export function getNvidiaOpenAI(): OpenAI {
     timeout: 45000,
     maxRetries: 0,
   });
-}
-
-export function getModelForTask(taskType: TaskType): string {
-  return MODEL_CONFIG[taskType];
 }
 
 import { internal } from "../_generated/api";
@@ -84,7 +79,7 @@ export async function logLLMUsage(
   sourceChannel?: string
 ): Promise<void> {
   try {
-    const resolvedProvider = provider || (taskType === "embedding" || model.includes("nvidia") ? "nvidia" : "openrouter");
+    const resolvedProvider = provider || (taskType === "embedding" || !IS_CV_EXTRACTION_TASK(taskType) || model.includes("nvidia") ? "nvidia" : "openrouter");
     await ctx.runMutation(internal.stats.stats.logNvidiaCallMutation, {
       taskType,
       model,
@@ -188,58 +183,52 @@ export async function callNvidiaVisionOCR(
     });
   }
 
-  const modelsToTry = [
-    OPENROUTER_SCANNED_CV_MODEL,
-    "deepseek/deepseek-v4-flash",
-  ];
-
+  const model = OPENROUTER_CV_EXTRACTION_MODEL;
   let lastError = "";
 
-  for (const model of modelsToTry) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await openai.chat.completions.create({
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: contentItems as any,
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 4096,
+      });
+
+      if (response.usage) {
+        await logLLMUsage(
+          ctx,
+          "cv_vision_ocr",
           model,
-          messages: [
-            {
-              role: "user",
-              content: contentItems as any,
-            },
-          ],
-          temperature: 0.1,
-          max_tokens: 4096,
-        });
-
-        if (response.usage) {
-          await logLLMUsage(
-            ctx,
-            "cv_vision_ocr",
-            model,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            true,
-            undefined,
-            cvUploadId,
-            "openrouter"
-          );
-        }
-
-        const extractedText = response.choices[0]?.message?.content?.trim() || "";
-        if (extractedText && extractedText.length > 10) {
-          return extractedText;
-        }
-      } catch (err: any) {
-        lastError = err?.message || String(err);
-        console.warn(`[callNvidiaVisionOCR] Vision OCR failed with model ${model} (attempt ${attempt}): ${lastError}`);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+          response.usage.prompt_tokens,
+          response.usage.completion_tokens,
+          true,
+          undefined,
+          cvUploadId,
+          "openrouter"
+        );
       }
+
+      const extractedText = response.choices[0]?.message?.content?.trim() || "";
+      if (extractedText && extractedText.length > 10) {
+        return extractedText;
+      }
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+      console.warn(`[callNvidiaVisionOCR] Vision OCR failed with model ${model} (attempt ${attempt}): ${lastError}`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
   await logLLMUsage(
     ctx,
     "cv_vision_ocr",
-    OPENROUTER_SCANNED_CV_MODEL,
+    model,
     0,
     0,
     false,
@@ -265,61 +254,66 @@ export async function executeLLMWithNvidiaFallback(
   taskType: TaskType | string,
   options: LLMCompletionOptions
 ): Promise<{ content: string; provider: "openrouter" | "nvidia"; model: string }> {
-  const primaryModel = getModelForTask(taskType as TaskType) || OPENROUTER_PRIMARY_MODEL;
-  
-  // 1. Try Primary OpenRouter Call
-  try {
-    const openai = getOpenAI(taskType as TaskType);
-    const response = await openai.chat.completions.create({
-      model: primaryModel,
-      messages: options.messages,
-      temperature: options.temperature ?? 0.1,
-      max_tokens: options.max_tokens ?? 4096,
-      ...(options.response_format ? { response_format: options.response_format } : {}),
-    });
+  if (IS_CV_EXTRACTION_TASK(taskType)) {
+    // CV Extractions: Use OpenRouter API exclusively with deepseek/deepseek-v4-flash (no fallback models)
+    const model = OPENROUTER_CV_EXTRACTION_MODEL;
+    try {
+      const openai = getOpenAI(taskType);
+      const response = await openai.chat.completions.create({
+        model,
+        messages: options.messages,
+        temperature: options.temperature ?? 0.1,
+        max_tokens: options.max_tokens ?? 4096,
+        ...(options.response_format ? { response_format: options.response_format } : {}),
+      });
 
-    if (response.usage) {
+      if (response.usage) {
+        await logLLMUsage(
+          ctx,
+          taskType,
+          model,
+          response.usage.prompt_tokens,
+          response.usage.completion_tokens,
+          true,
+          undefined,
+          options.cvUploadId,
+          "openrouter",
+          options.sourceChannel
+        );
+      }
+
+      const content = response.choices[0]?.message?.content?.trim() || "";
+      if (content) {
+        return { content, provider: "openrouter", model };
+      }
+      throw new Error("OpenRouter deepseek/deepseek-v4-flash returned empty response");
+    } catch (openRouterError: any) {
+      const errorMsg = openRouterError?.message || String(openRouterError);
+      console.error(`[executeLLMWithNvidiaFallback] CV extraction call (${model}) failed for task "${taskType}": ${errorMsg}`);
+      
       await logLLMUsage(
         ctx,
         taskType,
-        primaryModel,
-        response.usage.prompt_tokens,
-        response.usage.completion_tokens,
-        true,
-        undefined,
+        model,
+        0,
+        0,
+        false,
+        `CV Extraction Failed: ${errorMsg}`,
         options.cvUploadId,
         "openrouter",
         options.sourceChannel
       );
-    }
 
-    const content = response.choices[0]?.message?.content?.trim() || "";
-    if (content) {
-      return { content, provider: "openrouter", model: primaryModel };
+      throw openRouterError;
     }
-  } catch (openRouterError: any) {
-    const errorMsg = openRouterError?.message || String(openRouterError);
-    console.warn(`[executeLLMWithNvidiaFallback] Primary OpenRouter call (${primaryModel}) failed for task "${taskType}": ${errorMsg}. Failing over to NVIDIA Llama 3.1 70B...`);
-    
-    await logLLMUsage(
-      ctx,
-      taskType,
-      primaryModel,
-      0,
-      0,
-      false,
-      `Primary OpenRouter Failed: ${errorMsg}`,
-      options.cvUploadId,
-      "openrouter",
-      options.sourceChannel
-    );
   }
 
-  // 2. Fallback to NVIDIA API (Llama 3.1 70B Instruct)
+  // Non-CV Tasks (Reverse Match, Search, JD Extraction, Email Routing, etc.): Use NVIDIA NIM API
+  const model = NVIDIA_PRIMARY_MODEL;
   try {
     const nvidiaOpenAI = getNvidiaOpenAI();
     const response = await nvidiaOpenAI.chat.completions.create({
-      model: NVIDIA_FALLBACK_MODEL,
+      model,
       messages: options.messages,
       temperature: options.temperature ?? 0.1,
       max_tokens: options.max_tokens ?? 4096,
@@ -330,7 +324,7 @@ export async function executeLLMWithNvidiaFallback(
       await logLLMUsage(
         ctx,
         taskType,
-        NVIDIA_FALLBACK_MODEL,
+        model,
         response.usage.prompt_tokens,
         response.usage.completion_tokens,
         true,
@@ -343,27 +337,28 @@ export async function executeLLMWithNvidiaFallback(
 
     const content = response.choices[0]?.message?.content?.trim() || "";
     if (content) {
-      return { content, provider: "nvidia", model: NVIDIA_FALLBACK_MODEL };
+      return { content, provider: "nvidia", model };
     }
-    throw new Error("NVIDIA Llama 3.1 70B returned empty response");
+    throw new Error(`NVIDIA ${model} returned empty response`);
   } catch (nvidiaError: any) {
     const errorMsg = nvidiaError?.message || String(nvidiaError);
-    console.error(`[executeLLMWithNvidiaFallback] Fallback NVIDIA call (${NVIDIA_FALLBACK_MODEL}) also failed for task "${taskType}": ${errorMsg}`);
+    console.error(`[executeLLMWithNvidiaFallback] Non-CV task call (${model}) failed for task "${taskType}": ${errorMsg}`);
     
     await logLLMUsage(
       ctx,
       taskType,
-      NVIDIA_FALLBACK_MODEL,
+      model,
       0,
       0,
       false,
-      `Fallback NVIDIA Failed: ${errorMsg}`,
+      `NVIDIA Call Failed: ${errorMsg}`,
       options.cvUploadId,
       "nvidia",
       options.sourceChannel
     );
 
-    throw new Error(`LLM execution failed on both OpenRouter and NVIDIA fallback: ${errorMsg}`);
+    throw nvidiaError;
   }
 }
+
 
