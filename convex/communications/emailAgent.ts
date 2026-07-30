@@ -138,7 +138,7 @@ async function fetchInboxEmails(inboxEmail: string, lastFetch: string | null, ig
       filterClause = `isRead eq false and ` + filterClause;
     }
 
-    let url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/mailFolders/inbox/messages?$filter=${filterClause}&$select=id,subject,body,from,hasAttachments,isRead,receivedDateTime&$top=100&$orderby=receivedDateTime desc`;
+    let url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/mailFolders/inbox/messages?$filter=${filterClause}&$select=id,subject,body,from,hasAttachments,isRead,receivedDateTime&$top=100`;
     
     const allMessages: any[] = [];
 

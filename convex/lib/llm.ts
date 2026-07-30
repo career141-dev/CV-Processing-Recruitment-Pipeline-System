@@ -12,14 +12,15 @@ export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
 
 export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
 export const OPENROUTER_PRIMARY_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
-export const OPENROUTER_VISION_MODEL = "meta-llama/llama-3.2-11b-vision-instruct";
+export const OPENROUTER_VISION_MODEL = "google/gemini-flash-1.5";
 export const OPENROUTER_SCANNED_CV_MODEL = OPENROUTER_VISION_MODEL;
 export const OPENROUTER_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_VISION_FALLBACK_MODELS = [
-  "meta-llama/llama-3.2-11b-vision-instruct",
-  "google/gemini-2.0-flash-001",
-  "openai/gpt-4o-mini",
+  "google/gemini-flash-1.5",
+  "google/gemini-2.0-flash-lite-001",
+  "qwen/qwen-2-vl-72b-instruct:free",
+  "meta-llama/llama-3.2-11b-vision-instruct:free",
 ];
 export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.1-70b-instruct";
 export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
