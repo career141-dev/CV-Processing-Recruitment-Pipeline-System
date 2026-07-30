@@ -609,8 +609,8 @@ http.route({
         );
         const taEmail = resourceMatch?.[1];
 
-        if (!taEmail) {
-          console.warn("[Graph Webhook] Could not extract taEmail from resource:", notification.resource);
+        if (!taEmail || taEmail.toLowerCase().includes("sanjeev")) {
+          console.warn("[Graph Webhook] Skipping disabled or unparseable taEmail resource:", notification.resource);
           continue;
         }
 

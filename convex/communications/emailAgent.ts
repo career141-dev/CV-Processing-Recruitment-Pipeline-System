@@ -122,13 +122,12 @@ async function fetchInboxEmails(inboxEmail: string, lastFetch: string | null, ig
   const token = await getGraphToken();
   if (!token) return [];
 
-  const isSanjeevInbox = inboxEmail.toLowerCase().includes("sanjeev");
-  const bypassReadCheck = ignoreReadStatus || isSanjeevInbox;
+  const bypassReadCheck = ignoreReadStatus;
 
   console.log(`[EmailAgent] Fetching emails for ${inboxEmail} (bypassReadCheck=${bypassReadCheck}) since ${lastFetch || '30 days ago'}`);
   try {
     let cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    if (lastFetch && !isSanjeevInbox) {
+    if (lastFetch) {
       const lastFetchTime = new Date(lastFetch).getTime();
       cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 30 * 24 * 60 * 60 * 1000)).toISOString();
     }
@@ -207,6 +206,10 @@ export const pollEmailInbox = action({
   },
   handler: async (ctx, { inboxEmail, jobId, ignoreReadStatus }) => {
     const targetInboxEmail = inboxEmail;
+    if (targetInboxEmail.toLowerCase().includes("sanjeev")) {
+      console.log(`[EmailAgent] Ingestion disabled for ${targetInboxEmail}. Skipping.`);
+      return { success: false, reason: "sanjeev_inbox_disabled" };
+    }
     console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail}`);
     
     // Fetch last check timestamp for this specific inbox
@@ -1001,15 +1004,19 @@ export const processSingleBulkIngestionEmail = processSingleWeekendEmail;
 
 export const recoverMailboxCVs = action({
   args: {
-    inboxEmail: v.optional(v.string()), // Defaults to "sanjeev@career141.com"
+    inboxEmail: v.optional(v.string()), // Defaults to "cv@career141.com"
     targetJobId: v.optional(v.id("jobs")),
     daysLookback: v.optional(v.number()), // Default 30 days
   },
   handler: async (ctx, args) => {
+    const targetInboxEmail = args.inboxEmail || "cv@career141.com";
+    if (targetInboxEmail.toLowerCase().includes("sanjeev")) {
+      console.log(`[Mailbox Recovery] Ingestion for ${targetInboxEmail} is disabled. Aborting.`);
+      return { success: false, totalMessagesChecked: 0, cvEmailsQueued: 0, reason: "sanjeev_inbox_disabled" };
+    }
     const token = await getGraphToken();
     if (!token) throw new Error("No Graph token available");
 
-    const targetInboxEmail = args.inboxEmail || "sanjeev@career141.com";
     const days = args.daysLookback ?? 30;
     const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
@@ -1081,29 +1088,18 @@ export const recoverMailboxCVs = action({
   }
 });
 
-export const recoverSanjeevFullInbox = action({
+export const recoverCvFullInbox = action({
   args: {
     targetJobId: v.optional(v.id("jobs")),
     daysLookback: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ success: boolean; totalMessagesChecked: number; cvEmailsQueued: number }> => {
-    const targetInboxEmail = "sanjeev@career141.com";
-    console.log(`[Sanjeev Full Recovery] Triggering recovery for ${targetInboxEmail}...`);
+    const targetInboxEmail = "cv@career141.com";
+    console.log(`[CV Full Recovery] Triggering recovery for ${targetInboxEmail}...`);
     return await ctx.runAction(api.communications.emailAgent.recoverMailboxCVs, {
       inboxEmail: targetInboxEmail,
       targetJobId: args.targetJobId,
       daysLookback: args.daysLookback ?? 60,
     });
-  },
-});
-
-export const checkFileHashExists = query({
-  args: { fileHash: v.string() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("cvUploads")
-      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
-      .first();
-    return existing !== null;
   },
 });

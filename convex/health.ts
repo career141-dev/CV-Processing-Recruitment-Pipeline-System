@@ -447,7 +447,42 @@ export const addTestCandidateForDevJob = mutation({
       applicationId,
       email: targetEmail,
       phone: formattedPhone,
-      stage: "new_cvs",
+    };
+  },
+});
+
+export const getCvSourceBreakdown = query({
+  args: {},
+  handler: async (ctx) => {
+    const uploads = await ctx.db.query("cvUploads").collect();
+    const apps = await ctx.db.query("applications").collect();
+
+    const uploadSources: Record<string, number> = {};
+    for (const u of uploads) {
+      const src = u.source || "unknown";
+      uploadSources[src] = (uploadSources[src] || 0) + 1;
+    }
+
+    const appSources: Record<string, number> = {};
+    for (const a of apps) {
+      const src = a.sourceChannel || "unknown";
+      appSources[src] = (appSources[src] || 0) + 1;
+    }
+
+    // Ingestion log inspect
+    const logs = await ctx.db.query("ingestionLog").take(100);
+    const logSources: Record<string, number> = {};
+    for (const l of logs) {
+      const src = (l as any).channelType || (l as any).channel || "unknown";
+      logSources[src] = (logSources[src] || 0) + 1;
+    }
+
+    return {
+      totalUploads: uploads.length,
+      uploadSources,
+      totalApplications: apps.length,
+      appSources,
+      logSourcesSample: logSources,
     };
   },
 });
