@@ -470,6 +470,14 @@ crons.interval(
   { inboxEmail: "job@career141.com" }
 );
 
+// Poll Sanjeev's inbox every 5 minutes
+crons.interval(
+  "poll-sanjeev-inbox",
+  { minutes: 5 },
+  api.communications.emailAgent.pollEmailInbox,
+  { inboxEmail: "sanjeev@career141.com" }
+);
+
 export const checkSlaBreaches = internalMutation({
   args: {},
   handler: async (ctx) => {

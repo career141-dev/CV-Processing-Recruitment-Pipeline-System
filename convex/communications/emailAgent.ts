@@ -14,12 +14,12 @@ let _cachedToken: string | null = null;
 let _tokenExpiresAt = 0;
 
 export async function getGraphToken(): Promise<string | null> {
-  const tenantId = process.env.MS_GRAPH_TENANT_ID;
-  const clientId = process.env.MS_GRAPH_CLIENT_ID;
-  const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET;
+  const tenantId = process.env.MS_GRAPH_TENANT_ID || process.env.MS_TENANT_ID;
+  const clientId = process.env.MS_GRAPH_CLIENT_ID || process.env.MS_CLIENT_ID;
+  const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET || process.env.MS_CLIENT_SECRET;
 
   if (!tenantId || !clientId || !clientSecret) {
-    console.log("[EmailAgent] Missing Microsoft Graph API credentials in environment variables.");
+    console.log("[EmailAgent] Missing Microsoft Graph API credentials in environment variables (checked MS_GRAPH_TENANT_ID / MS_TENANT_ID).");
     return null;
   }
 
@@ -933,5 +933,87 @@ export const recoverWeekendCVs = action({
 });
 
 export const processSingleBulkIngestionEmail = processSingleWeekendEmail;
+
+export const recoverMailboxCVs = action({
+  args: {
+    inboxEmail: v.optional(v.string()), // Defaults to "sanjeev@career141.com"
+    targetJobId: v.optional(v.id("jobs")),
+    daysLookback: v.optional(v.number()), // Default 30 days
+  },
+  handler: async (ctx, args) => {
+    const token = await getGraphToken();
+    if (!token) throw new Error("No Graph token available");
+
+    const targetInboxEmail = args.inboxEmail || "sanjeev@career141.com";
+    const days = args.daysLookback ?? 30;
+    const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    console.log(`[Mailbox Recovery] Starting recovery for ${targetInboxEmail} (lookback ${days} days)...`);
+    
+    // Notice: NO 'isRead eq false' filter so read emails are included!
+    let url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(targetInboxEmail)}/mailFolders/inbox/messages?$filter=receivedDateTime ge ${cutoffDate}&$select=id,subject,body,from,hasAttachments,isRead&$top=100`;
+
+    const allMessages: any[] = [];
+    while (url) {
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) {
+        console.error(`[Mailbox Recovery] Graph API error: ${await response.text()}`);
+        break;
+      }
+      const data = await response.json();
+      allMessages.push(...(data.value || []));
+      url = data["@odata.nextLink"];
+    }
+
+    console.log(`[Mailbox Recovery] Found ${allMessages.length} total messages in ${targetInboxEmail}. Filtering CV attachments...`);
+
+    let totalQueued = 0;
+    let scheduleDelaySecs = 0;
+
+    for (const message of allMessages) {
+      let attachments = message.attachments || [];
+      if (message.hasAttachments && attachments.length === 0) {
+        attachments = await fetchMessageAttachments(targetInboxEmail, message.id);
+      }
+
+      const cvAttachments = attachments.filter((a: any) =>
+        a.contentType?.includes("pdf") || a.contentType?.includes("msword") ||
+        a.contentType?.includes("officedocument.wordprocessingml") ||
+        a.name?.toLowerCase().endsWith(".pdf") || a.name?.toLowerCase().endsWith(".doc") ||
+        a.name?.toLowerCase().endsWith(".docx")
+      );
+
+      if (cvAttachments.length === 0) continue;
+
+      const subject = message.subject ?? "";
+      const emailBody = ((typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "")) || message.subject || "";
+
+      const attachMeta = cvAttachments.map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        contentType: a.contentType,
+        contentBytes: a.contentBytes
+      }));
+
+      await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleWeekendEmail, {
+        targetInboxEmail,
+        messageId: message.id,
+        subject,
+        emailBody,
+        targetJobId: args.targetJobId,
+        rawSender: message.from?.emailAddress?.address,
+        cvAttachments: attachMeta,
+        extractionDelayMs: 0,
+      });
+
+      scheduleDelaySecs += 10; // Queue 1 email every 10s to avoid rate limits
+      totalQueued++;
+    }
+
+    console.log(`[Mailbox Recovery] Successfully scheduled ${totalQueued} CV emails for extraction from ${targetInboxEmail}.`);
+    return { success: true, totalMessagesChecked: allMessages.length, cvEmailsQueued: totalQueued };
+  }
+});
+
 
 
