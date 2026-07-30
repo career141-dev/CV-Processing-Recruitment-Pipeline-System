@@ -158,6 +158,17 @@ export async function generateNvidiaEmbedding(
   return undefined;
 }
 
+export const NVIDIA_VISION_MODELS = [
+  "meta/llama-3.2-11b-vision-instruct",
+  "meta/llama-3.2-90b-vision-instruct",
+];
+
+export const OPENROUTER_VISION_MODELS = [
+  "google/gemini-2.0-flash-001",
+  "openai/gpt-4o-mini",
+  "qwen/qwen-2.5-vl-72b-instruct",
+];
+
 export async function callNvidiaVisionOCR(
   ctx: ActionCtx,
   imageBase64DataUrls: string[],
@@ -166,8 +177,6 @@ export async function callNvidiaVisionOCR(
   if (!imageBase64DataUrls || imageBase64DataUrls.length === 0) {
     throw new Error("No image content provided for Vision OCR");
   }
-
-  const openai = getOpenAI("cv_vision_ocr");
 
   const contentItems: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
     {
@@ -183,58 +192,96 @@ export async function callNvidiaVisionOCR(
     });
   }
 
-  const model = OPENROUTER_CV_EXTRACTION_MODEL;
   let lastError = "";
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const response = await openai.chat.completions.create({
-        model,
-        messages: [
-          {
-            role: "user",
-            content: contentItems as any,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 4096,
-      });
-
-      if (response.usage) {
-        await logLLMUsage(
-          ctx,
-          "cv_vision_ocr",
+  // 1. Try NVIDIA NIM API first (Free & No OpenRouter Privacy Limits)
+  try {
+    const nvidiaOpenAI = getNvidiaOpenAI();
+    for (const model of NVIDIA_VISION_MODELS) {
+      try {
+        console.log(`[callNvidiaVisionOCR] Invoking NVIDIA NIM Vision OCR model: ${model}`);
+        const response = await nvidiaOpenAI.chat.completions.create({
           model,
-          response.usage.prompt_tokens,
-          response.usage.completion_tokens,
-          true,
-          undefined,
-          cvUploadId,
-          "openrouter"
-        );
-      }
+          messages: [
+            {
+              role: "user",
+              content: contentItems as any,
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 4096,
+        });
 
-      const extractedText = response.choices[0]?.message?.content?.trim() || "";
-      if (extractedText && extractedText.length > 10) {
-        return extractedText;
+        if (response.usage) {
+          await logLLMUsage(
+            ctx,
+            "cv_vision_ocr",
+            model,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            true,
+            undefined,
+            cvUploadId,
+            "nvidia"
+          );
+        }
+
+        const extractedText = response.choices[0]?.message?.content?.trim() || "";
+        if (extractedText && extractedText.length > 10) {
+          console.log(`[callNvidiaVisionOCR] Successfully extracted ${extractedText.length} chars using NVIDIA ${model}`);
+          return extractedText;
+        }
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+        console.warn(`[callNvidiaVisionOCR] NVIDIA Vision OCR failed with model ${model}: ${lastError}`);
       }
-    } catch (err: any) {
-      lastError = err?.message || String(err);
-      console.warn(`[callNvidiaVisionOCR] Vision OCR failed with model ${model} (attempt ${attempt}): ${lastError}`);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
+  } catch (err: any) {
+    console.warn("[callNvidiaVisionOCR] Failed to initialize NVIDIA client:", err);
+  }
+
+  // 2. OpenRouter fallback if NVIDIA fails
+  try {
+    const openRouter = getOpenAI("cv_vision_ocr");
+    for (const model of OPENROUTER_VISION_MODELS) {
+      try {
+        console.log(`[callNvidiaVisionOCR] Fallback: Invoking OpenRouter Vision OCR model: ${model}`);
+        const response = await openRouter.chat.completions.create({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: contentItems as any,
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 4096,
+        });
+
+        const extractedText = response.choices[0]?.message?.content?.trim() || "";
+        if (extractedText && extractedText.length > 10) {
+          console.log(`[callNvidiaVisionOCR] Successfully extracted ${extractedText.length} chars using OpenRouter ${model}`);
+          return extractedText;
+        }
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+        console.warn(`[callNvidiaVisionOCR] OpenRouter Vision OCR failed with model ${model}: ${lastError}`);
+      }
+    }
+  } catch (err: any) {
+    lastError = err?.message || String(err);
   }
 
   await logLLMUsage(
     ctx,
     "cv_vision_ocr",
-    model,
+    NVIDIA_VISION_MODELS[0],
     0,
     0,
     false,
     lastError,
     cvUploadId,
-    "openrouter"
+    "nvidia"
   );
 
   throw new Error(`Vision OCR failed to extract text from candidate document: ${lastError}`);
