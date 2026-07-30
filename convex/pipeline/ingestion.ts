@@ -57,16 +57,19 @@ export const processCvIngestion = mutation({
           .filter((q) => q.eq(q.field("jobId"), args.jobId))
           .first();
 
-        if (!existingApp) {
+          const now = Date.now();
           const appId = await ctx.db.insert("applications", {
             candidateId: existingFile.candidateId,
             jobId: args.jobId,
             currentStage: "new_cvs",
             sourceChannel: args.sourceChannel,
-            appliedAt: Date.now(),
+            createdAt: now,
+            isActive: true,
+            lastStageChangedAt: now,
+            loopIteration: 0,
             stageHistory: [{
               stage: "new_cvs",
-              enteredAt: Date.now(),
+              enteredAt: new Date(now).toISOString(),
               changedBy: "system",
             }],
           } as any);
