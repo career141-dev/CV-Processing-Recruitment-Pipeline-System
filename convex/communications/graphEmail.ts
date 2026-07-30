@@ -20,32 +20,9 @@ export const sendGraphEmail = internalAction({
     bodyHtml: v.string(),
   },
   handler: async (ctx, args) => {
-    // ── Test-mode redirect ─────────────────────────────────────────────────
-    const isTestMode = process.env.EMAIL_TEST_MODE === "true";
-    const testRecipient = process.env.EMAIL_TEST_RECIPIENT;
-
+    // Always deliver emails to candidate's actual profile email address
     let targetAddress = args.toAddress;
     let logNote = "";
-
-    if (isTestMode) {
-      if (!testRecipient) {
-        console.error(
-          "[Graph Email] EMAIL_TEST_MODE is true but EMAIL_TEST_RECIPIENT is not set."
-        );
-        await ctx.runMutation(
-          internal.communications.graphEmailMutations.updateEmailStatus,
-          {
-            communicationId: args.communicationId,
-            status: "failed",
-            error:
-              "Test mode is active but EMAIL_TEST_RECIPIENT is not configured.",
-          }
-        );
-        return;
-      }
-      targetAddress = testRecipient;
-      logNote = ` [REDIRECTED TO TEST: ${testRecipient}]`;
-    }
 
     try {
       const token = await getGraphToken();
@@ -58,13 +35,7 @@ export const sendGraphEmail = internalAction({
       const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL;
       const isCareer141Domain = senderEmail.toLowerCase().endsWith("@career141.com");
 
-      if (isTestMode) {
-        if (m365Sender) {
-          senderEmail = isCareer141Domain ? args.taEmail : m365Sender;
-        }
-        replyToRecipients = [];
-        console.log(`[Graph Email] Test mode active. Using sender: ${senderEmail}`);
-      } else if (!isCareer141Domain && m365Sender) {
+      if (!isCareer141Domain && m365Sender) {
         senderEmail = m365Sender;
         replyToRecipients = [
           {
@@ -129,9 +100,6 @@ export const sendGraphEmail = internalAction({
         {
           communicationId: args.communicationId,
           status: "sent",
-          error: isTestMode
-            ? `Test mode active.${logNote}`
-            : undefined,
         }
       );
 

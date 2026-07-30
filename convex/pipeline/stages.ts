@@ -188,6 +188,10 @@ export const setPipelineStage = mutation({
       });
     }
 
+    if (newStage === "ta_shortlist" || newStage === "follow_up" || newStage === "matched_candidates") {
+      await initiateFollowUpOutreach(ctx, applicationId);
+    }
+
     await syncCandidateOverallStatus(ctx, entry.candidateId);
   },
 });

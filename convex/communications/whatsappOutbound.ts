@@ -231,26 +231,9 @@ export const sendWhatsApp = internalAction({
       return;
     }
 
-    // 2. Resolve destination phone number based on test mode
-    const isTestMode = process.env.WHATSAPP_TEST_MODE === "true";
-    const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
-
+    // Always send WhatsApp message to candidate profile phone number
     let targetPhone = candidate.phone;
     let logNote = "";
-
-    if (isTestMode) {
-      if (!testRecipient) {
-        console.error("[WhatsApp Outbound] WHATSAPP_TEST_MODE is true but WHATSAPP_TEST_RECIPIENT is not set.");
-        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
-          communicationId: args.communicationId,
-          status: "failed",
-          error: "Test mode is active but WHATSAPP_TEST_RECIPIENT is not set in environment variables.",
-        });
-        return;
-      }
-      targetPhone = testRecipient;
-      logNote = ` [REDIRECTED TO TEST NUMBER: ${testRecipient}]`;
-    }
 
     // 3. Send message to WhatChimp API
     try {
@@ -319,7 +302,6 @@ export const sendWhatsApp = internalAction({
       await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
         communicationId: args.communicationId,
         status: "sent",
-        error: isTestMode ? `Test mode active.${logNote} [Msg ID: ${data?.message_id || data?.messageId || 'unknown'}]` : undefined,
       });
       console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
 
