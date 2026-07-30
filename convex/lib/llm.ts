@@ -17,10 +17,7 @@ export const OPENROUTER_SCANNED_CV_MODEL = OPENROUTER_VISION_MODEL;
 export const OPENROUTER_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_VISION_FALLBACK_MODELS = [
-  "google/gemini-2.0-flash-lite-001",
-  "google/gemini-2.0-flash-001",
-  "qwen/qwen-2.5-vl-72b-instruct:free",
-  "meta-llama/llama-3.2-11b-vision-instruct:free",
+  OPENROUTER_VISION_MODEL,
 ];
 export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.1-70b-instruct";
 export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";

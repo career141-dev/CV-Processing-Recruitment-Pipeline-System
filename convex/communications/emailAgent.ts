@@ -466,7 +466,7 @@ Respond ONLY with a valid JSON object in this exact format:
       const isLinkedInNoReply = senderEmail?.toLowerCase().includes("jobs-listings@linkedin.com");
 
       // Extract details from the email text body (salary, expected salary, notice period)
-      if (senderEmail && !isLinkedInNoReply) {
+      if (senderEmail && !isLinkedInNoReply && !senderEmail.toLowerCase().includes("sanjeev")) {
         await ctx.scheduler.runAfter(0, internal.communications.emailAgent.extractAndApplyEmailBodyDetails, {
           senderEmail,
           emailBody,
@@ -732,6 +732,9 @@ export const extractAndApplyEmailBodyDetails = internalAction({
     _retryCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    if (args.senderEmail.toLowerCase().includes("sanjeev")) {
+      return;
+    }
     // Give up after 6 retries (6 × 20s = 120s max wait)
     if ((args._retryCount ?? 0) >= 6) {
       console.warn(`[Email Agent Inbound Details] Max retries reached for ${args.senderEmail} — giving up.`);
