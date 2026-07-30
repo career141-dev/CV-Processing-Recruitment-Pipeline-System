@@ -431,9 +431,10 @@ Respond ONLY with a valid JSON object in this exact format:
       }
 
       const isLinkedInNoReply = senderEmail?.toLowerCase().includes("jobs-listings@linkedin.com");
+      const isInternalTeamEmail = senderEmail?.toLowerCase().endsWith("@career141.com");
 
-      // Extract details from the email text body (salary, expected salary, notice period)
-      if (senderEmail && !isLinkedInNoReply) {
+      // Extract details from the email text body (salary, expected salary, notice period) for direct candidate emails
+      if (senderEmail && !isLinkedInNoReply && !isInternalTeamEmail) {
         await ctx.scheduler.runAfter(0, internal.communications.emailAgent.extractAndApplyEmailBodyDetails, {
           senderEmail,
           emailBody,
