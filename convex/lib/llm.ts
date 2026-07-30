@@ -12,13 +12,22 @@ export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
 
 export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
 export const OPENROUTER_PRIMARY_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
-export const OPENROUTER_SCANNED_CV_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
+export const OPENROUTER_VISION_MODEL = "meta-llama/llama-3.2-11b-vision-instruct";
+export const OPENROUTER_SCANNED_CV_MODEL = OPENROUTER_VISION_MODEL;
 export const OPENROUTER_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
+export const OPENROUTER_VISION_FALLBACK_MODELS = [
+  "meta-llama/llama-3.2-11b-vision-instruct",
+  "google/gemini-2.0-flash-001",
+  "openai/gpt-4o-mini",
+];
 export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.1-70b-instruct";
 export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
 
 export function getModelForTask(taskType: TaskType | string): string {
+  if (taskType === "cv_vision_ocr") {
+    return OPENROUTER_VISION_MODEL;
+  }
   if (IS_CV_EXTRACTION_TASK(taskType)) {
     return OPENROUTER_CV_EXTRACTION_MODEL;
   }
@@ -183,11 +192,12 @@ export async function callNvidiaVisionOCR(
     });
   }
 
-  const model = OPENROUTER_CV_EXTRACTION_MODEL;
   let lastError = "";
+  let successfulModel = OPENROUTER_VISION_MODEL;
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (const model of OPENROUTER_VISION_FALLBACK_MODELS) {
     try {
+      console.log(`[callNvidiaVisionOCR] Invoking Vision OCR model: ${model}`);
       const response = await openai.chat.completions.create({
         model,
         messages: [
@@ -216,11 +226,12 @@ export async function callNvidiaVisionOCR(
 
       const extractedText = response.choices[0]?.message?.content?.trim() || "";
       if (extractedText && extractedText.length > 10) {
+        console.log(`[callNvidiaVisionOCR] Vision OCR succeeded with model ${model} (${extractedText.length} chars)`);
         return extractedText;
       }
     } catch (err: any) {
       lastError = err?.message || String(err);
-      console.warn(`[callNvidiaVisionOCR] Vision OCR failed with model ${model} (attempt ${attempt}): ${lastError}`);
+      console.warn(`[callNvidiaVisionOCR] Vision OCR failed with model ${model}: ${lastError}`);
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
@@ -228,7 +239,7 @@ export async function callNvidiaVisionOCR(
   await logLLMUsage(
     ctx,
     "cv_vision_ocr",
-    model,
+    successfulModel,
     0,
     0,
     false,
