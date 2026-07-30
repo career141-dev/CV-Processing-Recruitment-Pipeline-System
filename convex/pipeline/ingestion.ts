@@ -51,6 +51,31 @@ export const processCvIngestion = mutation({
       .first();
 
     if (existingFile) {
+      if (args.jobId && existingFile.candidateId) {
+        const existingApp = await ctx.db.query("applications")
+          .withIndex("by_candidateId", (q) => q.eq("candidateId", existingFile.candidateId!))
+          .filter((q) => q.eq(q.field("jobId"), args.jobId))
+          .first();
+
+        if (!existingApp) {
+          const appId = await ctx.db.insert("applications", {
+            candidateId: existingFile.candidateId,
+            jobId: args.jobId,
+            currentStage: "new_cvs",
+            sourceChannel: args.sourceChannel,
+            appliedAt: Date.now(),
+            stageHistory: [{
+              stage: "new_cvs",
+              enteredAt: Date.now(),
+              changedBy: "system",
+            }],
+          } as any);
+
+          console.log(`[processCvIngestion] Linked existing candidate ${existingFile.candidateId} to new job ${args.jobId} (appId: ${appId})`);
+          return { success: true, reason: "linked_existing_candidate", applicationId: appId, existingCandidateId: existingFile.candidateId };
+        }
+      }
+
       await ctx.db.insert("ingestionLog", {
         jobId: args.jobId,
         channelType: args.sourceChannel as any,
