@@ -224,9 +224,15 @@ export const pollEmailInbox = action({
       console.log(`[EmailAgent] No matching messages found in ${targetInboxEmail}.`);
     }
     
+    const allMessages = messages as any[];
+    const batch = allMessages.slice(0, 15);
+    if (allMessages.length > 15) {
+      console.log(`[EmailAgent] ${allMessages.length} unread emails found. Processing top 15 in this run to prevent execution timeout (remaining ${allMessages.length - 15} will run in next 5-min cycle).`);
+    }
+
     let currentExtractionDelayMs = 0; // Stagger AI extractions by 10s
 
-    for (const message of messages as any[]) {
+    for (const message of batch) {
       console.log(`[EmailAgent] Processing message: ${message.subject} from ${message.from?.emailAddress?.address}`);
       let attachments = message.attachments || [];
       if (message.hasAttachments && attachments.length === 0) {
@@ -303,13 +309,30 @@ export const pollEmailInbox = action({
       const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
       
       if (!resolvedJobId && activeJobs.length > 0) {
-        try {
-          const openai = getOpenAI("email_routing");
-          const model = getModelForTask("email_routing");
-          
-          const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword || "None"}`).join("\n");
-          
-          const prompt = `You are an intelligent recruitment email router.
+        // Fallback 1: Fast direct title / keyword matching from email subject
+        const subjectLower = subject.toLowerCase();
+        for (const j of activeJobs) {
+          const titleLower = j.title.toLowerCase();
+          const keywordLower = j.keyword ? j.keyword.toLowerCase() : "";
+          if (
+            subjectLower.includes(titleLower) ||
+            (keywordLower && subjectLower.includes(keywordLower)) ||
+            (titleLower.includes("full stack") && subjectLower.includes("full stack"))
+          ) {
+            resolvedJobId = j._id;
+            console.log(`[EmailAgent] Fast title/keyword matched email "${subject}" to job: ${j.title} (${j._id})`);
+            break;
+          }
+        }
+
+        if (!resolvedJobId) {
+          try {
+            const openai = getOpenAI("email_routing");
+            const model = getModelForTask("email_routing");
+            
+            const jobsListContext = activeJobs.map((j: any) => `- ID: ${j._id} | Title: ${j.title} | Client: ${j.clientName} | Keyword: ${j.keyword || "None"}`).join("\n");
+            
+            const prompt = `You are an intelligent recruitment email router.
 Your task is to analyze an incoming email (subject and body) from a candidate and determine which active job they are applying for.
 
 CRITICAL ROUTING RULES:
@@ -328,33 +351,34 @@ Respond ONLY with a valid JSON object in this exact format:
   "matchedJobId": "string ID of the matched job, or null if absolutely no match could be determined"
 }`;
 
-          const completion = await openai.chat.completions.create({
-            model: model,
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
-            temperature: 0.1,
-          });
-          
-          const resultStr = completion.choices[0]?.message?.content;
-          if (resultStr) {
-            const resultObj = JSON.parse(resultStr);
-            if (resultObj.matchedJobId) {
-              // Verify the ID actually exists in our active jobs
-              const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
-              if (matchedJob) {
-                const channel = (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
-                if (matchedJob.pausedChannels?.includes(channel)) {
-                  console.log(`[EmailAgent] Job ${resultObj.matchedJobId} has ${channel} paused. Routing to general pool.`);
-                  resolvedJobId = undefined;
-                } else {
-                  resolvedJobId = resultObj.matchedJobId;
-                  console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
+            const completion = await openai.chat.completions.create({
+              model: model,
+              messages: [{ role: "user", content: prompt }],
+              response_format: { type: "json_object" },
+              temperature: 0.1,
+            });
+            
+            const resultStr = completion.choices[0]?.message?.content;
+            if (resultStr) {
+              const resultObj = JSON.parse(resultStr);
+              if (resultObj.matchedJobId) {
+                // Verify the ID actually exists in our active jobs
+                const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
+                if (matchedJob) {
+                  const channel = (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
+                  if (matchedJob.pausedChannels?.includes(channel)) {
+                    console.log(`[EmailAgent] Job ${resultObj.matchedJobId} has ${channel} paused. Routing to general pool.`);
+                    resolvedJobId = undefined;
+                  } else {
+                    resolvedJobId = resultObj.matchedJobId;
+                    console.log(`[EmailAgent] AI successfully routed email to job: ${resolvedJobId}`);
+                  }
                 }
               }
             }
+          } catch (error) {
+            console.error("[EmailAgent] LLM routing failed", error);
           }
-        } catch (error) {
-          console.error("[EmailAgent] LLM routing failed", error);
         }
       }
       
@@ -1073,6 +1097,13 @@ export const recoverSanjeevFullInbox = action({
   },
 });
 
-
-
-
+export const checkFileHashExists = query({
+  args: { fileHash: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
+      .first();
+    return existing !== null;
+  },
+});

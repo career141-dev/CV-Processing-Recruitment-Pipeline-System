@@ -421,21 +421,9 @@ async function extractImagesFromPdfBuffer(
       }
     }
 
-    if (pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
-      try {
-        const { pathToFileURL } = require("url");
-        let workerPath = "";
-        try {
-          workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-        } catch {
-          workerPath = require.resolve("pdfjs-dist/build/pdf.worker.mjs");
-        }
-        if (workerPath) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
-        }
-      } catch (workerErr) {
-        console.warn("[PDF Worker] Could not resolve pdf.worker.mjs URL:", workerErr);
-      }
+    if (!pdfjsLib) {
+      console.warn("[CvExtraction] pdfjs-dist is not available in server environment. Skipping PDF image rendering.");
+      return [];
     }
 
     const loadingTask = pdfjsLib.getDocument({
