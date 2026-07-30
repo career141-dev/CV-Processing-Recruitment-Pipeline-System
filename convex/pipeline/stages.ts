@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
-import { initiateFollowUpOutreach } from "./followUpHelper";
+import { initiateFollowUpOutreach, stopFollowUpSequenceForApp } from "./followUpHelper";
 import { adjustJobStageStat } from "../jobs/stats";
 import { adjustGlobalStat } from "../stats/statsHelper";
 
@@ -53,13 +53,13 @@ export const moveToTAShortlist = mutation({
       toStage: "ta_shortlist",
       actorType: "user",
       actorId: user._id,
-      notes: "TA shortlisted candidate. Automated follow-up will begin.",
+      notes: "TA shortlisted candidate.",
       createdAt: now,
     });
     await syncCandidateOverallStatus(ctx, entry.candidateId);
     
-    // Automated follow-up outreach disabled on TA shortlist move
-    // await initiateFollowUpOutreach(ctx, args.applicationId);
+    // Stop any scheduled automated follow-up sequence when moved to TA Shortlist
+    await stopFollowUpSequenceForApp(ctx, args.applicationId);
 
     await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
       applicationId: args.applicationId,
@@ -190,6 +190,8 @@ export const setPipelineStage = mutation({
 
     if (newStage === "follow_up") {
       await initiateFollowUpOutreach(ctx, applicationId);
+    } else {
+      await stopFollowUpSequenceForApp(ctx, applicationId);
     }
 
     await syncCandidateOverallStatus(ctx, entry.candidateId);

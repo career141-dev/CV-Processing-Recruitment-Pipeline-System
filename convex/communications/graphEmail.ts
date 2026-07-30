@@ -20,6 +20,21 @@ export const sendGraphEmail = internalAction({
     bodyHtml: v.string(),
   },
   handler: async (ctx, args) => {
+    // Check communication status & stage guard — DO NOT send automated follow-up email if candidate moved out of follow_up stage (e.g. to ta_shortlist)
+    const commRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getCommunicationRecord, { communicationId: args.communicationId });
+    if (commRecord?.stoppedSequence || commRecord?.deliveryStatus === "failed") {
+      console.log(`[Graph Email] Communication ${args.communicationId} was cancelled/stopped. Skipping email delivery.`);
+      return;
+    }
+
+    if (commRecord?.applicationId) {
+      const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
+      if (appRecord && appRecord.currentStage !== "follow_up") {
+        console.log(`[Graph Email] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up"). Aborting Email follow-up delivery.`);
+        return;
+      }
+    }
+
     // Always deliver emails to candidate's actual profile email address
     let targetAddress = args.toAddress;
     let logNote = "";

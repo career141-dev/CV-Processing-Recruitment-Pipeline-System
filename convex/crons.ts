@@ -23,13 +23,9 @@ export const evaluateFollowUpStage = internalMutation({
     const emailFollowUpPaused = toggles?.emailFollowUp === false;
     const allFollowUpsPaused = whatsappFollowUpPaused && emailFollowUpPaused;
 
-    const followUpOnly = await ctx.db.query("applications")
+    const followUpApps = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .collect();
-    const taShortlistOnly = await ctx.db.query("applications")
-      .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
-      .collect();
-    const followUpApps = [...followUpOnly, ...taShortlistOnly].slice(0, 200);
+      .take(200);
 
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;

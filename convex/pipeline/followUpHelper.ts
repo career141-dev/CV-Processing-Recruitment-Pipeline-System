@@ -20,7 +20,7 @@ export async function checkAndAdvanceFollowUp(
     .collect();
 
   for (const app of apps) {
-    const isFollowUp = app.currentStage === "follow_up" || app.currentStage === "ta_shortlist";
+    const isFollowUp = app.currentStage === "follow_up";
     const isAutoRejected = app.currentStage === "rejected" && app.taRejectionReason === "Did not complete requirements within 7-day window";
 
     if (!isFollowUp && !isAutoRejected) continue;
@@ -273,4 +273,37 @@ export async function initiateFollowUpOutreach(
 
   console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId}`);
   return commId;
+}
+
+/**
+ * Stops and cancels all pending/scheduled follow-up communications (both WhatsApp and Email)
+ * for an application when it moves out of the follow_up stage (e.g. to ta_shortlist, interview, etc.).
+ */
+export async function stopFollowUpSequenceForApp(
+  ctx: any,
+  applicationId: Id<"applications">
+): Promise<void> {
+  const app = await ctx.db.get(applicationId);
+  if (!app) return;
+
+  // 1. Clear scheduled follow-up timestamps on the application
+  await ctx.db.patch(applicationId, {
+    nextFollowUpScheduledAt: undefined,
+    nextFollowUpMessage: undefined,
+  });
+
+  // 2. Mark any pending communications for this application as stopped/failed
+  const pendingComms = await ctx.db
+    .query("communications")
+    .withIndex("by_application", (q: any) => q.eq("applicationId", applicationId))
+    .filter((q: any) => q.eq(q.field("deliveryStatus"), "pending"))
+    .collect();
+
+  for (const comm of pendingComms) {
+    await ctx.db.patch(comm._id, {
+      deliveryStatus: "failed",
+      stoppedSequence: true,
+      errorMessage: "Follow-up sequence stopped: Candidate moved out of follow_up stage.",
+    });
+  }
 }
