@@ -5,6 +5,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel.d.ts";
 import { mapJobSeniorityTo10LevelRank, checkSeniorityConflict, scoreCandidateAgainstRequirements, getSkillDomain } from "../cvs/cvScoring";
 import { classifyJobRoleFamily, classifyCurrentRolesBatch } from "../lib/currentRoleClassifier";
+import { synthesizeJobRequirements } from "../lib/jobSynthesizer";
 
 /**
  * Helper to get vector embeddings from NVIDIA API
@@ -280,19 +281,31 @@ Return ONLY valid JSON matching this schema:
         status: "running",
       });
 
+      // 1. Perform Holistic AI Requirement Synthesis on the Job
+      const synthesized = await synthesizeJobRequirements({
+        title: job.title,
+        jobDescription: job.jobDescription,
+        requiredSkills: job.requiredSkills,
+        niceToHaveSkills: job.niceToHaveSkills,
+        clientIndustry: job.clientIndustry,
+        seniorityLevel: job.seniorityLevel,
+        taPreferences: activePreferences,
+      });
+
       // Force regenerating job embedding if customPreferences parameter was explicitly provided
       let jobEmbedding = (args.customPreferences !== undefined) ? null : job.embedding;
 
-      // 1. Generate job embedding if missing or if customPreferences provided
+      // 2. Generate job embedding if missing or if customPreferences provided using holistic synthesized prompt
       if (!jobEmbedding || jobEmbedding.length === 0) {
         const jobRequirementsText = `
-          Title: ${job.title}
-          Description: ${job.jobDescription}
-          ${activePreferences ? `TA Recruiter Custom Preferences & Required Skills: ${activePreferences}` : ""}
-          Required Skills: ${(job.requiredSkills || []).join(", ")}
-          Nice to have Skills: ${(job.niceToHaveSkills || []).join(", ")}
-          Industry: ${job.clientIndustry || ""}
-          Seniority: ${job.seniorityLevel || ""}
+          Title: ${synthesized.primaryRoleTitle}
+          Target Domain: ${synthesized.targetDomain}
+          Holistic Summary: ${synthesized.synthesizedEmbeddingPrompt}
+          Core Mandatory Domain Skills: ${(synthesized.coreDomainSkills || []).join(", ")}
+          General Commercial Skills: ${(synthesized.generalCommercialSkills || []).join(", ")}
+          Domain Gate Constraints: ${synthesized.domainGateRules}
+          Description: ${job.jobDescription.slice(0, 1500)}
+          ${activePreferences ? `TA Recruiter Custom Preferences: ${activePreferences}` : ""}
         `;
 
         try {
@@ -324,16 +337,22 @@ Return ONLY valid JSON matching this schema:
         }
       }
 
-      // 2. Perform Keyword Search (Pool limit widened to 100)
+      // 3. Perform Precision Domain Keyword Search (using clean domain skills, avoiding filler verbs)
       const terms: string[] = [];
-      if (job.title) terms.push(job.title);
-      for (const s of (job.requiredSkills ?? []).slice(0, 4)) terms.push(s);
+      if (synthesized.primaryRoleTitle) terms.push(synthesized.primaryRoleTitle);
+      for (const s of (synthesized.coreDomainSkills ?? []).slice(0, 5)) {
+        if (s && s.length > 2) terms.push(s);
+      }
+      if (job.clientIndustry) terms.push(job.clientIndustry);
+      if (synthesized.targetDomain && synthesized.targetDomain !== job.clientIndustry) {
+        terms.push(synthesized.targetDomain);
+      }
       if (activePreferences && activePreferences.trim()) {
         const prefTerms = activePreferences
           .split(/[\n,;]+/)
           .map((s: string) => s.trim())
           .filter((s: string) => s.length > 2 && s.length < 50)
-          .slice(0, 3);
+          .slice(0, 2);
         terms.push(...prefTerms);
       }
 
@@ -653,22 +672,29 @@ Return ONLY valid JSON matching this schema:
           };
 
           const reqSkills = [
+            ...(synthesized.coreDomainSkills ?? []),
             ...(job.requiredSkills ?? []),
             ...(parsedPreferences.requiredSkillsOverride ?? []),
           ];
 
           const scored = scoreCandidateAgainstRequirements(cvPayload, {
-            title: job.title,
+            title: synthesized.primaryRoleTitle || job.title,
             requiredSkills: reqSkills,
-            niceToHaveSkills: job.niceToHaveSkills ?? [],
+            niceToHaveSkills: [
+              ...(synthesized.generalCommercialSkills ?? []),
+              ...(job.niceToHaveSkills ?? []),
+            ],
             minYearsExperience: parsedPreferences.minYearsExperience ?? job.experienceMinYears ?? null,
             maxYearsExperience: parsedPreferences.maxYearsExperience ?? job.experienceMaxYears ?? null,
             overrideSeniority: parsedPreferences.overrideSeniority ?? null,
-            negativeKeywords: parsedPreferences.negativeKeywords ?? [],
+            negativeKeywords: [
+              ...(synthesized.distractorWordsToIgnore ?? []),
+              ...(parsedPreferences.negativeKeywords ?? []),
+            ],
             education: job.educationLevel ?? null,
             languages: job.languagesRequired ?? [],
             location: job.location,
-            industry: job.clientIndustry,
+            industry: synthesized.targetDomain || job.clientIndustry,
             seniority: job.seniorityLevel,
             summary: job.jobDescription,
             keywords: [],
@@ -686,9 +712,27 @@ Return ONLY valid JSON matching this schema:
           }
 
           // Blend 50% heuristic scores with 50% normalized vector similarity
-          const matchScore = Math.round(
+          let matchScore = Math.round(
             (scored.overallScore * 0.5) + (normVectorScore * 0.5)
           );
+
+          // Domain Gate Enforcement: If role requires specific domain expertise (e.g. Tea, Mining, Aviation, Healthcare)
+          // and candidate has zero domain keyword hits in title/skills/summary, penalize heavily.
+          const candidateText = `${cv.currentTitle || ""} ${cv.currentJobTitle || ""} ${(cv.skills || []).join(" ")} ${cv.summary || ""}`.toLowerCase();
+          const targetDomainNorm = (synthesized.targetDomain || job.clientIndustry || "").toLowerCase();
+          const coreDomainKey = (synthesized.coreDomainSkills[0] || "").toLowerCase();
+
+          const hasDomainKeywords = (
+            (coreDomainKey && candidateText.includes(coreDomainKey)) ||
+            (targetDomainNorm && candidateText.includes(targetDomainNorm)) ||
+            synthesized.coreDomainSkills.some((ds) => ds.length > 2 && candidateText.includes(ds.toLowerCase()))
+          );
+
+          // If job has explicit domain specialization (e.g., Tea Trading) and candidate completely lacks domain keywords
+          const isSpecializedDomain = targetDomainNorm.includes("tea") || targetDomainNorm.includes("plant") || coreDomainKey.includes("tea");
+          if (isSpecializedDomain && !hasDomainKeywords) {
+            matchScore = Math.min(matchScore, 42); // Hard cap below minMatchScoreToShow (60)
+          }
 
           // Build authoritative AI Talent Acquisition reason
           const name = cv.fullName || "Candidate";

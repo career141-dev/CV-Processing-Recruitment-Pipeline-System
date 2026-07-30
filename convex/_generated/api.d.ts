@@ -70,6 +70,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_currentRoleClassifier from "../lib/currentRoleClassifier.js";
 import type * as lib_graphClient from "../lib/graphClient.js";
 import type * as lib_jdParser from "../lib/jdParser.js";
+import type * as lib_jobSynthesizer from "../lib/jobSynthesizer.js";
 import type * as lib_llm from "../lib/llm.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_validate from "../lib/validate.js";
@@ -165,6 +166,7 @@ declare const fullApi: ApiFromModules<{
   "lib/currentRoleClassifier": typeof lib_currentRoleClassifier;
   "lib/graphClient": typeof lib_graphClient;
   "lib/jdParser": typeof lib_jdParser;
+  "lib/jobSynthesizer": typeof lib_jobSynthesizer;
   "lib/llm": typeof lib_llm;
   "lib/permissions": typeof lib_permissions;
   "lib/validate": typeof lib_validate;

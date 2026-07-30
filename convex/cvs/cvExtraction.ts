@@ -1464,17 +1464,13 @@ Respond ONLY with a valid JSON object in this exact format:
   "matchedJobId": "string ID of the matched job, or null if no confident match"
 }`;
 
-      const openai = getOpenAI("email_routing");
-      const model = getModelForTask("email_routing");
-
-      const completion = await openai.chat.completions.create({
-        model: model,
+      const { content: resultStr } = await executeLLMWithNvidiaFallback(ctx, "email_routing", {
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
         temperature: 0.1,
+        sourceChannel: args.sourceChannel,
       });
 
-      const resultStr = completion.choices[0]?.message?.content;
       if (resultStr) {
         const resultObj = JSON.parse(resultStr);
         if (resultObj.matchedJobId) {

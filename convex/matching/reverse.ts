@@ -3,6 +3,7 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getOpenAI, getModelForTask } from "../lib/llm";
+import { synthesizeJobRequirements } from "../lib/jobSynthesizer";
 
 
 type Breakdown = {
@@ -48,24 +49,30 @@ export const runReverseMatch = action({
         ? args.customPreferences
         : job.taPreferences;
 
+      const synthesized = await synthesizeJobRequirements({
+        title: job.title,
+        jobDescription: job.jobDescription,
+        requiredSkills: job.requiredSkills,
+        niceToHaveSkills: job.niceToHaveSkills,
+        clientIndustry: job.clientIndustry,
+        seniorityLevel: job.seniorityLevel,
+        taPreferences: activePreferences,
+      });
+
       const minScore = job.minMatchScoreToShow ?? 60;
 
-      // Build search terms from the structured job fields, falling back to the
-      // free-text description. These pull the broadest relevant candidate set.
+      // Build precision search terms from synthesized core domain skills (avoiding filler verbs)
       const terms: string[] = [];
-      if (job.title) terms.push(job.title);
-      for (const s of (job.requiredSkills ?? []).slice(0, 4)) terms.push(s);
-      if (activePreferences && activePreferences.trim()) {
-        for (const t of activePreferences.split(/[\n,;]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 2).slice(0, 3)) {
-          terms.push(t);
-        }
+      if (synthesized.primaryRoleTitle) terms.push(synthesized.primaryRoleTitle);
+      for (const s of (synthesized.coreDomainSkills ?? []).slice(0, 5)) {
+        if (s && s.length > 2) terms.push(s);
       }
-      if (terms.length === 0 && job.jobDescription) {
-        for (const t of job.jobDescription
-          .split(/[\n,;]+/)
-          .map((s: string) => s.trim())
-          .filter((s: string) => s.length > 3 && s.length < 60)
-          .slice(0, 4)) {
+      if (job.clientIndustry) terms.push(job.clientIndustry);
+      if (synthesized.targetDomain && synthesized.targetDomain !== job.clientIndustry) {
+        terms.push(synthesized.targetDomain);
+      }
+      if (activePreferences && activePreferences.trim()) {
+        for (const t of activePreferences.split(/[\n,;]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 2).slice(0, 2)) {
           terms.push(t);
         }
       }
@@ -129,10 +136,12 @@ export const runReverseMatch = action({
       }));
 
       const jobReq = {
-        title: job.title,
+        title: synthesized.primaryRoleTitle || job.title,
+        targetDomain: synthesized.targetDomain || job.clientIndustry || null,
         taPreferences: activePreferences || null,
-        requiredSkills: job.requiredSkills ?? [],
-        niceToHaveSkills: job.niceToHaveSkills ?? [],
+        requiredSkills: synthesized.coreDomainSkills,
+        niceToHaveSkills: synthesized.generalCommercialSkills,
+        domainGateRules: synthesized.domainGateRules,
         seniority: job.seniorityLevel ?? null,
         minYearsExperience: job.experienceMinYears ?? null,
         industry: job.clientIndustry ?? null,
@@ -164,7 +173,8 @@ export const runReverseMatch = action({
               role: "system",
               content: `You are a talent matching expert. Score each candidate against a job's requirements.
 For each candidate return a breakdown score (0-100) across 5 dimensions, plus which required skills they have/lack.
-CRITICAL: Apply a heavy penalty if a candidate is significantly overqualified (e.g. Senior/Lead/Manager applying for an Intern/Junior role, or experience exceeds maximum threshold for entry-level jobs). Overqualified candidates must receive low overall scores (< 50).
+CRITICAL DOMAIN GATE: If a job requires a specialized industry domain (e.g. Tea Trading, Plantations, Aviation, Medical Devices), candidates who ONLY possess generic sales/management skills in unrelated fields MUST NOT receive an overallScore >= 60. Cap their score below 40.
+CRITICAL OVERQUALIFICATION: Apply a heavy penalty if a candidate is significantly overqualified (e.g. Senior/Lead/Manager applying for an Intern/Junior role). Overqualified candidates must receive low overall scores (< 50).
 Return JSON:
 {
   "matches": [
