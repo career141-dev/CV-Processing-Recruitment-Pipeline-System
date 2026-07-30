@@ -7,7 +7,7 @@ import type { ActionCtx } from "../_generated/server";
 export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
 
 export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
-  return taskType === "cv_structuring" || taskType === "cv_vision_ocr";
+  return taskType === "cv_structuring" || taskType === "cv_vision_ocr" || taskType === "email_routing" || taskType === "jd_matching";
 };
 
 export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";

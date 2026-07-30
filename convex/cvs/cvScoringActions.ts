@@ -4,6 +4,7 @@ import { Id } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { adjustJobStageStat } from "../jobs/stats";
+import { initiateFollowUpOutreach } from "../pipeline/followUpHelper";
 
 // 1. Internal Query to get the necessary data for scoring
 export const getScoringData = internalQuery({
@@ -75,8 +76,6 @@ export const saveMatchScore = internalMutation({
       await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
       await syncCandidateOverallStatus(ctx, args.candidateId);
       
-      // We must call the outreach scheduler so Day 0 WhatsApp/Email starts immediately
-      const { initiateFollowUpOutreach } = await import("../pipeline/followUpHelper");
       await initiateFollowUpOutreach(ctx, args.applicationId);
     }
   },
