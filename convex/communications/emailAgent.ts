@@ -399,7 +399,7 @@ Respond ONLY with a valid JSON object in this exact format:
             .join("");
 
           // Fast pre-check: skip if attachment hash already exists in cvUploads
-          const isAlreadyIngested = await ctx.runQuery(internal.communications.emailAgent.checkFileHashExists, { fileHash });
+          const isAlreadyIngested = await ctx.runQuery(api.communications.emailAgent.checkFileHashExists, { fileHash });
           if (isAlreadyIngested) {
             console.log(`[EmailAgent] Attachment ${attachment.name} (${fileHash.slice(0, 8)}) already ingested. Skipping upload.`);
             continue;
@@ -774,7 +774,7 @@ export const updateLastEmailFetchTimestamp = internalMutation({
   }
 });
 
-export const checkFileHashExists = internalQuery({
+export const checkFileHashExists = query({
   args: { fileHash: v.string() },
   handler: async (ctx, { fileHash }) => {
     const existing = await ctx.db
