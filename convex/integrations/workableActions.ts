@@ -601,21 +601,31 @@ export const runImportBatch = internalAction({
 
         if (createdCandidateId) {
           imported++;
-          // Broadcast live candidate extraction progress to UI
-          await ctx.runMutation(internal.integrations.workable.updateImportJob, {
-            importId: args.importId,
-            imported,
-            skipped,
-            deduplicated,
-            failed,
-            lastCursor: args.nextUrl ?? undefined,
-            candidateIndex: i + 1,
-          });
         } else {
           failed++;
         }
-      } catch {
+        // Always broadcast candidate extraction progress to UI and advance candidateIndex
+        await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+          importId: args.importId,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          lastCursor: args.nextUrl ?? undefined,
+          candidateIndex: i + 1,
+        });
+      } catch (err) {
+        console.error(`[WorkableImport] Error processing candidate ${candidate.id}:`, err);
         failed++;
+        await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+          importId: args.importId,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          lastCursor: args.nextUrl ?? undefined,
+          candidateIndex: i + 1,
+        });
       }
     }
 
