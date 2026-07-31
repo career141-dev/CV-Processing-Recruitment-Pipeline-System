@@ -57,26 +57,25 @@ export const processCvIngestion = mutation({
           .filter((q) => q.eq(q.field("jobId"), args.jobId))
           .first();
 
-          const now = Date.now();
-          const appId = await ctx.db.insert("applications", {
-            candidateId: existingFile.candidateId,
-            jobId: args.jobId,
-            currentStage: "new_cvs",
-            sourceChannel: args.sourceChannel,
-            createdAt: now,
-            isActive: true,
-            lastStageChangedAt: now,
-            loopIteration: 0,
-            stageHistory: [{
-              stage: "new_cvs",
-              enteredAt: new Date(now).toISOString(),
-              changedBy: "system",
-            }],
-          } as any);
+        const now = Date.now();
+        const appId = await ctx.db.insert("applications", {
+          candidateId: existingFile.candidateId,
+          jobId: args.jobId,
+          currentStage: "new_cvs",
+          sourceChannel: args.sourceChannel,
+          createdAt: now,
+          isActive: true,
+          lastStageChangedAt: now,
+          loopIteration: 0,
+          stageHistory: [{
+            stage: "new_cvs",
+            enteredAt: new Date(now).toISOString(),
+            changedBy: "system",
+          }],
+        } as any);
 
-          console.log(`[processCvIngestion] Linked existing candidate ${existingFile.candidateId} to new job ${args.jobId} (appId: ${appId})`);
-          return { success: true, reason: "linked_existing_candidate", applicationId: appId, existingCandidateId: existingFile.candidateId };
-        }
+        console.log(`[processCvIngestion] Linked existing candidate ${existingFile.candidateId} to new job ${args.jobId} (appId: ${appId})`);
+        return { success: true, reason: "linked_existing_candidate", applicationId: appId, existingCandidateId: existingFile.candidateId };
       }
 
       await ctx.db.insert("ingestionLog", {
