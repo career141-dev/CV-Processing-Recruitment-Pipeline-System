@@ -323,7 +323,7 @@ export function TeamTab() {
                   <option value="ta_manager">Talent Acquisition Manager</option>
                   <option value="senior_ta">Senior Talent Acquisition</option>
                   <option value="recruiter">Recruiter</option>
-                  <option value="test_ta">Test TA (Limited Access — Dashboard &amp; Jobs only)</option>
+                  <option value="test_ta">Test TA (Limited Access — Dashboard, Jobs &amp; Candidate Search)</option>
                   <option value="director">Director / Reviewer</option>
                   <option value="client">Client Contact</option>
                   <option value="viewer">Viewer / Read-Only</option>
