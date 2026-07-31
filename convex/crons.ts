@@ -361,14 +361,34 @@ export const evaluateFollowUpStage = internalMutation({
       ].join("\n\n");
 
       if (triggerEmail) {
+        const formattedMissingFields = missingFields.map(f => `• ${f}`).join("\n");
+        const companyName = (configRow as any)?.brandName || "our company";
+
+        let emailSubject = `Action Required: Missing info for your ${job.title} application`;
+        if (job.followUpEmailSubjectTemplate) {
+          emailSubject = job.followUpEmailSubjectTemplate
+            .replace(/{candidate_name}/g, candidate.fullName || "there")
+            .replace(/{job_title}/g, job.title || "the role")
+            .replace(/{company_name}/g, companyName);
+        }
+
+        let emailBody = body;
+        if (job.enableEmailFollowUpTemplate && job.followUpEmailBodyTemplate) {
+          emailBody = job.followUpEmailBodyTemplate
+            .replace(/{candidate_name}/g, candidate.fullName || "there")
+            .replace(/{job_title}/g, job.title || "the role")
+            .replace(/{missing_fields}/g, formattedMissingFields)
+            .replace(/{company_name}/g, companyName);
+        }
+
         await ctx.db.insert("communications", {
           candidateId: app.candidateId,
           jobId: app.jobId,
           applicationId: app._id,
           direction: "outbound",
           channel: "email",
-          subject: `Action Required: Missing info for your ${job.title} application`,
-          body,
+          subject: emailSubject,
+          body: emailBody,
           deliveryStatus: "sent",
           sentAt: now,
           stoppedSequence: false,
@@ -567,12 +587,6 @@ crons.daily(
   "check-sla-breaches",
   { hourUTC: 8, minuteUTC: 0 },
   internal.crons.checkSlaBreaches
-);
-
-crons.daily(
-  "Recalculate Global Stats",
-  { hourUTC: 2, minuteUTC: 0 },
-  (api as any).admin.recalculateGlobalStats.run
 );
 
 crons.interval(

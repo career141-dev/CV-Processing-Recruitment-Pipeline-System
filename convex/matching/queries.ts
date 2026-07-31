@@ -144,4 +144,21 @@ export const getApplicationsByJobIdInternal = internalQuery({
       .collect();
   },
 });
+
+export const getEmbeddingStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const candidatePage = await ctx.db.query("candidates").take(1000);
+    const resumePage = await ctx.db.query("candidateResumes").take(1000);
+    const withEmbeddingPage = await ctx.db.query("candidateResumes").withIndex("by_hasEmbedding", q => q.eq("hasEmbedding", true)).take(1000);
+    const missingEmbeddingPage = await ctx.db.query("candidateResumes").withIndex("by_hasEmbedding", q => q.eq("hasEmbedding", false)).take(1000);
+
+    return {
+      sampleCandidatesEvaluated: candidatePage.length,
+      sampleResumesEvaluated: resumePage.length,
+      resumesWithEmbeddingCount: withEmbeddingPage.length,
+      resumesMissingEmbeddingCount: missingEmbeddingPage.length,
+    };
+  },
+});
 

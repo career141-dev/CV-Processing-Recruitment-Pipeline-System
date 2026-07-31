@@ -30,6 +30,34 @@ export const triggerIntakeCall = internalAction({
       throw new Error("ElevenLabs credentials not configured");
     }
 
+    // Test mode recipient resolution
+    const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
+    const isTestMode = 
+      process.env.CALL_TEST_MODE === "true" || 
+      process.env.OUTREACH_TEST_MODE === "true" || 
+      process.env.TEST_MODE === "true" || 
+      systemSettings?.testModeEnabled !== false;
+
+    const testRecipient = 
+      process.env.CALL_TEST_RECIPIENT || 
+      process.env.WHATSAPP_TEST_RECIPIENT || 
+      process.env.TEST_PHONE_NUMBER || 
+      systemSettings?.testPhoneNumber;
+
+    let recipientPhone = candidate.phone;
+    if (isTestMode) {
+      const candidateDigits = candidate.phone.replace(/\D/g, "");
+      const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
+      if (testDigits && candidateDigits === testDigits) {
+        recipientPhone = candidate.phone;
+      } else if (testRecipient) {
+        recipientPhone = testRecipient;
+      } else {
+        console.warn(`[ElevenLabs] Test mode active: Suppressed intake call to real candidate ${candidate.phone}`);
+        return { success: false, conversationId: "suppressed_test_mode" };
+      }
+    }
+
     // 2. Call ElevenLabs API
     const response = await fetch("https://api.elevenlabs.io/v1/convai/outbound-call", {
       method: "POST",
@@ -39,7 +67,7 @@ export const triggerIntakeCall = internalAction({
       },
       body: JSON.stringify({
         agent_id: agentId,
-        recipient_phone_number: candidate.phone,
+        recipient_phone_number: recipientPhone,
         dynamic_variables: {
           candidate_name: candidate.fullName || "Candidate",
           job_title: job.title || "the open role",
@@ -124,6 +152,34 @@ export const triggerFollowUpCall = internalAction({
       return { success: false };
     }
 
+    // Test mode recipient resolution
+    const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
+    const isTestMode = 
+      process.env.CALL_TEST_MODE === "true" || 
+      process.env.OUTREACH_TEST_MODE === "true" || 
+      process.env.TEST_MODE === "true" || 
+      systemSettings?.testModeEnabled !== false;
+
+    const testRecipient = 
+      process.env.CALL_TEST_RECIPIENT || 
+      process.env.WHATSAPP_TEST_RECIPIENT || 
+      process.env.TEST_PHONE_NUMBER || 
+      systemSettings?.testPhoneNumber;
+
+    let targetPhone = candidate.phone;
+    if (isTestMode) {
+      const candidateDigits = candidate.phone.replace(/\D/g, "");
+      const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
+      if (testDigits && candidateDigits === testDigits) {
+        targetPhone = candidate.phone;
+      } else if (testRecipient) {
+        targetPhone = testRecipient;
+      } else {
+        console.warn(`[ElevenLabs] Test mode active: Suppressed follow-up call to real candidate ${candidate.phone}`);
+        return { success: false, skipped: true };
+      }
+    }
+
     const response = await fetch("https://api.elevenlabs.io/v1/convai/conversation/outbound-call", {
       method: "POST",
       headers: {
@@ -133,7 +189,7 @@ export const triggerFollowUpCall = internalAction({
       body: JSON.stringify({
         agent_id: agentId,
         agent_phone_number_id: sipPhoneNumberId,
-        to_number: candidate.phone,
+        to_number: targetPhone,
         conversation_initiation_client_data: {
           dynamic_variables: {
             candidate_name: candidate.fullName ? candidate.fullName.split(' ')[0] : "Candidate",

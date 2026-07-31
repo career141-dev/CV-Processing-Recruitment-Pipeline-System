@@ -676,19 +676,26 @@ Return ONLY valid JSON matching this schema:
             roleFamilyMatch: classRes.roleFamilyMatch,
           }, index);
 
-          // Normalize NVIDIA E5 vector similarity score (typical range ~0.35 to 0.75) to human-intuitive 0-100%
+          // Calibrated NVIDIA E5 vector similarity score (baseline floor at 0.45)
           const rawVector = c.vectorScore ?? 0.4;
-          let normVectorScore = 50;
-          if (rawVector >= 0.35) {
-            normVectorScore = Math.min(100, Math.round(50 + ((rawVector - 0.35) / 0.35) * 50));
+          let normVectorScore = 0;
+          if (rawVector >= 0.45) {
+            normVectorScore = Math.min(100, Math.round(30 + ((rawVector - 0.45) / 0.30) * 70));
           } else {
-            normVectorScore = Math.round((rawVector / 0.35) * 50);
+            normVectorScore = Math.max(0, Math.round((rawVector / 0.45) * 30));
           }
 
-          // Blend 50% heuristic scores with 50% normalized vector similarity
-          const matchScore = Math.round(
-            (scored.overallScore * 0.5) + (normVectorScore * 0.5)
+          // Blend 55% heuristic score with 45% calibrated vector similarity
+          let matchScore = Math.round(
+            (scored.overallScore * 0.55) + (normVectorScore * 0.45)
           );
+
+          // Apply Soft Weighted Domain Multiplier (1.15x for exact domain match, 0.75x for unrelated domain)
+          if (classRes.roleFamilyMatch === "exact") {
+            matchScore = Math.min(100, Math.round(matchScore * 1.15));
+          } else if (classRes.roleFamilyMatch === "unrelated") {
+            matchScore = Math.round(matchScore * 0.75);
+          }
 
           // Build authoritative AI Talent Acquisition reason
           const name = cv.fullName || "Candidate";
@@ -787,9 +794,9 @@ Return ONLY valid JSON matching this schema:
       // Sort all candidates by overall score descending (highest score to lowest/good score)
       matchResults.sort((a, b) => b.overallScore - a.overallScore);
 
-      // Strict Filter Gate: Exclude match scores below 60% AND hard-excluded overqualified roles / location mismatches
+      // Filter Gate: Filter match scores >= 60%
       const safetyFloor = 60;
-      const validMatches = matchResults.filter(r => {
+      let validMatches = matchResults.filter(r => {
         if (r.overallScore < safetyFloor) return false;
         if (r.currentRoleGate === "excluded_overqualified" && !appliedCandidateIds.has(r.cvId)) {
           return false; // Hard exclude new candidates whose current role level exceeds job target rank
@@ -800,7 +807,15 @@ Return ONLY valid JSON matching this schema:
         return true;
       });
 
-      // Slice the top 30 ordered highest to lowest (strictly filtering only matches >= 60)
+      // Mandatory Zero-Result Fallback: If 0 candidates meet safetyFloor (60%), surface top 10 nearest candidates labeled with advisory tag
+      if (validMatches.length === 0 && matchResults.length > 0) {
+        validMatches = matchResults.slice(0, 10).map(r => ({
+          ...r,
+          reason: `[Outside typical domain / Review manually] ${r.reason}`
+        }));
+      }
+
+      // Slice the top 30 ordered highest to lowest
       const newTop30 = validMatches.slice(0, 30);
       const newTop30Ids = new Set(newTop30.map(r => r.cvId));
 
@@ -949,6 +964,94 @@ export const backfillCandidateEmbeddings = action({
       processed,
       remaining: result.isDone ? 0 : 999,
       continueCursor: result.continueCursor ?? undefined,
+    };
+  },
+});
+
+export const runEmpiricalVectorBenchmark = action({
+  args: {},
+  handler: async (ctx): Promise<any> => {
+    // 1. Fetch sample jobs & candidates
+    const recentCandidates = await ctx.runQuery(api.matching.queries.getRecentCandidates, { limit: 100 });
+    const jobs = await ctx.runQuery(api.jobs.jobs.list, {});
+    
+    if (!jobs || jobs.length === 0 || !recentCandidates || recentCandidates.length === 0) {
+      return { error: "Insufficient sample data in database" };
+    }
+
+    const sampleJob = jobs[0]; // e.g. Tech / Engineering Job
+    const jobText = `Title: ${sampleJob.title}\nDescription: ${sampleJob.jobDescription}\nSkills: ${(sampleJob.requiredSkills || []).join(", ")}`;
+    
+    const jobEmbed = await embedText(jobText, "query");
+
+    const pairResults: Array<{
+      candidateId: string;
+      fullName: string;
+      currentTitle: string;
+      roleFamily: string;
+      isKnownGood: boolean;
+      cosineSimilarity: number;
+    }> = [];
+
+    const knownGood: number[] = [];
+    const knownBad: number[] = [];
+
+    // Evaluate top 30 candidates against sample job embedding
+    const sampleCandidates = recentCandidates.slice(0, 30);
+
+    for (const cand of sampleCandidates) {
+      const resume = await ctx.runQuery(internal.matching.queries.getCandidateResume, { candidateId: cand._id });
+      if (!resume || !resume.rawText) continue;
+
+      const candText = resume.rawText.slice(0, 4000);
+      try {
+        const candEmbed = await embedText(candText, "passage");
+        const sim = cosineSimilarity(jobEmbed.embedding, candEmbed.embedding);
+
+        const candRole = (cand.currentTitle || cand.currentJobTitle || "").toLowerCase();
+        const jobTitleLower = (sampleJob.title || "").toLowerCase();
+        
+        // Determine known good vs known bad based on title keywords
+        const isGood = candRole.includes("engineer") || candRole.includes("developer") || candRole.includes("software") || candRole.includes("tech");
+        
+        pairResults.push({
+          candidateId: cand._id,
+          fullName: cand.fullName || "Anonymous Candidate",
+          currentTitle: cand.currentTitle || cand.currentJobTitle || "Unspecified",
+          roleFamily: cand.roleFamily || "unclassified",
+          isKnownGood: isGood,
+          cosineSimilarity: Number(sim.toFixed(4)),
+        });
+
+        if (isGood) knownGood.push(sim);
+        else knownBad.push(sim);
+
+      } catch (err) {
+        console.error(`Failed embedding candidate ${cand._id}:`, err);
+      }
+    }
+
+    const calcAvg = (arr: number[]) => arr.length > 0 ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(4)) : 0;
+    const calcMin = (arr: number[]) => arr.length > 0 ? Number(Math.min(...arr).toFixed(4)) : 0;
+    const calcMax = (arr: number[]) => arr.length > 0 ? Number(Math.max(...arr).toFixed(4)) : 0;
+
+    return {
+      sampleJobEvaluated: {
+        jobId: sampleJob._id,
+        title: sampleJob.title,
+        industry: sampleJob.clientIndustry,
+      },
+      distributionSummary: {
+        knownGoodCount: knownGood.length,
+        knownGoodMin: calcMin(knownGood),
+        knownGoodMax: calcMax(knownGood),
+        knownGoodAvg: calcAvg(knownGood),
+        knownBadCount: knownBad.length,
+        knownBadMin: calcMin(knownBad),
+        knownBadMax: calcMax(knownBad),
+        knownBadAvg: calcAvg(knownBad),
+      },
+      pairResults,
     };
   },
 });

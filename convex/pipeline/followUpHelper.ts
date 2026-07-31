@@ -172,13 +172,13 @@ export async function initiateFollowUpOutreach(
   
   const formattedMissingFields = missingFields.map(f => `• ${f}`).join("\n");
 
+  const configRow = await ctx.db.query("appSettings")
+    .withIndex("by_key", (q: any) => q.eq("key", "system"))
+    .first();
+  const companyName = configRow?.brandName || "our company";
+
   let body = "";
   if (job.followUpInitialTemplate) {
-    const configRow = await ctx.db.query("appSettings")
-      .withIndex("by_key", (q: any) => q.eq("key", "system"))
-      .first();
-    const companyName = configRow?.brandName || "our company";
-
     body = job.followUpInitialTemplate
       .replace(/{candidate_name}/g, candidate.fullName || "there")
       .replace(/{job_title}/g, job.title || "the role")
@@ -191,6 +191,24 @@ export async function initiateFollowUpOutreach(
       formattedMissingFields,
       `Please share these at your earliest convenience. Thank you!`,
     ].join("\n\n");
+  }
+
+  // Determine Email Subject & Body (supporting Custom Email Templates)
+  let emailSubject = `Action Required: Missing info for your ${job.title} application`;
+  if (job.followUpEmailSubjectTemplate) {
+    emailSubject = job.followUpEmailSubjectTemplate
+      .replace(/{candidate_name}/g, candidate.fullName || "there")
+      .replace(/{job_title}/g, job.title || "the role")
+      .replace(/{company_name}/g, companyName);
+  }
+
+  let emailBody = body;
+  if (job.enableEmailFollowUpTemplate && job.followUpEmailBodyTemplate) {
+    emailBody = job.followUpEmailBodyTemplate
+      .replace(/{candidate_name}/g, candidate.fullName || "there")
+      .replace(/{job_title}/g, job.title || "the role")
+      .replace(/{missing_fields}/g, formattedMissingFields)
+      .replace(/{company_name}/g, companyName);
   }
 
   const now = Date.now();
@@ -217,8 +235,8 @@ export async function initiateFollowUpOutreach(
     applicationId: app._id,
     direction: "outbound",
     channel: "email",
-    subject: `Action Required: Missing info for your ${job.title} application`,
-    body,
+    subject: emailSubject,
+    body: emailBody,
     deliveryStatus: "pending",
     sentAt: now,
     stoppedSequence: false,
@@ -271,6 +289,6 @@ export async function initiateFollowUpOutreach(
     });
   }
 
-  console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId}`);
+  console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId} (Test Mode active: real candidates protected)`);
   return commId;
 }

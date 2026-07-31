@@ -79,6 +79,9 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     experienceMaxYears: '' as number | string,
     jobDescription: '',
     muteDefaultWhatsappReply: false,
+    enableEmailFollowUpTemplate: false,
+    followUpEmailSubjectTemplate: '',
+    followUpEmailBodyTemplate: '',
     pausedChannels: [] as string[],
     outreachWhatsAppNumber: '',
   });
@@ -100,6 +103,9 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         experienceMaxYears: job.experienceMaxYears !== undefined && job.experienceMaxYears !== null ? String(job.experienceMaxYears) : '',
         jobDescription: job.jobDescription || '',
         muteDefaultWhatsappReply: job.muteDefaultWhatsappReply || false,
+        enableEmailFollowUpTemplate: job.enableEmailFollowUpTemplate || false,
+        followUpEmailSubjectTemplate: job.followUpEmailSubjectTemplate || '',
+        followUpEmailBodyTemplate: job.followUpEmailBodyTemplate || '',
         pausedChannels: job.pausedChannels || [],
         outreachWhatsAppNumber: job.outreachWhatsAppNumber || '',
       });
@@ -169,6 +175,9 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         experienceMaxYears: formData.experienceMaxYears === '' ? undefined : Number(formData.experienceMaxYears),
         description: formData.jobDescription,
         muteDefaultWhatsappReply: formData.muteDefaultWhatsappReply,
+        enableEmailFollowUpTemplate: formData.enableEmailFollowUpTemplate,
+        followUpEmailSubjectTemplate: formData.followUpEmailSubjectTemplate || undefined,
+        followUpEmailBodyTemplate: formData.followUpEmailBodyTemplate || undefined,
         outreachWhatsAppNumber: formData.outreachWhatsAppNumber || undefined,
       });
 
@@ -408,6 +417,55 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               />
               <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
             </label>
+          </div>
+
+          {/* Custom Email Follow-Up Template */}
+          <div className="flex flex-col gap-3 col-span-2 p-3 bg-surface border border-border rounded-lg mt-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-text-primary">Enable Custom Email Follow-Up Template</p>
+                <p className="text-xs text-text-secondary mt-0.5">Toggle ON to customize the subject line and body of automated candidate follow-up emails for this job.</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer" 
+                  checked={formData.enableEmailFollowUpTemplate} 
+                  onChange={e => setFormData(prev => ({ ...prev, enableEmailFollowUpTemplate: e.target.checked }))} 
+                />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+              </label>
+            </div>
+
+            {formData.enableEmailFollowUpTemplate && (
+              <div className="flex flex-col gap-3 mt-2 pt-2 border-t border-border/50">
+                <div>
+                  <label className="text-xs font-semibold text-text-primary block mb-1">Email Subject Line Template</label>
+                  <input
+                    type="text"
+                    name="followUpEmailSubjectTemplate"
+                    value={formData.followUpEmailSubjectTemplate}
+                    onChange={handleChange}
+                    placeholder="Action Required: Missing info for your {job_title} application"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+                  />
+                  <p className="text-[11px] text-text-secondary mt-1">Available tags: <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;candidate_name&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;job_title&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;company_name&#125;</code></p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-text-primary block mb-1">Email Body Template</label>
+                  <textarea
+                    name="followUpEmailBodyTemplate"
+                    value={formData.followUpEmailBodyTemplate}
+                    onChange={handleChange}
+                    rows={5}
+                    placeholder={`Hi {candidate_name},\n\nThank you for applying for the {job_title} role at {company_name}.\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`}
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container font-mono"
+                  />
+                  <p className="text-[11px] text-text-secondary mt-1">Available tags: <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;candidate_name&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;job_title&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;missing_fields&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;company_name&#125;</code></p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Active Ingestion Sources */}

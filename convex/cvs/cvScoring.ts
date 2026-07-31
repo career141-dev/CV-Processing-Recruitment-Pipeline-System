@@ -3,11 +3,40 @@ import { getOpenAI, getModelForTask } from "../lib/llm";
 import type { SearchRequirements } from "../lib/jdParser";
 
 function normalizeText(value: string): string {
+  if (!value) return "";
   return value
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/[^\p{L}\p{N}#+./\-]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeSkillForComparison(value: string): string {
+  if (!value) return "";
+  let s = value.toLowerCase().trim();
+
+  // Canonicalize tech skill aliases preserving punctuation
+  s = s
+    .replace(/\bnode\s*(\.|\s*)js\b/g, "nodejs")
+    .replace(/\breact\s*(\.|\s*)js\b/g, "reactjs")
+    .replace(/\bvue\s*(\.|\s*)js\b/g, "vuejs")
+    .replace(/\bnext\s*(\.|\s*)js\b/g, "nextjs")
+    .replace(/\bexpress\s*(\.|\s*)js\b/g, "expressjs")
+    .replace(/\bc\+\+\b/g, "cplusplus")
+    .replace(/\bcpp\b/g, "cplusplus")
+    .replace(/\bc#/g, "csharp")
+    .replace(/\bc-sharp\b/g, "csharp")
+    .replace(/\b\.net\b/g, "dotnet")
+    .replace(/\bdotnet\b/g, "dotnet")
+    .replace(/\bci\/cd\b/g, "cicd")
+    .replace(/\bci-cd\b/g, "cicd")
+    .replace(/\bpower\s*bi\b/g, "powerbi")
+    .replace(/\bms\s*excel\b/g, "excel")
+    .replace(/\bmicrosoft\s*excel\b/g, "excel")
+    .replace(/\bsql\s*server\b/g, "sqlserver")
+    .replace(/\bdata\s*analysis\b/g, "analytics");
+
+  return normalizeText(s);
 }
 
 function tokenize(value: string): string[] {
@@ -220,38 +249,6 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
   }
 
   return Math.max(45, Math.min(100, Math.round(best || 55)));
-}
-
-function normalizeSkillForComparison(value: string): string {
-  // Protect tech chars that normalizeText would strip: + # .
-  let s = value
-    .replace(/\+\+/g, "\x00PLUSPLUS\x00")
-    .replace(/#/g, "\x00SHARP\x00")
-    .replace(/\./g, "\x00DOT\x00");
-
-  s = normalizeText(s)
-    .replace(/\bnode\s*dot\s*js\b/g, "nodejs")
-    .replace(/\breact\s*dot\s*js\b/g, "reactjs")
-    .replace(/\bvue\s*dot\s*js\b/g, "vuejs")
-    .replace(/\bnext\s*dot\s*js\b/g, "nextjs")
-    .replace(/\bnode\s*js\b/g, "nodejs")
-    .replace(/\breact\s*js\b/g, "reactjs")
-    .replace(/\bvue\s*js\b/g, "vuejs")
-    .replace(/\bnext\s*js\b/g, "nextjs")
-    .replace(/\bpower\s*bi\b/g, "powerbi")
-    .replace(/\bms\s*excel\b/g, "excel")
-    .replace(/\bmicrosoft\s*excel\b/g, "excel")
-    .replace(/\bsql\s*server\b/g, "sql")
-    .replace(/\bdata\s*analysis\b/g, "analytics");
-
-  // Restore protected chars
-  s = s
-    .replace(/\x00PLUSPLUS\x00/g, "++")
-    .replace(/\x00SHARP\x00/g, "#")
-    .replace(/\x00DOT\x00/g, ".")
-    .trim();
-
-  return s;
 }
 
 function skillMatches(requiredSkill: string, candidateSkills: string[]): string | null {

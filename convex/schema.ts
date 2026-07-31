@@ -234,6 +234,9 @@ export default defineSchema({
     // Agent 3 — Follow-up Config (Dynamic AI Flow)
     followUpInitialTemplate: v.optional(v.string()),
     followUpSampleTemplate: v.optional(v.string()),
+    enableEmailFollowUpTemplate: v.optional(v.boolean()),
+    followUpEmailSubjectTemplate: v.optional(v.string()),
+    followUpEmailBodyTemplate: v.optional(v.string()),
     customFollowUpQuestions: v.optional(v.array(v.string())),
     maxFollowUpDays: v.optional(v.number()),
     maxFollowUpAttempts: v.optional(v.number()),
@@ -1312,6 +1315,9 @@ export default defineSchema({
     commonWhatsappNumber: v.optional(v.string()),
     commonWhatsappNumberId: v.optional(v.string()),
     autopilotEnabled: v.optional(v.boolean()),
+    testModeEnabled: v.optional(v.boolean()),
+    testPhoneNumber: v.optional(v.string()),
+    testEmailAddress: v.optional(v.string()),
     updatedBy: v.optional(v.id("users")),
     updatedAt: v.optional(v.string()),
     lastEmailFetchTimestamp: v.optional(v.string()), // Added for email polling memory

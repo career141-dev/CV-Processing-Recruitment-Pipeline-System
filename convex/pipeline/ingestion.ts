@@ -57,6 +57,7 @@ export const processCvIngestion = mutation({
           .filter((q) => q.eq(q.field("jobId"), args.jobId))
           .first();
 
+        if (!existingApp) {
           const now = Date.now();
           const appId = await ctx.db.insert("applications", {
             candidateId: existingFile.candidateId,

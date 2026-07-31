@@ -1,4 +1,4 @@
-import { query, mutation } from "../_generated/server";
+import { query, mutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "../lib/permissions";
 import { internal } from "../_generated/api";
@@ -16,6 +16,13 @@ export const getSystemSettings = query({
       whatsappFollowUp: true,
       emailFollowUp: true,
     };
+  }
+});
+
+export const getInternalSystemSettings = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
   }
 });
 

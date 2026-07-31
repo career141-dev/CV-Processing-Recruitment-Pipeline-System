@@ -127,6 +127,9 @@ export default function CreateJobWizard() {
     enableFollowUps: false,
     followUpInitialTemplate: `Hi {candidate_name},\n\nThank you for applying for the {job_title} role!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease let us know how soon you can provide this information.\n\nBest regards,\nTalent Acquisition Team`,
     followUpSampleTemplate: `Hi {candidate_name}, thanks for getting back to us.\n\nWe just need your {missing_fields} to move forward.\n\nPlease share them at your earliest convenience.`,
+    enableEmailFollowUpTemplate: false,
+    followUpEmailSubjectTemplate: `Action Required: Missing info for your {job_title} application`,
+    followUpEmailBodyTemplate: `Hi {candidate_name},\n\nThank you for applying for the {job_title} role at {company_name}.\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`,
     maxFollowUpDays: 3,
     maxFollowUpAttempts: 3,
     customFollowUpQuestions: [] as string[],
@@ -590,6 +593,9 @@ export default function CreateJobWizard() {
         agent3Enabled: formData.enableFollowUps,
         followUpInitialTemplate: formData.followUpInitialTemplate,
         followUpSampleTemplate: formData.followUpSampleTemplate,
+        enableEmailFollowUpTemplate: formData.enableEmailFollowUpTemplate,
+        followUpEmailSubjectTemplate: formData.followUpEmailSubjectTemplate,
+        followUpEmailBodyTemplate: formData.followUpEmailBodyTemplate,
         maxFollowUpDays: formData.maxFollowUpDays,
         maxFollowUpAttempts: formData.maxFollowUpAttempts,
         customFollowUpQuestions: formData.customFollowUpQuestions,
@@ -1699,6 +1705,53 @@ export default function CreateJobWizard() {
                       rows={8}
                     />
                   </div>
+                </div>
+
+                {/* Custom Email Follow-Up Template Section */}
+                <div className="border border-border rounded-lg p-4 bg-surface-container/50 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-text-primary">Enable Custom Email Follow-Up Template</h4>
+                      <p className="text-[11px] text-text-secondary">Customize the subject line and body template for automated follow-up emails sent for this job.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={formData.enableEmailFollowUpTemplate} 
+                        onChange={(e) => updateFormData('enableEmailFollowUpTemplate', e.target.checked)} 
+                      />
+                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+                    </label>
+                  </div>
+
+                  {formData.enableEmailFollowUpTemplate && (
+                    <div className="space-y-4 pt-2 border-t border-border/50">
+                      <div>
+                        <label className="text-xs font-semibold text-text-primary block mb-1">Email Subject Line Template</label>
+                        <input
+                          type="text"
+                          className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+                          value={formData.followUpEmailSubjectTemplate}
+                          onChange={(e) => updateFormData('followUpEmailSubjectTemplate', e.target.value)}
+                          placeholder="Action Required: Missing info for your {job_title} application"
+                        />
+                        <p className="text-[10px] text-text-secondary mt-1">Available tags: <code className="bg-surface-variant px-1 rounded">{'{candidate_name}'}</code>, <code className="bg-surface-variant px-1 rounded">{'{job_title}'}</code>, <code className="bg-surface-variant px-1 rounded">{'{company_name}'}</code></p>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-text-primary block mb-1">Email Body Template</label>
+                        <textarea
+                          rows={6}
+                          className="w-full text-sm border border-border rounded-md p-3 bg-surface text-text-primary focus:outline-none focus:border-primary-container font-mono"
+                          value={formData.followUpEmailBodyTemplate}
+                          onChange={(e) => updateFormData('followUpEmailBodyTemplate', e.target.value)}
+                          placeholder={`Hi {candidate_name},\n\nThank you for applying for the {job_title} role at {company_name}.\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`}
+                        />
+                        <p className="text-[10px] text-text-secondary mt-1">Available tags: <code className="bg-surface-variant px-1 rounded">{'{candidate_name}'}</code>, <code className="bg-surface-variant px-1 rounded">{'{job_title}'}</code>, <code className="bg-surface-variant px-1 rounded">{'{missing_fields}'}</code>, <code className="bg-surface-variant px-1 rounded">{'{company_name}'}</code></p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 max-w-sm">
