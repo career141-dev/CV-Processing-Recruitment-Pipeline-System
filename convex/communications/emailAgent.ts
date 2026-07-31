@@ -961,7 +961,7 @@ export const processSingleBulkIngestionEmail = processSingleWeekendEmail;
 
 export const recoverMailboxCVs = action({
   args: {
-    inboxEmail: v.optional(v.string()), // Defaults to "sanjeev@career141.com"
+    inboxEmail: v.string(), // Must be explicitly provided (e.g. "cv@career141.com", "job@career141.com")
     targetJobId: v.optional(v.id("jobs")),
     daysLookback: v.optional(v.number()), // Default 30 days
   },
@@ -969,7 +969,7 @@ export const recoverMailboxCVs = action({
     const token = await getGraphToken();
     if (!token) throw new Error("No Graph token available");
 
-    const targetInboxEmail = args.inboxEmail || "sanjeev@career141.com";
+    const targetInboxEmail = args.inboxEmail;
     const days = args.daysLookback ?? 30;
     const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 

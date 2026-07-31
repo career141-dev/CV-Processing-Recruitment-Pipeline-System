@@ -249,9 +249,9 @@ export const runJobLifecycleAndRoutingTest = mutation({
     console.log("--> Starting Job Lifecycle & Source Ingestion Routing QA Test...");
     const now = Date.now();
 
-    // 1. Seed two candidates (Sanjeev as React Specialist, Alex as Python Developer)
+    // 1. Seed two candidates (React Dev Lead as React Specialist, Alex as Python Developer)
     const reactCandId = await ctx.db.insert("candidates", {
-      fullName: "Sanjeev React Senior",
+      fullName: "React Dev Lead React Senior",
       email: `sanjeev.qa.${now}@example.com`,
       phone: "+15551111",
       overallStatus: "new_cvs",
@@ -335,8 +335,8 @@ export const runJobLifecycleAndRoutingTest = mutation({
     console.log(`[PASS] Ingestion routing correctly resolved inbound WhatsApp to target Job ID`);
 
     // 5. Simulate Reverse Matching against old candidates
-    // Sanjeev matches skills and experience (> 5 yrs). Alex does not.
-    // Insert application for Sanjeev with score 88 (>= 60 triggers auto-routing to ta_shortlist)
+    // React Dev Lead matches skills and experience (> 5 yrs). Alex does not.
+    // Insert application for React Dev Lead with score 88 (>= 60 triggers auto-routing to ta_shortlist)
     const sanjeevAppId = await ctx.db.insert("applications", {
       candidateId: reactCandId,
       jobId,

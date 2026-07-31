@@ -95,9 +95,9 @@ jobs:
             echo "Starting Convex Database (if not already running)..."
             docker compose --env-file .env.production -f docker-compose.yml up -d
             
-            # Build new Next.js release in background while old container serves users!
-            echo "Building new Next.js release in background (Zero-Downtime)..."
-            docker compose --env-file .env.production -f docker-compose.prod.yml build
+            # Build new Next.js release in background with low CPU priority (nice -n 19)
+            echo "Building new Next.js release in background (Low CPU Priority)..."
+            nice -n 19 docker compose --env-file .env.production -f docker-compose.prod.yml build
             
             # Instant 1-second container swap once build completes
             echo "Performing instant 1-second container swap..."

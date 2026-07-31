@@ -82,9 +82,9 @@ export const seedTestJobAndCandidates = mutation({
       noticePeriodDays: 45,
     });
 
-    // 4. Create the target test candidate requested: Sivasuthakran Sanjeev
+    // 4. Create the target test candidate requested: Test Candidate Benchmark
     const targetCandidateId = await ctx.db.insert("candidates", {
-      fullName: "Sivasuthakran Sanjeev",
+      fullName: "Test Candidate Benchmark",
       email: "sivasuthakran.sanjeev@career141-test.com",
       phone: "+94775556666",
       status: "active",
@@ -186,13 +186,13 @@ export const seedTestJobAndCandidates = mutation({
       createdAt: new Date().toISOString()
     });
 
-    // 7. Add target candidate "Sivasuthakran Sanjeev" as an active application in the 'new_cvs' stage for this job
+    // 7. Add target candidate "Test Candidate Benchmark" as an active application in the 'new_cvs' stage for this job
     const applicationId = await ctx.db.insert("applications", {
       candidateId: targetCandidateId,
       jobId,
       sourceChannel: "whatsapp",
       currentStage: "new_cvs",
-      candidateName: "Sivasuthakran Sanjeev",
+      candidateName: "Test Candidate Benchmark",
       createdAt: Date.now(),
       lastStageChangedAt: Date.now(),
       isActive: true,
