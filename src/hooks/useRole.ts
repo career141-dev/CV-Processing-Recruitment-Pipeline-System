@@ -9,10 +9,6 @@ export function useCurrentUser() {
 export function useRole() {
   const user = useCurrentUser();
   const role = user?.role ?? null;
-  
-  if (typeof window !== 'undefined') {
-    console.log("DEBUG ROLE:", { user, role, identity_loaded: user !== undefined });
-  }
 
   return {
     role,
