@@ -3,11 +3,40 @@ import { getOpenAI, getModelForTask } from "../lib/llm";
 import type { SearchRequirements } from "../lib/jdParser";
 
 function normalizeText(value: string): string {
+  if (!value) return "";
   return value
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/[^\p{L}\p{N}#+./\-]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeSkillForComparison(value: string): string {
+  if (!value) return "";
+  let s = value.toLowerCase().trim();
+
+  // Canonicalize tech skill aliases preserving punctuation
+  s = s
+    .replace(/\bnode\s*(\.|\s*)js\b/g, "nodejs")
+    .replace(/\breact\s*(\.|\s*)js\b/g, "reactjs")
+    .replace(/\bvue\s*(\.|\s*)js\b/g, "vuejs")
+    .replace(/\bnext\s*(\.|\s*)js\b/g, "nextjs")
+    .replace(/\bexpress\s*(\.|\s*)js\b/g, "expressjs")
+    .replace(/\bc\+\+\b/g, "cplusplus")
+    .replace(/\bcpp\b/g, "cplusplus")
+    .replace(/\bc#/g, "csharp")
+    .replace(/\bc-sharp\b/g, "csharp")
+    .replace(/\b\.net\b/g, "dotnet")
+    .replace(/\bdotnet\b/g, "dotnet")
+    .replace(/\bci\/cd\b/g, "cicd")
+    .replace(/\bci-cd\b/g, "cicd")
+    .replace(/\bpower\s*bi\b/g, "powerbi")
+    .replace(/\bms\s*excel\b/g, "excel")
+    .replace(/\bmicrosoft\s*excel\b/g, "excel")
+    .replace(/\bsql\s*server\b/g, "sqlserver")
+    .replace(/\bdata\s*analysis\b/g, "analytics");
+
+  return normalizeText(s);
 }
 
 function tokenize(value: string): string[] {
@@ -220,38 +249,6 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
   }
 
   return Math.max(45, Math.min(100, Math.round(best || 55)));
-}
-
-function normalizeSkillForComparison(value: string): string {
-  // Protect tech chars that normalizeText would strip: + # .
-  let s = value
-    .replace(/\+\+/g, "\x00PLUSPLUS\x00")
-    .replace(/#/g, "\x00SHARP\x00")
-    .replace(/\./g, "\x00DOT\x00");
-
-  s = normalizeText(s)
-    .replace(/\bnode\s*dot\s*js\b/g, "nodejs")
-    .replace(/\breact\s*dot\s*js\b/g, "reactjs")
-    .replace(/\bvue\s*dot\s*js\b/g, "vuejs")
-    .replace(/\bnext\s*dot\s*js\b/g, "nextjs")
-    .replace(/\bnode\s*js\b/g, "nodejs")
-    .replace(/\breact\s*js\b/g, "reactjs")
-    .replace(/\bvue\s*js\b/g, "vuejs")
-    .replace(/\bnext\s*js\b/g, "nextjs")
-    .replace(/\bpower\s*bi\b/g, "powerbi")
-    .replace(/\bms\s*excel\b/g, "excel")
-    .replace(/\bmicrosoft\s*excel\b/g, "excel")
-    .replace(/\bsql\s*server\b/g, "sql")
-    .replace(/\bdata\s*analysis\b/g, "analytics");
-
-  // Restore protected chars
-  s = s
-    .replace(/\x00PLUSPLUS\x00/g, "++")
-    .replace(/\x00SHARP\x00/g, "#")
-    .replace(/\x00DOT\x00/g, ".")
-    .trim();
-
-  return s;
 }
 
 function skillMatches(requiredSkill: string, candidateSkills: string[]): string | null {
@@ -476,7 +473,8 @@ export interface LocationEvaluationResult {
 
 export function evaluateLocationMatch(
   jobLocationStr: string | null | undefined,
-  candLocationStr?: string | null
+  candLocationStr?: string | null,
+  strictLocation?: boolean
 ): LocationEvaluationResult {
   const normJob = normalizeText(jobLocationStr || "");
   const normCand = normalizeText(candLocationStr || "");
@@ -488,12 +486,27 @@ export function evaluateLocationMatch(
 
   // 2. Unspecified Candidate Location
   if (!normCand) {
-    return { score: 60, status: "not specified", gate: "unspecified_pass", penalty: 0 };
+    return strictLocation
+      ? { score: 30, status: "different", gate: "excluded_mismatch", penalty: -25 }
+      : { score: 60, status: "not specified", gate: "unspecified_pass", penalty: 0 };
   }
 
   // 3. Direct String Identity / Substring Match
   if (normCand === normJob || normCand.includes(normJob) || normJob.includes(normCand)) {
     return { score: 100, status: "match", gate: "pass", penalty: 0 };
+  }
+
+  // Colombo Metro alias check
+  const colomboMetro = ["colombo", "dehiwala", "moratuwa", "mount lavinia", "nugegoda", "battaramulla", "rajagiriya", "kotte", "maharagama", "malabe"];
+  const isJobColombo = colomboMetro.some(c => normJob.includes(c));
+  const isCandColombo = colomboMetro.some(c => normCand.includes(c));
+  if (isJobColombo && isCandColombo) {
+    return { score: 100, status: "match", gate: "pass", penalty: 0 };
+  }
+
+  // If strict location requested and candidate is outside target city (e.g. Kegalle vs Colombo)
+  if (strictLocation) {
+    return { score: 0, status: "different", gate: "excluded_mismatch", penalty: -40 };
   }
 
   // 4. Token & Geographic Knowledge Resolution
@@ -542,7 +555,7 @@ export function evaluateLocationMatch(
       return { score: 100, status: "match", gate: "pass", penalty: 0 };
     }
 
-    // Both specified different cities in the same country (e.g. "Colombo" vs "Kandy")
+    // Both specified different cities in the same country (e.g. "Colombo" vs "Kandy" or "Kegalle")
     return { score: 85, status: "region_match", gate: "region_pass", penalty: 0 };
   }
 
@@ -998,6 +1011,11 @@ export function scoreCandidateAgainstRequirements(
     maxYearsExperience?: number | null;
     negativeKeywords?: string[];
     overrideSeniority?: string | null;
+    overrideLocation?: string | null;
+    strictLocation?: boolean;
+    domainPreference?: string | null;
+    companyTypePreference?: string | null;
+    requiredCertifications?: string[];
     currentRolePenalty?: number;
     roleFamilyMatch?: "exact" | "synonym" | "adjacent" | "unrelated";
   },
@@ -1034,8 +1052,10 @@ export function scoreCandidateAgainstRequirements(
   const skillScores = scoreSkills(requiredSkills, preferredSkills, candidateSkills);
   const hasMissingRequired = requiredSkills.length > 0 && skillScores.missingRequired.length > 0;
   const skillScore = skillScores.score;
-  const industryScore = scoreIndustry(req.industry, cv.industries ?? null);
-  const locEval = evaluateLocationMatch(req.location, cv.location);
+  const targetIndustry = req.domainPreference || req.industry;
+  const industryScore = scoreIndustry(targetIndustry, cv.industries ?? null);
+  const targetLocation = req.overrideLocation || req.location;
+  const locEval = evaluateLocationMatch(targetLocation, cv.location, req.strictLocation);
   const locationScore = locEval.score;
   const locationStatus = locEval.status;
   const locationGate = locEval.gate;
@@ -1065,6 +1085,25 @@ export function scoreCandidateAgainstRequirements(
       (experienceScore * 0.16) +
       (industryScore * 0.06)
     );
+  }
+
+  // Apply Location Penalty (e.g. -40 points for strict location mismatch like Kegalle vs Colombo)
+  if (locationPenalty < 0) {
+    overallScore = Math.max(0, overallScore + locationPenalty);
+  }
+
+  // Evaluate Required Certifications if specified in custom preferences
+  if (req.requiredCertifications && req.requiredCertifications.length > 0) {
+    const candCertsText = normalizeText(`${(cv.certifications || []).join(" ")} ${cv.summary || ""}`);
+    let certMatches = 0;
+    for (const cert of req.requiredCertifications) {
+      if (candCertsText.includes(normalizeText(cert))) {
+        certMatches++;
+      }
+    }
+    if (certMatches === 0) {
+      overallScore = Math.max(10, overallScore - 20);
+    }
   }
 
   // Apply negative keywords penalty if TA feedback extracted negative keywords

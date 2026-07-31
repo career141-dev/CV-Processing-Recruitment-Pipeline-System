@@ -35,9 +35,46 @@ export const sendGraphEmail = internalAction({
       }
     }
 
-    // Always deliver emails to candidate's actual profile email address
+    // ── Test-mode redirect ─────────────────────────────────────────────────
+    const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
+    const isTestMode = 
+      process.env.EMAIL_TEST_MODE === "true" || 
+      process.env.OUTREACH_TEST_MODE === "true" || 
+      process.env.TEST_MODE === "true" || 
+      systemSettings?.testModeEnabled !== false; // Default true during testing phase
+
+    const testRecipient = 
+      process.env.EMAIL_TEST_RECIPIENT || 
+      process.env.TEST_EMAIL_ADDRESS || 
+      systemSettings?.testEmailAddress;
+
     let targetAddress = args.toAddress;
     let logNote = "";
+
+    if (isTestMode) {
+      const candidateEmailNorm = args.toAddress.toLowerCase().trim();
+      const testEmailNorm = testRecipient ? testRecipient.toLowerCase().trim() : "";
+
+      if (testEmailNorm && candidateEmailNorm === testEmailNorm) {
+        targetAddress = args.toAddress;
+        logNote = ` [TEST CANDIDATE]`;
+      } else if (testRecipient) {
+        targetAddress = testRecipient;
+        logNote = ` [REDIRECTED TO TEST: ${testRecipient}]`;
+      } else {
+        console.warn(`[Graph Email] Test mode active: Suppressed email outreach to real candidate ${args.toAddress}`);
+        await ctx.runMutation(
+          internal.communications.graphEmailMutations.updateEmailStatus,
+          {
+            communicationId: args.communicationId,
+            status: "failed",
+            error:
+              "Test mode is active: Automated email outreach to real candidates is suppressed during testing phase.",
+          }
+        );
+        return;
+      }
+    }
 
     try {
       const token = await getGraphToken();

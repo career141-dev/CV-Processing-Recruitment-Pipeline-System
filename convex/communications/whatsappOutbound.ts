@@ -251,10 +251,45 @@ export const sendWhatsApp = internalAction({
       return;
     }
 
-    // Always send WhatsApp message to candidate profile phone number
+    // 2. Resolve destination phone number based on test mode
+    const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
+    const isTestMode = 
+      process.env.WHATSAPP_TEST_MODE === "true" || 
+      process.env.OUTREACH_TEST_MODE === "true" || 
+      process.env.TEST_MODE === "true" || 
+      systemSettings?.testModeEnabled !== false; // Default true during testing phase
+
+    const testRecipient = 
+      process.env.WHATSAPP_TEST_RECIPIENT || 
+      process.env.TEST_PHONE_NUMBER || 
+      systemSettings?.testPhoneNumber;
+
     let targetPhone = candidate.phone;
     let logNote = "";
 
+    if (isTestMode) {
+      const candidateDigits = candidate.phone.replace(/\D/g, "");
+      const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
+
+      if (testDigits && candidateDigits === testDigits) {
+        // Candidate IS the test number, send directly
+        targetPhone = candidate.phone;
+        logNote = ` [TEST CANDIDATE]`;
+      } else if (testRecipient) {
+        // Redirect to test recipient number
+        targetPhone = testRecipient;
+        logNote = ` [REDIRECTED TO TEST NUMBER: ${testRecipient}]`;
+      } else {
+        // Real candidate, no test recipient configured -> SUPPRESS OUTREACH
+        console.warn(`[WhatsApp Outbound] Test mode active: Suppressed outreach to real candidate ${candidate.phone}`);
+        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+          communicationId: args.communicationId,
+          status: "failed",
+          error: "Test mode is active: Automated WhatsApp outreach to real candidates is suppressed during testing phase.",
+        });
+        return;
+      }
+    }
     // 3. Send message to WhatChimp API
     try {
       const baseApiToken = process.env.WHATCHIMP_API_TOKEN;

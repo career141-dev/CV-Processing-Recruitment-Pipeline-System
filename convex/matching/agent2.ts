@@ -210,6 +210,11 @@ export const runReverseMatch = action({
       // Parse custom TA preferences with LLM if present
       let parsedPreferences: {
         overrideSeniority?: string | null;
+        overrideLocation?: string | null;
+        strictLocation?: boolean;
+        domainPreference?: string | null;
+        companyTypePreference?: string | null;
+        requiredCertifications?: string[];
         maxYearsExperience?: number | null;
         minYearsExperience?: number | null;
         requiredSkillsOverride?: string[];
@@ -225,14 +230,19 @@ export const runReverseMatch = action({
           const response = await openai.chat.completions.create({
             model,
             temperature: 0.1,
-            max_tokens: 300,
+            max_tokens: 400,
             messages: [
               {
                 role: "system",
-                content: `You are a Senior TA Recruiter. Extract candidate criteria overrides from recruiter feedback.
+                content: `You are a Senior TA Recruiter. Extract all candidate criteria overrides from recruiter feedback.
 Return ONLY valid JSON matching this schema:
 {
   "overrideSeniority": "intern" | "junior" | "mid" | "senior" | "lead" | "executive" | null,
+  "overrideLocation": string | null,
+  "strictLocation": boolean | null,
+  "domainPreference": string | null,
+  "companyTypePreference": string | null,
+  "requiredCertifications": string[],
   "maxYearsExperience": number | null,
   "minYearsExperience": number | null,
   "requiredSkillsOverride": string[],
@@ -264,6 +274,11 @@ Return ONLY valid JSON matching this schema:
           if (parsed && typeof parsed === "object") {
             parsedPreferences = {
               overrideSeniority: typeof parsed.overrideSeniority === "string" ? parsed.overrideSeniority : null,
+              overrideLocation: typeof parsed.overrideLocation === "string" ? parsed.overrideLocation : null,
+              strictLocation: Boolean(parsed.strictLocation || (typeof parsed.overrideLocation === "string" && activePreferences.toLowerCase().match(/\b(only|within|must be|located in|strict)\b/))),
+              domainPreference: typeof parsed.domainPreference === "string" ? parsed.domainPreference : null,
+              companyTypePreference: typeof parsed.companyTypePreference === "string" ? parsed.companyTypePreference : null,
+              requiredCertifications: Array.isArray(parsed.requiredCertifications) ? parsed.requiredCertifications : [],
               maxYearsExperience: typeof parsed.maxYearsExperience === "number" ? parsed.maxYearsExperience : null,
               minYearsExperience: typeof parsed.minYearsExperience === "number" ? parsed.minYearsExperience : null,
               requiredSkillsOverride: Array.isArray(parsed.requiredSkillsOverride) ? parsed.requiredSkillsOverride : [],
@@ -688,6 +703,11 @@ Return ONLY valid JSON matching this schema:
             minYearsExperience: parsedPreferences.minYearsExperience ?? job.experienceMinYears ?? null,
             maxYearsExperience: parsedPreferences.maxYearsExperience ?? job.experienceMaxYears ?? null,
             overrideSeniority: parsedPreferences.overrideSeniority ?? null,
+            overrideLocation: parsedPreferences.overrideLocation ?? null,
+            strictLocation: parsedPreferences.strictLocation ?? false,
+            domainPreference: parsedPreferences.domainPreference ?? null,
+            companyTypePreference: parsedPreferences.companyTypePreference ?? null,
+            requiredCertifications: parsedPreferences.requiredCertifications ?? [],
             negativeKeywords: [
               ...(synthesized.distractorWordsToIgnore ?? []),
               ...(parsedPreferences.negativeKeywords ?? []),
@@ -703,33 +723,38 @@ Return ONLY valid JSON matching this schema:
             roleFamilyMatch: classRes.roleFamilyMatch,
           }, index);
 
-          // Normalize NVIDIA E5 vector similarity score (typical range ~0.35 to 0.75) to human-intuitive 0-100%
+          // Calibrated NVIDIA E5 vector similarity score (baseline floor at 0.45)
           const rawVector = c.vectorScore ?? 0.4;
-          let normVectorScore = 50;
-          if (rawVector >= 0.35) {
-            normVectorScore = Math.min(100, Math.round(50 + ((rawVector - 0.35) / 0.35) * 50));
+          let normVectorScore = 0;
+          if (rawVector >= 0.45) {
+            normVectorScore = Math.min(100, Math.round(30 + ((rawVector - 0.45) / 0.30) * 70));
           } else {
-            normVectorScore = Math.round((rawVector / 0.35) * 50);
+            normVectorScore = Math.max(0, Math.round((rawVector / 0.45) * 30));
           }
 
-          // Blend 50% heuristic scores with 50% normalized vector similarity
+          // Blend 55% heuristic score with 45% calibrated vector similarity
           let matchScore = Math.round(
-            (scored.overallScore * 0.5) + (normVectorScore * 0.5)
+            (scored.overallScore * 0.55) + (normVectorScore * 0.45)
           );
 
-          // Domain Gate Enforcement: If role requires specific domain expertise (e.g. Tea, Mining, Aviation, Healthcare)
-          // and candidate has zero domain keyword hits in title/skills/summary, penalize heavily.
+          // Apply Soft Weighted Domain Multiplier (1.15x for exact domain match, 0.75x for unrelated domain)
+          if (classRes.roleFamilyMatch === "exact") {
+            matchScore = Math.min(100, Math.round(matchScore * 1.15));
+          } else if (classRes.roleFamilyMatch === "unrelated") {
+            matchScore = Math.round(matchScore * 0.75);
+          }
+
+          // Domain Gate Enforcement for Specialized Domains (e.g. Tea Trading, Plantations)
           const candidateText = `${cv.currentTitle || ""} ${cv.currentJobTitle || ""} ${(cv.skills || []).join(" ")} ${cv.summary || ""}`.toLowerCase();
           const targetDomainNorm = (synthesized.targetDomain || job.clientIndustry || "").toLowerCase();
-          const coreDomainKey = (synthesized.coreDomainSkills[0] || "").toLowerCase();
+          const coreDomainKey = (synthesized.coreDomainSkills?.[0] || "").toLowerCase();
 
           const hasDomainKeywords = (
             (coreDomainKey && candidateText.includes(coreDomainKey)) ||
             (targetDomainNorm && candidateText.includes(targetDomainNorm)) ||
-            synthesized.coreDomainSkills.some((ds) => ds.length > 2 && candidateText.includes(ds.toLowerCase()))
+            (synthesized.coreDomainSkills || []).some((ds) => ds.length > 2 && candidateText.includes(ds.toLowerCase()))
           );
 
-          // If job has explicit domain specialization (e.g., Tea Trading) and candidate completely lacks domain keywords
           const isSpecializedDomain = targetDomainNorm.includes("tea") || targetDomainNorm.includes("plant") || coreDomainKey.includes("tea");
           if (isSpecializedDomain && !hasDomainKeywords) {
             matchScore = Math.min(matchScore, 42); // Hard cap below minMatchScoreToShow (60)
@@ -832,9 +857,9 @@ Return ONLY valid JSON matching this schema:
       // Sort all candidates by overall score descending (highest score to lowest/good score)
       matchResults.sort((a, b) => b.overallScore - a.overallScore);
 
-      // Strict Filter Gate: Exclude match scores below 60% AND hard-excluded overqualified roles / location mismatches
+      // Filter Gate: Filter match scores >= 60%
       const safetyFloor = 60;
-      const validMatches = matchResults.filter(r => {
+      let validMatches = matchResults.filter(r => {
         if (r.overallScore < safetyFloor) return false;
         if (r.currentRoleGate === "excluded_overqualified" && !appliedCandidateIds.has(r.cvId)) {
           return false; // Hard exclude new candidates whose current role level exceeds job target rank
@@ -845,7 +870,15 @@ Return ONLY valid JSON matching this schema:
         return true;
       });
 
-      // Slice the top 30 ordered highest to lowest (strictly filtering only matches >= 60)
+      // Mandatory Zero-Result Fallback: If 0 candidates meet safetyFloor (60%), surface top 10 nearest candidates labeled with advisory tag
+      if (validMatches.length === 0 && matchResults.length > 0) {
+        validMatches = matchResults.slice(0, 10).map(r => ({
+          ...r,
+          reason: `[Outside typical domain / Review manually] ${r.reason}`
+        }));
+      }
+
+      // Slice the top 30 ordered highest to lowest
       const newTop30 = validMatches.slice(0, 30);
       const newTop30Ids = new Set(newTop30.map(r => r.cvId));
 
@@ -994,6 +1027,94 @@ export const backfillCandidateEmbeddings = action({
       processed,
       remaining: result.isDone ? 0 : 999,
       continueCursor: result.continueCursor ?? undefined,
+    };
+  },
+});
+
+export const runEmpiricalVectorBenchmark = action({
+  args: {},
+  handler: async (ctx): Promise<any> => {
+    // 1. Fetch sample jobs & candidates
+    const recentCandidates = await ctx.runQuery(api.matching.queries.getRecentCandidates, { limit: 100 });
+    const jobs = await ctx.runQuery(api.jobs.jobs.list, {});
+    
+    if (!jobs || jobs.length === 0 || !recentCandidates || recentCandidates.length === 0) {
+      return { error: "Insufficient sample data in database" };
+    }
+
+    const sampleJob = jobs[0]; // e.g. Tech / Engineering Job
+    const jobText = `Title: ${sampleJob.title}\nDescription: ${sampleJob.jobDescription}\nSkills: ${(sampleJob.requiredSkills || []).join(", ")}`;
+    
+    const jobEmbed = await embedText(jobText, "query");
+
+    const pairResults: Array<{
+      candidateId: string;
+      fullName: string;
+      currentTitle: string;
+      roleFamily: string;
+      isKnownGood: boolean;
+      cosineSimilarity: number;
+    }> = [];
+
+    const knownGood: number[] = [];
+    const knownBad: number[] = [];
+
+    // Evaluate top 30 candidates against sample job embedding
+    const sampleCandidates = recentCandidates.slice(0, 30);
+
+    for (const cand of sampleCandidates) {
+      const resume = await ctx.runQuery(internal.matching.queries.getCandidateResume, { candidateId: cand._id });
+      if (!resume || !resume.rawText) continue;
+
+      const candText = resume.rawText.slice(0, 4000);
+      try {
+        const candEmbed = await embedText(candText, "passage");
+        const sim = cosineSimilarity(jobEmbed.embedding, candEmbed.embedding);
+
+        const candRole = (cand.currentTitle || cand.currentJobTitle || "").toLowerCase();
+        const jobTitleLower = (sampleJob.title || "").toLowerCase();
+        
+        // Determine known good vs known bad based on title keywords
+        const isGood = candRole.includes("engineer") || candRole.includes("developer") || candRole.includes("software") || candRole.includes("tech");
+        
+        pairResults.push({
+          candidateId: cand._id,
+          fullName: cand.fullName || "Anonymous Candidate",
+          currentTitle: cand.currentTitle || cand.currentJobTitle || "Unspecified",
+          roleFamily: cand.roleFamily || "unclassified",
+          isKnownGood: isGood,
+          cosineSimilarity: Number(sim.toFixed(4)),
+        });
+
+        if (isGood) knownGood.push(sim);
+        else knownBad.push(sim);
+
+      } catch (err) {
+        console.error(`Failed embedding candidate ${cand._id}:`, err);
+      }
+    }
+
+    const calcAvg = (arr: number[]) => arr.length > 0 ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(4)) : 0;
+    const calcMin = (arr: number[]) => arr.length > 0 ? Number(Math.min(...arr).toFixed(4)) : 0;
+    const calcMax = (arr: number[]) => arr.length > 0 ? Number(Math.max(...arr).toFixed(4)) : 0;
+
+    return {
+      sampleJobEvaluated: {
+        jobId: sampleJob._id,
+        title: sampleJob.title,
+        industry: sampleJob.clientIndustry,
+      },
+      distributionSummary: {
+        knownGoodCount: knownGood.length,
+        knownGoodMin: calcMin(knownGood),
+        knownGoodMax: calcMax(knownGood),
+        knownGoodAvg: calcAvg(knownGood),
+        knownBadCount: knownBad.length,
+        knownBadMin: calcMin(knownBad),
+        knownBadMax: calcMax(knownBad),
+        knownBadAvg: calcAvg(knownBad),
+      },
+      pairResults,
     };
   },
 });
