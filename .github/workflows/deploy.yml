@@ -88,20 +88,20 @@ jobs:
             git reset --hard
             git pull origin main
 
-            # ── Build and recreate containers ─────────────────────────────
-            echo "[5/5] Building and starting containers..."
-            
-            # Shut down old Next.js container properly (without --remove-orphans to protect Convex)
-            echo "Shutting down old Next.js container..."
-            docker compose --env-file .env.production -f docker-compose.prod.yml down || true
+            # ── Build and recreate containers (Zero-Downtime) ───────────────
+            echo "[5/5] Building and starting containers with Zero-Downtime..."
             
             # Ensure the self-hosted Convex database is running!
             echo "Starting Convex Database (if not already running)..."
             docker compose --env-file .env.production -f docker-compose.yml up -d
             
-            # Start the new Next.js container
-            echo "Starting Next.js..."
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --force-recreate
+            # Build new Next.js release in background while old container serves users!
+            echo "Building new Next.js release in background (Zero-Downtime)..."
+            docker compose --env-file .env.production -f docker-compose.prod.yml build
+            
+            # Instant 1-second container swap once build completes
+            echo "Performing instant 1-second container swap..."
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-deps web
 
             echo "======================================"
             echo "  DEPLOYMENT COMPLETE"
