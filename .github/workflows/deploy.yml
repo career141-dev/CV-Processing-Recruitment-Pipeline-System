@@ -35,6 +35,10 @@ jobs:
           script: |
             set -e
             cd ~/career141
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            git reset --hard
+            git pull origin main
+            docker rm -f career141-web 2>/dev/null || true
             echo "Starting Convex Database..."
             docker compose --env-file .env.production -f docker-compose.yml up -d
             sleep 5
@@ -84,20 +88,20 @@ jobs:
             git reset --hard
             git pull origin main
 
-            # ── Build and recreate containers ─────────────────────────────
-            echo "[5/5] Building and starting containers..."
-            
-            # Shut down old Next.js container properly (without --remove-orphans to protect Convex)
-            echo "Shutting down old Next.js container..."
-            docker compose --env-file .env.production -f docker-compose.prod.yml down || true
+            # ── Build and recreate containers (Zero-Downtime) ───────────────
+            echo "[5/5] Building and starting containers with Zero-Downtime..."
             
             # Ensure the self-hosted Convex database is running!
             echo "Starting Convex Database (if not already running)..."
             docker compose --env-file .env.production -f docker-compose.yml up -d
             
-            # Start the new Next.js container
-            echo "Starting Next.js..."
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --force-recreate
+            # Build new Next.js release in background with low CPU priority (nice -n 19)
+            echo "Building new Next.js release in background (Low CPU Priority)..."
+            nice -n 19 docker compose --env-file .env.production -f docker-compose.prod.yml build
+            
+            # Instant 1-second container swap once build completes
+            echo "Performing instant 1-second container swap..."
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-deps web
 
             echo "======================================"
             echo "  DEPLOYMENT COMPLETE"

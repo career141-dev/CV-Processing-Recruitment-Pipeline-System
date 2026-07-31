@@ -9,10 +9,6 @@ export function useCurrentUser() {
 export function useRole() {
   const user = useCurrentUser();
   const role = user?.role ?? null;
-  
-  if (typeof window !== 'undefined') {
-    console.log("DEBUG ROLE:", { user, role, identity_loaded: user !== undefined });
-  }
 
   return {
     role,
@@ -27,6 +23,7 @@ export function useRole() {
     isViewer: role === "viewer",
     isTestTA: role === "test_ta",
     hasFullAccess: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    canSearchCandidates: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
     canCreateJob: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
     canManageUsers: role === "admin",
     canViewAnalytics: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),

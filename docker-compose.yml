@@ -57,10 +57,8 @@ services:
       start_period: 10s
       timeout: 5s
       retries: 5
-    # ── SCALE FIX: Increased from 4g → 6g to handle bulk 115k CV import load ──
-    # Each parallel parse action holds a PDF buffer + LLM response in memory.
-    # 8 parallel actions x ~400MB peak = ~3.2GB. 6g gives safe headroom.
-    mem_limit: 6g
+    # ── SCALE FIX: Increased to 8g to handle bulk candidate processing load ──
+    mem_limit: 8g
     mem_reservation: 2g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:

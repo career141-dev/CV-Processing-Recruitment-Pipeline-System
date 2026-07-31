@@ -6,7 +6,7 @@ import { Id } from "../_generated/dataModel";
  * test_ta and other limited roles are intentionally excluded.
  * Add new roles here as the system evolves.
  */
-export const FULL_ACCESS_ROLES = ["admin", "ta_manager", "senior_ta"] as const;
+export const FULL_ACCESS_ROLES = ["admin", "ta_manager", "senior_ta", "test_ta"] as const;
 
 // Fetch the current authenticated user and validate they are active
 export async function requireUser(ctx: QueryCtx | MutationCtx) {
