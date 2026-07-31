@@ -35,6 +35,10 @@ jobs:
           script: |
             set -e
             cd ~/career141
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            git reset --hard
+            git pull origin main
+            docker rm -f career141-web 2>/dev/null || true
             echo "Starting Convex Database..."
             docker compose --env-file .env.production -f docker-compose.yml up -d
             sleep 5
