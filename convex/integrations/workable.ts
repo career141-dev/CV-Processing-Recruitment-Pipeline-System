@@ -36,7 +36,7 @@ export const updateImportJob = internalMutation({
     totalCandidates: v.optional(v.number()),
     maxCandidates: v.optional(v.number()),
     status: v.optional(
-      v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped"))
+      v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped"), v.literal("paused"))
     ),
     errorMessage: v.optional(v.string()),
     lastCursor: v.optional(v.string()),

@@ -88,6 +88,8 @@ export default function IngestionMonitorPage() {
 
   const { user } = useUser();
   const startBulkImport = useAction(api.integrations.workableActions.startBulkImport);
+  const pauseImport = useAction(api.integrations.workableActions.pauseImport);
+  const resumeImport = useAction(api.integrations.workableActions.resumeImport);
   const retryImport = useAction(api.integrations.workableActions.retryImport);
   const retrySkippedAction = useAction(api.integrations.workableActions.retrySkipped);
   const stopImport = useAction(api.integrations.workableActions.stopImport);
@@ -147,9 +149,36 @@ export default function IngestionMonitorPage() {
     setIsWorkableImporting(true);
     try {
       await startBulkImport({ subdomain, apiKey, userId: user.id, maxCandidates });
-      toast.success(`Workable import started (limit: ${maxCandidates} candidates)`);
+      toast.success(`Workable import started (target limit: ${maxCandidates} candidates)`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start import");
+    } finally {
+      setIsWorkableImporting(false);
+    }
+  };
+
+  const handlePauseWorkable = async () => {
+    if (!importStatus) return;
+    try {
+      await pauseImport({ importId: importStatus._id as any });
+      toast.info("Workable import paused.");
+    } catch (err) {
+      toast.error("Failed to pause import");
+    }
+  };
+
+  const handleResumeWorkable = async () => {
+    if (!importStatus) return;
+    setIsWorkableImporting(true);
+    try {
+      await resumeImport({
+        importId: importStatus._id as any,
+        subdomain: subdomain || undefined,
+        apiKey: apiKey || undefined,
+      });
+      toast.success("Workable import resumed from exact position.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resume import");
     } finally {
       setIsWorkableImporting(false);
     }
@@ -193,7 +222,7 @@ export default function IngestionMonitorPage() {
     if (!importStatus) return;
     try {
       await stopImport({ importId: importStatus._id as any });
-      toast.info("Import stopped.");
+      toast.warning("Workable import stopped. Only candidates processed so far remain in DB.");
     } catch (err) {
       toast.error("Failed to stop import");
     }
@@ -596,7 +625,13 @@ export default function IngestionMonitorPage() {
                     {importStatus.status === "running" && (
                       <div className="flex items-center gap-1.5 bg-[#E8F5E9] text-[#1B5E20] px-3 py-1 rounded-md border border-[#C8E6C9]">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span className="text-xs font-bold uppercase tracking-wider">Running</span>
+                        <span className="text-xs font-bold uppercase tracking-wider">Running (Extracting AI Candidates)</span>
+                      </div>
+                    )}
+                    {importStatus.status === "paused" && (
+                      <div className="flex items-center gap-1.5 bg-[#FFF3E0] text-[#E65100] px-3 py-1 rounded-md border border-[#FFE0B2]">
+                        <Pause className="w-3.5 h-3.5" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Paused</span>
                       </div>
                     )}
                     {importStatus.status === "stopped" && (
@@ -619,22 +654,20 @@ export default function IngestionMonitorPage() {
                     )}
                   </div>
 
-                  {importStatus.totalCandidates > 0 && (
-                    <div>
-                      <div className="flex justify-between text-xs font-bold text-text-secondary">
-                        <span>Overall Progress</span>
-                        <span>
-                          {totalProcessed.toLocaleString()} / {importStatus.totalCandidates.toLocaleString()}
-                        </span>
-                      </div>
-                      <ProgressBar value={totalProcessed} max={importStatus.totalCandidates} color="bg-[#006E1C]" />
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-text-secondary mb-1">
+                      <span>Extracted & Saved Candidates</span>
+                      <span>
+                        {importStatus.imported.toLocaleString()} / {(importStatus.maxCandidates || importStatus.totalCandidates || 100).toLocaleString()}
+                      </span>
                     </div>
-                  )}
+                    <ProgressBar value={importStatus.imported} max={importStatus.maxCandidates || importStatus.totalCandidates || 100} color="bg-[#006E1C]" />
+                  </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <StatBox label="Imported" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
+                    <StatBox label="Extracted & Saved" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
                     <StatBox label="Duplicates" value={importStatus.deduplicated} icon={Copy} color="bg-[#E1F5FE] text-[#0277BD]" />
-                    <StatBox label="Skipped" value={importStatus.skipped} icon={SkipForward} color="bg-[#FFF3E0] text-[#E65100]" />
+                    <StatBox label="Skipped (No CV)" value={importStatus.skipped} icon={SkipForward} color="bg-[#FFF3E0] text-[#E65100]" />
                     <StatBox label="Failed" value={importStatus.failed} icon={XCircle} color="bg-[#FFEBEE] text-[#D32F2F]" />
                   </div>
 
@@ -649,18 +682,38 @@ export default function IngestionMonitorPage() {
                     {importStatus.status === "running" && (
                       <>
                         <button
-                          onClick={handleStopWorkable}
+                          onClick={handlePauseWorkable}
                           className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
                         >
                           <Pause className="w-4 h-4" fill="currentColor" />
                           <span>Pause Import</span>
                         </button>
                         <button
-                          onClick={handleClearHistory}
+                          onClick={handleStopWorkable}
                           className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
                         >
                           <Square className="w-3.5 h-3.5" fill="currentColor" />
-                          <span>Stop & Cancel</span>
+                          <span>Stop Import</span>
+                        </button>
+                      </>
+                    )}
+
+                    {importStatus.status === "paused" && (
+                      <>
+                        <button
+                          onClick={handleResumeWorkable}
+                          disabled={isWorkableImporting}
+                          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                        >
+                          {isWorkableImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" fill="currentColor" />}
+                          <span>Resume Import</span>
+                        </button>
+                        <button
+                          onClick={handleStopWorkable}
+                          className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
+                        >
+                          <Square className="w-3.5 h-3.5" fill="currentColor" />
+                          <span>Stop Import</span>
                         </button>
                       </>
                     )}
@@ -668,7 +721,7 @@ export default function IngestionMonitorPage() {
                     {importStatus.status === "stopped" && (
                       <>
                         <button
-                          onClick={handleRetryWorkable}
+                          onClick={handleResumeWorkable}
                           disabled={isWorkableImporting}
                           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm disabled:opacity-50"
                         >
