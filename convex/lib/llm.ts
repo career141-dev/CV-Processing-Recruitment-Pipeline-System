@@ -4,10 +4,27 @@ import OpenAI from "openai";
 import type { ActionCtx } from "../_generated/server";
 
 
-export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
+export type TaskType = 
+  | "cv_structuring" 
+  | "cv_scoring" 
+  | "reverse_matching" 
+  | "search_ranking" 
+  | "jd_extraction" 
+  | "email_routing" 
+  | "email_auto_reply" 
+  | "cv_vision_ocr" 
+  | "embedding"
+  | "jd_matching";
 
 export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
-  return taskType === "cv_structuring" || taskType === "cv_vision_ocr" || taskType === "email_routing" || taskType === "jd_matching";
+  return (
+    taskType === "cv_structuring" ||
+    taskType === "cv_scoring" ||
+    taskType === "reverse_matching" ||
+    taskType === "email_routing" ||
+    taskType === "email_auto_reply" ||
+    taskType === "jd_matching"
+  );
 };
 
 export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";

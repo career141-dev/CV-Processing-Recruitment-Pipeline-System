@@ -975,6 +975,32 @@ export const updateTaPreferences = mutation({
   },
 });
 
+export const triggerReverseMatch = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    customPreferences: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Job not found");
+
+    if (args.customPreferences !== undefined) {
+      await ctx.db.patch(args.jobId, {
+        taPreferences: args.customPreferences,
+      });
+    }
+
+    await ctx.db.patch(args.jobId, {
+      reverseMatchStatus: "running",
+    });
+
+    await ctx.scheduler.runAfter(0, api.matching.agent2.runReverseMatch, {
+      jobId: args.jobId,
+      customPreferences: args.customPreferences,
+    });
+  },
+});
+
 export const updateTaPreferencesInternal = internalMutation({
   args: {
     jobId: v.id("jobs"),

@@ -149,8 +149,8 @@ export const runReverseMatch = action({
         summary: job.jobDescription.slice(0, 1500),
       };
 
-      const model = getModelForTask("jd_matching");
-      const openai = getOpenAI("jd_matching");
+      const model = getModelForTask("reverse_matching");
+      const openai = getOpenAI("reverse_matching");
 
       type ScoreItem = {
         index: number;
@@ -207,11 +207,12 @@ Only include candidates with overallScore >= 60. Sort by overallScore descending
         await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
           logs: [
             {
-              taskType: "jd_matching",
+              taskType: "reverse_matching",
               model,
               promptTokens: inputTokens,
               completionTokens: outputTokens,
               success: true,
+              provider: "openrouter",
             }
           ]
         });
@@ -220,12 +221,13 @@ Only include candidates with overallScore >= 60. Sort by overallScore descending
         await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
           logs: [
             {
-              taskType: "jd_matching",
+              taskType: "reverse_matching",
               model,
               promptTokens: inputTokens,
               completionTokens: outputTokens,
               success: false,
               error: err instanceof Error ? err.message : String(err),
+              provider: "openrouter",
             }
           ]
         });

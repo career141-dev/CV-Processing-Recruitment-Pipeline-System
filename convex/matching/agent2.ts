@@ -219,8 +219,8 @@ export const runReverseMatch = action({
       if (activePreferences && activePreferences.trim()) {
         try {
           const { getModelForTask, getOpenAI, logLLMUsage } = await import("../lib/llm.js");
-          const model = getModelForTask("jd_matching");
-          const openai = getOpenAI("jd_matching");
+          const model = getModelForTask("reverse_matching");
+          const openai = getOpenAI("reverse_matching");
 
           const response = await openai.chat.completions.create({
             model,
@@ -252,11 +252,12 @@ Return ONLY valid JSON matching this schema:
           const completionTokens = response.usage?.completion_tokens ?? 0;
 
           tokenLogs.push({
-            taskType: "jd_matching",
+            taskType: "reverse_matching",
             model,
             promptTokens,
             completionTokens,
             success: true,
+            provider: "openrouter",
           });
 
           const parsed = JSON.parse(content);

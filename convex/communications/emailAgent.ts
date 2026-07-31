@@ -635,8 +635,8 @@ Keep your email response:
    Here are the fields we are still waiting for: ${missingFields.join(", ") || "None (all details captured!)"}.
 Do not mention database fields, variables, or system internals. Write the email body only.`;
 
-    const openai = getOpenAI("jd_matching");
-    const model = getModelForTask("jd_matching");
+    const openai = getOpenAI("email_auto_reply");
+    const model = getModelForTask("email_auto_reply");
 
     console.log(`[EmailAgent AI Reply] Generating LLM response for candidate ${candidate.fullName}...`);
     const completion = await openai.chat.completions.create({

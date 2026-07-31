@@ -1519,7 +1519,7 @@ export default function JobDetailPage() {
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   
-  const runReverseMatch = useAction(api.matching.agent2.runReverseMatch);
+  const triggerReverseMatch = useMutation(api.jobs.jobs.triggerReverseMatch);
   const updateTaPreferencesMutation = useMutation(api.jobs.jobs.updateTaPreferences);
   const publishJob = useMutation(api.jobs.jobs.publishJob);
   const [isScanning, setIsScanning] = useState(false);
@@ -1551,16 +1551,16 @@ export default function JobDetailPage() {
     setIsScanning(true);
     const toastId = toast.loading(customPrompt !== undefined && customPrompt.trim() !== "" ? "Rescanning database with TA preferences..." : "Scanning candidate database...");
     try {
-      await runReverseMatch({
+      await triggerReverseMatch({
         jobId: jobId as Id<"jobs">,
         customPreferences: customPrompt,
       });
       setMatchesPage(1);
       setIsPreferenceModalOpen(false);
-      toast.success("Database scan complete!", { id: toastId });
+      toast.success("Background scan started!", { id: toastId });
     } catch (error) {
       console.error(error);
-      toast.error("Error scanning database", { id: toastId });
+      toast.error("Error starting database scan", { id: toastId });
     } finally {
       setIsScanning(false);
     }
@@ -1571,8 +1571,8 @@ export default function JobDetailPage() {
     try {
       await updateTaPreferencesMutation({ jobId: jobId as Id<"jobs">, taPreferences: undefined });
       setCustomPreferencesText("");
-      await runReverseMatch({ jobId: jobId as Id<"jobs">, customPreferences: "" });
-      toast.success("Preferences cleared & database rescanned", { id: toastId });
+      await triggerReverseMatch({ jobId: jobId as Id<"jobs">, customPreferences: "" });
+      toast.success("Preferences cleared & background scan started", { id: toastId });
     } catch (err) {
       console.error(err);
       toast.error("Failed to clear preferences", { id: toastId });

@@ -506,13 +506,14 @@ export const aiSearch = action({
       let scoredAmbiguousBatch: typeof batchToScore = [];
       if (batchToScore.length > 0) {
         try {
-          const { evaluations, usage } = await scoreBatchWithLLM(batchToScore, effectiveReq);
+          const { evaluations, usage } = await scoreBatchWithLLM(batchToScore, effectiveReq, "search_ranking");
           tokenLogs.push({
-            taskType: "jd_matching",
+            taskType: "search_ranking",
             model: usage.model,
             promptTokens: usage.promptTokens,
             completionTokens: usage.completionTokens,
             success: true,
+            provider: "nvidia",
           });
 
           scoredAmbiguousBatch = batchToScore.map((c) => {
@@ -526,12 +527,13 @@ export const aiSearch = action({
           });
         } catch (err) {
           tokenLogs.push({
-            taskType: "jd_matching",
-            model: OPENROUTER_PRIMARY_MODEL,
+            taskType: "search_ranking",
+            model: "meta/llama-3.1-70b-instruct",
             promptTokens: 0,
             completionTokens: 0,
             success: false,
             error: err instanceof Error ? err.message : String(err),
+            provider: "nvidia",
           });
           scoredAmbiguousBatch = batchToScore.map((c) => ({
             ...c,
