@@ -473,7 +473,8 @@ export interface LocationEvaluationResult {
 
 export function evaluateLocationMatch(
   jobLocationStr: string | null | undefined,
-  candLocationStr?: string | null
+  candLocationStr?: string | null,
+  strictLocation?: boolean
 ): LocationEvaluationResult {
   const normJob = normalizeText(jobLocationStr || "");
   const normCand = normalizeText(candLocationStr || "");
@@ -485,12 +486,27 @@ export function evaluateLocationMatch(
 
   // 2. Unspecified Candidate Location
   if (!normCand) {
-    return { score: 60, status: "not specified", gate: "unspecified_pass", penalty: 0 };
+    return strictLocation
+      ? { score: 30, status: "different", gate: "excluded_mismatch", penalty: -25 }
+      : { score: 60, status: "not specified", gate: "unspecified_pass", penalty: 0 };
   }
 
   // 3. Direct String Identity / Substring Match
   if (normCand === normJob || normCand.includes(normJob) || normJob.includes(normCand)) {
     return { score: 100, status: "match", gate: "pass", penalty: 0 };
+  }
+
+  // Colombo Metro alias check
+  const colomboMetro = ["colombo", "dehiwala", "moratuwa", "mount lavinia", "nugegoda", "battaramulla", "rajagiriya", "kotte", "maharagama", "malabe"];
+  const isJobColombo = colomboMetro.some(c => normJob.includes(c));
+  const isCandColombo = colomboMetro.some(c => normCand.includes(c));
+  if (isJobColombo && isCandColombo) {
+    return { score: 100, status: "match", gate: "pass", penalty: 0 };
+  }
+
+  // If strict location requested and candidate is outside target city (e.g. Kegalle vs Colombo)
+  if (strictLocation) {
+    return { score: 0, status: "different", gate: "excluded_mismatch", penalty: -40 };
   }
 
   // 4. Token & Geographic Knowledge Resolution
@@ -539,7 +555,7 @@ export function evaluateLocationMatch(
       return { score: 100, status: "match", gate: "pass", penalty: 0 };
     }
 
-    // Both specified different cities in the same country (e.g. "Colombo" vs "Kandy")
+    // Both specified different cities in the same country (e.g. "Colombo" vs "Kandy" or "Kegalle")
     return { score: 85, status: "region_match", gate: "region_pass", penalty: 0 };
   }
 
@@ -995,6 +1011,11 @@ export function scoreCandidateAgainstRequirements(
     maxYearsExperience?: number | null;
     negativeKeywords?: string[];
     overrideSeniority?: string | null;
+    overrideLocation?: string | null;
+    strictLocation?: boolean;
+    domainPreference?: string | null;
+    companyTypePreference?: string | null;
+    requiredCertifications?: string[];
     currentRolePenalty?: number;
     roleFamilyMatch?: "exact" | "synonym" | "adjacent" | "unrelated";
   },
@@ -1031,8 +1052,10 @@ export function scoreCandidateAgainstRequirements(
   const skillScores = scoreSkills(requiredSkills, preferredSkills, candidateSkills);
   const hasMissingRequired = requiredSkills.length > 0 && skillScores.missingRequired.length > 0;
   const skillScore = skillScores.score;
-  const industryScore = scoreIndustry(req.industry, cv.industries ?? null);
-  const locEval = evaluateLocationMatch(req.location, cv.location);
+  const targetIndustry = req.domainPreference || req.industry;
+  const industryScore = scoreIndustry(targetIndustry, cv.industries ?? null);
+  const targetLocation = req.overrideLocation || req.location;
+  const locEval = evaluateLocationMatch(targetLocation, cv.location, req.strictLocation);
   const locationScore = locEval.score;
   const locationStatus = locEval.status;
   const locationGate = locEval.gate;
@@ -1062,6 +1085,25 @@ export function scoreCandidateAgainstRequirements(
       (experienceScore * 0.16) +
       (industryScore * 0.06)
     );
+  }
+
+  // Apply Location Penalty (e.g. -40 points for strict location mismatch like Kegalle vs Colombo)
+  if (locationPenalty < 0) {
+    overallScore = Math.max(0, overallScore + locationPenalty);
+  }
+
+  // Evaluate Required Certifications if specified in custom preferences
+  if (req.requiredCertifications && req.requiredCertifications.length > 0) {
+    const candCertsText = normalizeText(`${(cv.certifications || []).join(" ")} ${cv.summary || ""}`);
+    let certMatches = 0;
+    for (const cert of req.requiredCertifications) {
+      if (candCertsText.includes(normalizeText(cert))) {
+        certMatches++;
+      }
+    }
+    if (certMatches === 0) {
+      overallScore = Math.max(10, overallScore - 20);
+    }
   }
 
   // Apply negative keywords penalty if TA feedback extracted negative keywords

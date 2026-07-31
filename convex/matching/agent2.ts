@@ -209,6 +209,11 @@ export const runReverseMatch = action({
       // Parse custom TA preferences with LLM if present
       let parsedPreferences: {
         overrideSeniority?: string | null;
+        overrideLocation?: string | null;
+        strictLocation?: boolean;
+        domainPreference?: string | null;
+        companyTypePreference?: string | null;
+        requiredCertifications?: string[];
         maxYearsExperience?: number | null;
         minYearsExperience?: number | null;
         requiredSkillsOverride?: string[];
@@ -224,14 +229,19 @@ export const runReverseMatch = action({
           const response = await openai.chat.completions.create({
             model,
             temperature: 0.1,
-            max_tokens: 300,
+            max_tokens: 400,
             messages: [
               {
                 role: "system",
-                content: `You are a Senior TA Recruiter. Extract candidate criteria overrides from recruiter feedback.
+                content: `You are a Senior TA Recruiter. Extract all candidate criteria overrides from recruiter feedback.
 Return ONLY valid JSON matching this schema:
 {
   "overrideSeniority": "intern" | "junior" | "mid" | "senior" | "lead" | "executive" | null,
+  "overrideLocation": string | null,
+  "strictLocation": boolean | null,
+  "domainPreference": string | null,
+  "companyTypePreference": string | null,
+  "requiredCertifications": string[],
   "maxYearsExperience": number | null,
   "minYearsExperience": number | null,
   "requiredSkillsOverride": string[],
@@ -262,6 +272,11 @@ Return ONLY valid JSON matching this schema:
           if (parsed && typeof parsed === "object") {
             parsedPreferences = {
               overrideSeniority: typeof parsed.overrideSeniority === "string" ? parsed.overrideSeniority : null,
+              overrideLocation: typeof parsed.overrideLocation === "string" ? parsed.overrideLocation : null,
+              strictLocation: Boolean(parsed.strictLocation || (typeof parsed.overrideLocation === "string" && activePreferences.toLowerCase().match(/\b(only|within|must be|located in|strict)\b/))),
+              domainPreference: typeof parsed.domainPreference === "string" ? parsed.domainPreference : null,
+              companyTypePreference: typeof parsed.companyTypePreference === "string" ? parsed.companyTypePreference : null,
+              requiredCertifications: Array.isArray(parsed.requiredCertifications) ? parsed.requiredCertifications : [],
               maxYearsExperience: typeof parsed.maxYearsExperience === "number" ? parsed.maxYearsExperience : null,
               minYearsExperience: typeof parsed.minYearsExperience === "number" ? parsed.minYearsExperience : null,
               requiredSkillsOverride: Array.isArray(parsed.requiredSkillsOverride) ? parsed.requiredSkillsOverride : [],
@@ -664,6 +679,11 @@ Return ONLY valid JSON matching this schema:
             minYearsExperience: parsedPreferences.minYearsExperience ?? job.experienceMinYears ?? null,
             maxYearsExperience: parsedPreferences.maxYearsExperience ?? job.experienceMaxYears ?? null,
             overrideSeniority: parsedPreferences.overrideSeniority ?? null,
+            overrideLocation: parsedPreferences.overrideLocation ?? null,
+            strictLocation: parsedPreferences.strictLocation ?? false,
+            domainPreference: parsedPreferences.domainPreference ?? null,
+            companyTypePreference: parsedPreferences.companyTypePreference ?? null,
+            requiredCertifications: parsedPreferences.requiredCertifications ?? [],
             negativeKeywords: parsedPreferences.negativeKeywords ?? [],
             education: job.educationLevel ?? null,
             languages: job.languagesRequired ?? [],

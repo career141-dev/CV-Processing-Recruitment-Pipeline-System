@@ -426,3 +426,32 @@ describe("Edge Cases", () => {
     assert.equal(result.matchedRequired.length, 1, "Unknown skills still match via normalization");
   });
 });
+
+describe("evaluateLocationMatch — Strict Location Gate", () => {
+  const { evaluateLocationMatch } = require("../cvScoring");
+
+  it("Colombo candidate matches Colombo job (100% pass)", () => {
+    const result = evaluateLocationMatch("Colombo", "Colombo", true);
+    assert.equal(result.score, 100);
+    assert.equal(result.gate, "pass");
+  });
+
+  it("Dehiwala candidate matches Colombo metro job (100% pass)", () => {
+    const result = evaluateLocationMatch("Colombo", "Dehiwala", true);
+    assert.equal(result.score, 100);
+    assert.equal(result.gate, "pass");
+  });
+
+  it("Kegalle candidate is EXCLUDED when strict Colombo location requested", () => {
+    const result = evaluateLocationMatch("Colombo", "Kegalle", true);
+    assert.equal(result.score, 0);
+    assert.equal(result.gate, "excluded_mismatch");
+    assert.equal(result.penalty, -40);
+  });
+
+  it("Kegalle candidate receives soft region match when strictLocation is false", () => {
+    const result = evaluateLocationMatch("Colombo", "Kegalle", false);
+    assert.equal(result.score, 85);
+    assert.equal(result.gate, "region_pass");
+  });
+});
