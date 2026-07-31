@@ -42,6 +42,7 @@ export const updateImportJob = internalMutation({
     lastCursor: v.optional(v.string()),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
+    candidateIndex: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { importId, ...rest } = args;

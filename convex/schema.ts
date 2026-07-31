@@ -1153,6 +1153,7 @@ export default defineSchema({
     lastCursor: v.optional(v.string()),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
+    candidateIndex: v.optional(v.number()),
   }).index("by_user", ["userId"]),
 
   herculesImports: defineTable({

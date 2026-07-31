@@ -377,6 +377,7 @@ export const runImportBatch = internalAction({
     apiKey: v.string(),
     userId: v.string(),
     nextUrl: v.optional(v.string()),
+    candidateIndex: v.optional(v.number()),
     imported: v.number(),
     skipped: v.number(),
     deduplicated: v.number(),
@@ -384,11 +385,15 @@ export const runImportBatch = internalAction({
     maxCandidates: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<void> => {
+    const startTime = Date.now();
+    const MAX_ACTION_DURATION_MS = 35000; // Yield execution after 35s to prevent Convex Action Timeout (120s limit)
+
     let imported = args.imported;
     let skipped = args.skipped;
     let deduplicated = args.deduplicated;
     let failed = args.failed;
     const maxLimit = args.maxCandidates ?? 500;
+    const startIndex = args.candidateIndex ?? 0;
 
     const currentJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
     if (!currentJob || currentJob.status === "stopped" || currentJob.status === "paused" || currentJob.status === "done") return;
@@ -437,7 +442,7 @@ export const runImportBatch = internalAction({
       return;
     }
 
-    if (page.candidates.length > 0) {
+    if (page.candidates.length > 0 && startIndex === 0) {
       const job: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
       if (job) {
         await ctx.runMutation(internal.integrations.workable.updateImportJob, {
@@ -447,7 +452,31 @@ export const runImportBatch = internalAction({
       }
     }
 
-    for (const candidate of page.candidates) {
+    for (let i = startIndex; i < page.candidates.length; i++) {
+      const candidate = page.candidates[i];
+
+      // Time budget check: if running close to Convex action timeout limit, yield execution & schedule next batch
+      if (Date.now() - startTime > MAX_ACTION_DURATION_MS) {
+        await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+          importId: args.importId,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          lastCursor: args.nextUrl ?? undefined,
+          candidateIndex: i,
+        });
+        await ctx.scheduler.runAfter(200, internal.integrations.workableActions.runImportBatch, {
+          ...args,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          candidateIndex: i,
+        });
+        return;
+      }
+
       // Re-verify if job was stopped or paused mid-batch or target max reached
       const checkJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
       if (!checkJob || checkJob.status === "stopped" || checkJob.status === "paused") return;
@@ -461,6 +490,7 @@ export const runImportBatch = internalAction({
           failed,
           status: "done",
           lastCursor: args.nextUrl ?? undefined,
+          candidateIndex: i,
         });
         return;
       }
@@ -491,6 +521,7 @@ export const runImportBatch = internalAction({
               deduplicated,
               failed,
               lastCursor: args.nextUrl ?? undefined,
+              candidateIndex: i,
             });
             await ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
               ...args,
@@ -498,6 +529,7 @@ export const runImportBatch = internalAction({
               skipped,
               deduplicated,
               failed,
+              candidateIndex: i,
             });
             return;
           }
@@ -577,6 +609,7 @@ export const runImportBatch = internalAction({
             deduplicated,
             failed,
             lastCursor: args.nextUrl ?? undefined,
+            candidateIndex: i + 1,
           });
         } else {
           failed++;
@@ -594,6 +627,7 @@ export const runImportBatch = internalAction({
       deduplicated,
       failed,
       lastCursor: page.paging?.next ?? undefined,
+      candidateIndex: 0,
     });
 
     // Chain to next page if next cursor exists, job is running, and imported target limit not reached
@@ -607,6 +641,7 @@ export const runImportBatch = internalAction({
         apiKey: args.apiKey,
         userId: args.userId,
         nextUrl: page.paging.next,
+        candidateIndex: 0,
         imported,
         skipped,
         deduplicated,
