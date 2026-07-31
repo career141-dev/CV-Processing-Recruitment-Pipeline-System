@@ -90,21 +90,5 @@ services:
         max-size: "5m"
         max-file: "3"
 
-  web:
-    image: career141-prod:latest
-    container_name: career141-web
-    restart: always
-    ports:
-      - "127.0.0.1:3000:3000"
-    depends_on:
-      backend:
-        condition: service_healthy
-    mem_limit: 1g
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 volumes:
   data:
