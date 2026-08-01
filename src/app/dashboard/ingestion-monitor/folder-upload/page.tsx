@@ -115,6 +115,9 @@ export default function FolderUploadPage() {
     });
   };
 
+  const [importMode, setImportMode] = useState<"test_100" | "full">("test_100");
+  const [lastStoppedItem, setLastStoppedItem] = useState<{ index: number; folderName: string } | null>(null);
+
   const startBatchUpload = async () => {
     if (candidateItems.length === 0) {
       toast.error("Please select a valid root folder first.");
@@ -126,7 +129,8 @@ export default function FolderUploadPage() {
     let currentSkipped = skippedCount;
     let currentFailed = failedCount;
 
-    const totalToProcess = candidateItems.length;
+    const maxLimit = importMode === "test_100" ? 100 : candidateItems.length;
+    const totalToProcess = Math.min(candidateItems.length, maxLimit);
 
     for (let i = processedCount; i < totalToProcess; i++) {
       if (status === "stopped" || status === "paused") break;
@@ -151,10 +155,12 @@ export default function FolderUploadPage() {
 
         currentUploaded++;
         setUploadedCount(currentUploaded);
+        setLastStoppedItem({ index: i + 1, folderName: item.folderName });
       } catch (err) {
         console.error(`Failed to upload ${item.folderName}:`, err);
         currentFailed++;
         setFailedCount(currentFailed);
+        setLastStoppedItem({ index: i + 1, folderName: item.folderName });
       }
 
       setProcessedCount(i + 1);
@@ -167,7 +173,11 @@ export default function FolderUploadPage() {
 
     if (processedCount + 1 >= totalToProcess) {
       setStatus("done");
-      toast.success("Folder candidate batch upload completed successfully!");
+      if (importMode === "test_100" && totalToProcess < candidateItems.length) {
+        toast.success(`Initial test batch of 100 candidates completed! Check candidate database and switch to 'Full Import' to continue.`);
+      } else {
+        toast.success("Folder candidate batch upload completed successfully!");
+      }
     }
   };
 
@@ -277,14 +287,34 @@ export default function FolderUploadPage() {
               For ultra-fast import of large 18,000 candidate folders from an external drive, run our standalone Node CLI script directly in your terminal. It logs progress to <code className="font-mono">progress.json</code> and supports seamless resume.
             </p>
 
-            <div className="p-3 bg-[#1E1E1E] text-[#D4D4D4] rounded-lg font-mono text-xs flex items-center justify-between overflow-x-auto">
-              <code>node scripts/folder-cv-importer.js "E:\Path\To\18000_Candidates"</code>
-              <button
-                onClick={handleCopyCliCommand}
-                className="ml-2 p-1.5 bg-white/10 hover:bg-white/20 text-white rounded transition text-xs flex items-center gap-1 shrink-0"
-              >
-                {copiedCliCommand ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
+            <div className="space-y-2">
+              <div className="text-[11px] font-bold text-text-secondary">Run Full 18,000 Candidates Import (100 per batch):</div>
+              <div className="p-2.5 bg-[#1E1E1E] text-[#D4D4D4] rounded-lg font-mono text-xs flex items-center justify-between overflow-x-auto">
+                <code>node scripts/folder-cv-importer.js "E:\Path\To\18000_Candidates"</code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText('node scripts/folder-cv-importer.js "E:\\Path\\To\\18000_Candidates"');
+                    toast.success("Full CLI command copied!");
+                  }}
+                  className="ml-2 p-1.5 bg-white/10 hover:bg-white/20 text-white rounded transition text-xs flex items-center gap-1 shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="text-[11px] font-bold text-text-secondary">Run First 100 Test Candidates Only:</div>
+              <div className="p-2.5 bg-[#1E1E1E] text-[#D4D4D4] rounded-lg font-mono text-xs flex items-center justify-between overflow-x-auto">
+                <code>node scripts/folder-cv-importer.js "E:\Path\To\18000_Candidates" --test</code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText('node scripts/folder-cv-importer.js "E:\\Path\\To\\18000_Candidates" --test');
+                    toast.success("Test CLI command copied!");
+                  }}
+                  className="ml-2 p-1.5 bg-white/10 hover:bg-white/20 text-white rounded transition text-xs flex items-center gap-1 shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -366,6 +396,46 @@ export default function FolderUploadPage() {
             </div>
           </div>
 
+          {/* Import Mode Selector Toggle */}
+          <div className="flex items-center gap-3 p-3 bg-background-accent rounded-lg border border-border-color">
+            <span className="text-xs font-bold text-text-primary">Import Scope:</span>
+            <button
+              onClick={() => setImportMode("test_100")}
+              disabled={status === "running"}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition ${
+                importMode === "test_100"
+                  ? "bg-[#006E1C] text-white shadow-sm"
+                  : "bg-surface-card text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              🎯 First 100 Candidates Only (Initial Test Batch)
+            </button>
+            <button
+              onClick={() => setImportMode("full")}
+              disabled={status === "running"}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition ${
+                importMode === "full"
+                  ? "bg-[#006E1C] text-white shadow-sm"
+                  : "bg-surface-card text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              🚀 Full Directory Import (100 candidates / batch)
+            </button>
+          </div>
+
+          {/* Recorded Stop Location Banner */}
+          {lastStoppedItem && (status === "paused" || status === "stopped" || status === "done") && (
+            <div className="p-3 bg-[#FFF3E0] text-[#E65100] rounded-lg text-xs font-semibold border border-[#FFE0B2] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>
+                  <strong>Recorded Stop Point:</strong> Processed up to candidate #{lastStoppedItem.index}{" "}
+                  (<code className="font-mono">{lastStoppedItem.folderName}</code>). Re-run or click <strong>Resume Upload</strong> to pick up at #{lastStoppedItem.index + 1}.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Controls */}
           <div className="flex items-center gap-3 pt-2">
             {status !== "running" && status !== "done" && (
@@ -375,7 +445,11 @@ export default function FolderUploadPage() {
                 className="py-2.5 px-5 bg-[#006E1C] hover:bg-[#005415] text-white text-xs font-bold rounded-lg transition flex items-center gap-2 disabled:opacity-50"
               >
                 <Play className="w-4 h-4 fill-current" />
-                {status === "paused" ? "Resume Upload" : "Start 100-Batch Upload"}
+                {status === "paused" || status === "stopped"
+                  ? `Resume Upload (from Candidate #${processedCount + 1})`
+                  : importMode === "test_100"
+                  ? "Start First 100 Test Batch"
+                  : "Start 100-Batch Upload"}
               </button>
             )}
 

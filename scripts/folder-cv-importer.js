@@ -112,7 +112,16 @@ function findFirstResumeFile(downloadsFolderPath) {
 }
 
 async function main() {
-  const targetDirArg = process.argv[2];
+  const args = process.argv.slice(2);
+  const targetDirArg = args.find((a) => !a.startsWith("--"));
+
+  let maxLimit = 0; // 0 = unlimited (process all 18k)
+  const limitIdx = args.findIndex((a) => a === "--limit");
+  if (limitIdx !== -1 && args[limitIdx + 1]) {
+    maxLimit = parseInt(args[limitIdx + 1], 10) || 100;
+  } else if (args.includes("--test") || args.includes("-t")) {
+    maxLimit = 100;
+  }
 
   console.log("=================================================================");
   console.log("📁 18,000 Candidate External Drive Folder Importer");
@@ -120,8 +129,9 @@ async function main() {
 
   if (!targetDirArg) {
     console.log("Usage:");
-    console.log('  node scripts/folder-cv-importer.js "E:\\Path\\To\\18000_Candidate_Folders"\n');
-    console.log("Please specify the root directory path of your candidate folders.");
+    console.log('  node scripts/folder-cv-importer.js "E:\\Path\\To\\18000_Candidate_Folders"');
+    console.log('  node scripts/folder-cv-importer.js "E:\\Path\\To\\18000_Candidate_Folders" --test      (Process first 100 candidates only)');
+    console.log('  node scripts/folder-cv-importer.js "E:\\Path\\To\\18000_Candidate_Folders" --limit 100  (Set custom batch limit)\n');
     process.exit(1);
   }
 
@@ -133,11 +143,23 @@ async function main() {
 
   console.log(`📂 Target Root Directory: "${rootDir}"`);
   console.log(`📡 Convex Backend URL: "${CONVEX_URL}"`);
-  console.log(`📦 Batch Size: ${BATCH_SIZE} candidates / batch\n`);
+  console.log(`📦 Batch Processing: 100 candidates per batch`);
+  if (maxLimit > 0) {
+    console.log(`🎯 Target Processing Limit: FIRST ${maxLimit} CANDIDATES ONLY (Initial Test Run)`);
+  } else {
+    console.log(`🎯 Target Processing Limit: FULL DRIVE (18,000 Candidates)`);
+  }
+  console.log("");
 
   const client = new ConvexClient(CONVEX_URL);
-
   const state = loadProgressState(rootDir);
+
+  // Register graceful Ctrl+C (SIGINT) stop handler
+  let isStopping = false;
+  process.on("SIGINT", () => {
+    console.log("\n\n⏹️  STOP SIGNAL RECEIVED! Recording current progress state...");
+    isStopping = true;
+  });
 
   console.log("🔍 Scanning candidate subfolders...");
   const allSubitems = fs.readdirSync(rootDir);
@@ -158,7 +180,7 @@ async function main() {
   console.log(`🚀 Remaining To Process: ${(candidateFolders.length - state.processedCount).toLocaleString()} folders.\n`);
 
   let currentBatch = [];
-  let batchCounter = 0;
+  let processedInThisRun = 0;
 
   for (let i = 0; i < candidateFolders.length; i++) {
     const folderName = candidateFolders[i];
@@ -193,14 +215,24 @@ async function main() {
       resumeFile,
     });
 
-    // When batch size reaches 100, process batch!
-    if (currentBatch.length >= BATCH_SIZE || i === candidateFolders.length - 1) {
-      batchCounter++;
+    processedInThisRun++;
+
+    // Check if maxLimit (e.g. first 100 test candidates) has been reached
+    const isLimitReached = maxLimit > 0 && processedInThisRun >= maxLimit;
+
+    // Process batch when batch reaches 100 OR when limit is reached OR at end of folders
+    if (currentBatch.length >= BATCH_SIZE || isLimitReached || i === candidateFolders.length - 1) {
       console.log(`-----------------------------------------------------------------`);
       console.log(`⚡ Processing Batch #${state.currentBatchIndex} (${currentBatch.length} candidates)...`);
       console.log(`-----------------------------------------------------------------`);
 
       for (let bIdx = 0; bIdx < currentBatch.length; bIdx++) {
+        if (isStopping) {
+          console.log("\n⏹️ Stopped by user. State recorded cleanly in progress file.");
+          saveProgressState(state);
+          process.exit(0);
+        }
+
         const item = currentBatch[bIdx];
         const { folderName, resumeFile } = item;
 
@@ -229,6 +261,8 @@ async function main() {
           };
           state.processedCount++;
           state.uploadedCount++;
+          state.lastStoppedFolder = folderName;
+          state.lastStoppedIndex = i;
           console.log(`✅ Success`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -240,6 +274,8 @@ async function main() {
           };
           state.processedCount++;
           state.failedCount++;
+          state.lastStoppedFolder = folderName;
+          state.lastStoppedIndex = i;
         }
 
         saveProgressState(state);
@@ -252,6 +288,17 @@ async function main() {
       state.currentBatchIndex++;
       saveProgressState(state);
       currentBatch = [];
+
+      if (isLimitReached) {
+        console.log("=================================================================");
+        console.log(`🎯 INITIAL TEST BATCH OF ${maxLimit} CANDIDATES IS COMPLETE!`);
+        console.log(`   Record saved at candidate folder #${state.processedCount} ("${state.lastStoppedFolder}").`);
+        console.log("   Check your platform candidate database to verify extracted profiles.");
+        console.log("   To continue importing the remaining candidates in 100-batches, re-run:");
+        console.log(`   node scripts/folder-cv-importer.js "${rootDir}"`);
+        console.log("=================================================================");
+        process.exit(0);
+      }
     }
   }
 
