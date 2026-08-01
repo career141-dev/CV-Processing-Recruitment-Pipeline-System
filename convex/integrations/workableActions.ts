@@ -582,8 +582,8 @@ export const runImportBatch = internalAction({
           userId: args.userId,
         });
 
-        // Run inline DeepSeek AI CV extraction & save candidate directly into database
-        const createdCandidateId = await runCvExtraction(ctx, {
+        // Schedule background AI CV extraction (DeepSeek V4 Flash) via Convex Scheduler
+        await ctx.scheduler.runAfter(imported * 1000, api.cvs.cvExtraction.processCvExtraction, {
           s3Key,
           storageProvider: "r2",
           fileType: downloaded.fileType,
@@ -599,12 +599,7 @@ export const runImportBatch = internalAction({
           },
         });
 
-        if (createdCandidateId) {
-          imported++;
-        } else {
-          failed++;
-        }
-        // Always broadcast candidate extraction progress to UI and advance candidateIndex
+        imported++;
         await ctx.runMutation(internal.integrations.workable.updateImportJob, {
           importId: args.importId,
           imported,

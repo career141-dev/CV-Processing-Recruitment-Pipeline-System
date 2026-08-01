@@ -625,7 +625,7 @@ export default function IngestionMonitorPage() {
                     {importStatus.status === "running" && (
                       <div className="flex items-center gap-1.5 bg-[#E8F5E9] text-[#1B5E20] px-3 py-1 rounded-md border border-[#C8E6C9]">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span className="text-xs font-bold uppercase tracking-wider">Running (Extracting AI Candidates)</span>
+                        <span className="text-xs font-bold uppercase tracking-wider">Running (Ingesting & Queuing AI Parsing)</span>
                       </div>
                     )}
                     {importStatus.status === "paused" && (
@@ -656,7 +656,7 @@ export default function IngestionMonitorPage() {
 
                   <div>
                     <div className="flex justify-between text-xs font-bold text-text-secondary mb-1">
-                      <span>Extracted & Saved Candidates</span>
+                      <span>Imported & Queued CVs</span>
                       <span>
                         {importStatus.imported.toLocaleString()} / {(importStatus.maxCandidates || importStatus.totalCandidates || 100).toLocaleString()}
                       </span>
@@ -665,7 +665,7 @@ export default function IngestionMonitorPage() {
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <StatBox label="Extracted & Saved" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
+                    <StatBox label="Imported CVs" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
                     <StatBox label="Duplicates" value={importStatus.deduplicated} icon={Copy} color="bg-[#E1F5FE] text-[#0277BD]" />
                     <StatBox label="Skipped (No CV)" value={importStatus.skipped} icon={SkipForward} color="bg-[#FFF3E0] text-[#E65100]" />
                     <StatBox label="Failed" value={importStatus.failed} icon={XCircle} color="bg-[#FFEBEE] text-[#D32F2F]" />
