@@ -11,11 +11,11 @@ export const uploadFolderCandidate = action({
     sourceChannel: v.optional(v.string()),
     batchIndex: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ cvUploadId: string; s3Key: string }> => {
     const sourceChannel = args.sourceChannel || "Manual Directory Import";
 
     // 1. Upload CV buffer to Cloudflare R2 storage
-    const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+    const s3Key: string = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
       fileName: args.fileName,
       contentType: args.fileType === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       base64Data: args.base64Data,
@@ -24,7 +24,7 @@ export const uploadFolderCandidate = action({
     const buffer = Buffer.from(args.base64Data, "base64");
 
     // 2. Save cvUploads record
-    const cvUploadId = await ctx.runMutation(api.cvs.cvUploads.saveUpload, {
+    const cvUploadId: any = await ctx.runMutation(api.cvs.cvUploads.saveUpload, {
       s3Key,
       storageProvider: "r2",
       fileName: args.fileName,
