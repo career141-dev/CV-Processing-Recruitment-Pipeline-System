@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import {
   RefreshCw,
   Upload,
+  FolderUp,
   AlertCircle,
   Loader2,
   CheckCircle2,
@@ -789,6 +791,28 @@ export default function IngestionMonitorPage() {
                   <span>•</span>
                   <span>Last Batch: {formatTime(manualStats.lastReceived)}</span>
                 </div>
+              </div>
+
+              {/* Bulk Folder Upload Banner */}
+              <div className="bg-[#006E1C]/5 border border-[#006E1C]/20 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-[#006E1C] text-white rounded-lg shrink-0">
+                    <FolderUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-text-primary">Bulk Upload from Local / External Directory (18,000 Candidates)</h3>
+                    <p className="text-xs text-text-secondary">
+                      Select a root directory containing candidate folders. Automatically locates resumes in <code className="font-mono bg-background-accent px-1.5 py-0.5 rounded">Downloads/</code> folders and uploads in 100-candidate batches.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/dashboard/ingestion-monitor/folder-upload"
+                  className="py-2.5 px-4 bg-[#006E1C] hover:bg-[#005415] text-white font-bold text-xs rounded-lg transition flex items-center gap-2 shrink-0 shadow-sm"
+                >
+                  <FolderUp className="w-4 h-4" />
+                  <span>Upload from Directory</span>
+                </Link>
               </div>
 
               <div

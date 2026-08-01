@@ -53,6 +53,7 @@ import type * as cvs_cvExtraction from "../cvs/cvExtraction.js";
 import type * as cvs_cvScoring from "../cvs/cvScoring.js";
 import type * as cvs_cvScoringActions from "../cvs/cvScoringActions.js";
 import type * as cvs_cvUploads from "../cvs/cvUploads.js";
+import type * as cvs_folderIngestion from "../cvs/folderIngestion.js";
 import type * as cvs_ingestion from "../cvs/ingestion.js";
 import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
 import type * as health from "../health.js";
@@ -151,6 +152,7 @@ declare const fullApi: ApiFromModules<{
   "cvs/cvScoring": typeof cvs_cvScoring;
   "cvs/cvScoringActions": typeof cvs_cvScoringActions;
   "cvs/cvUploads": typeof cvs_cvUploads;
+  "cvs/folderIngestion": typeof cvs_folderIngestion;
   "cvs/ingestion": typeof cvs_ingestion;
   "cvs/lazyParsing": typeof cvs_lazyParsing;
   health: typeof health;
