@@ -1,3 +1,5 @@
+"use node";
+
 import { action, mutation, query } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
@@ -21,14 +23,14 @@ export const uploadFolderCandidate = action({
       base64Data: args.base64Data,
     });
 
-    const buffer = Buffer.from(args.base64Data, "base64");
+    const fileSize = Math.round((args.base64Data.length * 3) / 4);
 
     // 2. Save cvUploads record
     const cvUploadId: any = await ctx.runMutation(api.cvs.cvUploads.saveUpload, {
       s3Key,
       storageProvider: "r2",
       fileName: args.fileName,
-      fileSize: buffer.byteLength,
+      fileSize,
       fileType: args.fileType,
       source: sourceChannel,
       uploadedBy: args.uploadedBy,
