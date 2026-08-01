@@ -306,24 +306,26 @@ async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string>
 }
 
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
+  ensureDOMMatrixPolyfill();
+
   // Primary PDF extractor: Mozilla pdfjs-dist (handles FlateDecode, CID fonts, & complex PDF structures)
   const pdfJsText = await extractTextFromPdfWithPdfJs(buffer);
   if (pdfJsText && pdfJsText.length >= 30) {
     return pdfJsText;
   }
 
-  return new Promise((resolve, reject) => {
-    try {
+  try {
+    return await new Promise((resolve, reject) => {
       const PDFParser = require("pdf2json");
       const pdfParser = new PDFParser(null, 1);
       pdfParser.on("pdfParser_dataError", (errData: any) => {
-        console.warn("[pdf2json] Parser error, attempting raw stream fallback:", errData.parserError);
+        console.warn("[pdf2json] Parser error, attempting raw stream fallback:", errData?.parserError || errData);
         const fallbackText = extractRawPdfStreamTextFallback(buffer);
         if (fallbackText.trim().length >= 30) {
           console.log(`[extractTextFromPdf] Recovered ${fallbackText.trim().length} chars via raw stream fallback!`);
           resolve(fallbackText);
         } else {
-          reject(errData.parserError);
+          resolve(fallbackText || "");
         }
       });
       pdfParser.on("pdfParser_dataReady", () => {
@@ -335,19 +337,14 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
             return;
           }
         }
-        resolve(text);
+        resolve(text || "");
       });
       pdfParser.parseBuffer(Buffer.from(buffer));
-    } catch (error) {
-      console.warn("PDF extraction exception, attempting raw stream fallback:", error);
-      const fallbackText = extractRawPdfStreamTextFallback(buffer);
-      if (fallbackText.trim().length >= 30) {
-        resolve(fallbackText);
-      } else {
-        reject(error);
-      }
-    }
-  });
+    });
+  } catch (err: any) {
+    console.warn("[pdf2json] Uncaught parser exception, using raw stream fallback:", err.message || err);
+    return extractRawPdfStreamTextFallback(buffer);
+  }
 }
 
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
@@ -361,6 +358,11 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
 }
 
 function ensureDOMMatrixPolyfill() {
+  if (typeof (Promise as any).try === "undefined") {
+    (Promise as any).try = function (fn: Function, ...args: any[]) {
+      return new Promise((resolve) => resolve(fn(...args)));
+    };
+  }
   if (typeof (globalThis as any).DOMMatrix === "undefined") {
     class DOMMatrixPolyfill {
       a: number; b: number; c: number; d: number; e: number; f: number;
