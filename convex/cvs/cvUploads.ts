@@ -261,13 +261,13 @@ export const recoverStuckUploads = internalMutation({
   handler: async (ctx) => {
     const stuck = await ctx.db
       .query("cvUploads")
-      .filter((q) => q.eq(q.field("status"), "processing"))
-      .collect();
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(50);
 
     let count = 0;
-    const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
+    const sixtyMinutesAgo = Date.now() - 60 * 60 * 1000;
     for (const upload of stuck) {
-      if (upload._creationTime < threeMinutesAgo) {
+      if (upload._creationTime < sixtyMinutesAgo) {
         await ctx.db.patch(upload._id, {
           status: "failed",
           errorMessage: "Process interrupted (Server restarted/crashed)",
