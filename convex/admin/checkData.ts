@@ -48,6 +48,25 @@ export const checkDb = query({
   }
 });
 
+export const getWorkableUploads = query({
+  handler: async (ctx) => {
+    const uploads = await ctx.db.query("cvUploads")
+      .filter(q => q.eq(q.field("source"), "Workable"))
+      .order("desc")
+      .take(20);
+    return uploads.map(u => ({
+      _id: u._id,
+      fileName: u.fileName,
+      status: u.status,
+      candidateId: u.candidateId,
+      errorMessage: u.errorMessage,
+      storageProvider: u.storageProvider,
+      s3Key: u.s3Key,
+      _creationTime: u._creationTime,
+    }));
+  }
+});
+
 export const getDeepSeekStats = query({
   handler: async (ctx) => {
     const candidates = await ctx.db.query("candidates").order("desc").take(300);

@@ -276,7 +276,42 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
   }
 }
 
+async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string> {
+  try {
+    ensureDOMMatrixPolyfill();
+    // @ts-ignore
+    const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    const pdfDocument = await loadingTask.promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdfDocument.numPages; i++) {
+      const page = await pdfDocument.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => ("str" in item ? item.str : ""))
+        .join(" ");
+      fullText += pageText + "\n";
+    }
+
+    return fullText.trim();
+  } catch (err: any) {
+    console.warn("[pdfjs-dist] PDF text extraction error:", err.message || err);
+    return "";
+  }
+}
+
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
+  // Primary PDF extractor: Mozilla pdfjs-dist (handles FlateDecode, CID fonts, & complex PDF structures)
+  const pdfJsText = await extractTextFromPdfWithPdfJs(buffer);
+  if (pdfJsText && pdfJsText.length >= 30) {
+    return pdfJsText;
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const PDFParser = require("pdf2json");
