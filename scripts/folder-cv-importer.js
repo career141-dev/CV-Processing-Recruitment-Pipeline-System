@@ -16,11 +16,13 @@
 
 const fs = require("fs");
 const path = require("path");
-const dotenv = require("dotenv");
-
-// Load local environment variables
-dotenv.config();
-dotenv.config({ path: ".env.local" });
+try {
+  const dotenv = require("dotenv");
+  dotenv.config();
+  dotenv.config({ path: ".env.local" });
+} catch (e) {
+  // Ignore if dotenv is not loaded standalone
+}
 
 const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "http://localhost:3210";
 const PROGRESS_FILE = path.join(__dirname, "folder_import_progress.json");
