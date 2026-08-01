@@ -407,9 +407,11 @@ export const runImportBatch = internalAction({
       return;
     }
 
+    const currentUrl = args.nextUrl ?? workableUrl(args.subdomain, "/candidates?limit=20");
+
     let page: WorkableCandidatesPage;
     try {
-      page = await fetchPage(args.subdomain, args.apiKey, args.nextUrl);
+      page = await fetchPage(args.subdomain, args.apiKey, currentUrl);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "fetch failed";
       if (msg === "RATE_LIMIT_429") {
@@ -419,10 +421,11 @@ export const runImportBatch = internalAction({
           skipped,
           deduplicated,
           failed,
-          lastCursor: args.nextUrl ?? undefined,
+          lastCursor: currentUrl,
         });
         await ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
           ...args,
+          nextUrl: currentUrl,
           imported,
           skipped,
           deduplicated,
@@ -463,11 +466,12 @@ export const runImportBatch = internalAction({
           skipped,
           deduplicated,
           failed,
-          lastCursor: args.nextUrl ?? undefined,
+          lastCursor: currentUrl,
           candidateIndex: i,
         });
         await ctx.scheduler.runAfter(200, internal.integrations.workableActions.runImportBatch, {
           ...args,
+          nextUrl: currentUrl,
           imported,
           skipped,
           deduplicated,
@@ -489,7 +493,7 @@ export const runImportBatch = internalAction({
           deduplicated,
           failed,
           status: "done",
-          lastCursor: args.nextUrl ?? undefined,
+          lastCursor: currentUrl,
           candidateIndex: i,
         });
         return;
@@ -520,11 +524,12 @@ export const runImportBatch = internalAction({
               skipped,
               deduplicated,
               failed,
-              lastCursor: args.nextUrl ?? undefined,
+              lastCursor: currentUrl,
               candidateIndex: i,
             });
             await ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
               ...args,
+              nextUrl: currentUrl,
               imported,
               skipped,
               deduplicated,
@@ -606,7 +611,7 @@ export const runImportBatch = internalAction({
           skipped,
           deduplicated,
           failed,
-          lastCursor: args.nextUrl ?? undefined,
+          lastCursor: currentUrl,
           candidateIndex: i + 1,
         });
       } catch (err) {
@@ -618,7 +623,7 @@ export const runImportBatch = internalAction({
           skipped,
           deduplicated,
           failed,
-          lastCursor: args.nextUrl ?? undefined,
+          lastCursor: currentUrl,
           candidateIndex: i + 1,
         });
       }

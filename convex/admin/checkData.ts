@@ -67,6 +67,13 @@ export const getWorkableUploads = query({
   }
 });
 
+export const getWorkableJobDetails = query({
+  handler: async (ctx) => {
+    const job = await ctx.db.query("workableImports").order("desc").first();
+    return job;
+  }
+});
+
 export const getDeepSeekStats = query({
   handler: async (ctx) => {
     const candidates = await ctx.db.query("candidates").order("desc").take(300);
