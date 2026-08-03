@@ -41,7 +41,7 @@ import { toast } from "sonner";
 
 const SOURCE_OPTIONS = ["Manual", "Headhunting", "Referral", "Agency", "Direct Email"];
 
-type SourceTabKey = "workable" | "manual" | "linkedin" | "whatsapp" | "meta" | "email" | "portal";
+type SourceTabKey = "workable" | "manual" | "folder" | "linkedin" | "whatsapp" | "meta" | "email" | "portal";
 
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -426,6 +426,7 @@ export default function IngestionMonitorPage() {
   const TABS_CONFIG: Array<{ key: SourceTabKey; label: string; icon: React.ElementType; badge?: string; errorCount: number }> = [
     { key: "workable", label: "Workable", icon: RefreshCw, badge: workableStats.todayCount > 0 ? `${workableStats.todayCount}` : undefined, errorCount: getErrorCount("Workable") },
     { key: "manual", label: "Direct Upload", icon: Upload, badge: manualStats.todayCount > 0 ? `${manualStats.todayCount}` : undefined, errorCount: getErrorCount("Manual") },
+    { key: "folder", label: "External Drive / Folder", icon: FolderUp, badge: "18k Bulk", errorCount: 0 },
     { key: "linkedin", label: "LinkedIn", icon: Share2, badge: linkedinStats.todayCount > 0 ? `${linkedinStats.todayCount}` : undefined, errorCount: getErrorCount("linkedin") },
     { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, badge: whatsappStats.todayCount > 0 ? `${whatsappStats.todayCount}` : undefined, errorCount: getErrorCount("WhatsApp") },
     { key: "meta", label: "Meta Campaigns", icon: Activity, badge: metaStats.todayCount > 0 ? `${metaStats.todayCount}` : undefined, errorCount: getErrorCount("Meta") },
@@ -445,9 +446,18 @@ export default function IngestionMonitorPage() {
               <h1 className="text-[24px] leading-8 font-semibold text-text-primary">Ingestion Monitor</h1>
               <p className="text-[13px] text-text-secondary mt-1">Real-time status of all CV intake channels and the parsing queue.</p>
             </div>
-            <div className="flex items-center gap-3 bg-surface px-4 py-2.5 rounded-lg border border-border shadow-sm">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span className="text-[11px] font-bold tracking-widest text-green-600 dark:text-green-400">LIVE SYNC</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/dashboard/ingestion-monitor/folder-upload"
+                className="py-2.5 px-4 bg-[#006E1C] hover:bg-[#005415] text-white font-bold text-xs rounded-lg transition flex items-center gap-2 shadow-sm"
+              >
+                <FolderUp className="w-4 h-4" />
+                <span>Upload from Directory (18k Bulk)</span>
+              </Link>
+              <div className="flex items-center gap-3 bg-surface px-4 py-2.5 rounded-lg border border-border shadow-sm">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                <span className="text-[11px] font-bold tracking-widest text-green-600 dark:text-green-400">LIVE SYNC</span>
+              </div>
             </div>
           </div>
 
@@ -826,14 +836,18 @@ export default function IngestionMonitorPage() {
                   ref={fileInputRef}
                   onChange={handleFileSelect}
                   multiple
-                  accept=".pdf,.doc,.docx,.rtf,.txt"
+                  accept=".pdf,.docx,.doc,.rtf,.txt"
                   className="hidden"
                 />
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
                   <Upload className="w-6 h-6" />
                 </div>
-                <p className="text-sm font-bold text-text-primary">Click or Drag & Drop CV files here</p>
-                <p className="text-xs text-text-secondary mt-1">Supports PDF, DOCX, RTF, TXT up to 50MB per file</p>
+                <p className="text-sm font-bold text-text-primary mb-1">
+                  Click to select files or drag & drop here
+                </p>
+                <p className="text-xs text-text-secondary max-w-sm">
+                  Supported formats: PDF, DOCX, DOC, RTF, TXT (Up to 50MB per file)
+                </p>
               </div>
 
               {files.length > 0 && (
