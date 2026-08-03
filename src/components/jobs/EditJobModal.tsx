@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { toast } from 'sonner';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
+import { SkillsInput } from '@/components/ui/SkillsInput';
 
 interface EditJobModalProps {
   isOpen: boolean;
@@ -72,8 +73,8 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     clientIndustry: '',
     recruitmentType: 'both',
     location: '',
-    requiredSkills: '',
-    niceToHaveSkills: '',
+    requiredSkills: [] as string[],
+    niceToHaveSkills: [] as string[],
     seniorityLevel: 'mid_level',
     experienceMinYears: 0,
     experienceMaxYears: '' as number | string,
@@ -96,8 +97,8 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         clientIndustry: job.clientIndustry || '',
         recruitmentType: job.recruitmentType || 'both',
         location: job.location || '',
-        requiredSkills: (job.requiredSkills || []).join(', '),
-        niceToHaveSkills: (job.niceToHaveSkills || []).join(', '),
+        requiredSkills: job.requiredSkills || [],
+        niceToHaveSkills: job.niceToHaveSkills || [],
         seniorityLevel: job.seniorityLevel || 'mid_level',
         experienceMinYears: job.experienceMinYears || 0,
         experienceMaxYears: job.experienceMaxYears !== undefined && job.experienceMaxYears !== null ? String(job.experienceMaxYears) : '',
@@ -151,15 +152,13 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
 
     setIsSubmitting(true);
     try {
-      const requiredSkillsArr = formData.requiredSkills
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
+      const requiredSkillsArr = Array.isArray(formData.requiredSkills)
+        ? formData.requiredSkills
+        : (typeof formData.requiredSkills === 'string' && formData.requiredSkills ? (formData.requiredSkills as string).split(',').map(s => s.trim()).filter(Boolean) : []);
 
-      const niceToHaveSkillsArr = formData.niceToHaveSkills
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
+      const niceToHaveSkillsArr = Array.isArray(formData.niceToHaveSkills)
+        ? formData.niceToHaveSkills
+        : (typeof formData.niceToHaveSkills === 'string' && formData.niceToHaveSkills ? (formData.niceToHaveSkills as string).split(',').map(s => s.trim()).filter(Boolean) : []);
 
       await updateJobDetails({
         jobId: job._id,
@@ -343,31 +342,23 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
           </div>
 
           {/* Required Skills */}
-          <div className="flex flex-col gap-1 col-span-2">
-            <label className="text-xs font-semibold text-text-secondary">Required Skills (comma separated) *</label>
-            <textarea
-              name="requiredSkills"
-              value={formData.requiredSkills}
-              onChange={handleChange}
-              required
-              rows={3}
-              placeholder="e.g. React.js, Node.js, TypeScript, PostgreSQL"
-              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container leading-relaxed font-sans resize-y min-h-[80px]"
-            />
-          </div>
+          <SkillsInput
+            className="col-span-2"
+            label="Required Skills"
+            required
+            skills={formData.requiredSkills}
+            onChange={(skills) => setFormData(prev => ({ ...prev, requiredSkills: skills }))}
+            placeholder="Type required skill (e.g. React.js) and press Enter, comma, or click Add..."
+          />
 
           {/* Nice to Have Skills */}
-          <div className="flex flex-col gap-1 col-span-2">
-            <label className="text-xs font-semibold text-text-secondary">Nice to Have Skills (comma separated)</label>
-            <textarea
-              name="niceToHaveSkills"
-              value={formData.niceToHaveSkills}
-              onChange={handleChange}
-              rows={3}
-              placeholder="e.g. AWS, Docker, GraphQL, Redis"
-              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:border-primary-container leading-relaxed font-sans resize-y min-h-[80px]"
-            />
-          </div>
+          <SkillsInput
+            className="col-span-2"
+            label="Nice to Have Skills"
+            skills={formData.niceToHaveSkills}
+            onChange={(skills) => setFormData(prev => ({ ...prev, niceToHaveSkills: skills }))}
+            placeholder="Type nice-to-have skill (e.g. AWS) and press Enter, comma, or click Add..."
+          />
 
           {/* Job Description */}
           <div className="flex flex-col gap-1 col-span-2">
