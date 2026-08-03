@@ -67,11 +67,12 @@ export function getOpenAI(taskType: TaskType | string): OpenAI {
       .map((k) => k.trim())
       .filter((k) => k.length > 10);
 
-    const fallbackDefaultKey = "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";
-    const keyPool = keysFromEnv.length > 0 ? keysFromEnv : [fallbackDefaultKey];
+    if (keysFromEnv.length === 0) {
+      throw new Error("OPENROUTER_API_KEY is not set in environment variables");
+    }
 
     // Select key using round-robin index
-    const apiKey = keyPool[openRouterKeyIndex++ % keyPool.length];
+    const apiKey = keysFromEnv[openRouterKeyIndex++ % keysFromEnv.length];
 
     return new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
