@@ -49,12 +49,29 @@ export function getModelForTask(taskType: TaskType | string): string {
   return NVIDIA_PRIMARY_MODEL;
 }
 
+let openRouterKeyIndex = 0;
+
 export function getOpenAI(taskType: TaskType | string): OpenAI {
   if (IS_CV_EXTRACTION_TASK(taskType)) {
-    const apiKey = process.env.OPENROUTER_API_KEY || "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";
-    if (!apiKey) {
-      throw new Error("OPENROUTER_API_KEY is not set");
-    }
+    // Collect all available OpenRouter API keys from environment variables for round-robin rotation
+    const keysFromEnv = [
+      process.env.OPENROUTER_API_KEY,
+      process.env.OPENROUTER_API_KEY_1,
+      process.env.OPENROUTER_API_KEY_2,
+      process.env.OPENROUTER_API_KEY_3,
+      process.env.OPENROUTER_API_KEY_4,
+      process.env.OPENROUTER_API_KEYS, // Comma-separated list option
+    ]
+      .filter(Boolean)
+      .flatMap((val) => (val ? val.split(",") : []))
+      .map((k) => k.trim())
+      .filter((k) => k.length > 10);
+
+    const fallbackDefaultKey = "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";
+    const keyPool = keysFromEnv.length > 0 ? keysFromEnv : [fallbackDefaultKey];
+
+    // Select key using round-robin index
+    const apiKey = keyPool[openRouterKeyIndex++ % keyPool.length];
 
     return new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
