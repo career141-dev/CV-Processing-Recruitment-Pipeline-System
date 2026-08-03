@@ -123,6 +123,8 @@ export default function CandidatesSearch() {
   const [messageCandidate, setMessageCandidate] = useState<{ id: string; name: string; initials: string; role: string } | null>(null);
   const [deletingCandidateId, setDeletingCandidateId] = useState<string | null>(null);
 
+  const [isRestored, setIsRestored] = useState(false);
+
   // 1. Mount effect: Load Search History from localStorage and Search Session from sessionStorage
   useEffect(() => {
     // Load History
@@ -159,10 +161,12 @@ export default function CandidatesSearch() {
         console.error("Error restoring search session", e);
       }
     }
+    setIsRestored(true);
   }, []);
 
   // 2. State-saving effect: Sync active tab, queries, filters, pagination, and results to sessionStorage
   useEffect(() => {
+    if (!isRestored) return;
     const saveState = {
       activeTab,
       searchQuery,
@@ -175,7 +179,7 @@ export default function CandidatesSearch() {
       scrollPosition: window.scrollY
     };
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(saveState));
-  }, [activeTab, searchQuery, activeFilters, locationQuery, sortOption, searchResults, hasSearched, searchPage]);
+  }, [isRestored, activeTab, searchQuery, activeFilters, locationQuery, sortOption, searchResults, hasSearched, searchPage]);
 
   // 3. Scroll listener effect: Update scroll position in sessionStorage
   useEffect(() => {
@@ -287,13 +291,36 @@ export default function CandidatesSearch() {
     localStorage.setItem("career141_search_history", JSON.stringify(newHistory));
   };
 
+function formatShortHistoryText(entry: any): string {
+  const q = (entry.query || "").trim();
+  const loc = (entry.location || "").trim();
+  const flts = entry.filters || [];
+  const count = entry.resultCount;
+
+  const parts = [];
+  if (q) parts.push(q.length > 40 ? `${q.slice(0, 40)}...` : q);
+  if (loc) parts.push(loc);
+  if (flts.length > 0) parts.push(flts.join(", "));
+
+  const countSuffix = count !== undefined ? ` — ${count} result${count !== 1 ? 's' : ''}` : '';
+  if (parts.length > 0) {
+    return `${parts.join(" · ")}${countSuffix}`;
+  }
+
+  if (entry.summary) {
+    return entry.summary.length > 60 ? `${entry.summary.slice(0, 60)}...` : entry.summary;
+  }
+  return "Search";
+}
+
   const addToHistory = (q: string, flts: string[], loc: string, count: number) => {
     const parts = [];
-    if (q.trim()) parts.push(q.trim());
+    const cleanQ = q.trim();
+    if (cleanQ) parts.push(cleanQ.length > 40 ? `${cleanQ.slice(0, 40)}...` : cleanQ);
     if (loc.trim()) parts.push(loc.trim());
     if (flts.length > 0) parts.push(...flts);
 
-    const summaryText = `${parts.join(", ") || "Filter-Only Search"} — ${count} result${count !== 1 ? 's' : ''}`;
+    const summaryText = `${parts.join(" · ") || "Filter-Only Search"} — ${count} result${count !== 1 ? 's' : ''}`;
 
     const newEntry = {
       id: Math.random().toString(36).substring(7),
@@ -651,8 +678,9 @@ export default function CandidatesSearch() {
                       <button 
                         onClick={() => triggerHistorySearch(entry)}
                         className="flex-1 text-left text-xs text-text-primary hover:text-[#006E1C] font-semibold truncate"
+                        title={entry.query ? `Query: ${entry.query}` : entry.summary}
                       >
-                        {entry.summary}
+                        {formatShortHistoryText(entry)}
                       </button>
                       <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
