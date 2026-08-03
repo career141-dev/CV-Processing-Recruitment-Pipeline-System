@@ -23,13 +23,9 @@ export const evaluateFollowUpStage = internalMutation({
     const emailFollowUpPaused = toggles?.emailFollowUp === false;
     const allFollowUpsPaused = whatsappFollowUpPaused && emailFollowUpPaused;
 
-    const followUpOnly = await ctx.db.query("applications")
+    const followUpApps = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .collect();
-    const taShortlistOnly = await ctx.db.query("applications")
-      .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
-      .collect();
-    const followUpApps = [...followUpOnly, ...taShortlistOnly].slice(0, 200);
+      .take(20);
 
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -167,7 +163,7 @@ export const evaluateFollowUpStage = internalMutation({
         }
 
         // 2. Check if a dynamic message is scheduled and it's time to send
-        if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt && app.nextFollowUpMessage) {
+        if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt) {
           // Check attempt count
           const currentAttempts = app.followUpAttemptCount || 0;
           if (job.maxFollowUpAttempts && currentAttempts >= job.maxFollowUpAttempts) {
@@ -176,7 +172,28 @@ export const evaluateFollowUpStage = internalMutation({
              continue; 
           }
 
-          if (!whatsappFollowUpPaused) { 
+          const missingList: string[] = [];
+          if (!hasCV) missingList.push("• CV Document");
+          if (!hasCurrentSalary) missingList.push("• Current Salary");
+          if (!hasExpectedSalary) missingList.push("• Expected Salary");
+          if (!hasNoticePeriod) missingList.push("• Notice Period");
+          for (const q of customQuestions) {
+            if (!customAnswers[q]) missingList.push(`• ${q}`);
+          }
+          const missingFormatted = missingList.join("\n");
+
+          let messageToSend = app.nextFollowUpMessage || job.followUpInitialTemplate;
+          if (!messageToSend) {
+            messageToSend = `Hi ${candidate.fullName || "Candidate"},\n\nThank you for applying for the ${job.title} role!\n\nTo progress your application, please provide the following details:\n${missingFormatted}\n\nPlease reply at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`;
+          } else {
+            messageToSend = messageToSend
+              .replace(/{candidate_name}/g, candidate.fullName || "Candidate")
+              .replace(/{job_title}/g, job.title || "Job")
+              .replace(/{missing_fields}/g, missingFormatted);
+          }
+
+          // Send via WhatsApp if enabled
+          if (!whatsappFollowUpPaused && (job.enableWhatsAppFollowUp !== false)) { 
             const commId = await ctx.db.insert("communications", {
               candidateId: app.candidateId,
               jobId: app.jobId,
@@ -184,7 +201,7 @@ export const evaluateFollowUpStage = internalMutation({
               direction: "outbound",
               channel: "whatsapp",
               subject: `Follow-up: Missing info for your ${job.title} application`,
-              body: app.nextFollowUpMessage,
+              body: messageToSend,
               deliveryStatus: "pending",
               sentAt: now,
               stoppedSequence: false,
@@ -195,18 +212,53 @@ export const evaluateFollowUpStage = internalMutation({
               communicationId: commId,
               candidateId: app.candidateId,
               jobId: app.jobId,
-              body: app.nextFollowUpMessage,
+              body: messageToSend,
             });
-
-            // Clear the schedule and increment attempt count
-            await ctx.db.patch(app._id, {
-              nextFollowUpScheduledAt: undefined,
-              nextFollowUpMessage: undefined,
-              followUpAttemptCount: currentAttempts + 1,
-            });
-
-            console.log(`[Dynamic Follow-up] Sent scheduled message to ${candidate.fullName}`);
           }
+
+          // Send via Email if enabled
+          if (!emailFollowUpPaused && (job.enableEmailFollowUp !== false) && candidate.email) {
+            let emailSubject = job.followUpEmailSubjectTemplate || `Action Required: Missing info for your ${job.title} application`;
+            emailSubject = emailSubject
+              .replace(/{candidate_name}/g, candidate.fullName || "Candidate")
+              .replace(/{job_title}/g, job.title || "Job");
+
+            let emailBody = job.followUpEmailBodyTemplate || messageToSend;
+            emailBody = emailBody
+              .replace(/{candidate_name}/g, candidate.fullName || "Candidate")
+              .replace(/{job_title}/g, job.title || "Job")
+              .replace(/{missing_fields}/g, missingFormatted);
+
+            const commId = await ctx.db.insert("communications", {
+              candidateId: app.candidateId,
+              jobId: app.jobId,
+              applicationId: app._id,
+              direction: "outbound",
+              channel: "email",
+              subject: emailSubject,
+              body: emailBody,
+              deliveryStatus: "pending",
+              sentAt: now,
+              stoppedSequence: false,
+              sequenceDay: daysInStage,
+            });
+
+            await ctx.scheduler.runAfter(0, internal.communications.emailAgent.sendFollowUpEmail, {
+              communicationId: commId,
+              candidateEmail: candidate.email,
+              subject: emailSubject,
+              body: emailBody,
+            });
+          }
+
+          // Clear the schedule and increment attempt count
+          await ctx.db.patch(app._id, {
+            nextFollowUpScheduledAt: undefined,
+            nextFollowUpMessage: undefined,
+            followUpAttemptCount: currentAttempts + 1,
+          });
+
+          console.log(`[Dynamic Follow-up] Sent initial/scheduled message to ${candidate.fullName}`);
         }
         
         // Skip legacy logic for this candidate

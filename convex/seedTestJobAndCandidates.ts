@@ -22,14 +22,14 @@ export const seedTestJobAndCandidates = mutation({
         for (const app of apps) {
           // Delete events
           const events = await ctx.db.query("pipelineEvents")
-            .filter((q) => q.eq(q.field("applicationId"), app._id))
+            .withIndex("by_application", (q) => q.eq("applicationId", app._id))
             .collect();
           for (const ev of events) {
             await ctx.db.delete(ev._id);
           }
           // Delete communications
           const comms = await ctx.db.query("communications")
-            .filter((q) => q.eq(q.field("applicationId"), app._id))
+            .withIndex("by_applicationId", (q) => q.eq("applicationId", app._id))
             .collect();
           for (const c of comms) {
             await ctx.db.delete(c._id);
@@ -212,3 +212,13 @@ export const seedTestJobAndCandidates = mutation({
     return { jobId, applicationId, candidateId: targetCandidateId };
   }
 });
+
+
+
+
+
+
+
+
+
+

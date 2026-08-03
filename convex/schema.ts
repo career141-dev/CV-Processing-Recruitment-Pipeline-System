@@ -232,6 +232,8 @@ export default defineSchema({
 
 
     // Agent 3 — Follow-up Config (Dynamic AI Flow)
+    enableWhatsAppFollowUp: v.optional(v.boolean()),
+    enableEmailFollowUp: v.optional(v.boolean()),
     followUpInitialTemplate: v.optional(v.string()),
     followUpSampleTemplate: v.optional(v.string()),
     enableEmailFollowUpTemplate: v.optional(v.boolean()),
@@ -611,8 +613,19 @@ export default defineSchema({
         v.object({
           degree: v.optional(v.string()),
           institution: v.optional(v.string()),
-          year: v.optional(v.float64()),
+          year: v.optional(v.any()),
           field: v.optional(v.string()),
+        })
+      )
+    ),
+    jobHistory: v.optional(
+      v.array(
+        v.object({
+          title: v.optional(v.string()),
+          company: v.optional(v.string()),
+          startDate: v.optional(v.string()),
+          endDate: v.optional(v.string()),
+          description: v.optional(v.string()),
         })
       )
     ),

@@ -236,8 +236,7 @@ export const sendWhatsApp = internalAction({
     const isTestMode = 
       process.env.WHATSAPP_TEST_MODE === "true" || 
       process.env.OUTREACH_TEST_MODE === "true" || 
-      process.env.TEST_MODE === "true" || 
-      systemSettings?.testModeEnabled !== false; // Default true during testing phase
+      process.env.TEST_MODE === "true";
 
     const testRecipient = 
       process.env.WHATSAPP_TEST_RECIPIENT || 
@@ -309,44 +308,82 @@ export const sendWhatsApp = internalAction({
       const cleanPhone = targetPhone.replace(/[^0-9]/g, "");
       const cleanPhoneId = phoneId.replace(/[^0-9]/g, "");
 
-      const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          apiToken: apiKey,
-          phone_number_id: cleanPhoneId,
-          phone_number: cleanPhone,
-          message: args.body,
-        }).toString(),
-      });
+      let sentSuccess = false;
+      let sendError = "";
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`WhatChimp API returned status ${res.status}: ${errorText}`);
+      try {
+        const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phone_number_id: cleanPhoneId,
+            recipient: `+${cleanPhone}`,
+            message: args.body,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          console.log(`[WhatsApp Outbound] WhatChimp direct response:`, JSON.stringify(data));
+          sentSuccess = true;
+        } else {
+          sendError = await res.text();
+          console.warn(`[WhatsApp Outbound] Direct WhatChimp call returned HTTP ${res.status}: ${sendError}`);
+        }
+      } catch (directErr: any) {
+        sendError = directErr.message || String(directErr);
+        console.warn(`[WhatsApp Outbound] Direct WhatChimp call exception: ${sendError}`);
       }
 
-      const data = await res.json();
-      console.log(`[WhatsApp Outbound] WhatChimp response:`, JSON.stringify(data));
+      // Fallback: If direct call failed or experienced Docker DNS lookup error, proxy through Next.js API route on host
+      if (!sentSuccess) {
+        try {
+          console.log(`[WhatsApp Outbound] Attempting Next.js API route fallback (http://127.0.0.1:3000/api/whatsapp/send)...`);
+          const nextApiRes = await fetch("http://127.0.0.1:3000/api/whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phone: `+${cleanPhone}`,
+              body: args.body,
+            }),
+          });
 
-      if (data && (data.status === 0 || data.status === "0" || data.success === false)) {
-        throw new Error(data.message || "WhatChimp API returned failure status.");
+          if (nextApiRes.ok) {
+            const nextData = await nextApiRes.json();
+            if (nextData.success) {
+              sentSuccess = true;
+              sendError = "";
+              console.log(`[WhatsApp Outbound] Successfully sent WhatsApp via Next.js API route!`);
+            } else {
+              sendError = nextData.error || "Next.js API route returned failure";
+            }
+          } else {
+            sendError = `Next.js API route returned HTTP ${nextApiRes.status}: ${await nextApiRes.text()}`;
+          }
+        } catch (nextErr: any) {
+          console.error("[WhatsApp Outbound] Next.js API route fallback error:", nextErr.message || nextErr);
+        }
       }
 
-      // Success
-      await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
-        communicationId: args.communicationId,
-        status: "sent",
-        error: isTestMode ? `Test mode active.${logNote} [Msg ID: ${data?.message_id || data?.messageId || 'unknown'}]` : undefined,
-      });
-      console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
+      if (sentSuccess) {
+        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+          communicationId: args.communicationId,
+          status: "sent",
+          error: undefined,
+        });
+        console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
 
-      // 4. Async tag the candidate in WhatChimp Lists/Labels
-      await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.assignAiFollowUpLabel, {
-        candidatePhone: targetPhone,
-        jobId: args.jobId,
-      });
+        // 4. Async tag the candidate in WhatChimp Lists/Labels
+        await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.assignAiFollowUpLabel, {
+          candidatePhone: targetPhone,
+          jobId: args.jobId,
+        });
+      } else {
+        throw new Error(sendError || "Failed to send WhatsApp message");
+      }
 
     } catch (err: any) {
       console.error("[WhatsApp Outbound] Failed to dispatch via WhatChimp:", err.message);

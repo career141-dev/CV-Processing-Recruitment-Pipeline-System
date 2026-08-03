@@ -1050,3 +1050,117 @@ export const checkFileHashExists = query({
     return existing !== null;
   },
 });
+
+export const sendFollowUpEmail = internalAction({
+  args: {
+    communicationId: v.optional(v.id("communications")),
+    candidateEmail: v.string(),
+    subject: v.string(),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const senderEmail = process.env.OUTBOUND_EMAIL_SENDER || process.env.MS_SENDER_EMAIL || "binath@career141.com";
+    console.log(`[EmailAgent] Sending outbound follow-up email to ${args.candidateEmail} from ${senderEmail}`);
+
+    const token = await getGraphToken();
+    let sentSuccess = false;
+    let errorMessage = "";
+
+    if (token) {
+      try {
+        const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(senderEmail)}/sendMail`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: {
+              subject: args.subject,
+              body: {
+                contentType: "Text",
+                content: args.body,
+              },
+              toRecipients: [
+                {
+                  emailAddress: {
+                    address: args.candidateEmail,
+                  },
+                },
+              ],
+            },
+            saveToSentItems: "true",
+          }),
+        });
+
+        if (res.ok) {
+          sentSuccess = true;
+          console.log(`[EmailAgent] Outbound email sent successfully via MS Graph to ${args.candidateEmail}`);
+        } else {
+          errorMessage = await res.text();
+          console.error(`[EmailAgent] MS Graph sendMail failed (${res.status}): ${errorMessage}`);
+        }
+      } catch (err: any) {
+        errorMessage = err.message || String(err);
+        console.error(`[EmailAgent] MS Graph exception: ${errorMessage}`);
+      }
+    }
+
+    // Fallback: If direct MS Graph call failed or token was unavailable on Docker, proxy through Next.js API route
+    if (!sentSuccess) {
+      try {
+        console.log(`[EmailAgent] Attempting Next.js API route fallback (http://127.0.0.1:3000/api/email/send-followup)...`);
+        const nextApiRes = await fetch("http://127.0.0.1:3000/api/email/send-followup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            candidateEmail: args.candidateEmail,
+            subject: args.subject,
+            body: args.body,
+          }),
+        });
+
+        if (nextApiRes.ok) {
+          const resData = await nextApiRes.json();
+          if (resData.success) {
+            sentSuccess = true;
+            errorMessage = "";
+            console.log(`[EmailAgent] Outbound email sent successfully via Next.js API route to ${args.candidateEmail}`);
+          } else {
+            errorMessage = resData.error || "Next.js API route returned failure";
+          }
+        } else {
+          errorMessage = `Next.js API route returned HTTP ${nextApiRes.status}: ${await nextApiRes.text()}`;
+        }
+      } catch (nextApiErr: any) {
+        console.error("[EmailAgent] Next.js API route fallback exception:", nextApiErr.message || nextApiErr);
+      }
+    }
+
+    if (args.communicationId) {
+      await ctx.runMutation(internal.communications.emailAgent.updateCommunicationStatus, {
+        communicationId: args.communicationId,
+        status: sentSuccess ? "sent" : "failed",
+        errorMessage: sentSuccess ? undefined : errorMessage,
+      });
+    }
+
+    return { success: sentSuccess, error: errorMessage };
+  },
+});
+
+export const updateCommunicationStatus = internalMutation({
+  args: {
+    communicationId: v.id("communications"),
+    status: v.union(v.literal("sent"), v.literal("delivered"), v.literal("read"), v.literal("replied"), v.literal("failed"), v.literal("cancelled")),
+    errorMessage: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.communicationId, {
+      deliveryStatus: args.status === "sent" ? "sent" : "failed",
+      status: args.status,
+      errorMessage: args.errorMessage,
+    });
+  },
+});
