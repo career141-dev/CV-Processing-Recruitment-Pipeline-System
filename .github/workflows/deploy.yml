@@ -38,7 +38,6 @@ jobs:
             git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
             git reset --hard
             git pull origin main
-            docker rm -f career141-web 2>/dev/null || true
             echo "Starting Convex Database..."
             docker compose --env-file .env.production -f docker-compose.yml up -d
             sleep 5
@@ -95,13 +94,13 @@ jobs:
             echo "Starting Convex Database (if not already running)..."
             docker compose --env-file .env.production -f docker-compose.yml up -d
             
-            # Build new Next.js release in background with low CPU priority (nice -n 19)
-            echo "Building new Next.js release in background (Low CPU Priority)..."
-            nice -n 19 docker compose --env-file .env.production -f docker-compose.prod.yml build
+            # Build new release at normal speed (old container is still alive and serving traffic)
+            echo "Building new release (old container still serving live traffic)..."
+            docker compose --env-file .env.production -f docker-compose.prod.yml build
             
-            # Instant 1-second container swap once build completes
-            echo "Performing instant 1-second container swap..."
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-deps web
+            # Instant 1-second atomic container swap once build completes
+            echo "Swapping container (old container running until this exact line)..."
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-deps --force-recreate web
 
             echo "======================================"
             echo "  DEPLOYMENT COMPLETE"

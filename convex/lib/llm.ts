@@ -188,9 +188,9 @@ export const NVIDIA_VISION_MODELS = [
 ];
 
 export const OPENROUTER_VISION_MODELS = [
-  "google/gemini-2.0-flash-001",
-  "openai/gpt-4o-mini",
-  "qwen/qwen-2.5-vl-72b-instruct",
+  "google/gemini-2.0-flash-lite-001",
+  "google/gemini-flash-1.5",
+  "meta-llama/llama-3.2-11b-vision-instruct",
 ];
 
 export async function callNvidiaVisionOCR(
