@@ -242,7 +242,7 @@ export const updateDashboardStatsCache = internalMutation({
       .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
       .first();
 
-    const dailyStats = await ctx.db.query("dailyStats").order("desc").take(60);
+    const dailyStats = await ctx.db.query("dailyStats").withIndex("by_dateStr").order("desc").take(60);
 
     const now = new Date();
     const todayStr = now.toISOString().split("T")[0];
