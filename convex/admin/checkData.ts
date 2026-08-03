@@ -76,7 +76,7 @@ export const getWorkableJobDetails = query({
 
 export const getAllSourcesBreakdown = query({
   handler: async (ctx) => {
-    const candidates = await ctx.db.query("candidates").take(8000);
+    const candidates = await ctx.db.query("candidates").order("desc").take(1000);
     const candidateSourceCounts: Record<string, number> = {};
     let latestManualCandidate: any = null;
 
@@ -97,7 +97,7 @@ export const getAllSourcesBreakdown = query({
       }
     }
 
-    const uploads = await ctx.db.query("cvUploads").take(8000);
+    const uploads = await ctx.db.query("cvUploads").order("desc").take(1000);
     const uploadSourceCounts: Record<string, number> = {};
     let latestManualUpload: any = null;
 
