@@ -36,12 +36,13 @@ export const updateImportJob = internalMutation({
     totalCandidates: v.optional(v.number()),
     maxCandidates: v.optional(v.number()),
     status: v.optional(
-      v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped"))
+      v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped"), v.literal("paused"))
     ),
     errorMessage: v.optional(v.string()),
     lastCursor: v.optional(v.string()),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
+    candidateIndex: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { importId, ...rest } = args;

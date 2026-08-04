@@ -20,6 +20,21 @@ export const sendGraphEmail = internalAction({
     bodyHtml: v.string(),
   },
   handler: async (ctx, args) => {
+    // Check communication status & stage guard — DO NOT send automated follow-up email if candidate moved out of follow_up stage (e.g. to ta_shortlist)
+    const commRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getCommunicationRecord, { communicationId: args.communicationId });
+    if (commRecord?.stoppedSequence || commRecord?.deliveryStatus === "failed") {
+      console.log(`[Graph Email] Communication ${args.communicationId} was cancelled/stopped. Skipping email delivery.`);
+      return;
+    }
+
+    if (commRecord?.applicationId) {
+      const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
+      if (appRecord && appRecord.currentStage !== "follow_up") {
+        console.log(`[Graph Email] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up"). Aborting Email follow-up delivery.`);
+        return;
+      }
+    }
+
     // ── Test-mode redirect ─────────────────────────────────────────────────
     const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
     const isTestMode = 
@@ -72,13 +87,7 @@ export const sendGraphEmail = internalAction({
       const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL;
       const isCareer141Domain = senderEmail.toLowerCase().endsWith("@career141.com");
 
-      if (isTestMode) {
-        if (m365Sender) {
-          senderEmail = isCareer141Domain ? args.taEmail : m365Sender;
-        }
-        replyToRecipients = [];
-        console.log(`[Graph Email] Test mode active. Using sender: ${senderEmail}`);
-      } else if (!isCareer141Domain && m365Sender) {
+      if (!isCareer141Domain && m365Sender) {
         senderEmail = m365Sender;
         replyToRecipients = [
           {
@@ -143,9 +152,6 @@ export const sendGraphEmail = internalAction({
         {
           communicationId: args.communicationId,
           status: "sent",
-          error: isTestMode
-            ? `Test mode active.${logNote}`
-            : undefined,
         }
       );
 

@@ -5,6 +5,7 @@ import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel.d.ts";
+import { runCvExtraction } from "../cvs/cvExtraction";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -301,6 +302,61 @@ export const retrySkipped = action({
 
 // ─── Stop a running import ────────────────────────────────────────────────────
 
+// ─── Pause a running import ──────────────────────────────────────────────────
+
+export const pauseImport = action({
+  args: { importId: v.id("workableImports") },
+  handler: async (ctx, args): Promise<void> => {
+    await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+      importId: args.importId,
+      status: "paused",
+    });
+  },
+});
+
+// ─── Resume a paused import ──────────────────────────────────────────────────
+
+export const resumeImport = action({
+  args: {
+    importId: v.id("workableImports"),
+    subdomain: v.optional(v.string()),
+    apiKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const job: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
+    if (!job) throw new ConvexError({ message: "Import job not found", code: "NOT_FOUND" });
+
+    const subdomain = args.subdomain ?? job.subdomain;
+    const apiKey = args.apiKey ?? job.apiKey;
+    if (!subdomain || !apiKey) {
+      throw new ConvexError({ message: "Please enter your Workable subdomain and API key.", code: "BAD_REQUEST" });
+    }
+
+    await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+      importId: args.importId,
+      status: "running",
+      errorMessage: "",
+      subdomain,
+      apiKey,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.integrations.workableActions.runImportBatch, {
+      importId: args.importId,
+      subdomain,
+      apiKey,
+      userId: job.userId,
+      nextUrl: job.lastCursor ?? undefined,
+      imported: job.imported,
+      skipped: job.skipped,
+      deduplicated: job.deduplicated ?? 0,
+      failed: job.failed,
+      maxCandidates: job.maxCandidates ?? 500,
+    });
+  },
+});
+
+// ─── Stop a running import ────────────────────────────────────────────────────
+
 export const stopImport = action({
   args: { importId: v.id("workableImports") },
   handler: async (ctx, args): Promise<void> => {
@@ -321,6 +377,7 @@ export const runImportBatch = internalAction({
     apiKey: v.string(),
     userId: v.string(),
     nextUrl: v.optional(v.string()),
+    candidateIndex: v.optional(v.number()),
     imported: v.number(),
     skipped: v.number(),
     deduplicated: v.number(),
@@ -328,14 +385,18 @@ export const runImportBatch = internalAction({
     maxCandidates: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<void> => {
+    const startTime = Date.now();
+    const MAX_ACTION_DURATION_MS = 35000; // Yield execution after 35s to prevent Convex Action Timeout (120s limit)
+
     let imported = args.imported;
     let skipped = args.skipped;
     let deduplicated = args.deduplicated;
     let failed = args.failed;
     const maxLimit = args.maxCandidates ?? 500;
+    const startIndex = args.candidateIndex ?? 0;
 
     const currentJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
-    if (!currentJob || currentJob.status === "stopped" || currentJob.status === "done") return;
+    if (!currentJob || currentJob.status === "stopped" || currentJob.status === "paused" || currentJob.status === "done") return;
 
     // Check if target imported candidates count has been reached
     if (maxLimit > 0 && imported >= maxLimit) {
@@ -346,9 +407,11 @@ export const runImportBatch = internalAction({
       return;
     }
 
+    const currentUrl = args.nextUrl ?? workableUrl(args.subdomain, "/candidates?limit=20");
+
     let page: WorkableCandidatesPage;
     try {
-      page = await fetchPage(args.subdomain, args.apiKey, args.nextUrl);
+      page = await fetchPage(args.subdomain, args.apiKey, currentUrl);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "fetch failed";
       if (msg === "RATE_LIMIT_429") {
@@ -358,10 +421,11 @@ export const runImportBatch = internalAction({
           skipped,
           deduplicated,
           failed,
-          lastCursor: args.nextUrl ?? undefined,
+          lastCursor: currentUrl,
         });
         await ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
           ...args,
+          nextUrl: currentUrl,
           imported,
           skipped,
           deduplicated,
@@ -381,7 +445,7 @@ export const runImportBatch = internalAction({
       return;
     }
 
-    if (page.candidates.length > 0) {
+    if (page.candidates.length > 0 && startIndex === 0) {
       const job: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
       if (job) {
         await ctx.runMutation(internal.integrations.workable.updateImportJob, {
@@ -391,10 +455,35 @@ export const runImportBatch = internalAction({
       }
     }
 
-    for (const candidate of page.candidates) {
-      // Re-verify if job was stopped mid-batch or target max reached
+    for (let i = startIndex; i < page.candidates.length; i++) {
+      const candidate = page.candidates[i];
+
+      // Time budget check: if running close to Convex action timeout limit, yield execution & schedule next batch
+      if (Date.now() - startTime > MAX_ACTION_DURATION_MS) {
+        await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+          importId: args.importId,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          lastCursor: currentUrl,
+          candidateIndex: i,
+        });
+        await ctx.scheduler.runAfter(200, internal.integrations.workableActions.runImportBatch, {
+          ...args,
+          nextUrl: currentUrl,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          candidateIndex: i,
+        });
+        return;
+      }
+
+      // Re-verify if job was stopped or paused mid-batch or target max reached
       const checkJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
-      if (!checkJob || checkJob.status === "stopped") return;
+      if (!checkJob || checkJob.status === "stopped" || checkJob.status === "paused") return;
 
       if (maxLimit > 0 && imported >= maxLimit) {
         await ctx.runMutation(internal.integrations.workable.updateImportJob, {
@@ -404,7 +493,8 @@ export const runImportBatch = internalAction({
           deduplicated,
           failed,
           status: "done",
-          lastCursor: args.nextUrl ?? undefined,
+          lastCursor: currentUrl,
+          candidateIndex: i,
         });
         return;
       }
@@ -415,6 +505,10 @@ export const runImportBatch = internalAction({
         });
         if (existing) {
           deduplicated++;
+          await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+            importId: args.importId,
+            deduplicated,
+          });
           continue;
         }
 
@@ -430,14 +524,17 @@ export const runImportBatch = internalAction({
               skipped,
               deduplicated,
               failed,
-              lastCursor: args.nextUrl ?? undefined,
+              lastCursor: currentUrl,
+              candidateIndex: i,
             });
             await ctx.scheduler.runAfter(90000, internal.integrations.workableActions.runImportBatch, {
               ...args,
+              nextUrl: currentUrl,
               imported,
               skipped,
               deduplicated,
               failed,
+              candidateIndex: i,
             });
             return;
           }
@@ -453,12 +550,20 @@ export const runImportBatch = internalAction({
 
         if (!detail.resumeUrl) {
           skipped++;
+          await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+            importId: args.importId,
+            skipped,
+          });
           continue;
         }
 
         const downloaded = await downloadResume(detail.resumeUrl);
         if (!downloaded) {
           failed++;
+          await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+            importId: args.importId,
+            failed,
+          });
           continue;
         }
 
@@ -482,8 +587,8 @@ export const runImportBatch = internalAction({
           userId: args.userId,
         });
 
-        // Trigger background CV extraction (DeepSeek V4 Flash)
-        await ctx.scheduler.runAfter(imported * 2000, api.cvs.cvExtraction.processCvExtraction, {
+        // Schedule background AI CV extraction (DeepSeek V4 Flash) via Convex Scheduler
+        await ctx.scheduler.runAfter(imported * 1000, api.cvs.cvExtraction.processCvExtraction, {
           s3Key,
           storageProvider: "r2",
           fileType: downloaded.fileType,
@@ -500,8 +605,27 @@ export const runImportBatch = internalAction({
         });
 
         imported++;
-      } catch {
+        await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+          importId: args.importId,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          lastCursor: currentUrl,
+          candidateIndex: i + 1,
+        });
+      } catch (err) {
+        console.error(`[WorkableImport] Error processing candidate ${candidate.id}:`, err);
         failed++;
+        await ctx.runMutation(internal.integrations.workable.updateImportJob, {
+          importId: args.importId,
+          imported,
+          skipped,
+          deduplicated,
+          failed,
+          lastCursor: currentUrl,
+          candidateIndex: i + 1,
+        });
       }
     }
 
@@ -513,11 +637,13 @@ export const runImportBatch = internalAction({
       deduplicated,
       failed,
       lastCursor: page.paging?.next ?? undefined,
+      candidateIndex: 0,
     });
 
-    const currentTotal = imported + skipped + deduplicated + failed;
+    // Chain to next page if next cursor exists, job is running, and imported target limit not reached
+    const checkEndJob: any = await ctx.runQuery(internal.integrations.workable.getImportJob as any, { importId: args.importId });
+    if (!checkEndJob || checkEndJob.status === "stopped" || checkEndJob.status === "paused") return;
 
-    // Chain to next page if next cursor exists and imported candidate target limit not reached
     if (page.paging?.next && (maxLimit === 0 || imported < maxLimit)) {
       await ctx.scheduler.runAfter(500, internal.integrations.workableActions.runImportBatch, {
         importId: args.importId,
@@ -525,6 +651,7 @@ export const runImportBatch = internalAction({
         apiKey: args.apiKey,
         userId: args.userId,
         nextUrl: page.paging.next,
+        candidateIndex: 0,
         imported,
         skipped,
         deduplicated,

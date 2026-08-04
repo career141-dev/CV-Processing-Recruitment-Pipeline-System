@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useParams } from "next/navigation";
 import { AddToJobModal } from '@/components/candidates/modals/AddToJobModal';
 import { toast } from 'sonner';
+import { ChevronLeft } from 'lucide-react';
 
 function getInitials(name?: string | null): string {
   if (!name) return "?";
@@ -109,19 +111,23 @@ export default function CandidateProfile() {
           </div>
         )}
         {/* Breadcrumb */}
-            <div className="flex items-center self-stretch mb-4">
-              <span className="text-text-secondary text-xs mr-2 cursor-pointer hover:underline">
-                Candidates
-              </span>
-              <img
-                src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/c82l2plk_expires_30_days.png" 
-                className="w-1 h-[7px] mr-2 object-fill"
-                alt="Chevron"
-              />
-              <span className="text-text-primary text-xs font-semibold">
-                {candidate.fullName || "Candidate"}
-              </span>
-            </div>
+        <div className="flex items-center self-stretch mb-4">
+          <Link
+            href="/dashboard/candidates"
+            className="inline-flex items-center text-text-secondary text-xs hover:text-primary hover:underline font-medium transition-colors mr-2"
+          >
+            <ChevronLeft className="w-3.5 h-3.5 mr-0.5" />
+            Candidates
+          </Link>
+          <img
+            src="https://storage.googleapis.com/tagjs-prod.appspot.com/v1/RSsjzjm7bY/c82l2plk_expires_30_days.png" 
+            className="w-1 h-[7px] mr-2 object-fill"
+            alt="Chevron"
+          />
+          <span className="text-text-primary text-xs font-semibold">
+            {candidate.fullName || "Candidate"}
+          </span>
+        </div>
 
             {/* Candidate Header Card */}
             <div className="flex flex-col md:flex-row items-center self-stretch bg-surface py-[25px] px-[21px] mb-4 rounded-xl border border-solid border-border shadow-[0px_2px_4px_#0000000D]">

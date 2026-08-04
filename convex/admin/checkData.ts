@@ -48,6 +48,87 @@ export const checkDb = query({
   }
 });
 
+export const getWorkableUploads = query({
+  handler: async (ctx) => {
+    const uploads = await ctx.db.query("cvUploads")
+      .filter(q => q.eq(q.field("source"), "Workable"))
+      .order("desc")
+      .take(20);
+    return uploads.map(u => ({
+      _id: u._id,
+      fileName: u.fileName,
+      status: u.status,
+      candidateId: u.candidateId,
+      errorMessage: u.errorMessage,
+      storageProvider: u.storageProvider,
+      s3Key: u.s3Key,
+      _creationTime: u._creationTime,
+    }));
+  }
+});
+
+export const getWorkableJobDetails = query({
+  handler: async (ctx) => {
+    const job = await ctx.db.query("workableImports").order("desc").first();
+    return job;
+  }
+});
+
+export const getAllSourcesBreakdown = query({
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("candidates").order("desc").take(1000);
+    const candidateSourceCounts: Record<string, number> = {};
+    let latestManualCandidate: any = null;
+
+    for (const c of candidates) {
+      const src = (c as any).source || (c as any).sourceChannel || "Unknown";
+      candidateSourceCounts[src] = (candidateSourceCounts[src] || 0) + 1;
+      if (src.toLowerCase().includes("manual") || src.toLowerCase().includes("directory") || src.toLowerCase().includes("folder")) {
+        if (!latestManualCandidate || c._creationTime > latestManualCandidate._creationTime) {
+          latestManualCandidate = {
+            _id: c._id,
+            fullName: c.fullName,
+            email: c.email,
+            source: src,
+            creationTime: c._creationTime,
+            formattedDate: new Date(c._creationTime).toLocaleString(),
+          };
+        }
+      }
+    }
+
+    const uploads = await ctx.db.query("cvUploads").order("desc").take(1000);
+    const uploadSourceCounts: Record<string, number> = {};
+    let latestManualUpload: any = null;
+
+    for (const u of uploads) {
+      const src = u.source || "Unknown";
+      uploadSourceCounts[src] = (uploadSourceCounts[src] || 0) + 1;
+      if (src.toLowerCase().includes("manual") || src.toLowerCase().includes("directory") || src.toLowerCase().includes("folder")) {
+        if (!latestManualUpload || u._creationTime > latestManualUpload._creationTime) {
+          latestManualUpload = {
+            _id: u._id,
+            fileName: u.fileName,
+            source: src,
+            status: u.status,
+            creationTime: u._creationTime,
+            formattedDate: new Date(u._creationTime).toLocaleString(),
+          };
+        }
+      }
+    }
+
+    return {
+      totalCandidatesScanned: candidates.length,
+      candidateSourceCounts,
+      totalUploadsScanned: uploads.length,
+      uploadSourceCounts,
+      latestManualCandidate,
+      latestManualUpload,
+    };
+  },
+});
+
 export const getDeepSeekStats = query({
   handler: async (ctx) => {
     const candidates = await ctx.db.query("candidates").order("desc").take(300);

@@ -1153,7 +1153,7 @@ export default defineSchema({
     .index("by_uploadedBy", ["uploadedBy"]),
 
   workableImports: defineTable({
-    status: v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped")),
+    status: v.union(v.literal("running"), v.literal("done"), v.literal("error"), v.literal("stopped"), v.literal("paused")),
     totalCandidates: v.number(),
     maxCandidates: v.optional(v.number()),
     imported: v.number(),
@@ -1166,6 +1166,7 @@ export default defineSchema({
     lastCursor: v.optional(v.string()),
     subdomain: v.optional(v.string()),
     apiKey: v.optional(v.string()),
+    candidateIndex: v.optional(v.number()),
   }).index("by_user", ["userId"]),
 
   herculesImports: defineTable({

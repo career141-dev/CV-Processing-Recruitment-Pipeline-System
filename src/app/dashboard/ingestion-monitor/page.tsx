@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import {
   RefreshCw,
   Upload,
+  FolderUp,
   AlertCircle,
   Loader2,
   CheckCircle2,
@@ -39,7 +41,7 @@ import { toast } from "sonner";
 
 const SOURCE_OPTIONS = ["Manual", "Headhunting", "Referral", "Agency", "Direct Email"];
 
-type SourceTabKey = "workable" | "manual" | "linkedin" | "whatsapp" | "meta" | "email" | "portal";
+type SourceTabKey = "workable" | "manual" | "folder" | "linkedin" | "whatsapp" | "meta" | "email" | "portal";
 
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -88,6 +90,8 @@ export default function IngestionMonitorPage() {
 
   const { user } = useUser();
   const startBulkImport = useAction(api.integrations.workableActions.startBulkImport);
+  const pauseImport = useAction(api.integrations.workableActions.pauseImport);
+  const resumeImport = useAction(api.integrations.workableActions.resumeImport);
   const retryImport = useAction(api.integrations.workableActions.retryImport);
   const retrySkippedAction = useAction(api.integrations.workableActions.retrySkipped);
   const stopImport = useAction(api.integrations.workableActions.stopImport);
@@ -147,9 +151,36 @@ export default function IngestionMonitorPage() {
     setIsWorkableImporting(true);
     try {
       await startBulkImport({ subdomain, apiKey, userId: user.id, maxCandidates });
-      toast.success(`Workable import started (limit: ${maxCandidates} candidates)`);
+      toast.success(`Workable import started (target limit: ${maxCandidates} candidates)`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start import");
+    } finally {
+      setIsWorkableImporting(false);
+    }
+  };
+
+  const handlePauseWorkable = async () => {
+    if (!importStatus) return;
+    try {
+      await pauseImport({ importId: importStatus._id as any });
+      toast.info("Workable import paused.");
+    } catch (err) {
+      toast.error("Failed to pause import");
+    }
+  };
+
+  const handleResumeWorkable = async () => {
+    if (!importStatus) return;
+    setIsWorkableImporting(true);
+    try {
+      await resumeImport({
+        importId: importStatus._id as any,
+        subdomain: subdomain || undefined,
+        apiKey: apiKey || undefined,
+      });
+      toast.success("Workable import resumed from exact position.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resume import");
     } finally {
       setIsWorkableImporting(false);
     }
@@ -193,7 +224,7 @@ export default function IngestionMonitorPage() {
     if (!importStatus) return;
     try {
       await stopImport({ importId: importStatus._id as any });
-      toast.info("Import stopped.");
+      toast.warning("Workable import stopped. Only candidates processed so far remain in DB.");
     } catch (err) {
       toast.error("Failed to stop import");
     }
@@ -395,6 +426,7 @@ export default function IngestionMonitorPage() {
   const TABS_CONFIG: Array<{ key: SourceTabKey; label: string; icon: React.ElementType; badge?: string; errorCount: number }> = [
     { key: "workable", label: "Workable", icon: RefreshCw, badge: workableStats.todayCount > 0 ? `${workableStats.todayCount}` : undefined, errorCount: getErrorCount("Workable") },
     { key: "manual", label: "Direct Upload", icon: Upload, badge: manualStats.todayCount > 0 ? `${manualStats.todayCount}` : undefined, errorCount: getErrorCount("Manual") },
+    { key: "folder", label: "External Drive / Folder", icon: FolderUp, badge: "18k Bulk", errorCount: 0 },
     { key: "linkedin", label: "LinkedIn", icon: Share2, badge: linkedinStats.todayCount > 0 ? `${linkedinStats.todayCount}` : undefined, errorCount: getErrorCount("linkedin") },
     { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, badge: whatsappStats.todayCount > 0 ? `${whatsappStats.todayCount}` : undefined, errorCount: getErrorCount("WhatsApp") },
     { key: "meta", label: "Meta Campaigns", icon: Activity, badge: metaStats.todayCount > 0 ? `${metaStats.todayCount}` : undefined, errorCount: getErrorCount("Meta") },
@@ -414,9 +446,18 @@ export default function IngestionMonitorPage() {
               <h1 className="text-[24px] leading-8 font-semibold text-text-primary">Ingestion Monitor</h1>
               <p className="text-[13px] text-text-secondary mt-1">Real-time status of all CV intake channels and the parsing queue.</p>
             </div>
-            <div className="flex items-center gap-3 bg-surface px-4 py-2.5 rounded-lg border border-border shadow-sm">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span className="text-[11px] font-bold tracking-widest text-green-600 dark:text-green-400">LIVE SYNC</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/dashboard/ingestion-monitor/folder-upload"
+                className="py-2.5 px-4 bg-[#006E1C] hover:bg-[#005415] text-white font-bold text-xs rounded-lg transition flex items-center gap-2 shadow-sm"
+              >
+                <FolderUp className="w-4 h-4" />
+                <span>Upload from Directory (18k Bulk)</span>
+              </Link>
+              <div className="flex items-center gap-3 bg-surface px-4 py-2.5 rounded-lg border border-border shadow-sm">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                <span className="text-[11px] font-bold tracking-widest text-green-600 dark:text-green-400">LIVE SYNC</span>
+              </div>
             </div>
           </div>
 
@@ -596,7 +637,13 @@ export default function IngestionMonitorPage() {
                     {importStatus.status === "running" && (
                       <div className="flex items-center gap-1.5 bg-[#E8F5E9] text-[#1B5E20] px-3 py-1 rounded-md border border-[#C8E6C9]">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span className="text-xs font-bold uppercase tracking-wider">Running</span>
+                        <span className="text-xs font-bold uppercase tracking-wider">Running (Ingesting & Queuing AI Parsing)</span>
+                      </div>
+                    )}
+                    {importStatus.status === "paused" && (
+                      <div className="flex items-center gap-1.5 bg-[#FFF3E0] text-[#E65100] px-3 py-1 rounded-md border border-[#FFE0B2]">
+                        <Pause className="w-3.5 h-3.5" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Paused</span>
                       </div>
                     )}
                     {importStatus.status === "stopped" && (
@@ -619,22 +666,20 @@ export default function IngestionMonitorPage() {
                     )}
                   </div>
 
-                  {importStatus.totalCandidates > 0 && (
-                    <div>
-                      <div className="flex justify-between text-xs font-bold text-text-secondary">
-                        <span>Overall Progress</span>
-                        <span>
-                          {totalProcessed.toLocaleString()} / {importStatus.totalCandidates.toLocaleString()}
-                        </span>
-                      </div>
-                      <ProgressBar value={totalProcessed} max={importStatus.totalCandidates} color="bg-[#006E1C]" />
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-text-secondary mb-1">
+                      <span>Imported & Queued CVs</span>
+                      <span>
+                        {importStatus.imported.toLocaleString()} / {(importStatus.maxCandidates || importStatus.totalCandidates || 100).toLocaleString()}
+                      </span>
                     </div>
-                  )}
+                    <ProgressBar value={importStatus.imported} max={importStatus.maxCandidates || importStatus.totalCandidates || 100} color="bg-[#006E1C]" />
+                  </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <StatBox label="Imported" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
+                    <StatBox label="Imported CVs" value={importStatus.imported} icon={CheckCircle2} color="bg-[#E8F5E9] text-[#1B5E20]" />
                     <StatBox label="Duplicates" value={importStatus.deduplicated} icon={Copy} color="bg-[#E1F5FE] text-[#0277BD]" />
-                    <StatBox label="Skipped" value={importStatus.skipped} icon={SkipForward} color="bg-[#FFF3E0] text-[#E65100]" />
+                    <StatBox label="Skipped (No CV)" value={importStatus.skipped} icon={SkipForward} color="bg-[#FFF3E0] text-[#E65100]" />
                     <StatBox label="Failed" value={importStatus.failed} icon={XCircle} color="bg-[#FFEBEE] text-[#D32F2F]" />
                   </div>
 
@@ -649,18 +694,38 @@ export default function IngestionMonitorPage() {
                     {importStatus.status === "running" && (
                       <>
                         <button
-                          onClick={handleStopWorkable}
+                          onClick={handlePauseWorkable}
                           className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
                         >
                           <Pause className="w-4 h-4" fill="currentColor" />
                           <span>Pause Import</span>
                         </button>
                         <button
-                          onClick={handleClearHistory}
+                          onClick={handleStopWorkable}
                           className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
                         >
                           <Square className="w-3.5 h-3.5" fill="currentColor" />
-                          <span>Stop & Cancel</span>
+                          <span>Stop Import</span>
+                        </button>
+                      </>
+                    )}
+
+                    {importStatus.status === "paused" && (
+                      <>
+                        <button
+                          onClick={handleResumeWorkable}
+                          disabled={isWorkableImporting}
+                          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                        >
+                          {isWorkableImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" fill="currentColor" />}
+                          <span>Resume Import</span>
+                        </button>
+                        <button
+                          onClick={handleStopWorkable}
+                          className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm"
+                        >
+                          <Square className="w-3.5 h-3.5" fill="currentColor" />
+                          <span>Stop Import</span>
                         </button>
                       </>
                     )}
@@ -668,7 +733,7 @@ export default function IngestionMonitorPage() {
                     {importStatus.status === "stopped" && (
                       <>
                         <button
-                          onClick={handleRetryWorkable}
+                          onClick={handleResumeWorkable}
                           disabled={isWorkableImporting}
                           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-sm disabled:opacity-50"
                         >
@@ -738,6 +803,28 @@ export default function IngestionMonitorPage() {
                 </div>
               </div>
 
+              {/* Bulk Folder Upload Banner */}
+              <div className="bg-[#006E1C]/5 border border-[#006E1C]/20 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-[#006E1C] text-white rounded-lg shrink-0">
+                    <FolderUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-text-primary">Bulk Upload from Local / External Directory (18,000 Candidates)</h3>
+                    <p className="text-xs text-text-secondary">
+                      Select a root directory containing candidate folders. Automatically locates resumes in <code className="font-mono bg-background-accent px-1.5 py-0.5 rounded">Downloads/</code> folders and uploads in 100-candidate batches.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/dashboard/ingestion-monitor/folder-upload"
+                  className="py-2.5 px-4 bg-[#006E1C] hover:bg-[#005415] text-white font-bold text-xs rounded-lg transition flex items-center gap-2 shrink-0 shadow-sm"
+                >
+                  <FolderUp className="w-4 h-4" />
+                  <span>Upload from Directory</span>
+                </Link>
+              </div>
+
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
@@ -749,14 +836,18 @@ export default function IngestionMonitorPage() {
                   ref={fileInputRef}
                   onChange={handleFileSelect}
                   multiple
-                  accept=".pdf,.doc,.docx,.rtf,.txt"
+                  accept=".pdf,.docx,.doc,.rtf,.txt"
                   className="hidden"
                 />
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
                   <Upload className="w-6 h-6" />
                 </div>
-                <p className="text-sm font-bold text-text-primary">Click or Drag & Drop CV files here</p>
-                <p className="text-xs text-text-secondary mt-1">Supports PDF, DOCX, RTF, TXT up to 50MB per file</p>
+                <p className="text-sm font-bold text-text-primary mb-1">
+                  Click to select files or drag & drop here
+                </p>
+                <p className="text-xs text-text-secondary max-w-sm">
+                  Supported formats: PDF, DOCX, DOC, RTF, TXT (Up to 50MB per file)
+                </p>
               </div>
 
               {files.length > 0 && (

@@ -59,7 +59,15 @@ export const seedTestJobAndCandidates = mutation({
       }
     }
 
-    // 3. Create dummy candidates for matching tab
+    // 3. Delete any previous test candidates with email hdbinath@gmail.com or sivasuthakran
+    const existingCandidates = await ctx.db.query("candidates").collect();
+    for (const c of existingCandidates) {
+      if (c.email === "hdbinath@gmail.com" || c.email?.includes("sivasuthakran") || c.email?.includes("career141-test.com")) {
+        await ctx.db.delete(c._id);
+      }
+    }
+
+    // 4. Create dummy candidates for matching tab
     const dummy1Id = await ctx.db.insert("candidates", {
       fullName: "Jane Doe (React Dev)",
       email: "jane.doe@career141-test.com",
@@ -82,11 +90,13 @@ export const seedTestJobAndCandidates = mutation({
       noticePeriodDays: 45,
     });
 
-    // 4. Create the target test candidate requested: Test Candidate Benchmark
+    // 5. Create target candidate: Binath Test Candidate (hdbinath@gmail.com, +94742625552)
     const targetCandidateId = await ctx.db.insert("candidates", {
-      fullName: "Test Candidate Benchmark",
-      email: "sivasuthakran.sanjeev@career141-test.com",
-      phone: "+94775556666",
+      fullName: "Binath Test Candidate",
+      email: "hdbinath@gmail.com",
+      phone: "+94742625552",
+      currentJobTitle: "Software Developer",
+      totalExperienceYears: 3,
       status: "active",
       overallStatus: "new_cvs",
     });
@@ -186,13 +196,15 @@ export const seedTestJobAndCandidates = mutation({
       createdAt: new Date().toISOString()
     });
 
-    // 7. Add target candidate "Test Candidate Benchmark" as an active application in the 'new_cvs' stage for this job
+    // 7. Add target candidate as an active application in the 'new_cvs' stage for this job
     const applicationId = await ctx.db.insert("applications", {
       candidateId: targetCandidateId,
       jobId,
-      sourceChannel: "whatsapp",
+      sourceChannel: "email",
       currentStage: "new_cvs",
-      candidateName: "Test Candidate Benchmark",
+      candidateName: "Binath Test Candidate",
+      candidateEmail: "hdbinath@gmail.com",
+      candidatePhone: "+94742625552",
       createdAt: Date.now(),
       lastStageChangedAt: Date.now(),
       isActive: true,
@@ -351,12 +363,40 @@ export const seedSanjeevToProduction = mutation({
   }
 });
 
+export const fixTestCandidateCredentials = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const job = await ctx.db
+      .query("jobs")
+      .withIndex("by_keyword", (q) => q.eq("keyword", "DEV-TEST"))
+      .first();
 
+    if (!job) throw new Error("DEV-TEST job not found");
 
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_jobId", (q) => q.eq("jobId", job._id))
+      .collect();
 
+    for (const app of apps) {
+      await ctx.db.patch(app._id, {
+        candidateName: "Binath Test Candidate",
+        candidateEmail: "hdbinath@gmail.com",
+        candidatePhone: "+94742625552",
+        currentStage: "new_cvs",
+        isActive: true,
+      });
 
+      const candidate = await ctx.db.get(app.candidateId);
+      if (candidate) {
+        await ctx.db.patch(candidate._id, {
+          fullName: "Binath Test Candidate",
+          email: "hdbinath@gmail.com",
+          phone: "+94742625552",
+        });
+      }
+    }
 
-
-
-
-
+    return { success: true, count: apps.length };
+  },
+});

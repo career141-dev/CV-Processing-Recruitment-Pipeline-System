@@ -5,6 +5,8 @@ import { api, internal } from "../_generated/api";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { adjustJobStageStat } from "../jobs/stats";
 import { initiateFollowUpOutreach } from "../pipeline/followUpHelper";
+import { scoreCandidateAgainstRequirements, scoreWithLLM } from "./cvScoring";
+import { getOpenAI, getModelForTask, OPENROUTER_CV_EXTRACTION_MODEL } from "../lib/llm";
 
 // 1. Internal Query to get the necessary data for scoring
 export const getScoringData = internalQuery({
@@ -76,25 +78,25 @@ export const saveMatchScore = internalMutation({
       await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
       await syncCandidateOverallStatus(ctx, args.candidateId);
       
-      await initiateFollowUpOutreach(ctx, args.applicationId);
+      // Automated follow-up outreach disabled on TA shortlist move
+      // await initiateFollowUpOutreach(ctx, args.applicationId);
     }
   },
 });
 
 // 3. Main scoring action — THREE-TIER AI SCORING SYSTEM
 //
-//  Tier 1: NVIDIA 70B (primary — best quality, full reasoning)
+//  Tier 1: DeepSeek (primary — best quality, full reasoning)
 //          3 retries with exponential backoff: 1s → 2s → 4s
 //
-//  Tier 2: NVIDIA 8B (fallback — smaller, faster, avoids rate limits)
-//          2 retries, 1s apart. Uses a shorter prompt to reduce load.
+//  Tier 2: DeepSeek Fallback (short prompt to reduce load)
+//          2 retries, 1s apart.
 //
 //  Tier 3: Smart Heuristic Reason (last resort — zero API calls)
 //          Score  = weighted heuristic score (fair — never 0)
 //          Reason = generated from actual CV breakdown (proper recruiter language)
 //
 //  Result: EVERY candidate ALWAYS gets a real score + proper reason.
-//          "Failed to connect" will NEVER appear in your system again.
 //
 export const processCvScoring = action({
   args: { candidateId: v.id("candidates"), jobId: v.id("jobs") },
@@ -126,7 +128,6 @@ export const processCvScoring = action({
     };
 
     // ── Step 3: Heuristic scoring (always runs — no API needed) ────────
-    const { scoreCandidateAgainstRequirements, scoreWithLLM } = await import("./cvScoring.js");
     const scored = scoreCandidateAgainstRequirements(candidate as any, req as any, 0);
 
     const weightedScore = Math.round(
@@ -138,8 +139,6 @@ export const processCvScoring = action({
     );
 
     // ── Step 4: Smart reason builder (Tier 3 fallback) ─────────────────
-    // Generates a proper recruiter-style reason from heuristic data.
-    // Never shows a generic error message to the TA team.
     function buildHeuristicReason(): string {
       const name     = (candidate as any).fullName || "The candidate";
       const jobTitle = job.title || "this role";
@@ -187,10 +186,11 @@ export const processCvScoring = action({
     let finalReason = buildHeuristicReason(); // safe default
     let scoringTier = "heuristic-smart";
 
-    // ── TIER 1: NVIDIA NIM API (Llama 3.1 70B) — 3 retries ───────────────────
+    const scoringModel = OPENROUTER_CV_EXTRACTION_MODEL;
+
+    // ── TIER 1: OpenRouter DeepSeek — 3 retries ───────────────────
     let tier1Success = false;
-    const { getNvidiaOpenAI, NVIDIA_PRIMARY_MODEL } = await import("../lib/llm.js");
-    let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: NVIDIA_PRIMARY_MODEL };
+    let tier1Usage   = { promptTokens: 0, completionTokens: 0, model: scoringModel };
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -199,7 +199,7 @@ export const processCvScoring = action({
         finalReason  = result.reason;
         tier1Usage   = usage;
         tier1Success = true;
-        scoringTier  = "nvidia-primary";
+        scoringTier  = "deepseek-primary";
         break;
       } catch {
         if (attempt < 3) {
@@ -211,32 +211,31 @@ export const processCvScoring = action({
     // Log Tier 1
     await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
       logs: [{
-        taskType: "jd_matching",
+        taskType: "cv_scoring",
         model:           tier1Usage.model,
         promptTokens:    tier1Usage.promptTokens,
         completionTokens: tier1Usage.completionTokens,
         success: tier1Success,
-        error:   tier1Success ? undefined : "Tier 1 (NVIDIA Llama 3.1 70B) failed after 3 retries",
+        error:   tier1Success ? undefined : "Tier 1 (DeepSeek) failed after 3 retries",
         cvUploadId: candidate.cvUploadId ?? undefined,
+        provider: "openrouter",
       }]
     });
 
-    // ── TIER 2: NVIDIA NIM Fallback — only if Tier 1 failed ──────
+    // ── TIER 2: DeepSeek Fallback — only if Tier 1 failed ──────
     if (!tier1Success) {
-      console.warn(`[Scoring] Tier 1 (${NVIDIA_PRIMARY_MODEL}) failed for ${args.candidateId}. Trying Tier 2 fallback (${NVIDIA_PRIMARY_MODEL})...`);
+      console.warn(`[Scoring] Tier 1 (${scoringModel}) failed for ${args.candidateId}. Trying Tier 2 fallback...`);
 
       let tier2Success = false;
-      const fallbackModel = NVIDIA_PRIMARY_MODEL;
-      let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: fallbackModel };
+      let tier2Usage   = { promptTokens: 0, completionTokens: 0, model: scoringModel };
 
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const nvidia = getNvidiaOpenAI();
-          const model  = fallbackModel;
+          const openrouter = getOpenAI("cv_scoring");
 
           // Shorter prompt — reduces token usage and rate-limit pressure
-          const response = await nvidia.chat.completions.create({
-            model,
+          const response = await openrouter.chat.completions.create({
+            model: scoringModel,
             messages: [
               {
                 role: "system",
@@ -267,10 +266,10 @@ export const processCvScoring = action({
           tier2Usage   = {
             promptTokens:    response.usage?.prompt_tokens    || 0,
             completionTokens: response.usage?.completion_tokens || 0,
-            model,
+            model: scoringModel,
           };
           tier2Success = true;
-          scoringTier  = "nvidia-fallback";
+          scoringTier  = "deepseek-fallback";
           break;
         } catch {
           if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
@@ -280,13 +279,14 @@ export const processCvScoring = action({
       // Log Tier 2
       await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
         logs: [{
-          taskType: "jd_matching",
+          taskType: "cv_scoring",
           model:           tier2Usage.model,
           promptTokens:    tier2Usage.promptTokens,
           completionTokens: tier2Usage.completionTokens,
           success: tier2Success,
-          error:   tier2Success ? undefined : "Tier 2 (NVIDIA) also failed — using Tier 3 heuristic",
+          error:   tier2Success ? undefined : "Tier 2 (DeepSeek) also failed — using Tier 3 heuristic",
           cvUploadId: candidate.cvUploadId ?? undefined,
+          provider: "openrouter",
         }]
       });
 

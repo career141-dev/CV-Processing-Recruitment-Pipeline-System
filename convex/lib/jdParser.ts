@@ -195,16 +195,17 @@ For occupationSynonyms, include alternative job titles that represent the same o
 }
 
 export function buildSearchTerms(req: SearchRequirements, sourceText: string): string[] {
+  // Filter required skills to remove filler words or long sentences
+  const cleanSkills = (req.requiredSkills ?? [])
+    .map((s) => s.replace(/^\*\s*/, "").trim())
+    .filter((s) => s.length > 2 && s.length < 40 && !/^(developing|managing|handling|working|supporting|proven|strong|experience)$/i.test(s));
+
   return distinct([
     req.title,
     ...req.alternativeTitles.slice(0, 4),
     ...req.occupationSynonyms.slice(0, 4),
-    ...req.requiredSkills.slice(0, 6),
-    ...req.preferredSkills.slice(0, 3),
+    ...cleanSkills.slice(0, 6),
+    ...req.preferredSkills.filter((s) => s.length < 35).slice(0, 3),
     ...req.keywords.slice(0, 6),
-    ...sourceText
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 3 && line.length < 140),
-  ]).slice(0, 12);
+  ]).slice(0, 10);
 }

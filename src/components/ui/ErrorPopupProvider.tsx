@@ -154,15 +154,34 @@ export function ErrorPopupProvider({ children }: { children: React.ReactNode }) 
   const [isCopied, setIsCopied] = useState(false);
   const [customAction, setCustomAction] = useState<{ label: string; handler: () => void } | null>(null);
 
-  // Esc key closes modal
+  // Listen for unhandled promise rejections (e.g. background Clerk heartbeat fetch glitches)
   useEffect(() => {
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const msg = String(event.reason?.message || event.reason || "");
+      if (
+        msg.includes("clerk.accounts.dev") ||
+        msg.includes("clerk") && msg.includes("Failed to fetch") ||
+        msg.includes("touch?__clerk") ||
+        msg.includes("ClerkJS: Network error")
+      ) {
+        // Suppress transient background Clerk heartbeat fetch errors to avoid crashing UI
+        event.preventDefault();
+        console.warn("[ClerkJS] Transient network heartbeat error suppressed:", msg);
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
         hideError();
       }
     };
+
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [isOpen]);
 
   const showError = (error: any, optionsOrContext?: ErrorPopupOptions | string) => {

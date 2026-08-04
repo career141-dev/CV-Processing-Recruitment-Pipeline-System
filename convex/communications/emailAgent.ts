@@ -13,6 +13,20 @@ import { getOpenAI, getModelForTask } from "../lib/llm";
 let _cachedToken: string | null = null;
 let _tokenExpiresAt = 0;
 
+async function safeFetchWithRetry(url: string, init: RequestInit, retries: number = 3): Promise<Response | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      return res;
+    } catch (err: any) {
+      console.warn(`[EmailAgent Network] Attempt ${attempt}/${retries} failed for URL (${url.slice(0, 70)}...):`, err.message || err);
+      if (attempt === retries) return null;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return null;
+}
+
 export async function getGraphToken(): Promise<string | null> {
   const tenantId = process.env.MS_GRAPH_TENANT_ID || process.env.MS_TENANT_ID;
   const clientId = process.env.MS_GRAPH_CLIENT_ID || process.env.MS_CLIENT_ID;
@@ -30,7 +44,7 @@ export async function getGraphToken(): Promise<string | null> {
   }
 
   try {
-    const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+    const response = await safeFetchWithRetry(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -41,8 +55,9 @@ export async function getGraphToken(): Promise<string | null> {
       }),
     });
 
-    if (!response.ok) {
-      console.error("[EmailAgent] Failed to fetch Graph token:", await response.text());
+    if (!response || !response.ok) {
+      const errorText = response ? await response.text() : "Network unreachable";
+      console.error("[EmailAgent] Failed to fetch Graph token:", errorText);
       return null;
     }
 
@@ -62,13 +77,13 @@ async function fetchMessageAttachments(inboxEmail: string, messageId: string) {
   if (!token) return [];
 
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments?$select=id,name,contentType,size`;
-    const response = await fetch(url, {
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/messages/${messageId}/attachments?$select=id,name,contentType,size`;
+    const response = await safeFetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (!response.ok) {
-      console.error(`[EmailAgent] Failed to fetch attachments for message ${messageId}:`, await response.text());
+    if (!response || !response.ok) {
+      console.error(`[EmailAgent] Failed to fetch attachments for message ${messageId}`);
       return [];
     }
 
@@ -85,13 +100,13 @@ async function fetchAttachmentContent(inboxEmail: string, messageId: string, att
   if (!token) return null;
 
   try {
-    const url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}/attachments/${attachmentId}`;
-    const response = await fetch(url, {
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/messages/${messageId}/attachments/${attachmentId}`;
+    const response = await safeFetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (!response.ok) {
-      console.error(`[EmailAgent] Failed to fetch attachment content for ${attachmentId}:`, await response.text());
+    if (!response || !response.ok) {
+      console.error(`[EmailAgent] Failed to fetch attachment content for ${attachmentId}`);
       return null;
     }
 
@@ -103,35 +118,41 @@ async function fetchAttachmentContent(inboxEmail: string, messageId: string, att
   }
 }
 
-async function fetchUnreadEmails(inboxEmail: string, lastFetch: string | null) {
+async function fetchInboxEmails(inboxEmail: string, lastFetch: string | null, ignoreReadStatus: boolean = false) {
   const token = await getGraphToken();
   if (!token) return [];
 
-  console.log(`[EmailAgent] Fetching emails for ${inboxEmail} since ${lastFetch || '14 days ago'}`);
+  const bypassReadCheck = ignoreReadStatus;
+
+  console.log(`[EmailAgent] Fetching emails for ${inboxEmail} (bypassReadCheck=${bypassReadCheck}) since ${lastFetch || '30 days ago'}`);
   try {
-    let cutoffDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    let cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     if (lastFetch) {
       const lastFetchTime = new Date(lastFetch).getTime();
-      cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 14 * 24 * 60 * 60 * 1000)).toISOString();
+      cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 30 * 24 * 60 * 60 * 1000)).toISOString();
     }
 
-    // Filter by isRead eq false to avoid processing read emails repeatedly on every 5-min poll cycle
-    let url = `https://graph.microsoft.com/v1.0/users/${inboxEmail}/mailFolders/inbox/messages?$filter=isRead eq false and receivedDateTime ge ${cutoffDate}&$select=id,subject,body,from,hasAttachments,isRead&$top=100`;
+    let filterClause = `hasAttachments eq true and receivedDateTime ge ${cutoffDate}`;
+    if (!bypassReadCheck) {
+      filterClause = `isRead eq false and ` + filterClause;
+    }
+
+    let url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/mailFolders/inbox/messages?$filter=${filterClause}&$select=id,subject,body,from,hasAttachments,isRead,receivedDateTime&$top=100`;
     
     const allMessages: any[] = [];
 
     while (url) {
-      const response = await fetch(url, {
+      const response = await safeFetchWithRetry(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!response.ok) {
-        console.error("[EmailAgent] Failed to fetch emails:", await response.text());
+      if (!response || !response.ok) {
+        console.error("[EmailAgent] Failed to fetch emails:", response ? await response.text() : "Network error");
         break;
       }
 
       const data = await response.json();
-      const messages = (data.value || []).filter((m: any) => !m.isRead);
+      const messages = data.value || [];
       allMessages.push(...messages);
       
       // Handle pagination if more emails exist
@@ -150,7 +171,7 @@ async function markEmailAsRead(inboxEmail: string, messageId: string) {
   if (!token) return;
 
   try {
-    const response = await fetch(`https://graph.microsoft.com/v1.0/users/${inboxEmail}/messages/${messageId}`, {
+    const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(inboxEmail)}/messages/${messageId}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -180,10 +201,15 @@ async function sendConfirmationEmail(toEmail: string, jobId: string) {
 export const pollEmailInbox = action({
   args: { 
     inboxEmail: v.string(), 
-    jobId: v.optional(v.id("jobs")) 
+    jobId: v.optional(v.id("jobs")),
+    ignoreReadStatus: v.optional(v.boolean()),
   },
-  handler: async (ctx, { inboxEmail, jobId }) => {
+  handler: async (ctx, { inboxEmail, jobId, ignoreReadStatus }) => {
     const targetInboxEmail = inboxEmail;
+    if (targetInboxEmail.toLowerCase().includes("sanjeev")) {
+      console.log(`[EmailAgent] Ingestion disabled for ${targetInboxEmail}. Skipping.`);
+      return { success: false, reason: "sanjeev_inbox_disabled" };
+    }
     console.log(`[EmailAgent] Polling inbox: ${targetInboxEmail}`);
     
     // Fetch last check timestamp for this specific inbox
@@ -193,12 +219,12 @@ export const pollEmailInbox = action({
     const currentFetchTime = new Date().toISOString();
     await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime, inboxEmail: targetInboxEmail });
 
-    // 1. Fetch unread emails
-    const messages = await fetchUnreadEmails(targetInboxEmail, lastFetch);
+    // 1. Fetch inbox emails (including read emails for Sanjeev or when ignoreReadStatus is true)
+    const messages = await fetchInboxEmails(targetInboxEmail, lastFetch, ignoreReadStatus ?? false);
     if ((messages as any[]).length > 0) {
-      console.log(`[EmailAgent] Found ${(messages as any[]).length} unread messages.`);
+      console.log(`[EmailAgent] Found ${(messages as any[]).length} target messages in ${targetInboxEmail}.`);
     } else {
-      console.log(`[EmailAgent] No unread messages found.`);
+      console.log(`[EmailAgent] No matching messages found in ${targetInboxEmail}.`);
     }
     
     const allMessages = messages as any[];
@@ -399,6 +425,13 @@ Respond ONLY with a valid JSON object in this exact format:
             .map(b => b.toString(16).padStart(2, "0"))
             .join("");
 
+          // Fast pre-check: skip if attachment hash already exists in cvUploads
+          const isAlreadyIngested = await ctx.runQuery(api.communications.emailAgent.checkFileHashExists, { fileHash });
+          if (isAlreadyIngested) {
+            console.log(`[EmailAgent] Attachment ${attachment.name} (${fileHash.slice(0, 8)}) already ingested. Skipping upload.`);
+            continue;
+          }
+
           // Store in Cloudflare R2
           console.log("USING R2 NOW - UPLOADING TO CLOUDFLARE!");
           s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
@@ -435,6 +468,7 @@ Respond ONLY with a valid JSON object in this exact format:
 
       // Extract details from the email text body (salary, expected salary, notice period) for direct candidate emails
       if (senderEmail && !isLinkedInNoReply && !isInternalTeamEmail) {
+
         await ctx.scheduler.runAfter(0, internal.communications.emailAgent.extractAndApplyEmailBodyDetails, {
           senderEmail,
           emailBody,
@@ -601,8 +635,8 @@ Keep your email response:
    Here are the fields we are still waiting for: ${missingFields.join(", ") || "None (all details captured!)"}.
 Do not mention database fields, variables, or system internals. Write the email body only.`;
 
-    const openai = getOpenAI("jd_matching");
-    const model = getModelForTask("jd_matching");
+    const openai = getOpenAI("email_auto_reply");
+    const model = getModelForTask("email_auto_reply");
 
     console.log(`[EmailAgent AI Reply] Generating LLM response for candidate ${candidate.fullName}...`);
     const completion = await openai.chat.completions.create({
@@ -700,6 +734,9 @@ export const extractAndApplyEmailBodyDetails = internalAction({
     _retryCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    if (args.senderEmail.toLowerCase().includes("sanjeev")) {
+      return;
+    }
     // Give up after 6 retries (6 × 20s = 120s max wait)
     if ((args._retryCount ?? 0) >= 6) {
       console.warn(`[Email Agent Inbound Details] Max retries reached for ${args.senderEmail} — giving up.`);
@@ -769,7 +806,18 @@ export const updateLastEmailFetchTimestamp = internalMutation({
   }
 });
 
-export const processSingleWeekendEmail = action({
+export const checkFileHashExists = query({
+  args: { fileHash: v.string() },
+  handler: async (ctx, { fileHash }) => {
+    const existing = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_fileHash", (q) => q.eq("fileHash", fileHash))
+      .first();
+    return !!existing;
+  },
+});
+
+export const processSingleRecoveredEmail = action({
   args: {
     targetInboxEmail: v.string(),
     messageId: v.string(),
@@ -824,16 +872,16 @@ Respond ONLY with a valid JSON object in this exact format:
           if (resultObj.matchedJobId) {
             const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
             if (matchedJob) {
-              const weekendChannel = (args.targetInboxEmail.toLowerCase() === "linkedin@career141.com" || args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX) ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
-              if (!matchedJob.pausedChannels?.includes(weekendChannel)) {
+              const channel = (args.targetInboxEmail.toLowerCase() === "linkedin@career141.com" || args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX) ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
+              if (!matchedJob.pausedChannels?.includes(channel)) {
                 resolvedJobId = resultObj.matchedJobId;
-                console.log(`[WeekendEmail] AI successfully routed email to job: ${resolvedJobId}`);
+                console.log(`[EmailRecovery] AI successfully routed email to job: ${resolvedJobId}`);
               }
             }
           }
         }
       } catch (error) {
-        console.error("[WeekendEmail] LLM routing failed", error);
+        console.error("[EmailRecovery] LLM routing failed", error);
       }
     }
     }
@@ -882,94 +930,24 @@ Respond ONLY with a valid JSON object in this exact format:
   }
 });
 
-export const recoverWeekendCVs = action({
-  args: {},
-  handler: async (ctx) => {
-    const token = await getGraphToken();
-    if (!token) throw new Error("No Graph token");
-
-    const inboxes = ["cv@career141.com", "job@career141.com", "linkedin@career141.com"];
-    // Weekend dates: July 18 and 19 2026.
-    const startWindow = "2026-07-18T00:00:00Z";
-    const endWindow = "2026-07-20T00:00:00Z";
-
-    let totalRecoveredEmails = 0;
-    let scheduleDelaySecs = 0; // Stagger jobs by 15 seconds
-
-    for (const targetInboxEmail of inboxes) {
-      console.log(`[Weekend Recovery] Checking ${targetInboxEmail}...`);
-      let url = `https://graph.microsoft.com/v1.0/users/${targetInboxEmail}/mailFolders/inbox/messages?$filter=receivedDateTime ge ${startWindow} and receivedDateTime lt ${endWindow}&$select=id,subject,body,from,hasAttachments&$top=100`;
-      
-      const allMessages: any[] = [];
-      while (url) {
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-        if (!response.ok) break;
-        const data = await response.json();
-        allMessages.push(...(data.value || []));
-        url = data["@odata.nextLink"];
-      }
-
-      console.log(`[Weekend Recovery] Found ${allMessages.length} messages in ${targetInboxEmail}. Queueing...`);
-
-      for (const message of allMessages) {
-        let attachments = message.attachments || [];
-        if (message.hasAttachments && attachments.length === 0) {
-          attachments = await fetchMessageAttachments(targetInboxEmail, message.id);
-        }
-
-        const cvAttachments = attachments.filter((a: any) =>
-          a.contentType?.includes("pdf") || a.contentType?.includes("msword") ||
-          a.contentType?.includes("officedocument.wordprocessingml") ||
-          a.name?.toLowerCase().endsWith(".pdf") || a.name?.toLowerCase().endsWith(".doc") ||
-          a.name?.toLowerCase().endsWith(".docx")
-        );
-
-        if (cvAttachments.length === 0) continue;
-
-        const subject = message.subject ?? "";
-        const emailBody = ((typeof message.body === "object" && message.body !== null) ? (message.body.content || "") : (message.body || "")) || message.subject || "";
-        
-        // Pass essential metadata to the background task instead of full attachment content (it will fetch bytes later if needed)
-        const attachMeta = cvAttachments.map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          contentType: a.contentType,
-          contentBytes: a.contentBytes
-        }));
-
-        await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleWeekendEmail, {
-          targetInboxEmail,
-          messageId: message.id,
-          subject,
-          emailBody,
-          rawSender: message.from?.emailAddress?.address,
-          cvAttachments: attachMeta,
-          extractionDelayMs: 0,
-        });
-
-        scheduleDelaySecs += 15; // Queue one email every 15 seconds to avoid 429 Too Many Requests on AI Job Router
-        totalRecoveredEmails++;
-      }
-    }
-
-    console.log(`[Weekend Recovery] Completed Queueing. Scheduled ${totalRecoveredEmails} emails for delayed processing.`);
-    return { success: true, queued: totalRecoveredEmails };
-  }
-});
-
-export const processSingleBulkIngestionEmail = processSingleWeekendEmail;
+export const processSingleWeekendEmail = processSingleRecoveredEmail;
+export const processSingleBulkIngestionEmail = processSingleRecoveredEmail;
 
 export const recoverMailboxCVs = action({
   args: {
-    inboxEmail: v.string(), // Must be explicitly provided (e.g. "cv@career141.com", "job@career141.com")
+    inboxEmail: v.optional(v.string()), // Defaults to "cv@career141.com"
     targetJobId: v.optional(v.id("jobs")),
     daysLookback: v.optional(v.number()), // Default 30 days
   },
   handler: async (ctx, args) => {
+    const targetInboxEmail = args.inboxEmail || "cv@career141.com";
+    if (targetInboxEmail.toLowerCase().includes("sanjeev")) {
+      console.log(`[Mailbox Recovery] Ingestion for ${targetInboxEmail} is disabled. Aborting.`);
+      return { success: false, totalMessagesChecked: 0, cvEmailsQueued: 0, reason: "sanjeev_inbox_disabled" };
+    }
     const token = await getGraphToken();
     if (!token) throw new Error("No Graph token available");
 
-    const targetInboxEmail = args.inboxEmail;
     const days = args.daysLookback ?? 30;
     const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
@@ -980,9 +958,10 @@ export const recoverMailboxCVs = action({
 
     const allMessages: any[] = [];
     while (url) {
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) {
-        console.error(`[Mailbox Recovery] Graph API error: ${await response.text()}`);
+      const response = await safeFetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response || !response.ok) {
+        const errorMsg = response ? await response.text() : "Network failure";
+        console.error(`[Mailbox Recovery] Graph API response error: ${errorMsg}`);
         break;
       }
       const data = await response.json();
@@ -1020,7 +999,7 @@ export const recoverMailboxCVs = action({
         contentBytes: a.contentBytes
       }));
 
-      await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleWeekendEmail, {
+      await ctx.scheduler.runAfter(scheduleDelaySecs * 1000, api.communications.emailAgent.processSingleRecoveredEmail, {
         targetInboxEmail,
         messageId: message.id,
         subject,
@@ -1040,14 +1019,19 @@ export const recoverMailboxCVs = action({
   }
 });
 
-export const checkFileHashExists = query({
-  args: { fileHash: v.string() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("cvUploads")
-      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
-      .first();
-    return existing !== null;
+export const recoverCvFullInbox = action({
+  args: {
+    targetJobId: v.optional(v.id("jobs")),
+    daysLookback: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; totalMessagesChecked: number; cvEmailsQueued: number }> => {
+    const targetInboxEmail = "cv@career141.com";
+    console.log(`[CV Full Recovery] Triggering recovery for ${targetInboxEmail}...`);
+    return await ctx.runAction(api.communications.emailAgent.recoverMailboxCVs, {
+      inboxEmail: targetInboxEmail,
+      targetJobId: args.targetJobId,
+      daysLookback: args.daysLookback ?? 60,
+    });
   },
 });
 

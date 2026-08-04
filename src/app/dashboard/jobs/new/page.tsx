@@ -12,6 +12,13 @@ import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 import { SmartTemplateEditor } from '@/components/ui/SmartTemplateEditor';
 import { Modal } from '@/components/ui/Modal';
 import { MessageTemplatesTab } from '@/components/settings/tabs/MessageTemplatesTab';
+import { SkillsInput } from '@/components/ui/SkillsInput';
+
+function normalizeSkills(val: string[] | string | undefined | null): string[] {
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'string' && val.trim()) return val.split(',').map(s => s.trim()).filter(Boolean);
+  return [];
+}
 
 export default function CreateJobWizard() {
   const { showError } = useErrorPopup();
@@ -71,8 +78,8 @@ export default function CreateJobWizard() {
     confidential: false,
     industry: '',
     jobDescription: '',
-    requiredSkills: '',
-    niceToHaveSkills: '',
+    requiredSkills: [] as string[],
+    niceToHaveSkills: [] as string[],
     seniorityLevel: 'Mid-Level',
     experienceMin: '0',
     experienceMax: '3',
@@ -431,8 +438,8 @@ export default function CreateJobWizard() {
         recruitmentType: formData.recruitmentType.includes("headhunting") && formData.recruitmentType.includes("posting") ? "both" : formData.recruitmentType.includes("headhunting") ? "headhunting" : "job_posting",
         isConfidential: formData.confidential,
         location: formData.location || undefined,
-        requiredSkills: formData.requiredSkills ? formData.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : undefined,
-        niceToHaveSkills: formData.niceToHaveSkills ? formData.niceToHaveSkills.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        requiredSkills: normalizeSkills(formData.requiredSkills).length > 0 ? normalizeSkills(formData.requiredSkills) : undefined,
+        niceToHaveSkills: normalizeSkills(formData.niceToHaveSkills).length > 0 ? normalizeSkills(formData.niceToHaveSkills) : undefined,
         seniorityLevel: formData.seniorityLevel ? formData.seniorityLevel.toLowerCase().replace(/ /g, "_").replace("-", "_") : undefined,
         experienceMinYears: parseInt(formData.experienceMin) || undefined,
         experienceMaxYears: parseInt(formData.experienceMax) || undefined,
@@ -507,8 +514,12 @@ export default function CreateJobWizard() {
         recruitmentType: formData.recruitmentType.includes("headhunting") && formData.recruitmentType.includes("posting") ? "both" : formData.recruitmentType.includes("headhunting") ? "headhunting" : "job_posting",
         isConfidential: formData.confidential,
         jobDescription: formData.jobDescription || "No description provided.",
-        requiredSkills: formData.requiredSkills ? formData.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : ["Not specified"],
-        niceToHaveSkills: formData.niceToHaveSkills ? formData.niceToHaveSkills.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        requiredSkills: normalizeSkills(formData.requiredSkills).length > 0
+          ? normalizeSkills(formData.requiredSkills)
+          : ["Not specified"],
+        niceToHaveSkills: normalizeSkills(formData.niceToHaveSkills).length > 0
+          ? normalizeSkills(formData.niceToHaveSkills)
+          : undefined,
         seniorityLevel: formData.seniorityLevel.toLowerCase().replace(/ /g, "_").replace("-", "_"),
         experienceMinYears: parseInt(formData.experienceMin) || 0,
         experienceMaxYears: parseInt(formData.experienceMax) || undefined,
@@ -699,8 +710,8 @@ export default function CreateJobWizard() {
                 const res = await extractRequirements({ description: formData.jobDescription });
                 setFormData(prev => ({
                   ...prev,
-                  requiredSkills: res.requiredSkills ? res.requiredSkills.join(", ") : "",
-                  niceToHaveSkills: res.niceToHaveSkills ? res.niceToHaveSkills.join(", ") : "",
+                  requiredSkills: res.requiredSkills ? res.requiredSkills : [],
+                  niceToHaveSkills: res.niceToHaveSkills ? res.niceToHaveSkills : [],
                   location: res.location ? res.location : prev.location,
                   jobTitle: res.title ? res.title : prev.jobTitle,
                   industry: res.industry ? res.industry : prev.industry,
@@ -886,14 +897,19 @@ export default function CreateJobWizard() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Required Skills *</label>
-            <input type="text" className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.requiredSkills} onChange={e => updateFormData('requiredSkills', e.target.value)} placeholder="Comma separated (e.g. React, Node.js)" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Nice-to-Have Skills</label>
-            <input type="text" className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.niceToHaveSkills} onChange={e => updateFormData('niceToHaveSkills', e.target.value)} placeholder="Comma separated" />
-          </div>
+          <SkillsInput
+            label="Required Skills"
+            required
+            skills={formData.requiredSkills}
+            onChange={(skills) => setFormData(prev => ({ ...prev, requiredSkills: skills }))}
+            placeholder="Type required skill (e.g. React.js) and press Enter, comma, or click Add..."
+          />
+          <SkillsInput
+            label="Nice-to-Have Skills"
+            skills={formData.niceToHaveSkills}
+            onChange={(skills) => setFormData(prev => ({ ...prev, niceToHaveSkills: skills }))}
+            placeholder="Type nice-to-have skill (e.g. AWS) and press Enter, comma, or click Add..."
+          />
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1.5">Languages Required</label>
             <input type="text" className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.languages} onChange={e => updateFormData('languages', e.target.value)} placeholder="e.g. English, Arabic" />
@@ -1951,7 +1967,7 @@ export default function CreateJobWizard() {
             <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">Requirements</p>
             <div className="space-y-2">
               <div className="flex flex-wrap gap-1.5">
-                {formData.requiredSkills ? formData.requiredSkills.split(',').map(s => s.trim()).filter(Boolean).map(s => (
+                {normalizeSkills(formData.requiredSkills).length > 0 ? normalizeSkills(formData.requiredSkills).map(s => (
                   <span key={s} className="text-[10px] bg-primary-container/10 text-primary-container border border-primary-container/20 px-2 py-0.5 rounded-full">{s}</span>
                 )) : <span className="text-xs text-text-secondary italic">No skills added</span>}
               </div>

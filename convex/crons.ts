@@ -25,7 +25,7 @@ export const evaluateFollowUpStage = internalMutation({
 
     const followUpApps = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .take(20);
+      .take(200);
 
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;

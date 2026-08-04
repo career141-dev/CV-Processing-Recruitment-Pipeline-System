@@ -4,33 +4,75 @@ import OpenAI from "openai";
 import type { ActionCtx } from "../_generated/server";
 
 
-export type TaskType = "cv_structuring" | "jd_extraction" | "jd_matching" | "email_routing" | "cv_vision_ocr";
+export type TaskType = 
+  | "cv_structuring" 
+  | "cv_scoring" 
+  | "reverse_matching" 
+  | "search_ranking" 
+  | "jd_extraction" 
+  | "email_routing" 
+  | "email_auto_reply" 
+  | "cv_vision_ocr" 
+  | "embedding"
+  | "jd_matching";
 
 export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
-  return taskType === "cv_structuring" || taskType === "cv_vision_ocr" || taskType === "email_routing" || taskType === "jd_matching";
+  return (
+    taskType === "cv_structuring" ||
+    taskType === "cv_scoring" ||
+    taskType === "reverse_matching" ||
+    taskType === "email_routing" ||
+    taskType === "email_auto_reply" ||
+    taskType === "jd_matching"
+  );
 };
 
 export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
 export const OPENROUTER_PRIMARY_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
-export const OPENROUTER_SCANNED_CV_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
+export const OPENROUTER_VISION_MODEL = "google/gemini-2.0-flash-lite-001";
+export const OPENROUTER_SCANNED_CV_MODEL = OPENROUTER_VISION_MODEL;
 export const OPENROUTER_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
+export const OPENROUTER_VISION_FALLBACK_MODELS = [
+  OPENROUTER_VISION_MODEL,
+];
 export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.1-70b-instruct";
 export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
 
 export function getModelForTask(taskType: TaskType | string): string {
+  if (taskType === "cv_vision_ocr") {
+    return OPENROUTER_VISION_MODEL;
+  }
   if (IS_CV_EXTRACTION_TASK(taskType)) {
     return OPENROUTER_CV_EXTRACTION_MODEL;
   }
   return NVIDIA_PRIMARY_MODEL;
 }
 
+let openRouterKeyIndex = 0;
+
 export function getOpenAI(taskType: TaskType | string): OpenAI {
   if (IS_CV_EXTRACTION_TASK(taskType)) {
-    const apiKey = process.env.OPENROUTER_API_KEY || "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";
-    if (!apiKey) {
-      throw new Error("OPENROUTER_API_KEY is not set");
+    // Collect all available OpenRouter API keys from environment variables for round-robin rotation
+    const keysFromEnv = [
+      process.env.OPENROUTER_API_KEY,
+      process.env.OPENROUTER_API_KEY_1,
+      process.env.OPENROUTER_API_KEY_2,
+      process.env.OPENROUTER_API_KEY_3,
+      process.env.OPENROUTER_API_KEY_4,
+      process.env.OPENROUTER_API_KEYS, // Comma-separated list option
+    ]
+      .filter(Boolean)
+      .flatMap((val) => (val ? val.split(",") : []))
+      .map((k) => k.trim())
+      .filter((k) => k.length > 10);
+
+    if (keysFromEnv.length === 0) {
+      throw new Error("OPENROUTER_API_KEY is not set in environment variables");
     }
+
+    // Select key using round-robin index
+    const apiKey = keysFromEnv[openRouterKeyIndex++ % keysFromEnv.length];
 
     return new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",

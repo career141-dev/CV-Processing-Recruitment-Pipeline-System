@@ -68,6 +68,7 @@ if (typeof (globalThis as any).DOMMatrix === "undefined") {
 }
 
 import { Jimp } from "jimp";
+import { recognize } from "tesseract.js";
 
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
@@ -109,7 +110,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, executeLLMWithNvidiaFallback, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, getModelForTask, executeLLMWithNvidiaFallback, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
 // Types & Schemas
@@ -275,19 +276,56 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
   }
 }
 
+async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string> {
+  try {
+    ensureDOMMatrixPolyfill();
+    // @ts-ignore
+    const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    const pdfDocument = await loadingTask.promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdfDocument.numPages; i++) {
+      const page = await pdfDocument.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => ("str" in item ? item.str : ""))
+        .join(" ");
+      fullText += pageText + "\n";
+    }
+
+    return fullText.trim();
+  } catch (err: any) {
+    console.warn("[pdfjs-dist] PDF text extraction error:", err.message || err);
+    return "";
+  }
+}
+
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
-  return new Promise((resolve, reject) => {
-    try {
+  ensureDOMMatrixPolyfill();
+
+  // Primary PDF extractor: Mozilla pdfjs-dist (handles FlateDecode, CID fonts, & complex PDF structures)
+  const pdfJsText = await extractTextFromPdfWithPdfJs(buffer);
+  if (pdfJsText && pdfJsText.length >= 30) {
+    return pdfJsText;
+  }
+
+  try {
+    return await new Promise((resolve, reject) => {
       const PDFParser = require("pdf2json");
       const pdfParser = new PDFParser(null, 1);
       pdfParser.on("pdfParser_dataError", (errData: any) => {
-        console.warn("[pdf2json] Parser error, attempting raw stream fallback:", errData.parserError);
+        console.warn("[pdf2json] Parser error, attempting raw stream fallback:", errData?.parserError || errData);
         const fallbackText = extractRawPdfStreamTextFallback(buffer);
         if (fallbackText.trim().length >= 30) {
           console.log(`[extractTextFromPdf] Recovered ${fallbackText.trim().length} chars via raw stream fallback!`);
           resolve(fallbackText);
         } else {
-          reject(errData.parserError);
+          resolve(fallbackText || "");
         }
       });
       pdfParser.on("pdfParser_dataReady", () => {
@@ -299,19 +337,14 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
             return;
           }
         }
-        resolve(text);
+        resolve(text || "");
       });
       pdfParser.parseBuffer(Buffer.from(buffer));
-    } catch (error) {
-      console.warn("PDF extraction exception, attempting raw stream fallback:", error);
-      const fallbackText = extractRawPdfStreamTextFallback(buffer);
-      if (fallbackText.trim().length >= 30) {
-        resolve(fallbackText);
-      } else {
-        reject(error);
-      }
-    }
-  });
+    });
+  } catch (err: any) {
+    console.warn("[pdf2json] Uncaught parser exception, using raw stream fallback:", err.message || err);
+    return extractRawPdfStreamTextFallback(buffer);
+  }
 }
 
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
@@ -325,6 +358,11 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
 }
 
 function ensureDOMMatrixPolyfill() {
+  if (typeof (Promise as any).try === "undefined") {
+    (Promise as any).try = function (fn: Function, ...args: any[]) {
+      return new Promise((resolve) => resolve(fn(...args)));
+    };
+  }
   if (typeof (globalThis as any).DOMMatrix === "undefined") {
     class DOMMatrixPolyfill {
       a: number; b: number; c: number; d: number; e: number; f: number;
@@ -563,26 +601,57 @@ async function extractImagesFromPdfBuffer(
 }
 
 
+export async function extractTextWithTesseract(
+  buffer: ArrayBuffer,
+  fileType: string
+): Promise<string> {
+  const type = fileType.toLowerCase();
+  console.log(`[Tesseract OCR] Running Tesseract OCR on document (${type})...`);
+
+  try {
+    if (type === "pdf" || type === "application/pdf") {
+      const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
+      if (!pageImages || pageImages.length === 0) {
+        console.warn("[Tesseract OCR] Could not render page images from PDF for Tesseract OCR");
+        return "";
+      }
+
+      let fullText = "";
+      for (let i = 0; i < pageImages.length; i++) {
+        const pageImg = pageImages[i];
+        console.log(`[Tesseract OCR] Running Tesseract OCR on page ${i + 1}/${pageImages.length}...`);
+        const result = await recognize(pageImg, "eng");
+        if (result?.data?.text) {
+          fullText += `\n${result.data.text}`;
+        }
+      }
+      console.log(`[Tesseract OCR] Tesseract OCR completed. Extracted ${fullText.trim().length} characters.`);
+      return fullText.trim();
+    } else {
+      const imageBuffer = Buffer.from(buffer);
+      console.log(`[Tesseract OCR] Running Tesseract OCR on image file...`);
+      const result = await recognize(imageBuffer, "eng");
+      const text = result?.data?.text || "";
+      console.log(`[Tesseract OCR] Tesseract OCR completed. Extracted ${text.trim().length} characters.`);
+      return text.trim();
+    }
+  } catch (err: any) {
+    console.error("[Tesseract OCR] Tesseract OCR failed:", err.message || err);
+    return "";
+  }
+}
+
 async function extractTextFromImage(
   buffer: ArrayBuffer,
   fileType: string,
   ctx?: ActionCtx,
   cvUploadId?: Id<"cvUploads">
 ): Promise<string> {
-  if (!ctx) {
-    throw new Error("Image CV extraction requires Vision OCR, but ActionCtx was not provided.");
+  const tesseractText = await extractTextWithTesseract(buffer, fileType);
+  if (!tesseractText || tesseractText.trim().length < 20) {
+    throw new Error("Insufficient text extracted from image (Tesseract OCR returned less than 20 characters).");
   }
-
-  const mimeType = fileType.toLowerCase().includes("png") ? "image/png" : "image/jpeg";
-  const base64Str = Buffer.from(buffer).toString("base64");
-  const dataUrl = `data:${mimeType};base64,${base64Str}`;
-
-  const visionText = await callNvidiaVisionOCR(ctx, [dataUrl], cvUploadId);
-  if (!visionText || visionText.trim().length < 20) {
-    throw new Error("Insufficient text extracted from image (Vision OCR returned less than 20 characters).");
-  }
-
-  return visionText;
+  return tesseractText;
 }
 
 export async function extractText(
@@ -603,32 +672,22 @@ export async function extractText(
       console.warn("[extractText] Standard PDF text extraction failed:", e);
     }
 
-    // Condition: If pdf2json extracts >= 50 characters, use normal text extraction path!
     if (pdfText && pdfText.trim().length >= 50) {
       return { text: pdfText, extractionModel: "deepseek-v4-flash" };
     }
 
-    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Falling through to Vision LLM fallback (vision-llama32)...`);
+    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Sending scanned document to Tesseract OCR...`);
 
-    if (!ctx) {
-      throw new Error("PDF text extraction returned less than 50 characters, and ActionCtx is missing for Vision OCR fallback.");
+    const tesseractText = await extractTextWithTesseract(buffer, fileType);
+    if (tesseractText && tesseractText.trim().length >= 20) {
+      return { text: tesseractText, extractionModel: "ocr-tesseract" };
     }
 
-    const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
-    if (!pageImages || pageImages.length === 0) {
-      if (pdfText && pdfText.trim().length > 0) {
-        console.warn(`[extractText] Scanned PDF image extraction returned 0 images. Falling back to pdfText (${pdfText.trim().length} chars).`);
-        return { text: pdfText, extractionModel: "deepseek-v4-flash" };
-      }
-      throw new Error("Scanned PDF text extraction failed: less than 50 characters extracted and no scanned page images could be extracted from PDF.");
+    if (pdfText && pdfText.trim().length > 0) {
+      return { text: pdfText, extractionModel: "deepseek-v4-flash" };
     }
 
-    const visionText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
-    if (!visionText || visionText.trim().length < 20) {
-      throw new Error("Insufficient text extracted from scanned PDF (Vision OCR returned less than 20 characters).");
-    }
-
-    return { text: visionText, extractionModel: "vision-llama32" };
+    throw new Error("Tesseract OCR extraction failed: Insufficient text extracted from scanned document.");
   }
 
   // 2. DOCX / DOC
@@ -1036,10 +1095,10 @@ export async function runCvExtraction(
         });
       }
 
-      // First try: call OpenRouter LLM (OPENROUTER_PRIMARY_MODEL) with extracted text
+      // First try: Single call to OpenRouter LLM (DeepSeek V4 Flash) with standard extracted text
       let [extractedData, embeddingResult] = await Promise.all([
         callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
-          console.warn("[CvExtraction] First call to callOpenRouterLLM failed:", err.message || err);
+          console.warn("[CvExtraction] First call to OpenRouter LLM failed:", err.message || err);
           return null;
         }),
         generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
@@ -1050,24 +1109,31 @@ export async function runCvExtraction(
 
       extracted = extractedData;
 
-      // Fallback: If primary LLM failed on standard text, and document is PDF where Vision OCR hasn't run yet
-      if (!extracted && (fileType.toLowerCase() === "pdf" || fileType.toLowerCase() === "application/pdf")) {
-        console.warn(`[CvExtraction] OpenRouter LLM extraction returned null for standard text. Attempting Gemma 4 26B Vision OCR fallback...`);
+      // Fallback: If OpenRouter LLM failed once on standard text, send CV to Tesseract OCR, then pass text to OpenRouter DeepSeek
+      if (!extracted) {
+        console.warn(`[CvExtraction] OpenRouter LLM initial call failed. Sending CV to Tesseract OCR...`);
         try {
-          const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
-          if (pageImages && pageImages.length > 0) {
-            const visionRawText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
-            const cleanedVision = cleanRawText(visionRawText).trim();
-            if (cleanedVision.length >= 20) {
-              cappedRawText = cleanedVision.length > MAX_RAW_TEXT_LENGTH
-                ? cleanedVision.slice(0, MAX_RAW_TEXT_LENGTH)
-                : cleanedVision;
-              console.log(`[CvExtraction] Vision OCR transcribed ${cappedRawText.length} characters. Passing raw text back to DeepSeek V4 Flash for candidate detail extraction...`);
-              extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel);
+          const tesseractRawText = await extractTextWithTesseract(buffer, fileType);
+          const cleanedTesseract = cleanRawText(tesseractRawText).trim();
+
+          if (cleanedTesseract.length >= 20) {
+            cappedRawText = cleanedTesseract.length > MAX_RAW_TEXT_LENGTH
+              ? cleanedTesseract.slice(0, MAX_RAW_TEXT_LENGTH)
+              : cleanedTesseract;
+            console.log(`[CvExtraction] Tesseract OCR extracted ${cappedRawText.length} characters. Passing text to OpenRouter DeepSeek model...`);
+            
+            // Single call to OpenRouter DeepSeek with Tesseract text
+            extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
+              console.error("[CvExtraction] OpenRouter DeepSeek call on Tesseract OCR text failed:", err.message || err);
+              return null;
+            });
+
+            if (extracted && !embeddingResult) {
+              embeddingResult = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch(() => undefined);
             }
           }
-        } catch (visionFallbackErr: any) {
-          console.error("[CvExtraction] Vision OCR fallback attempt failed:", visionFallbackErr.message || visionFallbackErr);
+        } catch (tesseractErr: any) {
+          console.error("[CvExtraction] Tesseract OCR fallback attempt failed:", tesseractErr.message || tesseractErr);
         }
       }
 
@@ -1223,7 +1289,7 @@ export async function runCvExtraction(
     const isTransientLLMError = message.includes("timeout") || message.includes("invalid response") || message.toLowerCase().includes("timed out");
     const isNotACV = message.includes("NOT_A_CV");
 
-    const shouldRetry = (isRateLimit || isTransientLLMError) && ((args as any).retryCount ?? 0) < 5;
+    const shouldRetry = false; // Do not auto-retry 5-6 times on failure; single pass only
 
     // Clean up the blank candidate stub since extraction failed
     if (candidateId) {
@@ -1452,17 +1518,13 @@ Respond ONLY with a valid JSON object in this exact format:
   "matchedJobId": "string ID of the matched job, or null if no confident match"
 }`;
 
-      const openai = getOpenAI("email_routing");
-      const model = OPENROUTER_CV_EXTRACTION_MODEL || "openai/gpt-4o-mini";
-
-      const completion = await openai.chat.completions.create({
-        model: model,
+      const { content: resultStr } = await executeLLMWithNvidiaFallback(ctx, "email_routing", {
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
         temperature: 0.1,
+        sourceChannel: args.sourceChannel,
       });
 
-      const resultStr = completion.choices[0]?.message?.content;
       if (resultStr) {
         const resultObj = JSON.parse(resultStr);
         if (resultObj.matchedJobId) {

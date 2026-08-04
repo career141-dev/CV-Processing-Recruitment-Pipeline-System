@@ -1179,8 +1179,8 @@ export async function scoreWithLLM(
   result: { score: number; reason: string };
   usage: { promptTokens: number; completionTokens: number; model: string };
 }> {
-  const model = getModelForTask("jd_matching");
-  const openai = getOpenAI("jd_matching");
+  const model = getModelForTask("cv_scoring");
+  const openai = getOpenAI("cv_scoring");
 
   try {
     const candidateObj = cv.cv || cv;
@@ -1326,17 +1326,18 @@ export type BatchScoreResult = {
 
 export async function scoreBatchWithLLM(
   candidates: ScoredCandidate[],
-  req: SearchRequirements
+  req: SearchRequirements,
+  taskType: string = "search_ranking"
 ): Promise<BatchScoreResult> {
   if (candidates.length === 0) {
     return {
       evaluations: new Map(),
-      usage: { promptTokens: 0, completionTokens: 0, model: getModelForTask("jd_matching") },
+      usage: { promptTokens: 0, completionTokens: 0, model: getModelForTask(taskType) },
     };
   }
 
-  const model = getModelForTask("jd_matching");
-  const openai = getOpenAI("jd_matching");
+  const model = getModelForTask(taskType);
+  const openai = getOpenAI(taskType);
 
   const reqSkills = Array.isArray(req.requiredSkills) ? req.requiredSkills.join(", ") : "Not specified";
   const prefSkills = Array.isArray(req.preferredSkills) ? req.preferredSkills.join(", ") : "None";

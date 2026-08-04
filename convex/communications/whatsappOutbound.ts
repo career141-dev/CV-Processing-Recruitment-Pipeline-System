@@ -216,6 +216,26 @@ export const sendWhatsApp = internalAction({
     body: v.string(),
   },
   handler: async (ctx, args) => {
+    // Check communication status & stage guard — DO NOT send automated follow-up if candidate moved out of follow_up stage (e.g. to ta_shortlist)
+    const commRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getCommunicationRecord, { communicationId: args.communicationId });
+    if (commRecord?.stoppedSequence || commRecord?.deliveryStatus === "failed") {
+      console.log(`[WhatsApp Outbound] Communication ${args.communicationId} was cancelled/stopped. Skipping delivery.`);
+      return;
+    }
+
+    if (commRecord?.applicationId) {
+      const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
+      if (appRecord && appRecord.currentStage !== "follow_up") {
+        console.log(`[WhatsApp Outbound] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up"). Aborting WhatsApp follow-up delivery.`);
+        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+          communicationId: args.communicationId,
+          status: "failed",
+          error: `Cancelled: Application is in stage ${appRecord.currentStage}`,
+        });
+        return;
+      }
+    }
+
     // 1. Fetch candidate contact details
     const candidate = await ctx.runQuery(api.candidates.candidates.getCandidate, {
       id: args.candidateId,
@@ -269,7 +289,6 @@ export const sendWhatsApp = internalAction({
         return;
       }
     }
-
     // 3. Send message to WhatChimp API
     try {
       const baseApiToken = process.env.WHATCHIMP_API_TOKEN;
@@ -557,6 +576,20 @@ export const processLocalWhatsappInbound = internalMutation({
         : null,
       history,
     };
+  },
+});
+
+export const getCommunicationRecord = internalQuery({
+  args: { communicationId: v.id("communications") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.communicationId);
+  },
+});
+
+export const getApplicationRecord = internalQuery({
+  args: { applicationId: v.id("applications") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.applicationId);
   },
 });
 

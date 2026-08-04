@@ -8,6 +8,32 @@ import { requireFullAccess } from "../lib/permissions";
 
 
 
+export const listCandidates = query({
+  args: {
+    paginationOpts: v.optional(v.any()),
+    searchQuery: v.optional(v.string()),
+    overallStatus: v.optional(v.string()),
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const apps = await ctx.db.query("candidates").order("desc").take(50);
+    return { page: apps, isDone: true, continueCursor: "" };
+  },
+});
+
+export const getCandidatesForJob = query({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .collect();
+    const candidateIds = apps.map((a) => a.candidateId);
+    const candidates = await Promise.all(candidateIds.map((id) => ctx.db.get(id)));
+    return candidates.filter(Boolean);
+  },
+});
+
 export const listCandidatesByIds = query({
   args: { ids: v.array(v.id("candidates")) },
   handler: async (ctx, args) => {

@@ -1,5 +1,5 @@
 import { query, mutation } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags, initiateFollowUpOutreach } from "../pipeline/followUpHelper";
@@ -84,12 +84,6 @@ export const getByJobId = query({
       const dbCandidate = await ctx.db.get(app.candidateId);
       
       const cvUploadId = dbCandidate?.cvUploadId || app.candidateCvUploadId;
-      if (cvUploadId) {
-        const cvUpload = await ctx.db.get(cvUploadId as any);
-        if (cvUpload && (cvUpload as any).isMissingMigrationFile) {
-          return null; // Hide candidates that are pending migration
-        }
-      }
 
       let candidateObj: any = dbCandidate ? {
         ...dbCandidate,
@@ -349,9 +343,13 @@ export const createApplication = mutation({
     if (existing) {
       let updates: any = {};
       
-      if (existing.currentStage === "new_cvs" && args.sourceChannel === "database") {
+      if (args.sourceChannel === "database" || existing.currentStage === "new_cvs" || existing.currentStage === "rejected") {
         updates.currentStage = "matched_candidates" as any;
         updates.lastStageChangedAt = Date.now();
+      }
+
+      if (existing.isActive === false) {
+        updates.isActive = true;
       }
       
       if (args.cvFileId && existing.cvFileId !== args.cvFileId) {
@@ -391,6 +389,15 @@ export const createApplication = mutation({
           await checkAndAdvanceFollowUp(ctx, args.candidateId);
         }
       }
+
+      // Trigger AI scoring if score is missing or when adding from database
+      if (!existing.aiMatchScore && args.sourceChannel === "database") {
+        await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+          candidateId: args.candidateId,
+          jobId: args.jobId,
+        });
+      }
+
       return existing._id;
     }
 
@@ -423,6 +430,13 @@ export const createApplication = mutation({
       metaAdId: args.metaSourceId, // Store sourceId as AdId
       metaConversionSentFor: [],
     });
+
+    if (args.sourceChannel === "database") {
+      await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+        candidateId: args.candidateId,
+        jobId: args.jobId,
+      });
+    }
     
     await adjustJobStageStat(ctx, args.jobId, null, initialStage as any, true);
     await adjustGlobalStat(ctx, "new_application");

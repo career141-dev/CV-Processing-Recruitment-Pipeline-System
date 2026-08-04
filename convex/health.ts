@@ -3,6 +3,7 @@ import { api } from "./_generated/api";
 import OpenAI from "openai";
 import { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { initiateFollowUpOutreach } from "./pipeline/followUpHelper";
 
 export const ping = query({
   args: {},
@@ -290,6 +291,241 @@ export const reprocessSingleUpload = action({
     });
     
     return { success: true };
+  },
+});
+
+export const resetBinathToNewCvs = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const job = await ctx.db
+      .query("jobs")
+      .withIndex("by_keyword", (q) => q.eq("keyword", "DEV-TEST"))
+      .first();
+
+    if (!job) throw new Error("DEV-TEST job not found");
+
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_jobId", (q) => q.eq("jobId", job._id))
+      .collect();
+
+    for (const app of apps) {
+      await ctx.db.patch(app._id, {
+        currentStage: "new_cvs",
+        followUpEnteredAt: undefined,
+        followUpState: undefined,
+        followUpCvReceived: false,
+        followUpCurrentSalary: false,
+        followUpExpectedSalary: false,
+        followUpNoticePeriod: false,
+        lastStageChangedAt: Date.now(),
+        isActive: true,
+      });
+
+      const candidate = await ctx.db.get(app.candidateId);
+      if (candidate) {
+        await ctx.db.patch(candidate._id, {
+          fullName: "Binath Test Candidate",
+          email: "hdbinath@gmail.com",
+          phone: "+94742625552",
+          currentSalary: undefined,
+          expectedSalary: undefined,
+          noticePeriodDays: undefined,
+          cvUploadId: undefined,
+        });
+      }
+    }
+
+    return { success: true, count: apps.length };
+  },
+});
+
+export const triggerShortlistFollowUpInternal = mutation({
+  args: { applicationId: v.id("applications") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "ta_shortlist",
+      followUpEnteredAt: Date.now(),
+      lastStageChangedAt: Date.now(),
+    });
+    const commId = await initiateFollowUpOutreach(ctx, args.applicationId);
+    return { success: true, commId };
+  },
+});
+
+export const addTestCandidateForDevJob = mutation({
+  args: {
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetEmail = args.email || "hdbinath@gmail.com";
+    const targetPhone = args.phone || "0742625552";
+    const formattedPhone = targetPhone.startsWith("+") ? targetPhone : `+94${targetPhone.replace(/^0/, "")}`;
+
+    // 1. Find Development Test Job
+    let job = await ctx.db
+      .query("jobs")
+      .withIndex("by_keyword", (q) => q.eq("keyword", "DEV-TEST"))
+      .first();
+
+    if (!job) {
+      const allJobs = await ctx.db.query("jobs").collect();
+      job = allJobs.find(j => j.title.toLowerCase().includes("development test")) || null;
+    }
+
+    if (!job) {
+      throw new Error("Development Test Job not found in database");
+    }
+
+    // 2. Find or Create Candidate
+    let candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_email", (q) => q.eq("email", targetEmail))
+      .first();
+
+    let candidateId;
+    const now = Date.now();
+
+    if (candidate) {
+      candidateId = candidate._id;
+      await ctx.db.patch(candidateId, {
+        fullName: "Binath Test Candidate",
+        phone: formattedPhone,
+      });
+    } else {
+      candidateId = await ctx.db.insert("candidates", {
+        fullName: "Binath Test Candidate",
+        email: targetEmail,
+        phone: formattedPhone,
+        currentJobTitle: "Software Developer",
+        totalExperienceYears: 3,
+        status: "active",
+        overallStatus: "new_cvs",
+      });
+    }
+
+    // 3. Find or Create Application in "new_cvs" stage
+    let app = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", candidateId))
+      .filter((q) => q.eq(q.field("jobId"), job._id))
+      .first();
+
+    let applicationId;
+    if (app) {
+      applicationId = app._id;
+      await ctx.db.patch(app._id, {
+        currentStage: "new_cvs",
+        isActive: true,
+        candidateName: "Test Candidate (Binath)",
+        candidateEmail: targetEmail,
+        candidatePhone: formattedPhone,
+        lastStageChangedAt: now,
+      });
+    } else {
+      applicationId = await ctx.db.insert("applications", {
+        candidateId,
+        jobId: job._id,
+        sourceChannel: "email",
+        candidateName: "Test Candidate (Binath)",
+        candidateEmail: targetEmail,
+        candidatePhone: formattedPhone,
+        currentStage: "new_cvs",
+        loopIteration: 1,
+        isActive: true,
+        lastStageChangedAt: now,
+        createdAt: now,
+      });
+    }
+
+    return {
+      success: true,
+      jobId: job._id,
+      jobTitle: job.title,
+      candidateId,
+      applicationId,
+      email: targetEmail,
+      phone: formattedPhone,
+    };
+  },
+});
+
+export const getCvSourceBreakdown = query({
+  args: {},
+  handler: async (ctx) => {
+    const uploads = await ctx.db.query("cvUploads").collect();
+    const apps = await ctx.db.query("applications").collect();
+
+    const uploadSources: Record<string, number> = {};
+    for (const u of uploads) {
+      const src = u.source || "unknown";
+      uploadSources[src] = (uploadSources[src] || 0) + 1;
+    }
+
+    const appSources: Record<string, number> = {};
+    for (const a of apps) {
+      const src = a.sourceChannel || "unknown";
+      appSources[src] = (appSources[src] || 0) + 1;
+    }
+
+    // Ingestion log inspect
+    const logs = await ctx.db.query("ingestionLog").take(100);
+    const logSources: Record<string, number> = {};
+    for (const l of logs) {
+      const src = (l as any).channelType || (l as any).channel || "unknown";
+      logSources[src] = (logSources[src] || 0) + 1;
+    }
+
+    return {
+      totalUploads: uploads.length,
+      uploadSources,
+      totalApplications: apps.length,
+      appSources,
+      logSourcesSample: logSources,
+    };
+  },
+});
+
+export const lookupCandidateDetails = query({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    // Look at most recent 300 candidates first
+    const candidates = await ctx.db.query("candidates").order("desc").take(300);
+    const candidate = candidates.find(c => c.fullName?.toLowerCase().includes(args.name.toLowerCase()));
+    if (!candidate) return null;
+
+    const cvUpload = candidate.cvUploadId ? await ctx.db.get(candidate.cvUploadId) : null;
+    const application = await ctx.db.query("applications").withIndex("by_candidateId", (q) => q.eq("candidateId", candidate._id)).first();
+
+    return {
+      candidate: {
+        _id: candidate._id,
+        fullName: candidate.fullName,
+        email: candidate.email,
+        phone: candidate.phone,
+        currentTitle: candidate.currentTitle,
+        sourceChannel: candidate.sourceChannel,
+        _creationTime: candidate._creationTime,
+      },
+      cvUpload: cvUpload ? {
+        _id: cvUpload._id,
+        fileName: cvUpload.fileName,
+        source: cvUpload.source,
+        uploadedBy: cvUpload.uploadedBy,
+        campaignLabel: cvUpload.campaignLabel,
+        rawSender: (cvUpload as any).rawSender,
+        targetInboxEmail: (cvUpload as any).targetInboxEmail,
+        _creationTime: cvUpload._creationTime,
+      } : null,
+      application: application ? {
+        _id: application._id,
+        jobId: application.jobId,
+        currentStage: application.currentStage,
+        sourceChannel: application.sourceChannel,
+        _creationTime: application._creationTime,
+      } : null,
+    };
   },
 });
 
