@@ -450,17 +450,16 @@ export const checkAndRecordFollowUpReply = internalMutation({
 
     if (!candidate) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
-    // Find active application for this candidate (non-rejected/non-placed)
-    const activeApp = await ctx.db
+    const apps = await ctx.db
       .query("applications")
-      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate!._id))
-      .filter((q: any) =>
-        q.and(
-          q.neq(q.field("currentStage"), "rejected"),
-          q.neq(q.field("currentStage"), "placed")
-        )
-      )
-      .first();
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+      .collect();
+
+    const activeApp = apps.find(
+      (a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed"
+    );
+
+    console.log(`[checkAndRecordFollowUpReply] Sender: ${args.senderPhone} -> Candidate: ${candidate.fullName} (${candidate._id}). Active stage: ${activeApp?.currentStage || "NONE"}`);
 
     if (!activeApp) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
