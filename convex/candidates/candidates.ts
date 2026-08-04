@@ -673,6 +673,7 @@ export const createCandidate = mutation({
 
 export const clearAll = mutation({
   handler: async (ctx) => {
+    await requireFullAccess(ctx);
     const all = await ctx.db.query("candidates").collect();
     for (const doc of all) {
       await ctx.db.delete(doc._id);
@@ -683,6 +684,7 @@ export const clearAll = mutation({
 
 export const clearDocuments = mutation({
   handler: async (ctx) => {
+    await requireFullAccess(ctx);
     const all = await ctx.db.query("documents").collect();
     for (const doc of all) {
       await ctx.db.delete(doc._id);
@@ -693,6 +695,7 @@ export const clearDocuments = mutation({
 
 export const clearOrphanedUploads = mutation({
   handler: async (ctx) => {
+    await requireFullAccess(ctx);
     let deletedCount = 0;
     const allUploads = await ctx.db.query("cvUploads").collect();
     

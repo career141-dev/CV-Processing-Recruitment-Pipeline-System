@@ -4,6 +4,15 @@ import { v } from "convex/values";
 import { getOpenAI, getModelForTask } from "../lib/llm";
 
 export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
+  const webhookSecret = process.env.WHATCHIMP_WEBHOOK_SECRET;
+  if (webhookSecret) {
+    const receivedSecret = request.headers.get("x-whatchimp-secret") || request.headers.get("x-webhook-secret") || new URL(request.url).searchParams.get("secret");
+    if (receivedSecret !== webhookSecret) {
+      console.warn("[WhatChimp Webhook] Unauthorized request missing valid secret.");
+      return new Response("Unauthorized", { status: 401 });
+    }
+  }
+
   const bodyText = await request.text();
   console.log("[WhatChimp Webhook] Raw body received:", bodyText);
 

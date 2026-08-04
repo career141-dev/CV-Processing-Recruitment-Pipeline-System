@@ -7,6 +7,7 @@ import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { initiateFollowUpOutreach, stopFollowUpSequenceForApp } from "./followUpHelper";
 import { adjustJobStageStat } from "../jobs/stats";
 import { adjustGlobalStat } from "../stats/statsHelper";
+import { executeStageTransition, PipelineStage } from "./pipelineStateMachine";
 
 export const moveToTAShortlist = mutation({
   args: { applicationId: v.id("applications"), note: v.optional(v.string()) },
@@ -134,67 +135,11 @@ export const setPipelineStage = mutation({
     note: v.optional(v.string()) 
   },
   handler: async (ctx, { applicationId, newStage, note }) => {
-    const entry = await ctx.db.get(applicationId);
-    if (!entry) throw new Error("Application not found");
-
-    // Recruiter or higher
-    await requireJobAssignment(ctx, entry.jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
-    const user = await requireUser(ctx);
-
-    if (newStage === "second_shortlist") {
-      const candidate = await ctx.db.get(entry.candidateId);
-      if (!candidate) throw new Error("Candidate not found");
-      const hasCV = entry.followUpCvReceived === true || (entry.followUpCvReceived === undefined && (!!candidate.cvUploadId || !!entry.cvFileId));
-      const hasCurrentSalary = entry.followUpCurrentSalary === true || (entry.followUpCurrentSalary === undefined && candidate.currentSalary !== undefined);
-      const hasExpectedSalary = entry.followUpExpectedSalary === true || (entry.followUpExpectedSalary === undefined && candidate.expectedSalary !== undefined);
-      const hasNoticePeriod = entry.followUpNoticePeriod === true || (entry.followUpNoticePeriod === undefined && candidate.noticePeriodDays !== undefined);
-      const allFourComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
-      
-      if (!allFourComplete) {
-        throw new Error("Cannot move to 2nd Shortlist: Missing mandatory Follow-up data (CV, Current Salary, Expected Salary, Notice Period). Please log a manual call to complete the profile.");
-      }
-    }
-
-    const patchObj: Record<string, any> = {
-      currentStage: newStage as any,
-      lastStageChangedAt: Date.now(),
-      stageHistory: [...(entry.stageHistory ?? []), {
-        stage: newStage,
-        enteredAt: new Date().toISOString(),
-        changedBy: user._id,
-        note: note,
-      }],
-    };
-    if (newStage === "follow_up" || newStage === "ta_shortlist") {
-      patchObj.followUpEnteredAt = Date.now();
-    }
-    await ctx.db.patch(applicationId, patchObj);
-    await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, newStage);
-    if (newStage === "placed") {
-      await adjustGlobalStat(ctx, "placement");
-      await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
-        applicationId: applicationId,
-        eventName: "Hire",
-      });
-    } else if (newStage === "interview") {
-      await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
-        applicationId: applicationId,
-        eventName: "Schedule",
-      });
-    } else if (newStage === "ta_shortlist" || newStage === "matched_candidates" || newStage === "second_shortlist") {
-      await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
-        applicationId: applicationId,
-        eventName: "QualifiedLead",
-      });
-    }
-
-    if (newStage === "follow_up") {
-      await initiateFollowUpOutreach(ctx, applicationId);
-    } else {
-      await stopFollowUpSequenceForApp(ctx, applicationId);
-    }
-
-    await syncCandidateOverallStatus(ctx, entry.candidateId);
+    return await executeStageTransition(ctx, {
+      applicationId,
+      targetStage: newStage as PipelineStage,
+      reason: note,
+    });
   },
 });
 

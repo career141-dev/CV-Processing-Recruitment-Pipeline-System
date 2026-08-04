@@ -39,6 +39,16 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
+      const adminKeyHeader = request.headers.get("x-admin-key") || request.headers.get("authorization")?.replace("Bearer ", "");
+      const expectedAdminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY || process.env.ADMIN_KEY;
+      
+      if (!expectedAdminKey || adminKeyHeader !== expectedAdminKey) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Invalid or missing x-admin-key header" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       const body = await request.json();
 
       // Look up a fallback user to assign as the recruiter for this test
@@ -602,6 +612,13 @@ http.route({
       );
 
       for (const notification of notifications) {
+        // Validate clientState if configured
+        const expectedClientState = process.env.MS_GRAPH_CLIENT_STATE;
+        if (expectedClientState && notification.clientState && notification.clientState !== expectedClientState) {
+          console.warn("[Graph Webhook] Invalid clientState received:", notification.clientState);
+          continue;
+        }
+
         // Extract the mailbox from the resource path:
         //   "users/{email}/mailFolders/inbox/messages" → email
         const resourceMatch = notification.resource?.match(

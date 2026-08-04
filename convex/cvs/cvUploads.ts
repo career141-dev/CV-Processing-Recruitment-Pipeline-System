@@ -3,9 +3,11 @@ import { Id } from "../_generated/dataModel";
 import { mutation, internalQuery, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { adjustGlobalStat } from "../stats/statsHelper";
+import { requireUser, requireFullAccess } from "../lib/permissions";
 
 export const generateUploadUrl = mutation({
   handler: async (ctx) => {
+    await requireUser(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -91,6 +93,7 @@ export const queueManualExtraction = mutation({
 
 export const clearAll = mutation({
   handler: async (ctx) => {
+    await requireFullAccess(ctx);
     const all = await ctx.db.query("cvUploads").collect();
     for (const doc of all) {
       await ctx.db.delete(doc._id);
@@ -102,6 +105,7 @@ export const clearAll = mutation({
 export const deleteStorageFiles = mutation({
   args: { storageIds: v.array(v.id("_storage")) },
   handler: async (ctx, args) => {
+    await requireFullAccess(ctx);
     for (const id of args.storageIds) {
       await ctx.storage.delete(id);
     }
