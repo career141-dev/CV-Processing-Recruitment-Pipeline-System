@@ -1,8 +1,8 @@
 // convex/stats/statsQueries.ts
-import { query } from "../_generated/server";
+import { internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 
-export const getCandidatesPage = query({
+export const getCandidatesPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -11,7 +11,7 @@ export const getCandidatesPage = query({
   },
 });
 
-export const getCvUploadsPage = query({
+export const getCvUploadsPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -20,7 +20,7 @@ export const getCvUploadsPage = query({
   },
 });
 
-export const getApplicationsPage = query({
+export const getApplicationsPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -29,7 +29,7 @@ export const getApplicationsPage = query({
   },
 });
 
-export const getJobsPage = query({
+export const getJobsPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
   handler: async (ctx, args) => {
     return await ctx.db
