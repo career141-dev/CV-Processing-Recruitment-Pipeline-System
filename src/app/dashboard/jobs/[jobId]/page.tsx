@@ -882,8 +882,13 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
           </button>
           <button onClick={async () => {
             try {
+              const targetCandidateId = item.candidateId || item.candidate?._id;
+              if (!targetCandidateId) {
+                toast.error("Candidate ID missing on record");
+                return;
+              }
               await convex.mutation(api.admin.qaTests.resetCandidateTestDetails, {
-                candidateId: item.candidate._id,
+                candidateId: targetCandidateId,
                 applicationId: item.id,
               });
               toast.success("Candidate salary & notice period fields cleared for testing!");

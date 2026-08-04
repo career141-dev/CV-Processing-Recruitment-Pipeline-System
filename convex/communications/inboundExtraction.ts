@@ -9,12 +9,20 @@ export const extractDetailsFromText = internalAction({
     textBody: v.string(),
   },
   handler: async (ctx, args) => {
+    // Guard: skip extraction if text is empty or trivially short
+    if (!args.textBody || args.textBody.trim().length < 3) {
+      console.warn(`[Inbound Extraction] Skipping extraction — text body is empty or trivial: "${args.textBody}"`);
+      return;
+    }
+
+    console.log(`[Inbound Extraction] Starting extraction for candidate ${args.candidateId}. Text: "${args.textBody.substring(0, 200)}"`);
+
     const activeApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, {
       candidateId: args.candidateId,
     });
 
     if (!activeApp) {
-      console.log(`[Inbound Extraction] Candidate ${args.candidateId} is not in follow_up stage. Skipping details update.`);
+      console.log(`[Inbound Extraction] Candidate ${args.candidateId} has no active follow-up application. Skipping details update.`);
       return;
     }
 
@@ -158,28 +166,39 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         }
 
         if (replyMessage) {
-          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
-          await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
-            applicationId: activeApp._id,
-            nextActionTimeHours: hours,
-            messageBody: replyMessage,
+          // COOLDOWN GUARD: Prevent auto-reply loops by checking if we sent a message to this candidate very recently
+          const recentOutbound = await ctx.runQuery(api.candidates.candidates.getRecentOutboundComm, {
+            candidateId: args.candidateId,
+            channel: "whatsapp",
+            withinMs: 60_000, // 60 seconds cooldown
           });
 
-          // Only send immediate reply if it was a genuine candidate update
-          const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
-            candidateId: args.candidateId,
-            applicationId: activeApp._id,
-            jobId: activeApp.jobId,
-            body: replyMessage,
-          });
+          if (recentOutbound) {
+            console.log(`[Inbound Extraction] COOLDOWN: Skipping auto-reply — last outbound WhatsApp to ${args.candidateId} was ${Math.round((Date.now() - Number(recentOutbound.sentAt)) / 1000)}s ago. Preventing echo loop.`);
+          } else {
+            const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
+            await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
+              applicationId: activeApp._id,
+              nextActionTimeHours: hours,
+              messageBody: replyMessage,
+            });
 
-          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-            communicationId: commId,
-            candidateId: args.candidateId,
-            jobId: activeApp.jobId,
-            body: replyMessage,
-          });
-          console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
+            // Only send immediate reply if it was a genuine candidate update
+            const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+              candidateId: args.candidateId,
+              applicationId: activeApp._id,
+              jobId: activeApp.jobId,
+              body: replyMessage,
+            });
+
+            await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+              communicationId: commId,
+              candidateId: args.candidateId,
+              jobId: activeApp.jobId,
+              body: replyMessage,
+            });
+            console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
+          }
         }
       } else {
         console.log(`[Inbound Extraction] No new updates extracted from message for candidate ${args.candidateId}. Suppressing duplicate reply loop.`);

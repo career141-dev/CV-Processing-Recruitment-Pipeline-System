@@ -1309,6 +1309,28 @@ export const getActiveFollowUpApplication = query({
   },
 });
 
+export const getRecentOutboundComm = query({
+  args: {
+    candidateId: v.id("candidates"),
+    channel: v.string(),
+    withinMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const cutoffTime = Date.now() - args.withinMs;
+    const recent = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .filter((q: any) => q.and(q.eq(q.field("direction"), "outbound"), q.eq(q.field("channel"), args.channel)))
+      .first();
+
+    if (recent && Number(recent.sentAt) > cutoffTime) {
+      return { sentAt: Number(recent.sentAt), body: recent.body };
+    }
+    return null;
+  },
+});
+
 export const getCandidatesByIds = query({
   args: { ids: v.array(v.id("candidates")) },
   handler: async (ctx, args) => {

@@ -5,7 +5,7 @@ import { getOpenAI, getModelForTask } from "../lib/llm";
 
 export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const bodyText = await request.text();
-  console.log("[WhatChimp Webhook] Raw body received:", bodyText);
+  console.log("[WhatChimp Webhook] Raw body received (first 500 chars):", bodyText.substring(0, 500));
 
   let body: any;
   try {
@@ -17,7 +17,14 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
   const configuredPhone = process.env.WHATCHIMP_PHONE_NUMBER_ID || "";
   const cleanConfigured = configuredPhone.replace(/[^0-9]/g, "");
-  const businessPhone = cleanConfigured || "94753778899"; // Fallback to original registered number
+  const businessPhone = cleanConfigured;
+
+  // 0. Early return for Meta status-only webhooks (delivery receipts, read receipts)
+  // These have entry[0].changes[0].value.statuses but NO .messages — they contain zero text
+  if (body.entry && body.entry[0]?.changes && body.entry[0].changes[0]?.value?.statuses && !body.entry[0].changes[0]?.value?.messages) {
+    console.log("[WhatChimp Webhook] Ignoring Meta status-only webhook (delivery/read receipt).");
+    return new Response("OK", { status: 200 });
+  }
 
   // 1. Check if it's a standard Meta WhatsApp Webhook payload
   if (body.entry && body.entry[0]?.changes && body.entry[0].changes[0]?.value?.messages) {
@@ -52,8 +59,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           fileName: mediaItem.filename ?? null,
         });
       } else if (message.type === "text") {
-        const textBody = message.text?.body || "";
+        const textBody = message.text?.body || message.body || message.text || "";
         const cleanSender = cleanFromNumber;
+        console.log(`[WhatChimp Webhook] Meta text message from +${cleanSender}: "${String(textBody).substring(0, 200)}" (type=${message.type}, has text.body=${!!message.text?.body})`);
 
         const firstWord = textBody.trim().split(/\s+/)[0]?.toUpperCase() || "";
         let isKeyword = false;
@@ -128,6 +136,14 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const payload = (typeof body.data === "object" && body.data !== null) ? body.data :
                   (typeof body.payload === "object" && body.payload !== null) ? body.payload : body;
 
+  // 1.5 Check for WhatChimp-specific status/echo webhooks that have no meaningful content
+  // These include delivery notifications, typing indicators, and system messages
+  const wcEventType = body.event_type || body.event || body.type || body.action || payload?.event_type;
+  if (wcEventType && typeof wcEventType === "string" && ["message_status", "status_update", "delivery", "read", "sent", "delivered", "failed", "typing", "presence"].includes(wcEventType.toLowerCase())) {
+    console.log(`[WhatChimp Webhook] Ignoring WhatChimp event type: ${wcEventType}`);
+    return new Response("OK", { status: 200 });
+  }
+
   const extractMessageText = (msg: any): string | undefined => {
     if (typeof msg === "string") return msg;
     if (typeof msg === "object" && msg !== null) {
@@ -190,7 +206,13 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const cleanFrom = String(from).replace(/[^0-9]/g, "");
   const cleanTo = String(to).replace(/[^0-9]/g, "");
 
-  console.log(`[WhatChimp Webhook] Flat payload parsed: From=+${cleanFrom}, Text="${text}", Has Media=${!!mediaUrl}`);
+  console.log(`[WhatChimp Webhook] Flat payload parsed: From=+${cleanFrom}, Text="${text?.substring(0, 200)}", TextLength=${text?.length || 0}, Has Media=${!!mediaUrl}`);
+
+  // GUARD: If there's no text, no media, and no sender — this is a status/echo webhook, skip it
+  if (!text && !mediaUrl) {
+    console.log(`[WhatChimp Webhook] No text and no media from +${cleanFrom}. Likely a status/echo webhook. Skipping.`);
+    return new Response("OK", { status: 200 });
+  }
 
   // Pre-check: if text starts with a known job keyword, it's a new applicant — skip follow-up check
   let isNewKeywordMessage = false;
@@ -202,10 +224,10 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     }
   }
 
-  // 1. First, check if this is an active Candidate Follow-Up Reply
-  const checkResult = (!mediaUrl && !isNewKeywordMessage) ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+  // 1. First, check if this is an active Candidate Follow-Up Reply (ONLY if text is not empty)
+  const checkResult = (!mediaUrl && !isNewKeywordMessage && text && text.trim().length > 0) ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
     senderPhone: cleanFrom,
-    textBody: text || "",
+    textBody: text,
   }) : null;
 
   const isFollowUpReply = checkResult?.isFollowUpReply === true;
