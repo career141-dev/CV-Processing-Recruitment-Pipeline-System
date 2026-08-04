@@ -225,8 +225,8 @@ export const sendWhatsApp = internalAction({
 
     if (commRecord?.applicationId) {
       const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
-      if (appRecord && appRecord.currentStage !== "follow_up") {
-        console.log(`[WhatsApp Outbound] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up"). Aborting WhatsApp follow-up delivery.`);
+      if (appRecord && appRecord.currentStage !== "follow_up" && appRecord.currentStage !== "ta_shortlist") {
+        console.log(`[WhatsApp Outbound] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up" or "ta_shortlist"). Aborting WhatsApp follow-up delivery.`);
         await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
           communicationId: args.communicationId,
           status: "failed",
@@ -256,12 +256,14 @@ export const sendWhatsApp = internalAction({
     const isTestMode = 
       process.env.WHATSAPP_TEST_MODE === "true" || 
       process.env.OUTREACH_TEST_MODE === "true" || 
-      process.env.TEST_MODE === "true";
+      process.env.TEST_MODE === "true" ||
+      systemSettings?.testModeEnabled === true;
 
     const testRecipient = 
       process.env.WHATSAPP_TEST_RECIPIENT || 
       process.env.TEST_PHONE_NUMBER || 
-      systemSettings?.testPhoneNumber;
+      systemSettings?.testPhoneNumber ||
+      "+94753883167";
 
     let targetPhone = candidate.phone;
     let logNote = "";
@@ -270,8 +272,8 @@ export const sendWhatsApp = internalAction({
       const candidateDigits = candidate.phone.replace(/\D/g, "");
       const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
 
-      if (testDigits && candidateDigits === testDigits) {
-        // Candidate IS the test number, send directly
+      if ((testDigits && candidateDigits === testDigits) || candidateDigits.endsWith("753883167") || candidateDigits.endsWith("742197476")) {
+        // Candidate IS the designated test phone, send directly
         targetPhone = candidate.phone;
         logNote = ` [TEST CANDIDATE]`;
       } else if (testRecipient) {
