@@ -647,10 +647,10 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
   const daysInStage = Math.floor((item.timeInStageRaw || 0) / (1000 * 60 * 60 * 24));
   const daysLeft = Math.max(0, 7 - daysInStage);
   const isDbMatch = item.sourceChannel === 'database' || item.sourceChannel === 'headhunting';
-  const hasCV = item.followUpCvReceived === true || (item.followUpCvReceived === undefined && !!item.cvUploadId);
-  const hasCurrentSalary = item.followUpCurrentSalary === true || (item.followUpCurrentSalary === undefined && item.currentSalary !== '—');
-  const hasExpectedSalary = item.followUpExpectedSalary === true || (item.followUpExpectedSalary === undefined && item.expectedSalary !== '—');
-  const hasNoticePeriod = item.followUpNoticePeriod === true || (item.followUpNoticePeriod === undefined && item.noticePeriod !== '—');
+  const hasCV = item.followUpCvReceived === true || !!item.cvUploadId || !!item.candidate?.cvUploadId;
+  const hasCurrentSalary = item.followUpCurrentSalary === true || (item.candidate?.currentSalary !== undefined && item.candidate?.currentSalary !== null) || (item.currentSalary !== undefined && item.currentSalary !== '—' && item.currentSalary !== null);
+  const hasExpectedSalary = item.followUpExpectedSalary === true || (item.candidate?.expectedSalary !== undefined && item.candidate?.expectedSalary !== null) || (item.expectedSalary !== undefined && item.expectedSalary !== '—' && item.expectedSalary !== null);
+  const hasNoticePeriod = item.followUpNoticePeriod === true || (item.candidate?.noticePeriodDays !== undefined && item.candidate?.noticePeriodDays !== null) || (item.noticePeriod !== undefined && item.noticePeriod !== '—' && item.noticePeriod !== null);
   const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
 
   const flagItem = (label: string, done: boolean) => (
