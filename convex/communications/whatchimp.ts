@@ -174,12 +174,6 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
   console.log(`[WhatChimp Webhook] Flat payload parsed: From=+${cleanFrom}, Text="${text}", Has Media=${!!mediaUrl}`);
 
-  const isTaNumberCustom = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFrom });
-  if (cleanFrom === businessPhone || (cleanConfigured && cleanFrom === cleanConfigured) || isTaNumberCustom) {
-    console.log("[WhatChimp Webhook] Ignoring outbound/status notification from the business/TA number itself.");
-    return new Response("OK", { status: 200 });
-  }
-
   // Pre-check: if text starts with a known job keyword, it's a new applicant — skip follow-up check
   let isNewKeywordMessage = false;
   if (!mediaUrl && text) {
@@ -197,6 +191,15 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   }) : null;
 
   const isFollowUpReply = checkResult?.isFollowUpReply === true;
+
+  // 2. Only ignore if it is a TA/Business number AND NOT an active candidate follow-up reply
+  if (!isFollowUpReply) {
+    const isTaNumberCustom = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFrom });
+    if (cleanFrom === businessPhone || (cleanConfigured && cleanFrom === cleanConfigured) || isTaNumberCustom) {
+      console.log("[WhatChimp Webhook] Ignoring outbound/status notification from the business/TA number itself.");
+      return new Response("OK", { status: 200 });
+    }
+  }
 
   // 2. Pre-Application Conversational AI (Only if NOT an active candidate follow-up reply)
   let isPreAppChat = false;
