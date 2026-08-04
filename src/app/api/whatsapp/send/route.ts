@@ -16,17 +16,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Next.js API WhatsApp] Sending message to ${formattedPhone} via WhatChimp phone ID ${phoneId}`);
 
+    const params = new URLSearchParams({
+      apiToken: apiToken,
+      phone_number_id: phoneId,
+      phone_number: formattedPhone,
+      message: body,
+    });
+
     const res = await fetch(`https://app.whatchimp.com/api/v1/whatsapp/send`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: JSON.stringify({
-        phone_number_id: phoneId,
-        recipient: formattedPhone,
-        message: body,
-      }),
+      body: params.toString(),
     });
 
     const resText = await res.text();

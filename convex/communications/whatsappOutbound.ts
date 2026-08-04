@@ -333,23 +333,30 @@ export const sendWhatsApp = internalAction({
       let sendError = "";
 
       try {
+        const params = new URLSearchParams({
+          apiToken: apiKey,
+          phone_number_id: cleanPhoneId,
+          phone_number: `+${cleanPhone}`,
+          message: args.body,
+        });
+
         const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
           },
-          body: JSON.stringify({
-            phone_number_id: cleanPhoneId,
-            recipient: `+${cleanPhone}`,
-            message: args.body,
-          }),
+          body: params.toString(),
         });
 
         if (res.ok) {
           const data = await res.json();
           console.log(`[WhatsApp Outbound] WhatChimp direct response:`, JSON.stringify(data));
-          sentSuccess = true;
+          if (data.status === "1" || data.status === 1 || data.wa_message_id) {
+            sentSuccess = true;
+          } else {
+            sendError = data.message || "WhatChimp returned status 0";
+            console.warn(`[WhatsApp Outbound] WhatChimp status error: ${sendError}`);
+          }
         } else {
           sendError = await res.text();
           console.warn(`[WhatsApp Outbound] Direct WhatChimp call returned HTTP ${res.status}: ${sendError}`);
