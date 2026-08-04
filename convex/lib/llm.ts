@@ -23,7 +23,8 @@ export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
     taskType === "reverse_matching" ||
     taskType === "email_routing" ||
     taskType === "email_auto_reply" ||
-    taskType === "jd_matching"
+    taskType === "jd_matching" ||
+    taskType === "jd_extraction"
   );
 };
 

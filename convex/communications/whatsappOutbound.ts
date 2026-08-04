@@ -1,37 +1,50 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation } from "../_generated/server";
+import { internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
 // Internal query to fetch the correct phone_number_id based on the whatsapp number string from the database
 export const getWhatChimpPhoneId = internalQuery({
   args: { targetWhatsAppNumber: v.string() },
   handler: async (ctx, args) => {
-    const cleanNumber = args.targetWhatsAppNumber.startsWith('+') 
-      ? args.targetWhatsAppNumber 
-      : `+${args.targetWhatsAppNumber.replace(/[^0-9]/g, "")}`;
-    
-    const dbNumber = await ctx.db
-      .query("whatsappNumbers")
-      .withIndex("by_phone", (q) => q.eq("phone", cleanNumber))
-      .first();
+    const cleanDigits = args.targetWhatsAppNumber.replace(/\D/g, "");
+    if (!cleanDigits) return null;
+
+    const allNumbers = await ctx.db.query("whatsappNumbers").collect();
+    const dbNumber = allNumbers.find(n => n.phone && n.phone.replace(/\D/g, "").slice(-9) === cleanDigits.slice(-9));
       
-    if (dbNumber) {
+    if (dbNumber && dbNumber.whatchimpPhoneId) {
       return dbNumber.whatchimpPhoneId;
-    }
-    
-    // Fallback mapping for known numbers during transition
-    const legacyClean = args.targetWhatsAppNumber.replace(/[^0-9]/g, "");
-    const knownNumbers: Record<string, string> = {
-      "94742197476": "965783109962872",
-    };
-    
-    if (knownNumbers[legacyClean]) {
-      return knownNumbers[legacyClean];
     }
     
     console.error(`[WhatChimp] No phone_number_id mapped for ${args.targetWhatsAppNumber}`);
     return null;
   }
+});
+
+export const isCandidatePhone = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    const candidate = await findCandidateByPhone(ctx, args.phone);
+    return !!candidate;
+  },
+});
+
+export const hasRecentInboundComm = internalQuery({
+  args: {
+    candidateId: v.id("candidates"),
+    withinMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.withinMs;
+    const recent = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .filter((q: any) => q.and(q.eq(q.field("direction"), "inbound"), q.eq(q.field("channel"), "whatsapp")))
+      .first();
+
+    return recent ? Number(recent.sentAt) > cutoff : false;
+  },
 });
 
 // Internal action to tag a candidate in WhatChimp
@@ -132,7 +145,6 @@ export const assignAiFollowUpLabel = internalAction({
   }
 });
 
-import { internalQuery } from "../_generated/server";
 export const getJobWhatsAppChannel = internalQuery({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, args) => {
@@ -178,8 +190,7 @@ async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<stri
   const testRecipient = 
     process.env.WHATSAPP_TEST_RECIPIENT || 
     process.env.TEST_PHONE_NUMBER || 
-    systemSettings?.testPhoneNumber ||
-    "+94753883167";
+    systemSettings?.testPhoneNumber;
     
   const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
 
@@ -219,18 +230,46 @@ async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<stri
 }
 
 async function findCandidateByPhone(ctx: any, targetPhone: string) {
+  const cleanDigits = targetPhone.replace(/\D/g, "");
+  if (!cleanDigits) return null;
+
+  // 1. Direct search by exact phone (+digits or exact match)
   let candidate = await ctx.db
     .query("candidates")
     .withIndex("by_phone", (q: any) => q.eq("phone", targetPhone))
     .first();
 
-  if (!candidate) {
-    const phoneClean = targetPhone.replace(/[^0-9]/g, "");
+  if (!candidate && targetPhone !== `+${cleanDigits}`) {
     candidate = await ctx.db
       .query("candidates")
-      .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", phoneClean))
+      .withIndex("by_phone", (q: any) => q.eq("phone", `+${cleanDigits}`))
       .first();
   }
+
+  // 2. Search by phoneClean index (exact clean digits)
+  if (!candidate) {
+    candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", cleanDigits))
+      .first();
+  }
+
+  // 3. Dynamic tail-digits matching (e.g. last 9 digits to handle local 075... vs international 9475... without hardcoding)
+  if (!candidate && cleanDigits.length >= 7) {
+    const tailDigits = cleanDigits.slice(-9);
+    const candidates = await ctx.db.query("candidates").collect();
+    candidate = candidates.find((c: any) => {
+      if (c.phoneClean && c.phoneClean.length >= 7) {
+        return c.phoneClean.endsWith(tailDigits);
+      }
+      if (c.phone) {
+        const cClean = c.phone.replace(/\D/g, "");
+        return cClean.length >= 7 && cClean.endsWith(tailDigits);
+      }
+      return false;
+    }) ?? null;
+  }
+
   return candidate;
 }
 
@@ -288,8 +327,7 @@ export const sendWhatsApp = internalAction({
     const testRecipient = 
       process.env.WHATSAPP_TEST_RECIPIENT || 
       process.env.TEST_PHONE_NUMBER || 
-      systemSettings?.testPhoneNumber ||
-      "+94753883167";
+      systemSettings?.testPhoneNumber;
 
     let targetPhone = candidate.phone;
     let logNote = "";
@@ -298,10 +336,17 @@ export const sendWhatsApp = internalAction({
       const candidateDigits = candidate.phone.replace(/\D/g, "");
       const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
 
-      if ((testDigits && candidateDigits === testDigits) || candidateDigits.endsWith("753883167") || candidateDigits.endsWith("742197476")) {
-        // Candidate IS the designated test phone, send directly
+      const isExactOrTailMatch = testDigits && (candidateDigits === testDigits || candidateDigits.endsWith(testDigits.slice(-9)) || testDigits.endsWith(candidateDigits.slice(-9)));
+
+      const activeInboundSession = await ctx.runQuery(internal.communications.whatsappOutbound.hasRecentInboundComm, {
+        candidateId: candidate._id,
+        withinMs: 24 * 60 * 60 * 1000,
+      });
+
+      if (isExactOrTailMatch || activeInboundSession) {
+        // Candidate IS the test phone OR candidate actively sent an inbound message in last 24h -> send directly
         targetPhone = candidate.phone;
-        logNote = ` [TEST CANDIDATE]`;
+        logNote = activeInboundSession ? ` [ACTIVE INBOUND SESSION]` : ` [TEST CANDIDATE]`;
       } else if (testRecipient) {
         // Redirect to test recipient number
         targetPhone = testRecipient;
@@ -319,16 +364,13 @@ export const sendWhatsApp = internalAction({
     }
     // 3. Send message to WhatChimp API
     try {
-      const baseApiToken = process.env.WHATCHIMP_API_TOKEN;
-      if (!baseApiToken) {
-        throw new Error("WHATCHIMP_API_TOKEN is not configured.");
-      }
+      const baseApiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
 
       // Fetch job's designated outbound TA number (or fallback)
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
       
       let apiKey = baseApiToken;
-      let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
 
       if (outboundNumber) {
         const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
@@ -362,7 +404,7 @@ export const sendWhatsApp = internalAction({
         const params = new URLSearchParams({
           apiToken: apiKey,
           phone_number_id: cleanPhoneId,
-          phone_number: `+${cleanPhone}`,
+          phone_number: cleanPhone,
           message: args.body,
         });
 
@@ -474,7 +516,10 @@ export const checkAndRecordFollowUpReply = internalMutation({
     const targetPhone = await resolveTestModePhone(ctx, args.senderPhone);
     const candidate = await findCandidateByPhone(ctx, targetPhone);
 
-    if (!candidate) return { isFollowUpReply: false, candidateId: null, jobId: null };
+    if (!candidate) {
+      console.log(`[checkAndRecordFollowUpReply] No candidate found for phone ${args.senderPhone} (resolved: ${targetPhone}). Skipping.`);
+      return { isFollowUpReply: false, candidateId: null, jobId: null };
+    }
 
     const apps = await ctx.db
       .query("applications")
@@ -485,9 +530,29 @@ export const checkAndRecordFollowUpReply = internalMutation({
       (a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed"
     );
 
-    console.log(`[checkAndRecordFollowUpReply] Sender: ${args.senderPhone} -> Candidate: ${candidate.fullName} (${candidate._id}). Active stage: ${activeApp?.currentStage || "NONE"}`);
+    console.log(`[checkAndRecordFollowUpReply] Sender: ${args.senderPhone} -> Candidate: ${candidate.fullName} (${candidate._id}). Active stage: ${activeApp?.currentStage || "NONE"}. Text length: ${args.textBody?.length || 0}. Text preview: "${(args.textBody || "").substring(0, 100)}"`);
 
     if (!activeApp) return { isFollowUpReply: false, candidateId: null, jobId: null };
+
+    // Skip system template echoes (e.g. outbound follow-up template messages echoed back via WhatChimp webhooks)
+    if (args.textBody && args.textBody.startsWith("Hi ") && (args.textBody.includes("We've recorded your update") || args.textBody.includes("still waiting on the following"))) {
+      console.log(`[checkAndRecordFollowUpReply] ECHO GUARD: Skipping outbound template echo message.`);
+      return { isFollowUpReply: false, candidateId: candidate._id, jobId: activeApp.jobId };
+    }
+
+    // Inbound Deduplication: check if identical message was received from this candidate in the last 5 minutes (300s) to absorb Webhook retries
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    const recentInbound = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", candidate._id))
+      .order("desc")
+      .filter((q: any) => q.and(q.eq(q.field("direction"), "inbound"), q.eq(q.field("channel"), "whatsapp")))
+      .first();
+
+    if (recentInbound && Number(recentInbound.sentAt) > fiveMinAgo && recentInbound.body === args.textBody) {
+      console.log(`[checkAndRecordFollowUpReply] DEDUPLICATION: Skipping duplicate retried inbound message "${args.textBody}" from candidate ${candidate._id} within 5 minutes.`);
+      return { isFollowUpReply: true, candidateId: candidate._id, jobId: activeApp.jobId };
+    }
 
     // Insert inbound communication
     await ctx.db.insert("communications", {
@@ -502,11 +567,17 @@ export const checkAndRecordFollowUpReply = internalMutation({
       stoppedSequence: false,
     });
 
-    // Run text extraction in background to parse details
-    await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
-      candidateId: candidate._id,
-      textBody: args.textBody,
-    });
+    // ONLY run text extraction if textBody is non-empty (> 2 chars to skip trivial "ok", "hi")
+    if (args.textBody && args.textBody.trim().length > 2) {
+      // Run text extraction in background to parse details
+      await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
+        candidateId: candidate._id,
+        textBody: args.textBody,
+      });
+      console.log(`[checkAndRecordFollowUpReply] Dispatched extractDetailsFromText for candidate ${candidate._id} with text: "${args.textBody.substring(0, 100)}"`);
+    } else {
+      console.warn(`[checkAndRecordFollowUpReply] Skipping AI extraction — text body is empty or trivial: "${args.textBody}"`);
+    }
 
     return { isFollowUpReply: true, candidateId: candidate._id, jobId: activeApp.jobId };
   },
@@ -632,6 +703,20 @@ export const recordLocalWhatsappOutbound = internalMutation({
     body: v.string(),
   },
   handler: async (ctx, args) => {
+    // Outbound Deduplication: skip if identical outbound message was recorded within last 30s
+    const thirtySecAgo = Date.now() - 30000;
+    const recentOutbound = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .filter((q: any) => q.and(q.eq(q.field("direction"), "outbound"), q.eq(q.field("channel"), "whatsapp")))
+      .first();
+
+    if (recentOutbound && Number(recentOutbound.sentAt) > thirtySecAgo && recentOutbound.body === args.body) {
+      console.log(`[recordLocalWhatsappOutbound] DEDUPLICATION: Returning existing outbound communication ${recentOutbound._id} to prevent duplicate reply.`);
+      return recentOutbound._id;
+    }
+
     return await ctx.db.insert("communications", {
       candidateId: args.candidateId,
       applicationId: args.applicationId,

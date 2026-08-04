@@ -12,14 +12,14 @@ export async function POST(request: NextRequest) {
     const rawPhoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
     const phoneId = rawPhoneId.replace(/\D/g, "");
 
-    const formattedPhone = phone.startsWith("+") ? phone : `+${phone.replace(/\D/g, "")}`;
+    const cleanDigits = phone.replace(/\D/g, "");
 
-    console.log(`[Next.js API WhatsApp] Sending message to ${formattedPhone} via WhatChimp phone ID ${phoneId}`);
+    console.log(`[Next.js API WhatsApp] Sending message to ${cleanDigits} via WhatChimp phone ID ${phoneId}`);
 
     const params = new URLSearchParams({
       apiToken: apiToken,
       phone_number_id: phoneId,
-      phone_number: formattedPhone,
+      phone_number: cleanDigits,
       message: body,
     });
 

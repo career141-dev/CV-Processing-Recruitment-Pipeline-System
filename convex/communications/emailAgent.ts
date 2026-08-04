@@ -391,75 +391,21 @@ Respond ONLY with a valid JSON object in this exact format:
       }
 
 
-      // Loop over all CV attachments and process them
-      let allCvAttachmentsProcessedSuccessfully = true;
-
+      // Dispatch CV attachment processing asynchronously to keep pollEmailInbox non-blocking (< 500ms)
       for (const attachment of cvAttachments) {
-        console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType})`);
+        console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType}). Scheduling async background ingestion...`);
 
-        let contentBytes = attachment.contentBytes;
-        if (!contentBytes) {
-          contentBytes = await fetchAttachmentContent(targetInboxEmail, message.id, attachment.id);
-        }
-        
-        if (!contentBytes) {
-          console.error(`[EmailAgent] Failed to get contentBytes for attachment ${attachment.name}. Will keep message unread to retry on next poll cycle.`);
-          allCvAttachmentsProcessedSuccessfully = false;
-          continue;
-        }
-
-        let s3Key: string;
-        let fileBuffer: Uint8Array;
-        let fileHash: string;
-
-        try {
-          const binaryString = atob(contentBytes);
-          fileBuffer = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            fileBuffer[i] = binaryString.charCodeAt(i);
-          }
-          
-          // Hash the file
-          const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer.buffer as ArrayBuffer);
-          fileHash = Array.from(new Uint8Array(hashBuffer))
-            .map(b => b.toString(16).padStart(2, "0"))
-            .join("");
-
-          // Fast pre-check: skip if attachment hash already exists in cvUploads
-          const isAlreadyIngested = await ctx.runQuery(api.communications.emailAgent.checkFileHashExists, { fileHash });
-          if (isAlreadyIngested) {
-            console.log(`[EmailAgent] Attachment ${attachment.name} (${fileHash.slice(0, 8)}) already ingested. Skipping upload.`);
-            continue;
-          }
-
-          // Store in Cloudflare R2
-          console.log("USING R2 NOW - UPLOADING TO CLOUDFLARE!");
-          s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
-            fileName: attachment.name ?? "cv.pdf",
-            contentType: attachment.contentType || "application/pdf",
-            base64Data: contentBytes,
-          });
-        } catch (uploadError) {
-          console.error(`[EmailAgent] Error uploading attachment ${attachment.name} to R2:`, uploadError);
-          allCvAttachmentsProcessedSuccessfully = false;
-          continue;
-        }
-
-        // Process CV ingestion
-        await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-          jobId: resolvedJobId || undefined,
-          sourceChannel: (targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign"),
-          rawSender: message.from?.emailAddress?.address,
-          s3Key: s3Key,
-          storageProvider: "r2",
-          fileHash: fileHash,
-          fileName: attachment.name ?? "cv.pdf",
-          fileType: attachment.contentType || "application/pdf",
-          fileSizeBytes: fileBuffer.length,
-          extractionDelayMs: currentExtractionDelayMs,
+        await ctx.scheduler.runAfter(0, internal.communications.emailAgent.processSingleEmailAttachment, {
+          targetInboxEmail,
+          messageId: message.id,
+          attachmentId: attachment.id,
+          attachmentName: attachment.name ?? "cv.pdf",
+          contentType: attachment.contentType || "application/pdf",
+          resolvedJobId: resolvedJobId || undefined,
+          rawSender: senderEmail,
+          currentExtractionDelayMs,
         });
 
-        // Stagger the next extraction by 10 seconds to prevent AI API timeouts and DB spikes
         currentExtractionDelayMs += 10000;
       }
 
@@ -475,12 +421,7 @@ Respond ONLY with a valid JSON object in this exact format:
         });
       }
 
-      // Mark as read only if all attachments were successfully processed
-      if (allCvAttachmentsProcessedSuccessfully) {
-        await markEmailAsRead(targetInboxEmail, message.id);
-      } else {
-        console.warn(`[EmailAgent] Keeping message "${subject}" (${message.id}) unread to retry attachment processing on next poll.`);
-      }
+      await markEmailAsRead(targetInboxEmail, message.id);
       /*
       if (!isReplyProcessed && !isLinkedInNoReply) {
         if (resolvedJobId) {
@@ -1150,5 +1091,69 @@ export const updateCommunicationStatus = internalMutation({
       status: args.status,
       errorMessage: args.errorMessage,
     });
+  },
+});
+
+export const processSingleEmailAttachment = internalAction({
+  args: {
+    targetInboxEmail: v.string(),
+    messageId: v.string(),
+    attachmentId: v.string(),
+    attachmentName: v.string(),
+    contentType: v.string(),
+    resolvedJobId: v.optional(v.id("jobs")),
+    rawSender: v.optional(v.string()),
+    currentExtractionDelayMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      console.log(`[processSingleEmailAttachment] Fetching content for attachment: ${args.attachmentName}`);
+      const contentBytes = await fetchAttachmentContent(args.targetInboxEmail, args.messageId, args.attachmentId);
+      if (!contentBytes) {
+        console.error(`[processSingleEmailAttachment] Failed to get contentBytes for attachment ${args.attachmentName}`);
+        return;
+      }
+
+      const binaryString = atob(contentBytes);
+      const fileBuffer = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        fileBuffer[i] = binaryString.charCodeAt(i);
+      }
+
+      const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer.buffer as ArrayBuffer);
+      const fileHash = Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      const isAlreadyIngested = await ctx.runQuery(api.communications.emailAgent.checkFileHashExists, { fileHash });
+      if (isAlreadyIngested) {
+        console.log(`[processSingleEmailAttachment] Attachment ${args.attachmentName} (${fileHash.slice(0, 8)}) already ingested. Skipping upload.`);
+        return;
+      }
+
+      console.log(`[processSingleEmailAttachment] Uploading ${args.attachmentName} to Cloudflare R2...`);
+      const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
+        fileName: args.attachmentName,
+        contentType: args.contentType || "application/pdf",
+        base64Data: contentBytes,
+      });
+
+      const sourceChannel = (args.targetInboxEmail === process.env.LINKEDIN_SHARED_INBOX || args.targetInboxEmail.toLowerCase() === "linkedin@career141.com") ? "linkedin" : (args.targetInboxEmail.toLowerCase() === "cv@career141.com" ? "email" : "email_campaign");
+
+      await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
+        jobId: args.resolvedJobId || undefined,
+        sourceChannel,
+        rawSender: args.rawSender,
+        s3Key,
+        storageProvider: "r2",
+        fileHash,
+        fileName: args.attachmentName,
+        fileType: args.contentType || "application/pdf",
+        fileSizeBytes: fileBuffer.length,
+        extractionDelayMs: args.currentExtractionDelayMs,
+      });
+    } catch (e: any) {
+      console.error(`[processSingleEmailAttachment] Error processing attachment ${args.attachmentName}:`, e.message);
+    }
   },
 });

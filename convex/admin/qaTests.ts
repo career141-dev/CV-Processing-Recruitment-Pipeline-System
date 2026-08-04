@@ -1,5 +1,5 @@
 // convex/admin/qaTests.ts
-import { mutation, action } from "../_generated/server";
+import { mutation, query, action } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
@@ -431,3 +431,390 @@ export const runRefereeExtractionTest = action({
     return result;
   },
 });
+
+export const seedFollowUpTestJob = mutation({
+  args: { userEmail: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const targetEmail = args.userEmail || "sanjaysanjeev2000@gmail.com";
+    const users = await ctx.db.query("users").collect();
+    const user = users.find(u => u.email.toLowerCase() === targetEmail.toLowerCase()) || users.find(u => u.role === "admin") || users[0];
+
+    if (!user) {
+      throw new Error("No user found in database");
+    }
+
+    // 1. Insert Job "Follow-up Test"
+    const jobId = await ctx.db.insert("jobs", {
+      title: "Follow-up Test",
+      clientName: "Internal Test Desk",
+      clientIndustry: "Technology",
+      recruitmentType: "both",
+      isConfidential: false,
+      jobDescription: "Internal job created to test multi-channel automated follow-up sequences.",
+      requiredSkills: ["Testing", "Communication"],
+      seniorityLevel: "mid_level",
+      experienceMinYears: 1,
+      location: "Remote",
+      salaryMin: 150000,
+      salaryMax: 250000,
+      keyword: "FLW-TEST-" + Math.floor(Math.random() * 1000),
+      status: "active",
+      primaryRecruiterId: user._id,
+      directorId: user._id,
+      directorReviewEnabled: false,
+      clientReviewEnabled: false,
+      esaCheckEnabled: false,
+      rejectionLoopAction: "restart_from_new_cvs",
+      headhuntingEnabled: false,
+      agent3AfterDay7: "mark_unresponsive",
+      agent5Trigger: "manual_only",
+      agent5CallScript: "default",
+      agent5NoAnswerAction: "notify_ta",
+      enableWhatsAppFollowUp: true,
+      enableEmailFollowUp: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // 2. Create Candidate
+    const candidateId = await ctx.db.insert("candidates", {
+      fullName: "Follow-up Test Candidate",
+      email: targetEmail,
+      phone: "+94742625552",
+      status: "active",
+      overallStatus: "follow_up",
+    });
+
+    // 3. Create Application in follow_up stage
+    const appId = await ctx.db.insert("applications", {
+      candidateId: candidateId,
+      jobId: jobId,
+      currentStage: "follow_up",
+      sourceChannel: "whatsapp",
+      aiMatchScore: 88,
+      lastStageChangedAt: Date.now(),
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      loopIteration: 0,
+    });
+
+    return { success: true, jobId, candidateId, applicationId: appId, recruiter: user.email };
+  },
+});
+
+export const seedSanjeevInTaShortlist = mutation({
+  args: {
+    fullName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetName = args.fullName || "Sanjeev";
+    const targetEmail = args.email || "sanjaysanjeev2000@gmail.com";
+    const targetPhone = args.phone || "+94753883167";
+
+    const users = await ctx.db.query("users").collect();
+    const user = users.find(u => u.email.toLowerCase() === targetEmail.toLowerCase()) || users.find(u => u.role === "admin") || users[0];
+
+    if (!user) throw new Error("No user found in database");
+
+    // 1. Get or create Job "Follow-up Test"
+    let jobs = await ctx.db.query("jobs").collect();
+    let job = jobs.find(j => j.title === "Follow-up Test");
+
+    if (!job) {
+      const newJobId = await ctx.db.insert("jobs", {
+        title: "Follow-up Test",
+        clientName: "Internal Test Desk",
+        clientIndustry: "Technology",
+        recruitmentType: "both",
+        isConfidential: false,
+        jobDescription: "Internal job created to test multi-channel automated follow-up sequences.",
+        requiredSkills: ["Testing", "Communication"],
+        seniorityLevel: "mid_level",
+        experienceMinYears: 1,
+        location: "Remote",
+        salaryMin: 150000,
+        salaryMax: 250000,
+        keyword: "FLW-TEST-" + Math.floor(Math.random() * 1000),
+        status: "active",
+        primaryRecruiterId: user._id,
+        directorId: user._id,
+        directorReviewEnabled: false,
+        clientReviewEnabled: false,
+        esaCheckEnabled: false,
+        rejectionLoopAction: "restart_from_new_cvs",
+        headhuntingEnabled: false,
+        agent3AfterDay7: "mark_unresponsive",
+        agent5Trigger: "manual_only",
+        agent5CallScript: "default",
+        agent5NoAnswerAction: "notify_ta",
+        enableWhatsAppFollowUp: true,
+        enableEmailFollowUp: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      const fetched = await ctx.db.get(newJobId);
+      if (fetched) job = fetched;
+    }
+
+    if (!job) throw new Error("Could not find or create job");
+
+    // 2. Insert Candidate
+    const candidateId = await ctx.db.insert("candidates", {
+      fullName: targetName,
+      email: targetEmail,
+      phone: targetPhone,
+      phoneClean: targetPhone.replace(/\D/g, ""),
+      status: "active",
+      overallStatus: "ta_shortlist",
+    });
+
+    // 3. Insert Application in ta_shortlist stage with missing details flags
+    const appId = await ctx.db.insert("applications", {
+      candidateId: candidateId,
+      jobId: job._id,
+      currentStage: "ta_shortlist",
+      sourceChannel: "whatsapp",
+      aiMatchScore: 92,
+      lastStageChangedAt: Date.now(),
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      loopIteration: 0,
+      followUpCvReceived: false,
+      followUpCurrentSalary: false,
+      followUpExpectedSalary: false,
+      followUpNoticePeriod: false,
+    });
+
+    return {
+      success: true,
+      jobId: job._id,
+      jobTitle: job.title,
+      candidateId,
+      applicationId: appId,
+      candidateName: targetName,
+      candidatePhone: targetPhone,
+    };
+  },
+});
+
+export const simulateInboundMessage = mutation({
+  args: {
+    senderPhone: v.string(),
+    textBody: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_phone", (q) => q.eq("phone", args.senderPhone))
+      .first();
+
+    if (!candidate) throw new Error(`Candidate with phone ${args.senderPhone} not found`);
+
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", candidate._id))
+      .collect();
+
+    const activeApp = apps.find(a => a.currentStage !== "rejected" && a.currentStage !== "placed");
+    if (!activeApp) throw new Error("No active application found for candidate");
+
+    // Insert inbound communication
+    await ctx.db.insert("communications", {
+      candidateId: candidate._id,
+      applicationId: activeApp._id,
+      jobId: activeApp.jobId,
+      direction: "inbound",
+      channel: "whatsapp",
+      body: args.textBody,
+      deliveryStatus: "read",
+      sentAt: Date.now(),
+      stoppedSequence: false,
+    });
+
+    // Trigger LLM extraction
+    await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
+      candidateId: candidate._id,
+      textBody: args.textBody,
+    });
+
+    return { success: true, candidateId: candidate._id, applicationId: activeApp._id };
+  },
+});
+
+export const deduplicateJobApplications = mutation({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .collect();
+
+    const seenPhones = new Set<string>();
+    let deletedApps = 0;
+    let deletedCandidates = 0;
+
+    for (const app of apps) {
+      const candidate = await ctx.db.get(app.candidateId);
+      const phoneKey = candidate?.phoneClean || candidate?.phone || candidate?.email || app.candidateId;
+
+      if (seenPhones.has(phoneKey)) {
+        await ctx.db.delete(app._id);
+        deletedApps++;
+        if (candidate) {
+          await ctx.db.delete(candidate._id);
+          deletedCandidates++;
+        }
+      } else {
+        seenPhones.add(phoneKey);
+      }
+    }
+
+    return { success: true, totalApps: apps.length, remainingApps: seenPhones.size, deletedApps, deletedCandidates };
+  },
+});
+
+export const wipeSanjeevFieldsCompletely = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const candByEmail = await ctx.db
+      .query("candidates")
+      .withIndex("by_email", (q) => q.eq("email", "sanjaysanjeev2000@gmail.com"))
+      .collect();
+
+    const candByPhone = await ctx.db
+      .query("candidates")
+      .withIndex("by_phone", (q) => q.eq("phone", "+94753883167"))
+      .collect();
+
+    const map = new Map<string, any>();
+    for (const c of [...candByEmail, ...candByPhone]) {
+      map.set(c._id.toString(), c);
+    }
+
+    const sanjeevCandidates = Array.from(map.values());
+
+    let updatedCandCount = 0;
+    let updatedAppCount = 0;
+
+    for (const c of sanjeevCandidates) {
+      await ctx.db.patch(c._id, {
+        currentSalary: undefined,
+        expectedSalary: undefined,
+        noticePeriodDays: undefined,
+        noticePeriod: undefined,
+        cvUploadId: undefined,
+      });
+      updatedCandCount++;
+
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q) => q.eq("candidateId", c._id))
+        .collect();
+
+      for (const app of apps) {
+        await ctx.db.patch(app._id, {
+          followUpCurrentSalary: false,
+          followUpExpectedSalary: false,
+          followUpNoticePeriod: false,
+          followUpCvReceived: false,
+          followUpEnteredAt: undefined,
+          followUpState: undefined,
+        });
+        updatedAppCount++;
+      }
+    }
+
+    return { success: true, updatedCandCount, updatedAppCount };
+  },
+});
+
+export const getSanjeevInspectionStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const candidates = await ctx.db
+      .query("candidates")
+      .withIndex("by_phone", (q) => q.eq("phone", "+94753883167"))
+      .collect();
+
+    const result = [];
+    for (const c of candidates) {
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q) => q.eq("candidateId", c._id))
+        .collect();
+
+      const comms = await ctx.db
+        .query("communications")
+        .withIndex("by_candidate_time", (q) => q.eq("candidateId", c._id))
+        .collect();
+
+      result.push({
+        candidate: {
+          id: c._id,
+          name: c.fullName,
+          email: c.email,
+          phone: c.phone,
+          currentSalary: c.currentSalary,
+          expectedSalary: c.expectedSalary,
+          noticePeriodDays: c.noticePeriodDays,
+          cvUploadId: c.cvUploadId,
+        },
+        applications: apps.map(a => ({
+          id: a._id,
+          stage: a.currentStage,
+          followUpCurrentSalary: a.followUpCurrentSalary,
+          followUpExpectedSalary: a.followUpExpectedSalary,
+          followUpNoticePeriod: a.followUpNoticePeriod,
+          followUpCvReceived: a.followUpCvReceived,
+        })),
+        recentComms: comms.slice(-5).map(m => ({
+          direction: m.direction,
+          channel: m.channel,
+          body: m.body,
+          sentAt: m.sentAt,
+        })),
+      });
+    }
+
+    return result;
+  },
+});
+
+export const resetCandidateTestDetails = mutation({
+  args: {
+    candidateId: v.id("candidates"),
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.candidateId, {
+      currentSalary: undefined,
+      expectedSalary: undefined,
+      noticePeriodDays: undefined,
+      noticePeriod: undefined,
+      cvUploadId: undefined,
+    });
+
+    await ctx.db.patch(args.applicationId, {
+      followUpCurrentSalary: false,
+      followUpExpectedSalary: false,
+      followUpNoticePeriod: false,
+      followUpCvReceived: false,
+      currentStage: "ta_shortlist",
+      lastStageChangedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+
+
+
+
+
+
+
+
+

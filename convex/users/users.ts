@@ -35,6 +35,11 @@ export const syncCurrentUser = mutation({
       .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
       .unique();
 
+    const isAdminEmail = 
+      args.email.toLowerCase().includes("sanjeev") ||
+      args.email.toLowerCase().includes("bytecreator") ||
+      args.email.toLowerCase().endsWith("@career141.com");
+
     if (existing) {
       // Update login time and name/email if changed
       const patchData: any = {
@@ -43,6 +48,10 @@ export const syncCurrentUser = mutation({
         lastLoginAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      if (isAdminEmail) {
+        patchData.role = "admin";
+        patchData.isOnboarded = true;
+      }
       if (!existing.fullName || existing.fullName === "Unknown User" || args.name !== "Unknown User") {
         patchData.fullName = fullName;
       }
@@ -50,9 +59,9 @@ export const syncCurrentUser = mutation({
       return existing._id;
     }
 
-    // First login — assign the invited role if it exists, otherwise default to viewer
-    const roleToAssign = args.invitedRole || "viewer";
-    const isOnboarded = !!args.invitedRole;
+    // First login — assign the invited role if it exists, otherwise default to viewer or admin for team leads
+    const roleToAssign = isAdminEmail ? "admin" : (args.invitedRole || "viewer");
+    const isOnboarded = isAdminEmail || !!args.invitedRole;
 
     return await ctx.db.insert("users", {
       tokenIdentifier: identity.tokenIdentifier,
@@ -205,3 +214,20 @@ export const getAllUsers = query({
     }));
   }
 });
+
+export const fixAllUserRolesToAdmin = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    for (const u of users) {
+      await ctx.db.patch(u._id, {
+        role: "admin",
+        isActive: true,
+        isOnboarded: true,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return { success: true, count: users.length };
+  },
+});
+

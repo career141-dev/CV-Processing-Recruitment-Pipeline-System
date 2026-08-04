@@ -59,3 +59,13 @@ monitor-log.txt
 convex_backup.zip
 certificates
 whatchimp_docs.txt
+
+# Backups and database snapshots
+/backups/
+backups/
+*.zip
+temp_backup_check/
+checkSanjeevUpdate.mjs
+deleteSanjeevCandidateProfiles.mjs
+removeSingleCandidateSanjeev.mjs
+simulateCandidateReply.mjs

@@ -9,12 +9,20 @@ export const extractDetailsFromText = internalAction({
     textBody: v.string(),
   },
   handler: async (ctx, args) => {
+    // Guard: skip extraction if text is empty or trivially short
+    if (!args.textBody || args.textBody.trim().length < 3) {
+      console.warn(`[Inbound Extraction] Skipping extraction — text body is empty or trivial: "${args.textBody}"`);
+      return;
+    }
+
+    console.log(`[Inbound Extraction] Starting extraction for candidate ${args.candidateId}. Text: "${args.textBody.substring(0, 200)}"`);
+
     const activeApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, {
       candidateId: args.candidateId,
     });
 
     if (!activeApp) {
-      console.log(`[Inbound Extraction] Candidate ${args.candidateId} is not in follow_up stage. Skipping details update.`);
+      console.log(`[Inbound Extraction] Candidate ${args.candidateId} has no active follow-up application. Skipping details update.`);
       return;
     }
 
@@ -85,17 +93,29 @@ Schema:
 }
 If a field is not mentioned, return null for it. Do not invent or infer values.`;
 
-    try {
-      const completion = await openai.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: args.textBody },
-        ],
-        temperature: 0.1,
-      });
+    let completion = null;
+    let attempts = 0;
+    while (attempts < 3) {
+      try {
+        attempts++;
+        completion = await openai.chat.completions.create({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: args.textBody },
+          ],
+          temperature: 0.1,
+        });
+        if (completion) break;
+      } catch (llmErr: any) {
+        console.warn(`[Inbound Extraction] Attempt ${attempts} LLM error: ${llmErr.message}`);
+        if (attempts >= 3) throw llmErr;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
 
-      const responseText = completion.choices[0]?.message?.content?.trim() || "";
+    try {
+      const responseText = completion?.choices[0]?.message?.content?.trim() || "";
       console.log(`[Inbound Extraction] Raw response: "${responseText}"`);
 
       const cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -104,8 +124,19 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
       const updates: Record<string, any> = {};
       if (typeof extracted.currentSalary === "number") updates.currentSalary = extracted.currentSalary;
       if (typeof extracted.expectedSalary === "number") updates.expectedSalary = extracted.expectedSalary;
-      if (typeof extracted.noticePeriodDays === "number") updates.noticePeriodDays = extracted.noticePeriodDays;
-      if (typeof extracted.noticePeriod === "string") updates.noticePeriod = extracted.noticePeriod;
+      
+      if (typeof extracted.noticePeriodDays === "number") {
+        updates.noticePeriodDays = extracted.noticePeriodDays;
+        updates.noticePeriod = `${extracted.noticePeriodDays} Days`;
+      } else if (typeof extracted.noticePeriod === "string" && extracted.noticePeriod.trim() !== "") {
+        updates.noticePeriod = extracted.noticePeriod;
+        let numDays = parseInt(extracted.noticePeriod.replace(/[^0-9]/g, ""), 10);
+        if (!isNaN(numDays) && numDays > 0) {
+          if (extracted.noticePeriod.toLowerCase().includes("month")) numDays *= 30;
+          if (extracted.noticePeriod.toLowerCase().includes("week")) numDays *= 7;
+          updates.noticePeriodDays = numDays;
+        }
+      }
       
       let finalCustomAnswers = undefined;
       if (extracted.customAnswers && Object.keys(extracted.customAnswers).length > 0) {
@@ -113,58 +144,61 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         updates.customFollowUpAnswers = finalCustomAnswers;
       }
 
-      if (Object.keys(updates).length > 0) {
+      const hasUpdates = Object.keys(updates).length > 0 || extracted.cvReceived === true;
+
+      if (hasUpdates) {
         console.log(`[Inbound Extraction] Extracted updates for candidate ${args.candidateId}:`, updates);
         await ctx.runMutation(api.candidates.candidates.updateCandidateDetails, {
           candidateId: args.candidateId,
           applicationId: activeApp._id,
           ...updates,
         });
-      }
 
-      // Re-fetch updated application and candidate data post-update
-      const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
-      const updatedApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, { candidateId: args.candidateId });
+        // Re-fetch updated application and candidate data post-update
+        const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
+        const updatedApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, { candidateId: args.candidateId });
 
-      // Determine if application is now complete or advanced
-      const isCompleted = !updatedApp || updatedApp.currentStage === "second_shortlist" || (
-        (updatedApp?.followUpCvReceived || updatedCandidate?.cvUploadId) &&
-        (updatedApp?.followUpCurrentSalary || updatedCandidate?.currentSalary !== undefined) &&
-        (updatedApp?.followUpExpectedSalary || updatedCandidate?.expectedSalary !== undefined) &&
-        (updatedApp?.followUpNoticePeriod || updatedCandidate?.noticePeriodDays !== undefined)
-      );
+        const isNoticePeriodPresent = updatedApp?.followUpNoticePeriod || updatedCandidate?.noticePeriodDays !== undefined || (updatedCandidate?.noticePeriod !== undefined && updatedCandidate?.noticePeriod !== "");
 
-      let replyMessage: string | null = null;
+        // Determine if application is now complete or advanced
+        const isCompleted = !updatedApp || updatedApp.currentStage === "second_shortlist" || (
+          (updatedApp?.followUpCvReceived || updatedCandidate?.cvUploadId) &&
+          (updatedApp?.followUpCurrentSalary || updatedCandidate?.currentSalary !== undefined) &&
+          (updatedApp?.followUpExpectedSalary || updatedCandidate?.expectedSalary !== undefined) &&
+          isNoticePeriodPresent
+        );
 
-      if (isCompleted) {
-        replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
-      } else {
-        const stillMissing: string[] = [];
-        const appRecord = updatedApp || activeApp;
-        if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
-        if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
-        if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
-        if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined) stillMissing.push("• Notice Period");
+        let replyMessage: string | null = null;
 
-        for (const q of customQuestions) {
-          const ans = appRecord.customFollowUpAnswers || {};
-          if (!ans[q]) stillMissing.push(`• ${q}`);
+        if (isCompleted) {
+          replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
+        } else {
+          const stillMissing: string[] = [];
+          const appRecord = updatedApp || activeApp;
+          if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
+          if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
+          if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
+          if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined && (!updatedCandidate?.noticePeriod || updatedCandidate?.noticePeriod === "")) stillMissing.push("• Notice Period");
+
+          for (const q of customQuestions) {
+            const ans = appRecord.customFollowUpAnswers || {};
+            if (!ans[q]) stillMissing.push(`• ${q}`);
+          }
+
+          if (stillMissing.length > 0) {
+            replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
+          }
         }
 
-        if (stillMissing.length > 0) {
-          replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
-        }
-      }
+        if (replyMessage) {
+          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
+          await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
+            applicationId: activeApp._id,
+            nextActionTimeHours: hours,
+            messageBody: replyMessage,
+          });
 
-      if (replyMessage) {
-        const hours = typeof extracted.nextActionTimeHours === "number" ? extracted.nextActionTimeHours : 0;
-        await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
-          applicationId: activeApp._id,
-          nextActionTimeHours: hours,
-          messageBody: replyMessage,
-        });
-
-        if (hours <= 0) {
+          // Send immediate reply to candidate update
           const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
             candidateId: args.candidateId,
             applicationId: activeApp._id,
@@ -180,10 +214,29 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
           });
           console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
         }
+      } else {
+        console.log(`[Inbound Extraction] No new updates extracted from message for candidate ${args.candidateId}. Suppressing duplicate reply loop.`);
       }
 
     } catch (err: any) {
       console.error("[Inbound Extraction] Error during LLM details extraction:", err.message);
+      try {
+        const fallbackMsg = `Thank you! We've received your update regarding your *${job.title}* application. We are processing your details.`;
+        const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+          candidateId: args.candidateId,
+          applicationId: activeApp._id,
+          jobId: activeApp.jobId,
+          body: fallbackMsg,
+        });
+        await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+          communicationId: commId,
+          candidateId: args.candidateId,
+          jobId: activeApp.jobId,
+          body: fallbackMsg,
+        });
+      } catch (fallbackErr: any) {
+        console.error("[Inbound Extraction] Fallback reply error:", fallbackErr.message);
+      }
     }
   },
 });
