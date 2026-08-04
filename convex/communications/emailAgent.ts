@@ -215,9 +215,9 @@ export const pollEmailInbox = action({
     // Fetch last check timestamp for this specific inbox
     const lastFetch = await ctx.runQuery(internal.communications.emailAgent.getLastEmailFetchTimestamp, { inboxEmail: targetInboxEmail });
     
-    // Save current time as the new check time for this inbox
+    // NOTE: Timestamp is committed AFTER batch processing completes, not before.
+    // This prevents the cursor advancing past emails that weren't processed if a crash occurs.
     const currentFetchTime = new Date().toISOString();
-    await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime, inboxEmail: targetInboxEmail });
 
     // 1. Fetch inbox emails (including read emails for Sanjeev or when ignoreReadStatus is true)
     const messages = await fetchInboxEmails(targetInboxEmail, lastFetch, ignoreReadStatus ?? false);
@@ -491,6 +491,10 @@ Respond ONLY with a valid JSON object in this exact format:
       }
       */
     }
+
+    // Commit the fetch timestamp AFTER all messages are processed so a mid-batch crash
+    // does not skip unprocessed messages on the next poll cycle.
+    await ctx.runMutation(internal.communications.emailAgent.updateLastEmailFetchTimestamp, { timestamp: currentFetchTime, inboxEmail: targetInboxEmail });
   },
 });
 

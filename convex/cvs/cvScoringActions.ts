@@ -165,7 +165,7 @@ export const processCvScoring = action({
 
       // Experience match
       const minYears  = job.experienceMinYears;
-      const candYears = (candidate as any).totalYearsExperience;
+      const candYears = (candidate as any).totalExperienceYears ?? (candidate as any).totalYearsExperience;
       if (minYears && candYears) {
         if (candYears >= minYears) {
           parts.push(`Candidate has ${candYears} years of experience, meeting the ${minYears}-year requirement.`);
@@ -250,7 +250,7 @@ export const processCvScoring = action({
                   `Candidate: ${(candidate as any).fullName}`,
                   `Title: ${(candidate as any).currentTitle || "Unknown"}`,
                   `Skills: ${((candidate as any).skills || []).join(", ")}`,
-                  `Experience: ${(candidate as any).totalYearsExperience || 0} years`,
+                  `Experience: ${(candidate as any).totalExperienceYears ?? 0} years`,
                 ].join("\n")
               }
             ],

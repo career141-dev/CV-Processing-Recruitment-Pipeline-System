@@ -391,6 +391,59 @@ export const updateCandidateFields = mutation({
       phoneClean = args.phone.replace(/[^0-9]/g, "");
     }
 
+    // ── 4-FACTOR IDENTITY DEDUPLICATION ─────────────────────────────────────
+    // Now that we have the parsed identity fields (email, phone, linkedinUrl,
+    // fileHash), check whether another candidate already owns this identity.
+    // If so, the current candidateId is a ghost duplicate — merge into survivor.
+    let targetId = candidateId;
+
+    const lookupByEmail = args.email
+      ? await ctx.db
+          .query("candidates")
+          .withIndex("by_email", (q) => q.eq("email", args.email as string))
+          .first()
+      : null;
+
+    const lookupByPhone = phoneClean
+      ? await ctx.db
+          .query("candidates")
+          .withIndex("by_phoneClean", (q) => q.eq("phoneClean", phoneClean as string))
+          .first()
+      : null;
+
+    const lookupByLinkedin = args.linkedinUrl
+      ? await ctx.db
+          .query("candidates")
+          .withIndex("by_linkedinUrl", (q) => q.eq("linkedinUrl", args.linkedinUrl as string))
+          .first()
+      : null;
+
+    const lookupByFileHash = args.fileHash
+      ? await ctx.db
+          .query("candidates")
+          .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash as string))
+          .first()
+      : null;
+
+    const survivor = [lookupByEmail, lookupByPhone, lookupByLinkedin, lookupByFileHash]
+      .find((c) => c && c._id !== candidateId);
+
+    if (survivor) {
+      console.log(
+        `[Dedup] Ghost candidate ${candidateId} matched survivor ${survivor._id}` +
+        ` (email=${!!lookupByEmail}, phone=${!!lookupByPhone}, linkedin=${!!lookupByLinkedin}, hash=${!!lookupByFileHash}).` +
+        ` Merging into survivor.`
+      );
+      // Relink the upload record to the survivor so stats stay accurate
+      if (args.cvUploadId) {
+        await ctx.db.patch(args.cvUploadId, { candidateId: survivor._id });
+      }
+      // Delete the ghost profile (it was just created; it has no applications yet)
+      await ctx.db.delete(candidateId);
+      targetId = survivor._id;
+    }
+    // ── END DEDUP ─────────────────────────────────────────────────────────────
+
     const patches: Record<string, any> = {
       ...candidateArgs,
       status: "new",
@@ -404,13 +457,13 @@ export const updateCandidateFields = mutation({
       Object.entries(patches).filter(([_, v]) => v !== undefined)
     );
 
-    await ctx.db.patch(candidateId, definedPatches);
+    await ctx.db.patch(targetId, definedPatches);
 
     // Sync to candidateResumes table
     if (rawText || jobHistory || embedding) {
       const existingResume = await ctx.db
         .query("candidateResumes")
-        .withIndex("by_candidateId", (q) => q.eq("candidateId", candidateId))
+        .withIndex("by_candidateId", (q) => q.eq("candidateId", targetId))
         .first();
 
       if (existingResume) {
@@ -425,7 +478,7 @@ export const updateCandidateFields = mutation({
         await ctx.db.patch(existingResume._id, resumeUpdates);
       } else {
         await ctx.db.insert("candidateResumes", {
-          candidateId,
+          candidateId: targetId,
           rawText: rawText ?? "",
           jobHistory,
           embedding,
@@ -435,19 +488,19 @@ export const updateCandidateFields = mutation({
     }
 
     // Sync follow-up flags on all candidate applications
-    const candidate = await ctx.db.get(candidateId);
+    const candidate = await ctx.db.get(targetId);
     if (candidate) {
       const apps = await ctx.db
         .query("applications")
-        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidateId))
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", targetId))
         .collect();
       for (const app of apps) {
         await updateFollowUpFlags(ctx, app._id, candidate);
       }
 
-      await checkAndAdvanceFollowUp(ctx, candidateId);
-      await syncCandidateSummaryToApplications(ctx, candidateId);
-      await syncCandidateOverallStatus(ctx, candidateId);
+      await checkAndAdvanceFollowUp(ctx, targetId);
+      await syncCandidateSummaryToApplications(ctx, targetId);
+      await syncCandidateOverallStatus(ctx, targetId);
     }
   },
 });
@@ -726,12 +779,14 @@ export const updateCvUpload = mutation({
     fileHash: v.optional(v.string()),
     candidateId: v.optional(v.id("candidates")),
     errorMessage: v.optional(v.string()),
+    processingStartedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const updates: Record<string, unknown> = { status: args.status };
     if (args.fileHash !== undefined) updates.fileHash = args.fileHash;
     if (args.candidateId !== undefined) updates.candidateId = args.candidateId;
     if (args.errorMessage !== undefined) updates.errorMessage = args.errorMessage;
+    if (args.processingStartedAt !== undefined) updates.processingStartedAt = args.processingStartedAt;
     await ctx.db.patch(args.cvUploadId, updates);
     const upload = await ctx.db.get(args.cvUploadId);
     return upload?.assignToJob;

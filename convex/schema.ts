@@ -480,6 +480,7 @@ export default defineSchema({
     errorMessage: v.optional(v.string()),
     candidateId: v.optional(v.id("candidates")),
     batchId: v.optional(v.id("ingestionBatches")),
+    processingStartedAt: v.optional(v.number()), // Timestamp when extraction action began; used by stuck-upload recovery
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])

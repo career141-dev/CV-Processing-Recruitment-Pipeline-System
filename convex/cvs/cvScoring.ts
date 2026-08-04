@@ -1188,7 +1188,7 @@ export async function scoreWithLLM(
     const candName = candidateObj.fullName || "Candidate";
     const candTitle = candidateObj.currentTitle || candidateObj.currentJobTitle || "Not specified";
     const candEmployer = candidateObj.currentEmployer || "Not specified";
-    const candYears = candidateObj.totalYearsExperience ?? candidateObj.yearsOfExperience ?? "Not specified";
+    const candYears = candidateObj.totalExperienceYears ?? candidateObj.totalYearsExperience ?? candidateObj.yearsOfExperience ?? "Not specified";
     const candSkills = Array.isArray(candidateObj.skills)
       ? candidateObj.skills.map((s: any) => (typeof s === "object" ? s.value : String(s))).slice(0, 20).join(", ")
       : "Not specified";

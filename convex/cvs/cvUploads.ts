@@ -281,7 +281,10 @@ export const recoverStuckUploads = internalMutation({
     let count = 0;
     const sixtyMinutesAgo = Date.now() - 60 * 60 * 1000;
     for (const upload of stuck) {
-      if (upload._creationTime < sixtyMinutesAgo) {
+      // Use processingStartedAt (stamped when extraction actually began) if available;
+      // fall back to _creationTime only for legacy records that predate the new field.
+      const processingStartMs = (upload as any).processingStartedAt ?? upload._creationTime;
+      if (processingStartMs < sixtyMinutesAgo) {
         await ctx.db.patch(upload._id, {
           status: "failed",
           errorMessage: "Process interrupted (Server restarted/crashed)",

@@ -951,6 +951,7 @@ export async function runCvExtraction(
   await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
     cvUploadId,
     status: "processing",
+    processingStartedAt: Date.now(),
   });
 
   if (args.logId) {

@@ -14,13 +14,45 @@ export const processInboundCV = internalAction({
     fileName: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
-    console.log(`[Meta Cloud API Mock] Downloading media ${args.mediaId}...`);
-    
-    // 1. Download file from Meta (Mocked)
-    const mockPdfContent = `Mock CV content for candidate ${args.originalSenderPhone}. Source: WhatsApp.`;
-    const fileBlob = new Blob([mockPdfContent], { type: "application/pdf" });
-    const fileBuffer = await fileBlob.arrayBuffer();
-    
+    console.log(`[Meta Cloud API] Downloading media ${args.mediaId}...`);
+
+    // ── 1. Fetch real media binary from Meta Graph API ─────────────────────
+    const WHATSAPP_TOKEN = process.env.WHATSAPP_CLOUD_API_TOKEN;
+    if (!WHATSAPP_TOKEN) {
+      console.error("[WhatsApp Ingestion] WHATSAPP_CLOUD_API_TOKEN env var is not set. Aborting.");
+      return;
+    }
+
+    // Step 1a: Resolve media URL from media ID
+    const mediaMetaResp = await fetch(
+      `https://graph.facebook.com/v19.0/${args.mediaId}`,
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+    );
+    if (!mediaMetaResp.ok) {
+      console.error(
+        `[WhatsApp Ingestion] Failed to get media URL for ${args.mediaId}: ${mediaMetaResp.status} ${mediaMetaResp.statusText}`
+      );
+      return;
+    }
+    const mediaMeta = await mediaMetaResp.json() as { url?: string };
+    if (!mediaMeta.url) {
+      console.error(`[WhatsApp Ingestion] Meta response missing 'url' field for media ${args.mediaId}`);
+      return;
+    }
+
+    // Step 1b: Download the actual file binary
+    const fileResp = await fetch(mediaMeta.url, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+    });
+    if (!fileResp.ok) {
+      console.error(
+        `[WhatsApp Ingestion] Failed to download media binary: ${fileResp.status} ${fileResp.statusText}`
+      );
+      return;
+    }
+    const fileBuffer = await fileResp.arrayBuffer();
+    const mimeType = args.mimeType || fileResp.headers.get("content-type") || "application/pdf";
+
     // 2. Hash file
     const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
     const fileHash = Array.from(new Uint8Array(hashBuffer))
@@ -31,7 +63,7 @@ export const processInboundCV = internalAction({
     const base64Data = Buffer.from(fileBuffer).toString("base64");
     const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
       fileName: args.fileName || `whatsapp_${args.originalSenderPhone}.pdf`,
-      contentType: fileBlob.type,
+      contentType: mimeType,
       base64Data,
     });
 
@@ -44,7 +76,7 @@ export const processInboundCV = internalAction({
       s3Key,
       storageProvider: "r2",
       fileHash,
-      fileSize: fileBlob.size,
+      fileSize: fileBuffer.byteLength,
     });
   },
 });

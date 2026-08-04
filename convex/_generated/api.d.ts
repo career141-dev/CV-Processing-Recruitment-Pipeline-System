@@ -80,7 +80,6 @@ import type * as lib_validate from "../lib/validate.js";
 import type * as lib_webhookSecurity from "../lib/webhookSecurity.js";
 import type * as matching_agent2 from "../matching/agent2.js";
 import type * as matching_queries from "../matching/queries.js";
-import type * as matching_reverse from "../matching/reverse.js";
 import type * as matching_search from "../matching/search.js";
 import type * as meta_conversions from "../meta/conversions.js";
 import type * as meta_trigger from "../meta/trigger.js";
@@ -182,7 +181,6 @@ declare const fullApi: ApiFromModules<{
   "lib/webhookSecurity": typeof lib_webhookSecurity;
   "matching/agent2": typeof matching_agent2;
   "matching/queries": typeof matching_queries;
-  "matching/reverse": typeof matching_reverse;
   "matching/search": typeof matching_search;
   "meta/conversions": typeof meta_conversions;
   "meta/trigger": typeof meta_trigger;
