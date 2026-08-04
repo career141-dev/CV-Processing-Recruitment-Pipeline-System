@@ -172,12 +172,12 @@ export const checkAndTriggerNextBatch = mutation({
       return;
     }
 
-    // Atomically grab the next up to 10 uploads
+    // Atomically grab the next up to 15 uploads (VPS benchmark: 15 concurrent is safe ceiling)
     const nextUploads = await ctx.db
       .query("cvUploads")
       .withIndex("by_batchId", (q) => q.eq("batchId", args.batchId))
       .filter((q) => q.eq(q.field("status"), "uploaded"))
-      .take(10);
+      .take(15);
 
     if (nextUploads.length === 0) {
       console.log(`[checkAndTriggerNextBatch] Batch ${args.batchId} is fully complete.`);

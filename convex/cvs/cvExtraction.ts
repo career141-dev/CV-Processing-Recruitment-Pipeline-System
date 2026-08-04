@@ -807,7 +807,9 @@ export async function callOpenRouterLLM(
   cvUploadId?: Id<"cvUploads">,
   sourceChannel?: string
 ): Promise<CvExtractionResult | null> {
-  const MAX_CHARS = 15000;
+  // 6 000 chars (~1 500 tokens) comfortably covers all 16 structured fields.
+  // Fewer tokens = faster first-token latency and faster generation on DeepSeek.
+  const MAX_CHARS = 6000;
   const textToSend =
     rawText.length > MAX_CHARS
       ? rawText.slice(0, MAX_CHARS).replace(/\s+\S*$/, "")
@@ -1111,20 +1113,13 @@ export async function runCvExtraction(
         });
       }
 
-      // Single call to OpenRouter LLM and NVIDIA embedding with precise stage timing
+      // LLM structuring only — embedding is deferred to background scheduler below
       const tLlmStart = Date.now();
       let extractedData = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
         console.warn("[CvExtraction] First call to OpenRouter LLM failed:", err.message || err);
         return null;
       });
       t_llm = Date.now() - tLlmStart;
-
-      const tEmbedStart = Date.now();
-      let embeddingResult = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
-        console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", err.message || err);
-        return undefined;
-      });
-      t_embed = Date.now() - tEmbedStart;
 
       extracted = extractedData;
 
@@ -1140,16 +1135,11 @@ export async function runCvExtraction(
               ? cleanedTesseract.slice(0, MAX_RAW_TEXT_LENGTH)
               : cleanedTesseract;
             console.log(`[CvExtraction] Tesseract OCR extracted ${cappedRawText.length} characters. Passing text to OpenRouter DeepSeek model...`);
-            
-            // Single call to OpenRouter DeepSeek with Tesseract text
+
             extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
               console.error("[CvExtraction] OpenRouter DeepSeek call on Tesseract OCR text failed:", err.message || err);
               return null;
             });
-
-            if (extracted && !embeddingResult) {
-              embeddingResult = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch(() => undefined);
-            }
           }
         } catch (tesseractErr: any) {
           console.error("[CvExtraction] Tesseract OCR fallback attempt failed:", tesseractErr.message || tesseractErr);
@@ -1159,7 +1149,8 @@ export async function runCvExtraction(
       if (!extracted) {
         throw new Error("LLM failed to extract candidate data (API timeout or invalid response)");
       }
-      embedding = embeddingResult;
+      // Embedding is always deferred — scheduled after candidate save below
+      embedding = undefined;
     }
 
     if (extracted) {
@@ -1231,12 +1222,11 @@ export async function runCvExtraction(
         }
       }
 
-      if (!embedding) {
-        console.log(`[CvExtraction] Embedding was not generated during parsing for candidate ${candidateId}. Scheduling fallback background embedding task...`);
-        await ctx.scheduler.runAfter(1000, internal.matching.agent2.generateAndStoreEmbedding, {
-          candidateId,
-        });
-      }
+      // Always schedule embedding as a background task — saves ~1 000ms per CV extraction
+      console.log(`[CvExtraction] Scheduling background embedding for candidate ${candidateId}...`);
+      await ctx.scheduler.runAfter(0, internal.matching.agent2.generateAndStoreEmbedding, {
+        candidateId,
+      });
     }
 
     const resolvedCandidateId = candidateId;
