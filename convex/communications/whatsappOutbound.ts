@@ -184,6 +184,21 @@ async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<stri
   const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
 
   if (isTestMode && testRecipient && cleanNum(senderPhone) === cleanNum(testRecipient)) {
+    // 1. FIRST check if the test sender phone directly matches a candidate in the DB with an active application
+    const directCandidate = await findCandidateByPhone(ctx, senderPhone);
+    if (directCandidate) {
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", directCandidate._id))
+        .collect();
+      const activeApp = apps.find((a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed");
+      if (activeApp) {
+        console.log(`[WhatsApp Test Mode] Direct candidate match found for test sender ${senderPhone}: ${directCandidate.fullName} (${directCandidate._id})`);
+        return senderPhone;
+      }
+    }
+
+    // 2. Fallback to lastOutbound only if test sender is not a candidate themselves
     const lastOutbound = await ctx.db
       .query("communications")
       .withIndex("by_direction_channel_time", (q: any) =>
@@ -195,7 +210,7 @@ async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<stri
     if (lastOutbound) {
       const testCandidate = await ctx.db.get(lastOutbound.candidateId);
       if (testCandidate && testCandidate.phone) {
-        console.log(`[WhatsApp Test Mode] Mapped test sender ${senderPhone} to actual candidate phone: ${testCandidate.phone}`);
+        console.log(`[WhatsApp Test Mode] Mapped test sender ${senderPhone} to last contacted candidate phone: ${testCandidate.phone}`);
         return testCandidate.phone;
       }
     }
