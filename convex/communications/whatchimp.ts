@@ -181,9 +181,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     }
   }
 
-  // NEW: Pre-Application Conversational AI (Highest Priority after keywords/media)
+  // 1. First, check if this is an active Candidate Follow-Up Reply
+  const checkResult = (!mediaUrl && !isNewKeywordMessage) ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+    senderPhone: cleanFrom,
+    textBody: text || "",
+  }) : null;
+
+  const isFollowUpReply = checkResult?.isFollowUpReply === true;
+
+  // 2. Pre-Application Conversational AI (Only if NOT an active candidate follow-up reply)
   let isPreAppChat = false;
-  if (!mediaUrl && !isNewKeywordMessage && text) {
+  if (!mediaUrl && !isNewKeywordMessage && !isFollowUpReply && text) {
     const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, {
       phone: cleanFrom,
     });
@@ -202,14 +210,6 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       }
     }
   }
-
-  // Resolve candidate details for Follow-Up Replies (Only if not Pre-Application Chat)
-  const checkResult = (!mediaUrl && !isNewKeywordMessage && !isPreAppChat) ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
-    senderPhone: cleanFrom,
-    textBody: text || "",
-  }) : null;
-
-  const isFollowUpReply = checkResult?.isFollowUpReply === true;
 
   // Handle incoming CV document — process for ALL candidates, including follow-up
   if (mediaUrl) {
