@@ -213,6 +213,144 @@ export const seedTestJobAndCandidates = mutation({
   }
 });
 
+export const seedSanjeevToProduction = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // 1. Find or create Development Test Job
+    let job = await ctx.db.query("jobs").filter(q => q.eq(q.field("keyword"), "DEV-TEST")).first();
+    let jobId = job?._id;
+
+    if (!jobId) {
+      const activeUser = (await ctx.db.query("users").first()) || { _id: "n17ffg4ab5ds4crkhrkrgsgp8189987d" as any };
+      jobId = await ctx.db.insert("jobs", {
+        title: "Development Test Job",
+        clientName: "Internal",
+        clientIndustry: "Technology",
+        recruitmentType: "both",
+        isConfidential: false,
+        jobDescription: "Internal development test job for recruitment pipeline verification.",
+        requiredSkills: ["React", "TypeScript", "Convex", "Next.js"],
+        niceToHaveSkills: ["TailwindCSS", "Node.js"],
+        seniorityLevel: "mid_level",
+        experienceMinYears: 0,
+        location: "Remote",
+        keyword: "DEV-TEST",
+        status: "active",
+        primaryRecruiterId: activeUser._id,
+        directorId: activeUser._id,
+        directorReviewEnabled: true,
+        clientReviewEnabled: true,
+        esaCheckEnabled: false,
+        rejectionLoopAction: "restart_from_new_cvs",
+        headhuntingEnabled: false,
+        agent3AfterDay7: "mark_unresponsive",
+        agent5Trigger: "manual_only",
+        agent5CallScript: "default",
+        agent5NoAnswerAction: "notify_ta",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        outreachWhatsAppNumber: "+94742197476",
+        enableWhatsAppFollowUp: true,
+        enableEmailFollowUp: true,
+        maxFollowUpAttempts: 3,
+        maxFollowUpDays: 3,
+        customFollowUpQuestions: ["Do you have experience with Next.js and Convex?"],
+      });
+    }
+
+    // 2. Find or create Candidate Sivasuthakaran Sanjeev
+    let cand = await ctx.db.query("candidates").filter(q => q.eq(q.field("email"), "sanjaysanjeev2000@gmail.com")).first();
+    let candidateId = cand?._id;
+
+    if (!candidateId) {
+      candidateId = await ctx.db.insert("candidates", {
+        fullName: "Sivasuthakaran Sanjeev",
+        email: "sanjaysanjeev2000@gmail.com",
+        phone: "+94753883167",
+        status: "active",
+        overallStatus: "new_cvs",
+        currentEmployer: "Career141",
+        currentJobTitle: "Full-Stack Developer & AI Integration Engineer",
+        currentTitle: "Full-Stack Developer & AI Integration Engineer",
+        location: "Colombo, Sri Lanka",
+        totalExperienceYears: 3,
+        yearsOfExperience: 3,
+        skills: ["Next.js", "React", "Node.js", "TypeScript", "Convex", "AWS", "Python", "Full-Stack", "Docker", "TailwindCSS"],
+        summary: "Driven Full-Stack Developer and AI Integration Engineer delivering production-grade systems across web, mobile, cloud, and AI domains.",
+        jobHistory: [
+          {
+            title: "Web Developer Intern",
+            company: "Career141",
+            startDate: "2025",
+            endDate: "Present",
+            description: "Architected a 13-stage AI-powered CV recruitment pipeline with 8 autonomous agents processing 115,000+ candidate profiles."
+          },
+          {
+            title: "Mobile Application Development Trainee",
+            company: "Softwareplus Pvt Ltd",
+            startDate: "2024",
+            endDate: "2024",
+            description: "Developed Android (Java/Kotlin) features for ERP, LMS, and inventory management systems."
+          }
+        ],
+        education: [
+          {
+            degree: "BIT (Hons) in Networking & Mobile Computing",
+            institution: "Horizon Campus",
+            field: "Networking & Mobile Computing",
+            year: 2026
+          }
+        ],
+        isParsed: true,
+      });
+    }
+
+    // 3. Clear existing applications for Sanjeev under this job to prevent duplicates
+    const existingApps = await ctx.db.query("applications")
+      .withIndex("by_jobId", q => q.eq("jobId", jobId!))
+      .filter(q => q.eq(q.field("candidateId"), candidateId!))
+      .collect();
+
+    for (const app of existingApps) {
+      await ctx.db.delete(app._id);
+    }
+
+    // 4. Create fresh application in 'new_cvs' stage
+    const applicationId = await ctx.db.insert("applications", {
+      candidateId: candidateId!,
+      jobId: jobId!,
+      sourceChannel: "manual_upload",
+      currentStage: "new_cvs",
+      candidateName: "Sivasuthakaran Sanjeev",
+      candidateEmail: "sanjaysanjeev2000@gmail.com",
+      candidatePhone: "+94753883167",
+      candidateTitle: "Full-Stack Developer & AI Integration Engineer",
+      candidateExperience: 3,
+      aiMatchScore: 95,
+      aiMatchExplanation: "Candidate is a Full-Stack Developer & AI Integration Engineer matching all required skills for Development Test Job.",
+      createdAt: Date.now(),
+      lastStageChangedAt: Date.now(),
+      isActive: true,
+      loopIteration: 1,
+      followUpAttemptCount: 0,
+      followUpCvReceived: true,
+      followUpCurrentSalary: false,
+      followUpExpectedSalary: false,
+      followUpNoticePeriod: false,
+      stageHistory: [
+        {
+          stage: "new_cvs",
+          enteredAt: new Date().toISOString(),
+          changedBy: "system",
+        }
+      ]
+    });
+
+    console.log(`[Production Seed] Successfully seeded Sivasuthakaran Sanjeev in New CVs stage on production under job ${jobId}`);
+    return { success: true, jobId, candidateId, applicationId };
+  }
+});
+
 
 
 

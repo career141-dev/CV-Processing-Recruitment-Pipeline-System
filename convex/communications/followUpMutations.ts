@@ -1,6 +1,5 @@
-import { internalMutation, internalAction } from "../_generated/server";
+import { internalMutation } from "../_generated/server";
 import { v } from "convex/values";
-import { internal } from "../_generated/api";
 
 export const scheduleDynamicFollowUp = internalMutation({
   args: {
@@ -16,5 +15,42 @@ export const scheduleDynamicFollowUp = internalMutation({
       nextFollowUpMessage: args.messageBody,
     });
     console.log(`[Follow-Up] Scheduled next AI message for application ${args.applicationId} in ${args.nextActionTimeHours} hours.`);
+  },
+});
+
+export const resetFollowUpApp = internalMutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "follow_up",
+      followUpAttemptCount: 0,
+      nextFollowUpScheduledAt: Date.now(),
+    });
+    console.log(`[Follow-Up] Reset application ${args.applicationId} for follow-up evaluation.`);
+  },
+});
+
+export const resetToNewCvs = internalMutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "new_cvs",
+      lastStageChangedAt: Date.now(),
+      followUpAttemptCount: 0,
+      nextFollowUpScheduledAt: undefined,
+      nextFollowUpMessage: undefined,
+      stageHistory: [
+        {
+          stage: "new_cvs",
+          enteredAt: new Date().toISOString(),
+          changedBy: "system",
+        },
+      ],
+    });
+    console.log(`[Pipeline] Reset application ${args.applicationId} back to New CVs stage.`);
   },
 });
