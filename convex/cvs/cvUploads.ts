@@ -203,10 +203,7 @@ export const checkAndTriggerNextBatch = mutation({
         rawSender: upload.uploadedBy,
       });
 
-      let staggerDelayMs = index * 2000;
-      if (index >= 5) {
-        staggerDelayMs = 20000 + (index - 5) * 2000; // starts 20 seconds later
-      }
+      const staggerDelayMs = index * 100;
 
       await ctx.scheduler.runAfter(staggerDelayMs, api.cvs.cvExtraction.processCvExtraction, {
         storageId: upload.storageId as Id<"_storage"> | undefined,
