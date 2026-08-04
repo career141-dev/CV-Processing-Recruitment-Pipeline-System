@@ -25,7 +25,7 @@ export const isCandidatePhone = internalQuery({
   args: { phone: v.string() },
   handler: async (ctx, args) => {
     const candidate = await findCandidateByPhone(ctx, args.phone);
-    return !!candidate;
+    return candidate;
   },
 });
 
