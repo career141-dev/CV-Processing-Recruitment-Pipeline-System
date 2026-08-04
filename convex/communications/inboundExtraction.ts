@@ -113,13 +113,32 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         });
       }
 
-      // Schedule the next follow-up message if the AI drafted one
-      if (extracted.nextActionMessage && typeof extracted.nextActionTimeHours === "number") {
+      // Schedule or send the next follow-up message if the AI drafted one
+      if (extracted.nextActionMessage) {
+        const hours = typeof extracted.nextActionTimeHours === "number" ? extracted.nextActionTimeHours : 0;
         await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
           applicationId: activeApp._id,
-          nextActionTimeHours: extracted.nextActionTimeHours,
+          nextActionTimeHours: hours,
           messageBody: extracted.nextActionMessage,
         });
+
+        if (hours <= 0) {
+          // Create outbound comm and send immediate WhatsApp reply
+          const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+            candidateId: args.candidateId,
+            applicationId: activeApp._id,
+            jobId: activeApp.jobId,
+            body: extracted.nextActionMessage,
+          });
+
+          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+            communicationId: commId,
+            candidateId: args.candidateId,
+            jobId: activeApp.jobId,
+            body: extracted.nextActionMessage,
+          });
+          console.log(`[Inbound Extraction] Dispatched immediate AI response to candidate ${args.candidateId}`);
+        }
       }
 
     } catch (err: any) {

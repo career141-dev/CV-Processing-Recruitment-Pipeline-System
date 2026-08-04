@@ -612,7 +612,7 @@ export const recordLocalWhatsappOutbound = internalMutation({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("communications", {
+    return await ctx.db.insert("communications", {
       candidateId: args.candidateId,
       applicationId: args.applicationId,
       jobId: args.jobId,
