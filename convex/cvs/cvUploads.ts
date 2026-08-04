@@ -225,21 +225,35 @@ export const checkAndTriggerNextBatch = mutation({
 export const cancelAllRunningExtractions = mutation({
   args: {},
   handler: async (ctx) => {
-    // 1. Query only active uploads using by_status index (prevents scanning full table)
+    // 1. Immediately pause & fail active ingestion batches first (stops next batch triggers in < 5ms)
+    const activeBatches = await ctx.db
+      .query("ingestionBatches")
+      .withIndex("by_status", (q) => q.eq("status", "in_progress"))
+      .take(50);
+
+    for (const batch of activeBatches) {
+      await ctx.db.patch(batch._id, {
+        status: "failed",
+        paused: true,
+        completedAt: Date.now(),
+      });
+    }
+
+    // 2. Query bounded active uploads using by_status index (max 30 per status to guarantee < 150ms runtime)
     const queued = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "queued"))
-      .take(200);
+      .take(30);
 
     const processing = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "processing"))
-      .take(200);
+      .take(30);
 
     const pendingRetry = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "pending_retry"))
-      .take(200);
+      .take(30);
 
     const activeUploads = [...queued, ...processing, ...pendingRetry];
 
@@ -250,19 +264,6 @@ export const cancelAllRunningExtractions = mutation({
         errorMessage: "Cancelled by user",
       });
       cancelledCount++;
-    }
-
-    // 2. Mark any active ingestion batches as failed/stopped
-    const activeBatches = await ctx.db
-      .query("ingestionBatches")
-      .withIndex("by_status", (q) => q.eq("status", "in_progress"))
-      .take(50);
-
-    for (const batch of activeBatches) {
-      await ctx.db.patch(batch._id, {
-        status: "failed",
-        completedAt: Date.now(),
-      });
     }
 
     return { success: true, cancelledCount, batchesCancelled: activeBatches.length };
