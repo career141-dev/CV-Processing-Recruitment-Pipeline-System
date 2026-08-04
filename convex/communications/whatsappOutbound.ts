@@ -168,8 +168,19 @@ export const getJobOutboundWhatsAppNumber = internalQuery({
 });
 
 async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<string> {
-  const isTestMode = process.env.WHATSAPP_TEST_MODE === "true" && process.env.NODE_ENV !== "production";
-  const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
+  const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
+  const isTestMode = 
+    process.env.WHATSAPP_TEST_MODE === "true" || 
+    process.env.OUTREACH_TEST_MODE === "true" || 
+    process.env.TEST_MODE === "true" ||
+    systemSettings?.testModeEnabled === true;
+    
+  const testRecipient = 
+    process.env.WHATSAPP_TEST_RECIPIENT || 
+    process.env.TEST_PHONE_NUMBER || 
+    systemSettings?.testPhoneNumber ||
+    "+94753883167";
+    
   const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
 
   if (isTestMode && testRecipient && cleanNum(senderPhone) === cleanNum(testRecipient)) {
