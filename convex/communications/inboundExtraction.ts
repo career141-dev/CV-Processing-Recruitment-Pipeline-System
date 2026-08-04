@@ -122,31 +122,63 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         });
       }
 
-      // Schedule or send the next follow-up message if the AI drafted one
-      if (extracted.nextActionMessage) {
+      // Re-fetch updated application and candidate data post-update
+      const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
+      const updatedApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, { candidateId: args.candidateId });
+
+      // Determine if application is now complete or advanced
+      const isCompleted = !updatedApp || updatedApp.currentStage === "second_shortlist" || (
+        (updatedApp?.followUpCvReceived || updatedCandidate?.cvUploadId) &&
+        (updatedApp?.followUpCurrentSalary || updatedCandidate?.currentSalary !== undefined) &&
+        (updatedApp?.followUpExpectedSalary || updatedCandidate?.expectedSalary !== undefined) &&
+        (updatedApp?.followUpNoticePeriod || updatedCandidate?.noticePeriodDays !== undefined)
+      );
+
+      let replyMessage: string | null = null;
+
+      if (isCompleted) {
+        replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
+      } else {
+        const stillMissing: string[] = [];
+        const appRecord = updatedApp || activeApp;
+        if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
+        if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
+        if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
+        if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined) stillMissing.push("• Notice Period");
+
+        for (const q of customQuestions) {
+          const ans = appRecord.customFollowUpAnswers || {};
+          if (!ans[q]) stillMissing.push(`• ${q}`);
+        }
+
+        if (stillMissing.length > 0) {
+          replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
+        }
+      }
+
+      if (replyMessage) {
         const hours = typeof extracted.nextActionTimeHours === "number" ? extracted.nextActionTimeHours : 0;
         await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
           applicationId: activeApp._id,
           nextActionTimeHours: hours,
-          messageBody: extracted.nextActionMessage,
+          messageBody: replyMessage,
         });
 
         if (hours <= 0) {
-          // Create outbound comm and send immediate WhatsApp reply
           const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
             candidateId: args.candidateId,
             applicationId: activeApp._id,
             jobId: activeApp.jobId,
-            body: extracted.nextActionMessage,
+            body: replyMessage,
           });
 
           await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
             communicationId: commId,
             candidateId: args.candidateId,
             jobId: activeApp.jobId,
-            body: extracted.nextActionMessage,
+            body: replyMessage,
           });
-          console.log(`[Inbound Extraction] Dispatched immediate AI response to candidate ${args.candidateId}`);
+          console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
         }
       }
 
