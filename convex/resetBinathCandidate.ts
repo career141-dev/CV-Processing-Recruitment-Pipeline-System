@@ -9,7 +9,7 @@ export const resetBinathCandidate = mutation({
     await ctx.db.patch(appId, {
       currentStage: "new_cvs",
       candidateName: "Binath Test Candidate",
-      candidateEmail: "hdbinath@gmail.com",
+      candidateEmail: "binath@gmail.com",
       candidatePhone: "+94742625552",
       followUpEnteredAt: undefined,
       followUpState: undefined,
@@ -23,7 +23,7 @@ export const resetBinathCandidate = mutation({
 
     await ctx.db.patch(candidateId, {
       fullName: "Binath Test Candidate",
-      email: "hdbinath@gmail.com",
+      email: "binath@gmail.com",
       phone: "+94742625552",
       currentSalary: undefined,
       expectedSalary: undefined,

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import Link from "next/link";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import {
   FolderUp,
@@ -36,6 +36,12 @@ export default function FolderUploadPage() {
   const [candidateItems, setCandidateItems] = useState<CandidateFolderItem[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [status, setStatus] = useState<"idle" | "running" | "paused" | "stopped" | "done">("idle");
+  const statusRef = useRef<"idle" | "running" | "paused" | "stopped" | "done">("idle");
+
+  const updateStatus = (newStatus: "idle" | "running" | "paused" | "stopped" | "done") => {
+    statusRef.current = newStatus;
+    setStatus(newStatus);
+  };
 
   // Progress Counters
   const [processedCount, setProcessedCount] = useState<number>(0);
@@ -48,6 +54,7 @@ export default function FolderUploadPage() {
   const [copiedCliCommand, setCopiedCliCommand] = useState<boolean>(false);
 
   const uploadFolderCandidate = useAction(api.cvs.folderIngestion.uploadFolderCandidate);
+  const cancelAllRunningExtractions = useMutation(api.cvs.cvUploads.cancelAllRunningExtractions);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,13 +125,32 @@ export default function FolderUploadPage() {
   const [importMode, setImportMode] = useState<"test_100" | "full">("test_100");
   const [lastStoppedItem, setLastStoppedItem] = useState<{ index: number; folderName: string } | null>(null);
 
+  const handlePause = () => {
+    updateStatus("paused");
+    toast.info("Upload loop paused.");
+  };
+
+  const handleStop = async () => {
+    updateStatus("stopped");
+    try {
+      toast.loading("Stopping upload loop and cancelling active background extractions...");
+      const res = await cancelAllRunningExtractions();
+      toast.dismiss();
+      toast.success(`Upload stopped! Cancelled ${res.cancelledCount} queued/processing tasks.`);
+    } catch (err: any) {
+      console.error("Failed to cancel extractions:", err);
+      toast.dismiss();
+      toast.error("Stopped browser upload loop.");
+    }
+  };
+
   const startBatchUpload = async () => {
     if (candidateItems.length === 0) {
       toast.error("Please select a valid root folder first.");
       return;
     }
 
-    setStatus("running");
+    updateStatus("running");
     let currentUploaded = uploadedCount;
     let currentSkipped = skippedCount;
     let currentFailed = failedCount;
@@ -133,7 +159,10 @@ export default function FolderUploadPage() {
     const totalToProcess = Math.min(candidateItems.length, maxLimit);
 
     for (let i = processedCount; i < totalToProcess; i++) {
-      if (status === "stopped" || status === "paused") break;
+      if (statusRef.current === "stopped" || statusRef.current === "paused") {
+        console.log(`[FolderUpload] Upload loop broken. Status is: ${statusRef.current}`);
+        break;
+      }
 
       const item = candidateItems[i];
       const batchIdx = Math.floor(i / BATCH_SIZE) + 1;
@@ -171,8 +200,8 @@ export default function FolderUploadPage() {
       }
     }
 
-    if (processedCount + 1 >= totalToProcess) {
-      setStatus("done");
+    if (statusRef.current === "running" && processedCount + 1 >= totalToProcess) {
+      updateStatus("done");
       if (importMode === "test_100" && totalToProcess < candidateItems.length) {
         toast.success(`Initial test batch of 100 candidates completed! Check candidate database and switch to 'Full Import' to continue.`);
       } else {
@@ -455,7 +484,7 @@ export default function FolderUploadPage() {
 
             {status === "running" && (
               <button
-                onClick={() => setStatus("paused")}
+                onClick={handlePause}
                 className="py-2.5 px-5 bg-[#FFF3E0] text-[#E65100] hover:bg-[#FFE0B2] text-xs font-bold rounded-lg border border-[#FFE0B2] transition flex items-center gap-2"
               >
                 <Pause className="w-4 h-4" />
@@ -465,7 +494,7 @@ export default function FolderUploadPage() {
 
             {(status === "running" || status === "paused") && (
               <button
-                onClick={() => setStatus("stopped")}
+                onClick={handleStop}
                 className="py-2.5 px-5 bg-red-50 text-red-600 hover:bg-red-100 text-xs font-bold rounded-lg border border-red-200 transition flex items-center gap-2"
               >
                 <Square className="w-4 h-4 fill-current" />
