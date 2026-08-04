@@ -225,27 +225,39 @@ export const checkAndTriggerNextBatch = mutation({
 export const cancelAllRunningExtractions = mutation({
   args: {},
   handler: async (ctx) => {
-    // 1. Get all uploads in queued/processing/pending_retry
-    const activeUploads = await ctx.db
+    // 1. Query only active uploads using by_status index (prevents scanning full table)
+    const queued = await ctx.db
       .query("cvUploads")
-      .collect();
+      .withIndex("by_status", (q) => q.eq("status", "queued"))
+      .take(200);
+
+    const processing = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(200);
+
+    const pendingRetry = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "pending_retry"))
+      .take(200);
+
+    const activeUploads = [...queued, ...processing, ...pendingRetry];
 
     let cancelledCount = 0;
     for (const upload of activeUploads) {
-      if (upload.status === "queued" || upload.status === "processing" || upload.status === "pending_retry") {
-        await ctx.db.patch(upload._id, {
-          status: "failed",
-          errorMessage: "Cancelled by user",
-        });
-        cancelledCount++;
-      }
+      await ctx.db.patch(upload._id, {
+        status: "failed",
+        errorMessage: "Cancelled by user",
+      });
+      cancelledCount++;
     }
 
     // 2. Mark any active ingestion batches as failed/stopped
     const activeBatches = await ctx.db
       .query("ingestionBatches")
       .withIndex("by_status", (q) => q.eq("status", "in_progress"))
-      .collect();
+      .take(50);
+
     for (const batch of activeBatches) {
       await ctx.db.patch(batch._id, {
         status: "failed",
