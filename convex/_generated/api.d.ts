@@ -29,6 +29,7 @@ import type * as admin_updateJDs from "../admin/updateJDs.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
 import type * as candidates_candidates from "../candidates/candidates.js";
+import type * as candidates_dedupLock from "../candidates/dedupLock.js";
 import type * as candidates_derivations from "../candidates/derivations.js";
 import type * as candidates_governance from "../candidates/governance.js";
 import type * as candidates_profile from "../candidates/profile.js";
@@ -130,6 +131,7 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
   "candidates/candidates": typeof candidates_candidates;
+  "candidates/dedupLock": typeof candidates_dedupLock;
   "candidates/derivations": typeof candidates_derivations;
   "candidates/governance": typeof candidates_governance;
   "candidates/profile": typeof candidates_profile;

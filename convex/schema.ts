@@ -104,6 +104,15 @@ export default defineSchema({
     .index("by_targetUserId", ["targetUserId"])
     .index("by_occurredAt", ["occurredAt"]),
 
+  // ■■ CANDIDATE DEDUPLICATION IDENTITY LOCKS ■■■■■■■■■■■■■■■■■■■■■
+  candidateLocks: defineTable({
+    lockKey: v.string(), // e.g. "email:user@domain.com", "phone:+1234567890", "linkedin:slug"
+    cvUploadId: v.id("cvUploads"),
+    lockedAt: v.number(),
+  })
+    .index("by_lockKey", ["lockKey"])
+    .index("by_cvUploadId", ["cvUploadId"]),
+
   // ■■ JOBS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   jobs: defineTable({
     // Core Details

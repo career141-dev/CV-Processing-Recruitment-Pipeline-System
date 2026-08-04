@@ -932,6 +932,12 @@ export async function runCvExtraction(
   args: ExtractionArgs,
 ): Promise<string | null> {
   const { storageId, fileType, sourceChannel, cvUploadId, workableCandidateId, skipLLM, preExtractedData } = args;
+  const tStart = Date.now();
+  let t_download = 0;
+  let t_text = 0;
+  let t_llm = 0;
+  let t_embed = 0;
+  let t_write = 0;
 
   // Check if upload is still valid/running, abort if already marked failed or cancelled
   const cvUpload = await ctx.runQuery(api.candidates.candidates.getCvUpload, { cvUploadId });
@@ -956,6 +962,7 @@ export async function runCvExtraction(
 
   try {
     let url: string | null = null;
+    const tDownloadStart = Date.now();
 
     if (args.s3Key && args.storageProvider === "r2") {
       url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: args.s3Key });
@@ -969,6 +976,8 @@ export async function runCvExtraction(
     if (!response.ok) throw new Error(`Failed to download file from Convex storage. Status: ${response.status}`);
 
     const buffer = await response.arrayBuffer();
+    t_download = Date.now() - tDownloadStart;
+
     if (buffer.byteLength === 0) {
       throw new Error("The file retrieved from storage is empty (zero bytes).");
     }
@@ -1028,7 +1037,10 @@ export async function runCvExtraction(
       return existingCandidate._id;
     }
 
+    const tTextStart = Date.now();
     const { text: rawText, extractionModel } = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
+    t_text = Date.now() - tTextStart;
+
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
     if (trimmed.length < 20) {
@@ -1038,6 +1050,7 @@ export async function runCvExtraction(
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
       : trimmed;
 
+    const tWrite1Start = Date.now();
     candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
       rawText: cappedRawText,
       sourceChannel: sourceChannel ?? undefined,
@@ -1054,6 +1067,7 @@ export async function runCvExtraction(
       fileHash,
       candidateId,
     });
+    t_write += Date.now() - tWrite1Start;
 
     let finalCandidateId: Id<"candidates"> | null = null;
     let extracted: CvExtractionResult | null = null;
@@ -1083,7 +1097,9 @@ export async function runCvExtraction(
       } as unknown as CvExtractionResult;
 
       try {
+        const tEmbedStart = Date.now();
         embedding = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId);
+        t_embed = Date.now() - tEmbedStart;
       } catch (embedErr: any) {
         console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", embedErr.message || embedErr);
       }
@@ -1095,17 +1111,20 @@ export async function runCvExtraction(
         });
       }
 
-      // First try: Single call to OpenRouter LLM (DeepSeek V4 Flash) with standard extracted text
-      let [extractedData, embeddingResult] = await Promise.all([
-        callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
-          console.warn("[CvExtraction] First call to OpenRouter LLM failed:", err.message || err);
-          return null;
-        }),
-        generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
-          console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", err.message || err);
-          return undefined;
-        })
-      ]);
+      // Single call to OpenRouter LLM and NVIDIA embedding with precise stage timing
+      const tLlmStart = Date.now();
+      let extractedData = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
+        console.warn("[CvExtraction] First call to OpenRouter LLM failed:", err.message || err);
+        return null;
+      });
+      t_llm = Date.now() - tLlmStart;
+
+      const tEmbedStart = Date.now();
+      let embeddingResult = await generateNvidiaEmbedding(ctx, cappedRawText, cvUploadId).catch((err: any) => {
+        console.error("[CvExtraction] Embedding generation failed (continuing without embedding):", err.message || err);
+        return undefined;
+      });
+      t_embed = Date.now() - tEmbedStart;
 
       extracted = extractedData;
 
@@ -1274,6 +1293,17 @@ export async function runCvExtraction(
         batchId: args.batchId,
       });
     }
+
+    const t_total = Date.now() - tStart;
+    console.log("[CV_TIMING_METRICS]", JSON.stringify({
+      cvUploadId,
+      t_download,
+      t_text,
+      t_llm,
+      t_embed,
+      t_write,
+      t_total,
+    }));
 
     return candidateId;
   } catch (err) {
