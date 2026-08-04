@@ -18,7 +18,7 @@ async function runRestorationLoop() {
         }),
       });
 
-      const data: any = await res.json();
+      const data = await res.json();
       if (data.status === "success") {
         const { checkedCount, requeuedRestored } = data.value;
         totalChecked += checkedCount;
@@ -33,7 +33,7 @@ async function runRestorationLoop() {
         console.error(`[Batch ${i}] Server error:`, data.errorMessage);
         break;
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error(`[Batch ${i}] Network error:`, err.message);
       break;
     }
