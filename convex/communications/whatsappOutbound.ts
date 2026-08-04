@@ -450,13 +450,15 @@ export const checkAndRecordFollowUpReply = internalMutation({
 
     if (!candidate) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
-    // Find active follow-up or auto-rejected application
+    // Find active follow-up, ta_shortlist, new_cvs or auto-rejected application
     const activeApp = await ctx.db
       .query("applications")
       .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate!._id))
       .filter((q: any) =>
         q.or(
           q.eq(q.field("currentStage"), "follow_up"),
+          q.eq(q.field("currentStage"), "ta_shortlist"),
+          q.eq(q.field("currentStage"), "new_cvs"),
           q.and(
             q.eq(q.field("currentStage"), "rejected"),
             q.eq(q.field("taRejectionReason"), "Did not complete requirements within 7-day window")
