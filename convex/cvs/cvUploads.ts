@@ -296,10 +296,13 @@ export const recoverStuckUploads = internalMutation({
 export const restoreAllCandidatesFromUploads = mutation({
   args: {},
   handler: async (ctx) => {
-    const allUploads = await ctx.db.query("cvUploads").collect();
+    // Process up to 100 uploads per iteration to stay within 1s mutation limits
+    const uploadsChunk = await ctx.db.query("cvUploads").take(100);
     let requeued = 0;
+    let checkedCount = 0;
 
-    for (const upload of allUploads) {
+    for (const upload of uploadsChunk) {
+      checkedCount++;
       let candidateExists = false;
       if (upload.candidateId) {
         const cand = await ctx.db.get(upload.candidateId);
@@ -312,8 +315,8 @@ export const restoreAllCandidatesFromUploads = mutation({
           candidateId: undefined,
         });
 
-        // Trigger parallel extraction (50ms spread)
-        await ctx.scheduler.runAfter(requeued * 50, api.cvs.cvExtraction.processCvExtraction, {
+        // Trigger parallel extraction (100ms spread)
+        await ctx.scheduler.runAfter(requeued * 100, api.cvs.cvExtraction.processCvExtraction, {
           storageId: upload.storageId as any,
           s3Key: upload.s3Key,
           storageProvider: upload.storageProvider,
@@ -327,7 +330,7 @@ export const restoreAllCandidatesFromUploads = mutation({
       }
     }
 
-    return { totalUploads: allUploads.length, requeuedRestored: requeued };
+    return { checkedCount, requeuedRestored: requeued };
   },
 });
 
