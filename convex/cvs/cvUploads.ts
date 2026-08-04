@@ -287,3 +287,47 @@ export const recoverStuckUploads = internalMutation({
     return count;
   },
 });
+
+/**
+ * Recovery Tool: Scans all cvUploads in Cloudflare R2 / Convex.
+ * If a candidate profile was deleted from the candidates table,
+ * this mutation re-enqueues extraction to restore the candidate profile!
+ */
+export const restoreAllCandidatesFromUploads = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const allUploads = await ctx.db.query("cvUploads").collect();
+    let requeued = 0;
+
+    for (const upload of allUploads) {
+      let candidateExists = false;
+      if (upload.candidateId) {
+        const cand = await ctx.db.get(upload.candidateId);
+        if (cand) candidateExists = true;
+      }
+
+      if (!candidateExists) {
+        await ctx.db.patch(upload._id, {
+          status: "uploaded",
+          candidateId: undefined,
+        });
+
+        // Trigger parallel extraction (50ms spread)
+        await ctx.scheduler.runAfter(requeued * 50, api.cvs.cvExtraction.processCvExtraction, {
+          storageId: upload.storageId as any,
+          s3Key: upload.s3Key,
+          storageProvider: upload.storageProvider,
+          fileType: upload.fileType,
+          sourceChannel: upload.source || "Recovery",
+          uploadedBy: upload.uploadedBy,
+          cvUploadId: upload._id,
+        });
+
+        requeued++;
+      }
+    }
+
+    return { totalUploads: allUploads.length, requeuedRestored: requeued };
+  },
+});
+
