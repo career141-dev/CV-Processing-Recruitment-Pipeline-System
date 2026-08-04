@@ -29,8 +29,10 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const fromNumber = message.from;
       const cleanFromNumber = fromNumber.replace(/[^0-9]/g, "");
 
+      const isCandidateReply = await ctx.runQuery(internal.communications.whatsappOutbound.isCandidatePhone, { phone: cleanFromNumber });
       const isTaNumber = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFromNumber });
-      if (cleanFromNumber === businessPhone || (cleanConfigured && cleanFromNumber === cleanConfigured) || isTaNumber) {
+
+      if (!isCandidateReply && (cleanFromNumber === businessPhone || (cleanConfigured && cleanFromNumber === cleanConfigured) || isTaNumber)) {
         console.log("[WhatChimp Webhook] Ignoring Meta message from business/TA number itself.");
         continue;
       }
@@ -126,13 +128,16 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const payload = (typeof body.data === "object" && body.data !== null) ? body.data :
                   (typeof body.payload === "object" && body.payload !== null) ? body.payload : body;
 
-  const extractMessageText = (msg: any) => {
+  const extractMessageText = (msg: any): string | undefined => {
     if (typeof msg === "string") return msg;
     if (typeof msg === "object" && msg !== null) {
       if (typeof msg.text === "string") return msg.text;
       if (typeof msg.caption === "string") return msg.caption;
       if (typeof msg.body === "string") return msg.body;
       if (typeof msg.message === "string") return msg.message;
+      if (typeof msg.content === "string") return msg.content;
+      if (typeof msg.message_text === "string") return msg.message_text;
+      if (typeof msg.text_body === "string") return msg.text_body;
     }
     return undefined;
   };
@@ -152,8 +157,21 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
                body.chat_id || body.from || body.phone || body.sender || body.phone_number || body.mobile ||
                (body.subscriber_id && typeof body.subscriber_id === "string" && body.subscriber_id.split("-")[0]) || body.subscriber_id;
   
-  let text = extractMessageText(payload.user_message) || extractMessageText(payload.message) || extractMessageText(payload.body) || extractMessageText(payload.text) || (typeof payload.message_text === "string" ? payload.message_text : undefined) ||
-             extractMessageText(body.user_message) || extractMessageText(body.message) || extractMessageText(body.body) || extractMessageText(body.text) || (typeof body.message_text === "string" ? body.message_text : undefined);
+  let text = extractMessageText(payload.user_message) || 
+             extractMessageText(payload.message) || 
+             extractMessageText(payload.body) || 
+             extractMessageText(payload.text) || 
+             extractMessageText(payload.content) || 
+             extractMessageText(payload.message_text) || 
+             extractMessageText(payload.text_body) || 
+             extractMessageText(payload.data?.message) || 
+             extractMessageText(payload.data?.text) || 
+             extractMessageText(body.user_message) || 
+             extractMessageText(body.message) || 
+             extractMessageText(body.body) || 
+             extractMessageText(body.text) || 
+             extractMessageText(body.content) || 
+             extractMessageText(body.message_text) || "";
   if (typeof text !== "string") {
     text = "";
   }

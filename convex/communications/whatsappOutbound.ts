@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation } from "../_generated/server";
+import { internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
 // Internal query to fetch the correct phone_number_id based on the whatsapp number string from the database
@@ -32,6 +32,28 @@ export const getWhatChimpPhoneId = internalQuery({
     console.error(`[WhatChimp] No phone_number_id mapped for ${args.targetWhatsAppNumber}`);
     return null;
   }
+});
+
+export const isCandidatePhone = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    const cleanDigits = args.phone.replace(/\D/g, "");
+    if (!cleanDigits) return false;
+
+    const cand = await ctx.db
+      .query("candidates")
+      .withIndex("by_phone", (q) => q.eq("phone", `+${cleanDigits}`))
+      .first();
+
+    if (cand) return true;
+
+    const cand2 = await ctx.db
+      .query("candidates")
+      .filter((q) => q.eq(q.field("phoneClean"), cleanDigits))
+      .first();
+
+    return !!cand2;
+  },
 });
 
 // Internal action to tag a candidate in WhatChimp
@@ -132,7 +154,6 @@ export const assignAiFollowUpLabel = internalAction({
   }
 });
 
-import { internalQuery } from "../_generated/server";
 export const getJobWhatsAppChannel = internalQuery({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, args) => {

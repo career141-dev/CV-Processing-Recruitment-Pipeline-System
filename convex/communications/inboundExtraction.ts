@@ -113,58 +113,59 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         updates.customFollowUpAnswers = finalCustomAnswers;
       }
 
-      if (Object.keys(updates).length > 0) {
+      const hasUpdates = Object.keys(updates).length > 0 || extracted.cvReceived === true;
+
+      if (hasUpdates) {
         console.log(`[Inbound Extraction] Extracted updates for candidate ${args.candidateId}:`, updates);
         await ctx.runMutation(api.candidates.candidates.updateCandidateDetails, {
           candidateId: args.candidateId,
           applicationId: activeApp._id,
           ...updates,
         });
-      }
 
-      // Re-fetch updated application and candidate data post-update
-      const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
-      const updatedApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, { candidateId: args.candidateId });
+        // Re-fetch updated application and candidate data post-update
+        const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
+        const updatedApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, { candidateId: args.candidateId });
 
-      // Determine if application is now complete or advanced
-      const isCompleted = !updatedApp || updatedApp.currentStage === "second_shortlist" || (
-        (updatedApp?.followUpCvReceived || updatedCandidate?.cvUploadId) &&
-        (updatedApp?.followUpCurrentSalary || updatedCandidate?.currentSalary !== undefined) &&
-        (updatedApp?.followUpExpectedSalary || updatedCandidate?.expectedSalary !== undefined) &&
-        (updatedApp?.followUpNoticePeriod || updatedCandidate?.noticePeriodDays !== undefined)
-      );
+        // Determine if application is now complete or advanced
+        const isCompleted = !updatedApp || updatedApp.currentStage === "second_shortlist" || (
+          (updatedApp?.followUpCvReceived || updatedCandidate?.cvUploadId) &&
+          (updatedApp?.followUpCurrentSalary || updatedCandidate?.currentSalary !== undefined) &&
+          (updatedApp?.followUpExpectedSalary || updatedCandidate?.expectedSalary !== undefined) &&
+          (updatedApp?.followUpNoticePeriod || updatedCandidate?.noticePeriodDays !== undefined)
+        );
 
-      let replyMessage: string | null = null;
+        let replyMessage: string | null = null;
 
-      if (isCompleted) {
-        replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
-      } else {
-        const stillMissing: string[] = [];
-        const appRecord = updatedApp || activeApp;
-        if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
-        if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
-        if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
-        if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined) stillMissing.push("• Notice Period");
+        if (isCompleted) {
+          replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
+        } else {
+          const stillMissing: string[] = [];
+          const appRecord = updatedApp || activeApp;
+          if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
+          if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
+          if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
+          if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined) stillMissing.push("• Notice Period");
 
-        for (const q of customQuestions) {
-          const ans = appRecord.customFollowUpAnswers || {};
-          if (!ans[q]) stillMissing.push(`• ${q}`);
+          for (const q of customQuestions) {
+            const ans = appRecord.customFollowUpAnswers || {};
+            if (!ans[q]) stillMissing.push(`• ${q}`);
+          }
+
+          if (stillMissing.length > 0) {
+            replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
+          }
         }
 
-        if (stillMissing.length > 0) {
-          replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
-        }
-      }
+        if (replyMessage) {
+          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
+          await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
+            applicationId: activeApp._id,
+            nextActionTimeHours: hours,
+            messageBody: replyMessage,
+          });
 
-      if (replyMessage) {
-        const hours = typeof extracted.nextActionTimeHours === "number" ? extracted.nextActionTimeHours : 0;
-        await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
-          applicationId: activeApp._id,
-          nextActionTimeHours: hours,
-          messageBody: replyMessage,
-        });
-
-        if (hours <= 0) {
+          // Only send immediate reply if it was a genuine candidate update
           const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
             candidateId: args.candidateId,
             applicationId: activeApp._id,
@@ -180,6 +181,8 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
           });
           console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
         }
+      } else {
+        console.log(`[Inbound Extraction] No new updates extracted from message for candidate ${args.candidateId}. Suppressing duplicate reply loop.`);
       }
 
     } catch (err: any) {

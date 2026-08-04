@@ -880,6 +880,20 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
           }} className="inline-flex items-center text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer">
             {sendingEmailId === item.id ? "Sending..." : "Send Email"}
           </button>
+          <button onClick={async () => {
+            try {
+              await convex.mutation(api.admin.qaTests.resetCandidateTestDetails, {
+                candidateId: item.candidate._id,
+                applicationId: item.id,
+              });
+              toast.success("Candidate salary & notice period fields cleared for testing!");
+            } catch (err: any) {
+              console.error(err);
+              toast.error("Failed to clear details: " + (err.message || "Error"));
+            }
+          }} className="inline-flex items-center text-[11px] font-bold text-red-500 hover:text-red-600 hover:underline transition-all mt-1 cursor-pointer" title="Clear Salary & Notice Details to re-test follow-up">
+            Clear Test Details
+          </button>
         </div>
       </td>
     </tr>

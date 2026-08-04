@@ -9,6 +9,7 @@
     "dev:hosted": "node scripts/convex-env-run.js hosted dev",
     "dev:local": "node scripts/convex-env-run.js local dev",
     "db:sync-from-hosted": "node scripts/convex-env-run.js local sync-from-hosted",
+    "backup": "node scripts/auto-backup.mjs",
     "convex-dev": "npm run dev:hosted",
     "build": "next build",
     "start": "next start",
