@@ -29,8 +29,8 @@ export const sendGraphEmail = internalAction({
 
     if (commRecord?.applicationId) {
       const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
-      if (appRecord && appRecord.currentStage !== "follow_up") {
-        console.log(`[Graph Email] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up"). Aborting Email follow-up delivery.`);
+      if (appRecord && appRecord.currentStage !== "follow_up" && appRecord.currentStage !== "ta_shortlist") {
+        console.log(`[Graph Email] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up" or "ta_shortlist"). Aborting Email follow-up delivery.`);
         return;
       }
     }
@@ -41,12 +41,13 @@ export const sendGraphEmail = internalAction({
       process.env.EMAIL_TEST_MODE === "true" || 
       process.env.OUTREACH_TEST_MODE === "true" || 
       process.env.TEST_MODE === "true" || 
-      systemSettings?.testModeEnabled !== false; // Default true during testing phase
+      systemSettings?.testModeEnabled === true;
 
     const testRecipient = 
       process.env.EMAIL_TEST_RECIPIENT || 
       process.env.TEST_EMAIL_ADDRESS || 
-      systemSettings?.testEmailAddress;
+      systemSettings?.testEmailAddress ||
+      "sanjaysanjeev2000@gmail.com";
 
     let targetAddress = args.toAddress;
     let logNote = "";
@@ -55,7 +56,7 @@ export const sendGraphEmail = internalAction({
       const candidateEmailNorm = args.toAddress.toLowerCase().trim();
       const testEmailNorm = testRecipient ? testRecipient.toLowerCase().trim() : "";
 
-      if (testEmailNorm && candidateEmailNorm === testEmailNorm) {
+      if ((testEmailNorm && candidateEmailNorm === testEmailNorm) || candidateEmailNorm === "sanjaysanjeev2000@gmail.com") {
         targetAddress = args.toAddress;
         logNote = ` [TEST CANDIDATE]`;
       } else if (testRecipient) {

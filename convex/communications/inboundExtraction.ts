@@ -24,11 +24,18 @@ export const extractDetailsFromText = internalAction({
       return;
     }
 
+    const candidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
+
     const missingFields: string[] = [];
-    if (!activeApp.followUpCurrentSalary) missingFields.push("Current Salary");
-    if (!activeApp.followUpExpectedSalary) missingFields.push("Expected Salary");
-    if (!activeApp.followUpNoticePeriod) missingFields.push("Notice Period");
-    if (!activeApp.followUpCvReceived) missingFields.push("CV Document");
+    const hasCV = activeApp.followUpCvReceived === true || !!candidate?.cvUploadId;
+    const hasCurrentSalary = activeApp.followUpCurrentSalary === true || candidate?.currentSalary !== undefined;
+    const hasExpectedSalary = activeApp.followUpExpectedSalary === true || candidate?.expectedSalary !== undefined;
+    const hasNoticePeriod = activeApp.followUpNoticePeriod === true || candidate?.noticePeriodDays !== undefined;
+
+    if (!hasCV) missingFields.push("CV Document");
+    if (!hasCurrentSalary) missingFields.push("Current Salary");
+    if (!hasExpectedSalary) missingFields.push("Expected Salary");
+    if (!hasNoticePeriod) missingFields.push("Notice Period");
 
     const customQuestions = job.customFollowUpQuestions || [];
     const answeredCustomQuestions = activeApp.customFollowUpAnswers || {};
@@ -40,8 +47,8 @@ export const extractDetailsFromText = internalAction({
     const model = getModelForTask("jd_extraction");
 
     const systemPrompt = `You are an AI recruitment assistant for Career141 managing candidate follow-ups.
-The Talent Acquisition (TA) team wants you to collect these missing details from the candidate:
-MISSING DETAILS: ${missingFields.join(", ")}
+Currently, before reading this message, these details are missing from candidate profile:
+MISSING DETAILS BEFORE THIS MESSAGE: ${missingFields.join(", ")}
 
 To understand the TA's tone, look at their templates:
 INITIAL OUTREACH TEMPLATE:
@@ -52,17 +59,19 @@ SAMPLE FOLLOW-UP TEMPLATE:
 
 Your job is to analyze the candidate's chat message and output a JSON object.
 Rules:
-1. Extract the missing numeric details if provided.
-2. Determine the candidate's 'intent' (e.g., 'provided_all', 'provided_partial', 'interested_no_eta', 'provided_eta', 'asked_question', 'not_interested').
-3. 'nextActionTimeHours': If they provide an ETA (e.g., "this evening"), calculate roughly how many hours from now that is. If they are interested but give no ETA, set it to 3. If they provide all details or are not interested, set it to null.
-4. 'nextActionMessage': Draft the exact next message to send to the candidate. 
-   - Match the TA's tone from the templates.
-   - If 'provided_partial', ask ONLY for the remaining missing fields.
+1. Extract the missing numeric/text details if provided in the candidate's message.
+2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA, a question, or declined.
+3. CRITICAL RULE FOR nextActionMessage:
+   - Calculate which fields are STILL missing AFTER accounting for the details provided in THIS candidate message.
+   - If the candidate provided a field in THIS message (e.g., they gave Expected Salary), DO NOT ask for that field again!
+   - If ALL missing details are now satisfied, set intent to 'provided_all' and nextActionMessage to null.
+   - If 'provided_partial', ask ONLY for the REMAINING fields that are STILL missing.
    - If 'interested_no_eta', explicitly ask them "by what time could you provide these details?".
-   - If 'asked_question', answer their question logically while pivoting back to ask for the missing details.
-   - If 'provided_all' or 'not_interested', leave nextActionMessage as null.
+   - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
+   - If 'provided_all' or 'not_interested', set nextActionMessage to null.
+4. 'nextActionTimeHours': Set to 0 for an immediate reply if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
 
-Return ONLY a valid JSON object matching this schema. Do not add any markdown formatting, code block backticks, or other text.
+Return ONLY a valid JSON object matching this schema. Do not add markdown formatting or backticks.
 Schema:
 {
   "currentSalary": number | null,
@@ -113,13 +122,64 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         });
       }
 
-      // Schedule the next follow-up message if the AI drafted one
-      if (extracted.nextActionMessage && typeof extracted.nextActionTimeHours === "number") {
+      // Re-fetch updated application and candidate data post-update
+      const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
+      const updatedApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, { candidateId: args.candidateId });
+
+      // Determine if application is now complete or advanced
+      const isCompleted = !updatedApp || updatedApp.currentStage === "second_shortlist" || (
+        (updatedApp?.followUpCvReceived || updatedCandidate?.cvUploadId) &&
+        (updatedApp?.followUpCurrentSalary || updatedCandidate?.currentSalary !== undefined) &&
+        (updatedApp?.followUpExpectedSalary || updatedCandidate?.expectedSalary !== undefined) &&
+        (updatedApp?.followUpNoticePeriod || updatedCandidate?.noticePeriodDays !== undefined)
+      );
+
+      let replyMessage: string | null = null;
+
+      if (isCompleted) {
+        replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
+      } else {
+        const stillMissing: string[] = [];
+        const appRecord = updatedApp || activeApp;
+        if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
+        if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
+        if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
+        if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined) stillMissing.push("• Notice Period");
+
+        for (const q of customQuestions) {
+          const ans = appRecord.customFollowUpAnswers || {};
+          if (!ans[q]) stillMissing.push(`• ${q}`);
+        }
+
+        if (stillMissing.length > 0) {
+          replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
+        }
+      }
+
+      if (replyMessage) {
+        const hours = typeof extracted.nextActionTimeHours === "number" ? extracted.nextActionTimeHours : 0;
         await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
           applicationId: activeApp._id,
-          nextActionTimeHours: extracted.nextActionTimeHours,
-          messageBody: extracted.nextActionMessage,
+          nextActionTimeHours: hours,
+          messageBody: replyMessage,
         });
+
+        if (hours <= 0) {
+          const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+            candidateId: args.candidateId,
+            applicationId: activeApp._id,
+            jobId: activeApp.jobId,
+            body: replyMessage,
+          });
+
+          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+            communicationId: commId,
+            candidateId: args.candidateId,
+            jobId: activeApp.jobId,
+            body: replyMessage,
+          });
+          console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
+        }
       }
 
     } catch (err: any) {

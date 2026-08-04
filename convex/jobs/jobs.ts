@@ -1074,3 +1074,15 @@ export async function syncJobTitleToCandidates(ctx: any, jobId: Id<"jobs">, newT
   }
 }
 
+export const setMuteDefaultWhatsappReply = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    mute: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      muteDefaultWhatsappReply: args.mute,
+    });
+    return { success: true, jobId: args.jobId, muteDefaultWhatsappReply: args.mute };
+  },
+});

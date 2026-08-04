@@ -1353,7 +1353,7 @@ export const runSafeBackfill = action({
     let totalCandidates = 0;
     let candidateCursor: string | null = null;
     while (true) {
-      const page: any = await ctx.runQuery(api.stats.statsQueries.getCandidatesPage, {
+      const page: any = await ctx.runQuery(internal.stats.statsQueries.getCandidatesPage, {
         cursor: candidateCursor,
         limit,
       });
@@ -1367,7 +1367,7 @@ export const runSafeBackfill = action({
     let totalCvUploads = 0;
     let cvUploadCursor: string | null = null;
     while (true) {
-      const page: any = await ctx.runQuery(api.stats.statsQueries.getCvUploadsPage, {
+      const page: any = await ctx.runQuery(internal.stats.statsQueries.getCvUploadsPage, {
         cursor: cvUploadCursor,
         limit,
       });
@@ -1381,7 +1381,7 @@ export const runSafeBackfill = action({
     let totalApplications = 0;
     let appCursor: string | null = null;
     while (true) {
-      const page: any = await ctx.runQuery(api.stats.statsQueries.getApplicationsPage, {
+      const page: any = await ctx.runQuery(internal.stats.statsQueries.getApplicationsPage, {
         cursor: appCursor,
         limit,
       });
@@ -1395,7 +1395,7 @@ export const runSafeBackfill = action({
     let activeJobsCount = 0;
     let jobCursor: string | null = null;
     while (true) {
-      const page: any = await ctx.runQuery(api.stats.statsQueries.getJobsPage, {
+      const page: any = await ctx.runQuery(internal.stats.statsQueries.getJobsPage, {
         cursor: jobCursor,
         limit,
       });

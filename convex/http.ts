@@ -24,8 +24,13 @@ http.route({
   }),
 });
 
-// Meta Webhook Inbound Events
-// WhatChimp Webhook Inbound Events
+// Meta / WhatChimp Inbound POST Events
+http.route({
+  path: "/api/whatsapp",
+  method: "POST",
+  handler: handleWhatChimpWebhook,
+});
+
 http.route({
   path: "/api/whatsapp-whatchimp",
   method: "POST",

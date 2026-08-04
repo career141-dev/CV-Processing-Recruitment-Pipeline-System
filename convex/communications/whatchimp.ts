@@ -132,12 +132,16 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   }
 
   // 2. Check if it's a flat custom WhatChimp payload format
+  const payload = (typeof body.data === "object" && body.data !== null) ? body.data :
+                  (typeof body.payload === "object" && body.payload !== null) ? body.payload : body;
+
   const extractMessageText = (msg: any) => {
     if (typeof msg === "string") return msg;
     if (typeof msg === "object" && msg !== null) {
       if (typeof msg.text === "string") return msg.text;
       if (typeof msg.caption === "string") return msg.caption;
       if (typeof msg.body === "string") return msg.body;
+      if (typeof msg.message === "string") return msg.message;
     }
     return undefined;
   };
@@ -152,17 +156,22 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return undefined;
   };
 
-  const from = body.chat_id || body.from || body.phone || body.sender || body.phone_number || (body.subscriber_id && body.subscriber_id.split("-")[0]) || body.subscriber_id;
+  const from = payload.chat_id || payload.from || payload.phone || payload.sender || payload.phone_number || payload.mobile || 
+               (payload.subscriber_id && typeof payload.subscriber_id === "string" && payload.subscriber_id.split("-")[0]) || payload.subscriber_id ||
+               body.chat_id || body.from || body.phone || body.sender || body.phone_number || body.mobile ||
+               (body.subscriber_id && typeof body.subscriber_id === "string" && body.subscriber_id.split("-")[0]) || body.subscriber_id;
   
-  let text = extractMessageText(body.user_message) || extractMessageText(body.message) || extractMessageText(body.body) || extractMessageText(body.text) || (typeof body.message_text === "string" ? body.message_text : undefined);
+  let text = extractMessageText(payload.user_message) || extractMessageText(payload.message) || extractMessageText(payload.body) || extractMessageText(payload.text) || (typeof payload.message_text === "string" ? payload.message_text : undefined) ||
+             extractMessageText(body.user_message) || extractMessageText(body.message) || extractMessageText(body.body) || extractMessageText(body.text) || (typeof body.message_text === "string" ? body.message_text : undefined);
   if (typeof text !== "string") {
     text = "";
   }
 
-  const mediaUrl = extractMediaUrl(body.user_message) || extractMediaUrl(body.message) || extractMediaUrl(body.body) || body.media_url || body.file_url || body.mediaUrl || body.fileUrl;
-  const fileName = body.filename || body.fileName || (mediaUrl ? mediaUrl.split("/").pop() : "cv.pdf") || "cv.pdf";
-  const mimeType = body.mime_type || body.mimeType || "application/pdf";
-  const to = body.to || body.receiver || body.whatsapp_bot_username || body.display_phone_number || "WhatChimp Number";
+  const mediaUrl = extractMediaUrl(payload.user_message) || extractMediaUrl(payload.message) || extractMediaUrl(payload.body) || payload.media_url || payload.file_url || payload.mediaUrl || payload.fileUrl ||
+                   extractMediaUrl(body.user_message) || extractMediaUrl(body.message) || extractMediaUrl(body.body) || body.media_url || body.file_url || body.mediaUrl || body.fileUrl;
+  const fileName = payload.filename || payload.fileName || body.filename || body.fileName || (mediaUrl ? mediaUrl.split("/").pop() : "cv.pdf") || "cv.pdf";
+  const mimeType = payload.mime_type || payload.mimeType || body.mime_type || body.mimeType || "application/pdf";
+  const to = payload.to || payload.receiver || payload.whatsapp_bot_username || payload.display_phone_number || body.to || body.receiver || body.whatsapp_bot_username || body.display_phone_number || "WhatChimp Number";
 
   if (!from) {
     console.warn("[WhatChimp Webhook] No sender identifier found in payload.");
@@ -174,12 +183,6 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
   console.log(`[WhatChimp Webhook] Flat payload parsed: From=+${cleanFrom}, Text="${text}", Has Media=${!!mediaUrl}`);
 
-  const isTaNumberCustom = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFrom });
-  if (cleanFrom === businessPhone || (cleanConfigured && cleanFrom === cleanConfigured) || isTaNumberCustom) {
-    console.log("[WhatChimp Webhook] Ignoring outbound/status notification from the business/TA number itself.");
-    return new Response("OK", { status: 200 });
-  }
-
   // Pre-check: if text starts with a known job keyword, it's a new applicant — skip follow-up check
   let isNewKeywordMessage = false;
   if (!mediaUrl && text) {
@@ -190,9 +193,26 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     }
   }
 
-  // NEW: Pre-Application Conversational AI (Highest Priority after keywords/media)
+  // 1. First, check if this is an active Candidate Follow-Up Reply
+  const checkResult = (!mediaUrl && !isNewKeywordMessage) ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+    senderPhone: cleanFrom,
+    textBody: text || "",
+  }) : null;
+
+  const isFollowUpReply = checkResult?.isFollowUpReply === true;
+
+  // 2. Only ignore if it is a TA/Business number AND NOT an active candidate follow-up reply
+  if (!isFollowUpReply) {
+    const isTaNumberCustom = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFrom });
+    if (cleanFrom === businessPhone || (cleanConfigured && cleanFrom === cleanConfigured) || isTaNumberCustom) {
+      console.log("[WhatChimp Webhook] Ignoring outbound/status notification from the business/TA number itself.");
+      return new Response("OK", { status: 200 });
+    }
+  }
+
+  // 2. Pre-Application Conversational AI (Only if NOT an active candidate follow-up reply)
   let isPreAppChat = false;
-  if (!mediaUrl && !isNewKeywordMessage && text) {
+  if (!mediaUrl && !isNewKeywordMessage && !isFollowUpReply && text) {
     const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, {
       phone: cleanFrom,
     });
@@ -211,14 +231,6 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       }
     }
   }
-
-  // Resolve candidate details for Follow-Up Replies (Only if not Pre-Application Chat)
-  const checkResult = (!mediaUrl && !isNewKeywordMessage && !isPreAppChat) ? await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
-    senderPhone: cleanFrom,
-    textBody: text || "",
-  }) : null;
-
-  const isFollowUpReply = checkResult?.isFollowUpReply === true;
 
   // Handle incoming CV document — process for ALL candidates, including follow-up
   if (mediaUrl) {

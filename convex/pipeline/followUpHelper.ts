@@ -28,7 +28,7 @@ export async function checkAndAdvanceFollowUp(
     const candidate = await ctx.db.get(candidateId);
     if (!candidate) continue;
 
-    const hasCV = !!candidate.cvUploadId || !!app.cvFileId;
+    const hasCV = app.followUpCvReceived === true || !!candidate.cvUploadId || !!app.cvFileId || candidate.isParsed === true;
     const hasCurrent = candidate.currentSalary !== undefined && candidate.currentSalary !== null;
     const hasExpected = candidate.expectedSalary !== undefined && candidate.expectedSalary !== null;
     const hasNotice = candidate.noticePeriodDays !== undefined && candidate.noticePeriodDays !== null;

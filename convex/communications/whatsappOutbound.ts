@@ -168,11 +168,37 @@ export const getJobOutboundWhatsAppNumber = internalQuery({
 });
 
 async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<string> {
-  const isTestMode = process.env.WHATSAPP_TEST_MODE === "true" && process.env.NODE_ENV !== "production";
-  const testRecipient = process.env.WHATSAPP_TEST_RECIPIENT;
+  const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
+  const isTestMode = 
+    process.env.WHATSAPP_TEST_MODE === "true" || 
+    process.env.OUTREACH_TEST_MODE === "true" || 
+    process.env.TEST_MODE === "true" ||
+    systemSettings?.testModeEnabled === true;
+    
+  const testRecipient = 
+    process.env.WHATSAPP_TEST_RECIPIENT || 
+    process.env.TEST_PHONE_NUMBER || 
+    systemSettings?.testPhoneNumber ||
+    "+94753883167";
+    
   const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
 
   if (isTestMode && testRecipient && cleanNum(senderPhone) === cleanNum(testRecipient)) {
+    // 1. FIRST check if the test sender phone directly matches a candidate in the DB with an active application
+    const directCandidate = await findCandidateByPhone(ctx, senderPhone);
+    if (directCandidate) {
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", directCandidate._id))
+        .collect();
+      const activeApp = apps.find((a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed");
+      if (activeApp) {
+        console.log(`[WhatsApp Test Mode] Direct candidate match found for test sender ${senderPhone}: ${directCandidate.fullName} (${directCandidate._id})`);
+        return senderPhone;
+      }
+    }
+
+    // 2. Fallback to lastOutbound only if test sender is not a candidate themselves
     const lastOutbound = await ctx.db
       .query("communications")
       .withIndex("by_direction_channel_time", (q: any) =>
@@ -184,7 +210,7 @@ async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<stri
     if (lastOutbound) {
       const testCandidate = await ctx.db.get(lastOutbound.candidateId);
       if (testCandidate && testCandidate.phone) {
-        console.log(`[WhatsApp Test Mode] Mapped test sender ${senderPhone} to actual candidate phone: ${testCandidate.phone}`);
+        console.log(`[WhatsApp Test Mode] Mapped test sender ${senderPhone} to last contacted candidate phone: ${testCandidate.phone}`);
         return testCandidate.phone;
       }
     }
@@ -225,8 +251,8 @@ export const sendWhatsApp = internalAction({
 
     if (commRecord?.applicationId) {
       const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
-      if (appRecord && appRecord.currentStage !== "follow_up") {
-        console.log(`[WhatsApp Outbound] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up"). Aborting WhatsApp follow-up delivery.`);
+      if (appRecord && appRecord.currentStage !== "follow_up" && appRecord.currentStage !== "ta_shortlist") {
+        console.log(`[WhatsApp Outbound] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up" or "ta_shortlist"). Aborting WhatsApp follow-up delivery.`);
         await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
           communicationId: args.communicationId,
           status: "failed",
@@ -256,12 +282,14 @@ export const sendWhatsApp = internalAction({
     const isTestMode = 
       process.env.WHATSAPP_TEST_MODE === "true" || 
       process.env.OUTREACH_TEST_MODE === "true" || 
-      process.env.TEST_MODE === "true";
+      process.env.TEST_MODE === "true" ||
+      systemSettings?.testModeEnabled === true;
 
     const testRecipient = 
       process.env.WHATSAPP_TEST_RECIPIENT || 
       process.env.TEST_PHONE_NUMBER || 
-      systemSettings?.testPhoneNumber;
+      systemSettings?.testPhoneNumber ||
+      "+94753883167";
 
     let targetPhone = candidate.phone;
     let logNote = "";
@@ -270,8 +298,8 @@ export const sendWhatsApp = internalAction({
       const candidateDigits = candidate.phone.replace(/\D/g, "");
       const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
 
-      if (testDigits && candidateDigits === testDigits) {
-        // Candidate IS the test number, send directly
+      if ((testDigits && candidateDigits === testDigits) || candidateDigits.endsWith("753883167") || candidateDigits.endsWith("742197476")) {
+        // Candidate IS the designated test phone, send directly
         targetPhone = candidate.phone;
         logNote = ` [TEST CANDIDATE]`;
       } else if (testRecipient) {
@@ -331,23 +359,30 @@ export const sendWhatsApp = internalAction({
       let sendError = "";
 
       try {
+        const params = new URLSearchParams({
+          apiToken: apiKey,
+          phone_number_id: cleanPhoneId,
+          phone_number: `+${cleanPhone}`,
+          message: args.body,
+        });
+
         const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
           },
-          body: JSON.stringify({
-            phone_number_id: cleanPhoneId,
-            recipient: `+${cleanPhone}`,
-            message: args.body,
-          }),
+          body: params.toString(),
         });
 
         if (res.ok) {
           const data = await res.json();
           console.log(`[WhatsApp Outbound] WhatChimp direct response:`, JSON.stringify(data));
-          sentSuccess = true;
+          if (data.status === "1" || data.status === 1 || data.wa_message_id) {
+            sentSuccess = true;
+          } else {
+            sendError = data.message || "WhatChimp returned status 0";
+            console.warn(`[WhatsApp Outbound] WhatChimp status error: ${sendError}`);
+          }
         } else {
           sendError = await res.text();
           console.warn(`[WhatsApp Outbound] Direct WhatChimp call returned HTTP ${res.status}: ${sendError}`);
@@ -441,20 +476,16 @@ export const checkAndRecordFollowUpReply = internalMutation({
 
     if (!candidate) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
-    // Find active follow-up or auto-rejected application
-    const activeApp = await ctx.db
+    const apps = await ctx.db
       .query("applications")
-      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate!._id))
-      .filter((q: any) =>
-        q.or(
-          q.eq(q.field("currentStage"), "follow_up"),
-          q.and(
-            q.eq(q.field("currentStage"), "rejected"),
-            q.eq(q.field("taRejectionReason"), "Did not complete requirements within 7-day window")
-          )
-        )
-      )
-      .first();
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+      .collect();
+
+    const activeApp = apps.find(
+      (a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed"
+    );
+
+    console.log(`[checkAndRecordFollowUpReply] Sender: ${args.senderPhone} -> Candidate: ${candidate.fullName} (${candidate._id}). Active stage: ${activeApp?.currentStage || "NONE"}`);
 
     if (!activeApp) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
@@ -601,7 +632,7 @@ export const recordLocalWhatsappOutbound = internalMutation({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("communications", {
+    return await ctx.db.insert("communications", {
       candidateId: args.candidateId,
       applicationId: args.applicationId,
       jobId: args.jobId,
