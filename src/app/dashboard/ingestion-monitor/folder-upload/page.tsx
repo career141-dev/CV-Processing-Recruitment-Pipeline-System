@@ -173,14 +173,30 @@ export default function FolderUploadPage() {
         const ext = item.file.name.split(".").pop()?.toLowerCase() || "pdf";
         const uploadFileName = `${item.folderName}_${item.file.name}`;
 
-        await uploadFolderCandidate({
-          fileName: uploadFileName,
-          fileType: ext,
-          base64Data,
-          uploadedBy: "Browser Folder Importer",
-          sourceChannel: "Manual Directory Import",
-          batchIndex: i % BATCH_SIZE,
-        });
+        let success = false;
+        let retries = 3;
+
+        while (retries > 0 && !success) {
+          try {
+            await uploadFolderCandidate({
+              fileName: uploadFileName,
+              fileType: ext,
+              base64Data,
+              uploadedBy: "Browser Folder Importer",
+              sourceChannel: "Manual Directory Import",
+              batchIndex: i % BATCH_SIZE,
+            });
+            success = true;
+          } catch (err: any) {
+            retries--;
+            const activeStatus: string = statusRef.current;
+            if (retries === 0 || activeStatus === "stopped" || activeStatus === "paused") {
+              throw err;
+            }
+            console.warn(`[FolderUpload] Connection flicker on ${item.folderName}. Retrying upload (${3 - retries}/3)...`);
+            await new Promise((r) => setTimeout(r, 1000 * (4 - retries)));
+          }
+        }
 
         currentUploaded++;
         setUploadedCount(currentUploaded);
