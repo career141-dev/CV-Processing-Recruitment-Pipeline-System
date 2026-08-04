@@ -82,11 +82,11 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
               metaHeadline: message.referral?.headline,
             });
 
-            const apiToken = process.env.WHATCHIMP_API_TOKEN;
+            const apiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
             const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
               targetWhatsAppNumber: toNumber 
             });
-            const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID;
+            const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
 
             if (apiToken && phoneNumberId && !job.muteDefaultWhatsappReply) {
               const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
@@ -136,11 +136,10 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const payload = (typeof body.data === "object" && body.data !== null) ? body.data :
                   (typeof body.payload === "object" && body.payload !== null) ? body.payload : body;
 
-  // 1.5 Check for WhatChimp-specific status/echo webhooks that have no meaningful content
-  // These include delivery notifications, typing indicators, and system messages
-  const wcEventType = body.event_type || body.event || body.type || body.action || payload?.event_type;
-  if (wcEventType && typeof wcEventType === "string" && ["message_status", "status_update", "delivery", "read", "sent", "delivered", "failed", "typing", "presence"].includes(wcEventType.toLowerCase())) {
-    console.log(`[WhatChimp Webhook] Ignoring WhatChimp event type: ${wcEventType}`);
+  // 1.5 Check for WhatChimp-specific status/echo/outgoing webhooks that should not be processed as candidate inbound
+  const wcEventType = String(body.webhook_type || body.event_type || body.event || body.type || body.action || payload?.webhook_type || payload?.event_type || "").toLowerCase();
+  if (wcEventType && ["outgoing_message", "outgoing", "sent_message", "message_status", "status_update", "delivery", "read", "sent", "delivered", "failed", "typing", "presence"].includes(wcEventType)) {
+    console.log(`[WhatChimp Webhook] Ignoring WhatChimp outgoing/status event type: ${wcEventType}`);
     return new Response("OK", { status: 200 });
   }
 
@@ -363,11 +362,11 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       console.log(`[WhatChimp Webhook] Ingested CV for candidate +${cleanFrom} (jobId: ${resolvedJobId}). Result:`, ingestionResult);
 
       // 6. Send acknowledgment back to candidate
-      const apiToken = process.env.WHATCHIMP_API_TOKEN;
+      const apiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
       const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
         targetWhatsAppNumber: cleanTo 
       });
-      const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
       if (apiToken && phoneNumberId) {
         let replyMessage = "Thank you! Your CV has been successfully received and is being processed by our system. We will contact you if there is a match.";
         

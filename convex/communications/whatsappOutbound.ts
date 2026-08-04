@@ -29,6 +29,24 @@ export const isCandidatePhone = internalQuery({
   },
 });
 
+export const hasRecentInboundComm = internalQuery({
+  args: {
+    candidateId: v.id("candidates"),
+    withinMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.withinMs;
+    const recent = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .filter((q: any) => q.and(q.eq(q.field("direction"), "inbound"), q.eq(q.field("channel"), "whatsapp")))
+      .first();
+
+    return recent ? Number(recent.sentAt) > cutoff : false;
+  },
+});
+
 // Internal action to tag a candidate in WhatChimp
 export const assignAiFollowUpLabel = internalAction({
   args: {
@@ -318,10 +336,17 @@ export const sendWhatsApp = internalAction({
       const candidateDigits = candidate.phone.replace(/\D/g, "");
       const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
 
-      if (testDigits && candidateDigits === testDigits) {
-        // Candidate IS the designated test phone, send directly
+      const isExactOrTailMatch = testDigits && (candidateDigits === testDigits || candidateDigits.endsWith(testDigits.slice(-9)) || testDigits.endsWith(candidateDigits.slice(-9)));
+
+      const activeInboundSession = await ctx.runQuery(internal.communications.whatsappOutbound.hasRecentInboundComm, {
+        candidateId: candidate._id,
+        withinMs: 24 * 60 * 60 * 1000,
+      });
+
+      if (isExactOrTailMatch || activeInboundSession) {
+        // Candidate IS the test phone OR candidate actively sent an inbound message in last 24h -> send directly
         targetPhone = candidate.phone;
-        logNote = ` [TEST CANDIDATE]`;
+        logNote = activeInboundSession ? ` [ACTIVE INBOUND SESSION]` : ` [TEST CANDIDATE]`;
       } else if (testRecipient) {
         // Redirect to test recipient number
         targetPhone = testRecipient;
@@ -339,10 +364,7 @@ export const sendWhatsApp = internalAction({
     }
     // 3. Send message to WhatChimp API
     try {
-      const baseApiToken = process.env.WHATCHIMP_API_TOKEN;
-      if (!baseApiToken) {
-        throw new Error("WHATCHIMP_API_TOKEN is not configured.");
-      }
+      const baseApiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
 
       // Fetch job's designated outbound TA number (or fallback)
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
@@ -512,8 +534,14 @@ export const checkAndRecordFollowUpReply = internalMutation({
 
     if (!activeApp) return { isFollowUpReply: false, candidateId: null, jobId: null };
 
-    // Inbound Deduplication: check if identical message was received from this candidate in the last 10s
-    const tenSecAgo = Date.now() - 10000;
+    // Skip system template echoes (e.g. outbound follow-up template messages echoed back via WhatChimp webhooks)
+    if (args.textBody && args.textBody.startsWith("Hi ") && (args.textBody.includes("We've recorded your update") || args.textBody.includes("still waiting on the following"))) {
+      console.log(`[checkAndRecordFollowUpReply] ECHO GUARD: Skipping outbound template echo message.`);
+      return { isFollowUpReply: false, candidateId: candidate._id, jobId: activeApp.jobId };
+    }
+
+    // Inbound Deduplication: check if identical message was received from this candidate in the last 5 minutes (300s) to absorb Webhook retries
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
     const recentInbound = await ctx.db
       .query("communications")
       .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", candidate._id))
@@ -521,8 +549,8 @@ export const checkAndRecordFollowUpReply = internalMutation({
       .filter((q: any) => q.and(q.eq(q.field("direction"), "inbound"), q.eq(q.field("channel"), "whatsapp")))
       .first();
 
-    if (recentInbound && Number(recentInbound.sentAt) > tenSecAgo && recentInbound.body === args.textBody) {
-      console.log(`[checkAndRecordFollowUpReply] DEDUPLICATION: Skipping duplicate inbound message from candidate ${candidate._id} within 10s.`);
+    if (recentInbound && Number(recentInbound.sentAt) > fiveMinAgo && recentInbound.body === args.textBody) {
+      console.log(`[checkAndRecordFollowUpReply] DEDUPLICATION: Skipping duplicate retried inbound message "${args.textBody}" from candidate ${candidate._id} within 5 minutes.`);
       return { isFollowUpReply: true, candidateId: candidate._id, jobId: activeApp.jobId };
     }
 

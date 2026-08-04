@@ -469,6 +469,7 @@ export default defineSchema({
     uploadedBy: v.string(),
     status: v.string(),
     errorMessage: v.optional(v.string()),
+    processingStartedAt: v.optional(v.number()),
     candidateId: v.optional(v.id("candidates")),
     batchId: v.optional(v.id("ingestionBatches")),
   })

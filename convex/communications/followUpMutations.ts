@@ -9,10 +9,16 @@ export const scheduleDynamicFollowUp = internalMutation({
   },
   handler: async (ctx, args) => {
     const nextTimeMs = Date.now() + (args.nextActionTimeHours * 60 * 60 * 1000);
+    const app = await ctx.db.get(args.applicationId);
     
     await ctx.db.patch(args.applicationId, {
       nextFollowUpScheduledAt: nextTimeMs,
       nextFollowUpMessage: args.messageBody,
+      followUpState: {
+        lastContactDay: app?.followUpState?.lastContactDay ?? 0,
+        firstChannelUsed: app?.followUpState?.firstChannelUsed ?? "whatsapp",
+        replyChannel: "whatsapp",
+      },
     });
     console.log(`[Follow-Up] Scheduled next AI message for application ${args.applicationId} in ${args.nextActionTimeHours} hours.`);
   },
