@@ -53,36 +53,45 @@ export const sendMetaTemplate = internalAction({
     let parameters: any[] = [];
     let loggedBody = "";
 
-    const candidateName = candidate.fullName || "Candidate";
-    const jobTitle = job.title || "the role";
+    // Helper to sanitize template parameter text (Meta Error 132018: no newlines, tabs, or >4 spaces)
+    const sanitizeParam = (str: string): string => {
+      if (!str) return "";
+      return str
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    };
+
+    const candidateName = sanitizeParam(candidate.fullName || "Candidate");
+    const jobTitle = sanitizeParam(job.title || "the role");
 
     if (args.templateType === "initial_outreach") {
       templateName = "career141_initial_outreach";
 
-      // Build missing fields bullet list
+      // Build missing fields comma list (no newlines allowed by Meta API)
       const missingList: string[] = [];
       const hasCV = app.followUpCvReceived === true || !!candidate.cvUploadId || !!app.cvFileId;
       const hasCurrentSalary = app.followUpCurrentSalary === true || candidate.currentSalary !== undefined;
       const hasExpectedSalary = app.followUpExpectedSalary === true || candidate.expectedSalary !== undefined;
       const hasNoticePeriod = app.followUpNoticePeriod === true || candidate.noticePeriodDays !== undefined;
 
-      if (!hasCV) missingList.push("• CV / Resume");
-      if (!hasCurrentSalary) missingList.push("• Current Salary");
-      if (!hasExpectedSalary) missingList.push("• Expected Salary");
-      if (!hasNoticePeriod) missingList.push("• Notice Period");
+      if (!hasCV) missingList.push("CV / Resume");
+      if (!hasCurrentSalary) missingList.push("Current Salary");
+      if (!hasExpectedSalary) missingList.push("Expected Salary");
+      if (!hasNoticePeriod) missingList.push("Notice Period");
 
       const customQuestions = job.customFollowUpQuestions || [];
       const customAnswers = app.customFollowUpAnswers || {};
       for (const q of customQuestions) {
-        if (!customAnswers[q]) missingList.push(`• ${q}`);
+        if (!customAnswers[q]) missingList.push(q);
       }
 
-      const missingFormatted = missingList.join("\n") || "• None (all submitted)";
+      const missingFormatted = sanitizeParam(missingList.map(m => `• ${m}`).join(" | ") || "• None (all submitted)");
 
-      // Requirements snippet (max 200 chars)
-      let requirementsSnippet = job.jobDescription || "";
-      if (requirementsSnippet.length > 200) {
-        requirementsSnippet = requirementsSnippet.substring(0, 197) + "...";
+      // Requirements snippet (max 180 chars, no newlines)
+      let requirementsSnippet = sanitizeParam(job.jobDescription || "Job details");
+      if (requirementsSnippet.length > 180) {
+        requirementsSnippet = requirementsSnippet.substring(0, 177) + "...";
       }
 
       parameters = [
