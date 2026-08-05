@@ -145,14 +145,17 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
       }
 
       const hasUpdates = Object.keys(updates).length > 0 || extracted.cvReceived === true;
+      const isQuestion = extracted.intent === "asked_question" && typeof extracted.nextActionMessage === "string" && extracted.nextActionMessage.trim() !== "";
 
-      if (hasUpdates) {
-        console.log(`[Inbound Extraction] Extracted updates for candidate ${args.candidateId}:`, updates);
-        await ctx.runMutation(api.candidates.candidates.updateCandidateDetails, {
-          candidateId: args.candidateId,
-          applicationId: activeApp._id,
-          ...updates,
-        });
+      if (hasUpdates || isQuestion) {
+        if (hasUpdates) {
+          console.log(`[Inbound Extraction] Extracted updates for candidate ${args.candidateId}:`, updates);
+          await ctx.runMutation(api.candidates.candidates.updateCandidateDetails, {
+            candidateId: args.candidateId,
+            applicationId: activeApp._id,
+            ...updates,
+          });
+        }
 
         // Re-fetch updated application and candidate data post-update
         const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
@@ -172,6 +175,8 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (isCompleted) {
           replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
+        } else if (isQuestion) {
+          replyMessage = extracted.nextActionMessage;
         } else {
           const stillMissing: string[] = [];
           const appRecord = updatedApp || activeApp;

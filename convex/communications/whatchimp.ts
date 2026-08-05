@@ -146,6 +146,12 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
                   (typeof body.payload === "object" && body.payload !== null) ? body.payload : body;
 
   // 1.5 Check for WhatChimp-specific status/echo/outgoing webhooks that should not be processed as candidate inbound
+  const isAgentOutbound = !!(payload.agent_name || payload.agent_id || body.agent_name || body.agent_id);
+  if (isAgentOutbound) {
+    console.log(`[WhatChimp Webhook] Ignoring WhatChimp outbound agent/bot event`);
+    return new Response("OK", { status: 200 });
+  }
+
   const wcEventType = String(body.webhook_type || body.event_type || body.event || body.type || body.action || payload?.webhook_type || payload?.event_type || "").toLowerCase();
   if (wcEventType && ["outgoing_message", "outgoing", "sent_message", "message_status", "status_update", "delivery", "read", "sent", "delivered", "failed", "typing", "presence"].includes(wcEventType)) {
     console.log(`[WhatChimp Webhook] Ignoring WhatChimp outgoing/status event type: ${wcEventType}`);

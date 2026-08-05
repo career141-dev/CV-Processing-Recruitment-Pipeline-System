@@ -313,7 +313,7 @@ export async function stopFollowUpSequenceForApp(
   // 2. Mark any pending communications for this application as stopped/failed
   const pendingComms = await ctx.db
     .query("communications")
-    .withIndex("by_application", (q: any) => q.eq("applicationId", applicationId))
+    .withIndex("by_applicationId", (q: any) => q.eq("applicationId", applicationId))
     .filter((q: any) => q.eq(q.field("deliveryStatus"), "pending"))
     .collect();
 
