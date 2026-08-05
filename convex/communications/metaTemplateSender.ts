@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 
 export const sendMetaTemplate = internalAction({
   args: {
@@ -14,18 +14,18 @@ export const sendMetaTemplate = internalAction({
       throw new Error("META_ACCESS_TOKEN is missing");
     }
 
-    // 1. Fetch application, candidate, and job
-    const app = await ctx.runQuery(api.applications.applications.getApplication, { id: args.applicationId });
+    // 1. Fetch application, candidate, and job directly via internal queries
+    const app = await ctx.runQuery(internal.communications.metaTemplateSender.getApplicationById, { applicationId: args.applicationId });
     if (!app) {
       throw new Error(`Application ${args.applicationId} not found`);
     }
 
-    const candidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: app.candidateId });
+    const candidate = await ctx.runQuery(internal.communications.metaTemplateSender.getCandidateById, { candidateId: app.candidateId });
     if (!candidate) {
       throw new Error(`Candidate ${app.candidateId} not found`);
     }
 
-    const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: app.jobId });
+    const job = await ctx.runQuery(internal.communications.metaTemplateSender.getJobById, { jobId: app.jobId });
     if (!job) {
       throw new Error(`Job ${app.jobId} not found`);
     }
@@ -198,5 +198,29 @@ export const logTemplateCommunication = internalMutation({
       sentAt: Date.now(),
       stoppedSequence: false,
     });
+  },
+});
+
+// Internal query helpers — used by sendMetaTemplate action to load db records
+import { internalQuery } from "../_generated/server";
+
+export const getApplicationById = internalQuery({
+  args: { applicationId: v.id("applications") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.applicationId);
+  },
+});
+
+export const getCandidateById = internalQuery({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.candidateId);
+  },
+});
+
+export const getJobById = internalQuery({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.jobId);
   },
 });
