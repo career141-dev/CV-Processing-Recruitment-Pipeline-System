@@ -24,7 +24,7 @@ test("Dynamic Follow-Up — ETA Capping & Flagged TA Review", async (t) => {
 });
 
 test("Dynamic Follow-Up — Fail-Open Error Handling", async (t) => {
-  await t.test("Fails open to 3-hour fallback nudge on LLM extraction exception", () => {
+  await t.test("Fails open to 24-hour fallback nudge on LLM extraction exception", () => {
     let mockLlmThrowsError = true;
     let scheduledHours = null;
     let loggedWarning = null;
@@ -35,25 +35,71 @@ test("Dynamic Follow-Up — Fail-Open Error Handling", async (t) => {
       }
     } catch (err: any) {
       loggedWarning = err.message;
-      scheduledHours = 3; // Fail-open 3-hour fallback
+      scheduledHours = 24; // Fail-open 24-hour fallback
     }
 
     assert.equal(loggedWarning, "OpenRouter API rate limit / timeout");
-    assert.equal(scheduledHours, 3, "Fail-open mechanism must fallback safely to 3 hours");
+    assert.equal(scheduledHours, 24, "Fail-open mechanism must fallback safely to 24 hours (1 day)");
+  });
+});
+
+test("Dynamic Follow-Up — Nudge Scheduling (24h Default, ETA, Auto-Reschedule)", async (t) => {
+  await t.test("Defaults to 24-hour fallback nudge when candidate gives no ETA", () => {
+    const now = Date.now();
+    const nextActionTimeHours = null; // No ETA promised in partial reply
+    const hours = typeof nextActionTimeHours === "number" && nextActionTimeHours > 0 ? nextActionTimeHours : 24;
+    const nextFollowUpScheduledAt = now + hours * 60 * 60 * 1000;
+
+    assert.equal(hours, 24, "Default fallback nudge must schedule 24 hours (1 day) out");
+    assert.equal(nextFollowUpScheduledAt, now + 24 * 60 * 60 * 1000, "Scheduled timestamp must be exactly +24h");
+  });
+
+  await t.test("Uses promised ETA (10 minutes) instead of the 24h default", () => {
+    const now = Date.now();
+    const candidateEtaMinutes = 10; // "I'll reply in 10 minutes"
+    const nextActionTimeHours = candidateEtaMinutes / 60;
+    const nextFollowUpScheduledAt = now + nextActionTimeHours * 60 * 60 * 1000;
+
+    assert.equal(nextActionTimeHours, 10 / 60, "ETA minutes must convert to fractional hours");
+    assert.equal(nextFollowUpScheduledAt, now + 10 * 60 * 1000, "Promised ETA must win over the 24h default");
+  });
+
+  await t.test("Auto-reschedules the next nudge +24h after each send until max attempts", () => {
+    const now = Date.now();
+    const NUDGE_RESCHEDULE_MS = 24 * 60 * 60 * 1000;
+    const maxAttempts = 3;
+    let followUpAttemptCount = 0;
+    let nextFollowUpScheduledAt = now;
+
+    // Simulate 3 consecutive 24h-apart nudge dispatches
+    const sentAt: number[] = [];
+    for (let i = 0; i < maxAttempts; i++) {
+      sentAt.push(nextFollowUpScheduledAt);
+      followUpAttemptCount++;
+      nextFollowUpScheduledAt += NUDGE_RESCHEDULE_MS;
+    }
+
+    assert.equal(sentAt.length, 3, "Exactly 3 nudge attempts must be dispatched");
+    assert.deepEqual(
+      sentAt.map((ts, i) => ts - sentAt[0]),
+      [0, 24 * 60 * 60 * 1000, 48 * 60 * 60 * 1000],
+      "Nudges must be spaced exactly 24 hours apart"
+    );
+    assert.equal(followUpAttemptCount >= maxAttempts, true, "Ceiling reached — next sweep must move app to unresponsive");
   });
 });
 
 test("Dynamic Follow-Up — Max Attempt Terminal Condition", async (t) => {
-  await t.test("Transitions application to unresponsive when attempt count reaches ceiling", () => {
-    const maxAttempts = 4;
-    let currentAttempts = 4;
+  await t.test("Transitions application to unresponsive when attempt count reaches ceiling (3)", () => {
+    const maxAttempts = 3;
+    let currentAttempts = 3;
     let targetStage = "follow_up";
 
     if (currentAttempts >= maxAttempts) {
       targetStage = "unresponsive";
     }
 
-    assert.equal(targetStage, "unresponsive", "Application must transition to unresponsive at max attempt ceiling");
+    assert.equal(targetStage, "unresponsive", "Application must transition to unresponsive at 3-attempt ceiling");
   });
 });
 

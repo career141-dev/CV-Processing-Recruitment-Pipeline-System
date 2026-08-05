@@ -81,7 +81,7 @@ Rules:
    - If 'interested_no_eta', explicitly ask them "by what time could you provide these details?".
    - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
    - If 'provided_all' or 'not_interested', set nextActionMessage to null.
-5. 'nextActionTimeHours': Set to candidateEtaMinutes/60 if ETA given. Set to 3 for fallback nudge if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
+5. 'nextActionTimeHours': Set to candidateEtaMinutes/60 if ETA given. Set to 24 for the default 24-hour fallback nudge if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
 6. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
 
 Return ONLY a valid JSON object matching this schema. Do not add markdown formatting or backticks.
@@ -271,7 +271,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         }
 
         if (replyMessage) {
-          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 3;
+          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
           await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
             applicationId: activeApp._id,
             nextActionTimeHours: hours,
@@ -330,7 +330,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
     } catch (err: any) {
       console.warn("[Inbound Extraction] Fail-open: Error during DeepSeek details extraction:", err.message);
       try {
-        const fallbackHours = 3;
+        const fallbackHours = 24;
         const fallbackMsg = `Thank you! We've received your update regarding your *${job.title}* application. Please share any remaining details at your earliest convenience.`;
         await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
           applicationId: activeApp._id,

@@ -74,7 +74,7 @@ export const evaluateFollowUpStage = internalMutation({
       if (job.status !== "active") continue;
 
       // 3. Enforce Max Attempt Ceiling (Terminal Stop Condition)
-      const maxAttempts = job.maxFollowUpAttempts ?? 4;
+      const maxAttempts = job.maxFollowUpAttempts ?? 3;
       const currentAttempts = app.followUpAttemptCount || 0;
 
       if (currentAttempts >= maxAttempts) {
@@ -291,14 +291,19 @@ export const evaluateFollowUpStage = internalMutation({
             });
           }
 
-          // Clear the schedule and increment attempt count
+          // Increment the attempt counter and auto-reschedule the next fallback nudge
+          // for 24 hours out. The profile is still incomplete at this point (otherwise
+          // the app would have been auto-advanced to second_shortlist above), and the
+          // max-attempt ceiling check at the top of this loop will transition the app
+          // to unresponsive once the final nudge has been dispatched.
+          const NUDGE_RESCHEDULE_MS = 24 * 60 * 60 * 1000; // 24 hours (1 day)
           await ctx.db.patch(app._id, {
-            nextFollowUpScheduledAt: undefined,
+            nextFollowUpScheduledAt: now + NUDGE_RESCHEDULE_MS,
             nextFollowUpMessage: undefined,
             followUpAttemptCount: currentAttempts + 1,
           });
 
-          console.log(`[Dynamic Follow-up] Sent initial/scheduled message to ${candidate.fullName}`);
+          console.log(`[Dynamic Follow-up] Sent scheduled message to ${candidate.fullName}. Auto-rescheduling next nudge in 24 hours (attempt ${currentAttempts + 1}).`);
           continue;
         }
 
