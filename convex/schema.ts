@@ -810,6 +810,16 @@ export default defineSchema({
     metaAdsetId: v.optional(v.string()),
     metaAdId: v.optional(v.string()),
     metaConversionSentFor: v.optional(v.array(v.string())),
+    // ETA & Follow-up tracking fields
+    candidateEtaMs: v.optional(v.number()),
+    candidateEtaText: v.optional(v.string()),
+    waitingForCandidateEta: v.optional(v.boolean()),
+    lastCandidateReplyAt: v.optional(v.number()),
+    rejectedBy: v.optional(v.union(v.id("users"), v.literal("system"))),
+    rejectedAt: v.optional(v.number()),
+    rejectReason: v.optional(v.string()),
+    placedAt: v.optional(v.number()),
+    placedBy: v.optional(v.id("users")),
   })
     .index("by_jobId", ["jobId"])
     .index("by_job_stage", ["jobId", "currentStage"])
@@ -1559,6 +1569,7 @@ export default defineSchema({
     name: v.string(), // e.g. "Jesmeen Mohammad"
     phone: v.string(), // e.g. "+94 74 011 0130"
     whatchimpPhoneId: v.string(), // e.g. "965783109962872"
+    wabaId: v.optional(v.string()), // e.g. "900377459288998"
     createdAt: v.string(),
   }).index("by_phone", ["phone"]),
 
