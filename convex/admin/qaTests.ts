@@ -733,10 +733,22 @@ export const wipeSanjeevFieldsCompletely = mutation({
 export const getSanjeevInspectionStatus = query({
   args: {},
   handler: async (ctx) => {
-    const candidates = await ctx.db
+    const candidatesByPhone1 = await ctx.db
       .query("candidates")
       .withIndex("by_phone", (q) => q.eq("phone", "+94753883167"))
       .collect();
+
+    const candidatesByPhone2 = await ctx.db
+      .query("candidates")
+      .withIndex("by_phone", (q) => q.eq("phone", "+94742625552"))
+      .collect();
+
+    const allCandidates = [...candidatesByPhone1, ...candidatesByPhone2];
+    const uniqueCandidatesMap = new Map();
+    for (const c of allCandidates) {
+      uniqueCandidatesMap.set(c._id, c);
+    }
+    const candidates = Array.from(uniqueCandidatesMap.values());
 
     const result = [];
     for (const c of candidates) {
@@ -764,14 +776,15 @@ export const getSanjeevInspectionStatus = query({
         applications: apps.map(a => ({
           id: a._id,
           stage: a.currentStage,
+          followUpCvReceived: a.followUpCvReceived,
           followUpCurrentSalary: a.followUpCurrentSalary,
           followUpExpectedSalary: a.followUpExpectedSalary,
           followUpNoticePeriod: a.followUpNoticePeriod,
-          followUpCvReceived: a.followUpCvReceived,
         })),
         recentComms: comms.slice(-5).map(m => ({
-          direction: m.direction,
           channel: m.channel,
+          direction: m.direction,
+          subject: m.subject,
           body: m.body,
           sentAt: m.sentAt,
         })),
@@ -931,6 +944,19 @@ export const seedUnresponsiveTestCandidate = mutation({
     await adjustJobStageStat(ctx, args.jobId, null, "unresponsive", true);
 
     return { success: true, candidateId, applicationId, candidateName: name };
+  },
+});
+
+export const testTriggerMetaTemplate = mutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+      applicationId: args.applicationId,
+      templateType: "initial_outreach",
+    });
+    return { success: true, message: "Scheduled sendMetaTemplate" };
   },
 });
 
