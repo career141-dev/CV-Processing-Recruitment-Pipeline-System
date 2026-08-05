@@ -271,8 +271,9 @@ export async function initiateFollowUpOutreach(
     const htmlBody = buildStructuredEmailHtml({
       candidateName: candidate.fullName || "there",
       jobTitle: job.title,
-      prelude: `Thank you for applying for the *${job.title}* role at Career141! We are excited to consider your profile. To progress your application, please provide the following details:`,
+      missingHeader: `We're still waiting on the following to progress your application for ${job.title}:`,
       remainingMissing: missingFields,
+      ctaText: "Please share these at your earliest convenience. Thank you!",
     });
     await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
       communicationId: emailCommId,

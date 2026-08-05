@@ -270,11 +270,11 @@ export const evaluateFollowUpStage = internalMutation({
               .replace(/{job_title}/g, job.title || "Job")
               .replace(/{missing_fields}/g, missingFormatted);
 
-            // Structured rich HTML rendering for the nudge email
+            // Clean natural-text HTML rendering for the nudge email
             const emailBodyHtml = buildStructuredEmailHtml({
               candidateName: candidate.fullName || "there",
               jobTitle: job.title,
-              prelude: emailBody,
+              prelude: `This is a friendly reminder that your application for ${job.title} is still missing a few details.`,
               remainingMissing: missingList.length > 0
                 ? missingList.map((m) => m.replace(/^•\s*/, ""))
                 : undefined,

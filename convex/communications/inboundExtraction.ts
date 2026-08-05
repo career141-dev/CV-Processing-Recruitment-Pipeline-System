@@ -274,7 +274,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             ? `Great news! We have received all your application details for *${job.title}* and your profile is now 100% complete. Your application has been advanced to Second Shortlist.`
             : isQuestion
               ? `Thank you for your message regarding your application for *${job.title}*.`
-              : `Thank you! We have recorded your update for *${job.title}*.`;
+              : `Thank you! We have recorded your update for *${job.title}*:`;
 
         if (isCompleted) {
           replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
