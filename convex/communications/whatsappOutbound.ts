@@ -398,26 +398,38 @@ export const sendWhatsApp = internalAction({
       const cleanPhoneId = phoneId.replace(/[^0-9]/g, "");
 
       const isRedirected = isTestMode && !!testRecipient && targetPhone === testRecipient;
-      const isSessionOpen = activeInboundSession || isRedirected;
+      const isSessionOpen = activeInboundSession;
 
       if (!isSessionOpen) {
         console.log(`[WhatsApp Outbound] 24h window closed for +${cleanPhone}. Dispatching Meta re-engagement template instead.`);
-        try {
-          await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
-            applicationId: commRecord!.applicationId!,
-            templateType: "reengagement",
-          });
-          await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
-            communicationId: args.communicationId,
-            status: "sent",
-          });
-          return;
-        } catch (templateErr: any) {
-          console.error(`[WhatsApp Outbound] Failed to send re-engagement template:`, templateErr.message);
+        // Instead of sending free-text (which would fail outside 24h window),
+        // dispatch the approved Meta re-engagement template to re-open the window.
+        if (commRecord?.applicationId) {
+          try {
+            await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+              applicationId: commRecord.applicationId,
+              templateType: "reengagement",
+            });
+            await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+              communicationId: args.communicationId,
+              status: "sent",
+            });
+            return;
+          } catch (templateErr: any) {
+            console.error(`[WhatsApp Outbound] Failed to send re-engagement template:`, templateErr.message);
+            await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+              communicationId: args.communicationId,
+              status: "failed",
+              error: `Failed to re-open 24h window: ${templateErr.message}`,
+            });
+            return;
+          }
+        } else {
+          // No applicationId on comm record — can't send template, mark failed
           await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
             communicationId: args.communicationId,
             status: "failed",
-            error: `Failed to re-open 24h window: ${templateErr.message}`,
+            error: "24h window closed and no applicationId to dispatch template",
           });
           return;
         }
