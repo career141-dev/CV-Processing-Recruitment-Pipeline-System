@@ -2215,7 +2215,7 @@ export default function JobDetailPage() {
       case 'Follow-up':
         const unresponsiveList = unresponsiveCandidates ?? [];
         tableContent = (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-6">
             <div className="border border-orange-200 dark:border-orange-800/50 rounded-xl overflow-hidden mt-2">
               <div className="flex items-center justify-between px-5 py-3.5 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800/50">
                 <div className="flex items-center gap-2.5">
@@ -2253,6 +2253,41 @@ export default function JobDetailPage() {
                   )}
                   </tbody>
                 </table>
+            </div>
+
+            {/* Active Candidates in 7-Day Follow-Up Loop */}
+            <div className="border border-border rounded-xl overflow-hidden bg-surface">
+              <div className="px-5 py-3.5 bg-surface-bright border-b border-border flex justify-between items-center">
+                <span className="text-[13px] font-semibold text-text-primary">Active Candidate Follow-ups ({currentItems.length})</span>
+                <span className="text-[11px] text-text-secondary">Candidates in Active Automated Outreach Loop</span>
+              </div>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                    <th className="p-4">Candidate</th>
+                    <th className="p-4">Status / Score</th>
+                    <th className="p-4">Missing Fields / Details</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[13px] text-text-primary divide-y divide-border">
+                  {currentItems.length === 0 ? (
+                    <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No active candidates in Follow-up loop.</td></tr>
+                  ) : currentItems.map((item: any) => (
+                    <FollowUpCandidateRow 
+                      key={item.id} 
+                      item={item} 
+                      api={api}
+                      convex={convex}
+                      showError={showError}
+                      setTimelineAppId={setTimelineAppId}
+                      renderKanbanDropdown={renderKanbanDropdown}
+                      triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
+                      triggerEmailFollowUp={triggerEmailFollowUp}
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         );
