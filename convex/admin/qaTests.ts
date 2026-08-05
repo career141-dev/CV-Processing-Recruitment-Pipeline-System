@@ -809,6 +809,47 @@ export const resetCandidateTestDetails = mutation({
   },
 });
 
+export const processPausedCvForCandidate = mutation({
+  args: {
+    cvUploadId: v.id("cvUploads"),
+    candidateId: v.id("candidates"),
+    jobId: v.id("jobs"),
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    const cvUpload = await ctx.db.get(args.cvUploadId);
+    if (!cvUpload) throw new Error("CV Upload not found");
+
+    await ctx.db.patch(args.cvUploadId, {
+      status: "pending",
+      assignToJob: args.jobId,
+      candidateId: args.candidateId,
+    });
+
+    await ctx.db.patch(args.candidateId, {
+      cvUploadId: args.cvUploadId,
+    });
+
+    await ctx.db.patch(args.applicationId, {
+      followUpCvReceived: true,
+      currentStage: "second_shortlist",
+      lastStageChangedAt: Date.now(),
+    });
+
+    await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      storageId: cvUpload.storageId,
+      s3Key: cvUpload.s3Key,
+      storageProvider: cvUpload.storageProvider,
+      fileType: cvUpload.fileType,
+      sourceChannel: "whatsapp",
+      uploadedBy: "system",
+      cvUploadId: args.cvUploadId,
+    });
+
+    return { success: true, cvUploadId: args.cvUploadId };
+  },
+});
+
 
 
 

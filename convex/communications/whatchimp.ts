@@ -298,8 +298,14 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
-      // 3. Store in Cloudflare R2
-      const base64Data = Buffer.from(fileBuffer).toString("base64");
+      // 3. Store in Cloudflare R2 (Convert ArrayBuffer to Base64 without using Node Buffer)
+      const bytes = new Uint8Array(fileBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64Data = btoa(binary);
+
       const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
         fileName: fileName ?? "cv.pdf",
         contentType: mimeType || "application/pdf",
@@ -344,13 +350,22 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         }
       }
 
+      // Fallback: If no session/keyword, check if this phone belongs to an existing candidate with an active application
+      if (!resolvedJobId) {
+        const candidateObj = await ctx.runQuery(internal.communications.whatsappOutbound.isCandidatePhone, { phone: cleanFrom });
+        if (candidateObj) {
+          const apps = await ctx.runQuery(api.applications.applications.getApplicationsByCandidateId, { candidateId: candidateObj._id });
+          const activeApp = apps?.find((a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed");
+          if (activeApp) {
+            resolvedJobId = activeApp.jobId;
+            console.log(`[WhatChimp Webhook] Linked WhatsApp CV upload from +${cleanFrom} to candidate active job ${resolvedJobId}`);
+          }
+        }
+      }
+
       if (isPaused) {
         console.log(`[WhatChimp Webhook] Job ${resolvedJobId} has WhatsApp paused. Dropping CV to general pool.`);
         resolvedJobId = undefined; // Drop to general pool
-      } else if (resolvedJobId === null) {
-        // No active session — candidate did not send a keyword first. Reject silently.
-        console.warn(`[WhatChimp Webhook] No active session for +${cleanFrom}. CV rejected silently — no keyword was sent first.`);
-        return new Response("OK", { status: 200 });
       }
 
       // 5. Ingest into central pipeline (only reached when a valid session/job exists)
