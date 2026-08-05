@@ -988,7 +988,10 @@ export const sendFollowUpEmail = internalAction({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    const senderEmail = process.env.OUTBOUND_EMAIL_SENDER || process.env.MS_SENDER_EMAIL || "binath@career141.com";
+    const senderEmail = process.env.OUTBOUND_EMAIL_SENDER || process.env.MS_SENDER_EMAIL;
+    if (!senderEmail) {
+      throw new Error("[EmailAgent] MS_SENDER_EMAIL or OUTBOUND_EMAIL_SENDER environment variable is not configured.");
+    }
     console.log(`[EmailAgent] Sending outbound follow-up email to ${args.candidateEmail} from ${senderEmail}`);
 
     const token = await getGraphToken();

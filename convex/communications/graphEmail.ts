@@ -46,8 +46,7 @@ export const sendGraphEmail = internalAction({
     const testRecipient = 
       process.env.EMAIL_TEST_RECIPIENT || 
       process.env.TEST_EMAIL_ADDRESS || 
-      systemSettings?.testEmailAddress ||
-      "sanjaysanjeev2000@gmail.com";
+      systemSettings?.testEmailAddress;
 
     let targetAddress = args.toAddress;
     let logNote = "";
@@ -56,7 +55,7 @@ export const sendGraphEmail = internalAction({
       const candidateEmailNorm = args.toAddress.toLowerCase().trim();
       const testEmailNorm = testRecipient ? testRecipient.toLowerCase().trim() : "";
 
-      if ((testEmailNorm && candidateEmailNorm === testEmailNorm) || candidateEmailNorm === "sanjaysanjeev2000@gmail.com") {
+      if (testEmailNorm && candidateEmailNorm === testEmailNorm) {
         targetAddress = args.toAddress;
         logNote = ` [TEST CANDIDATE]`;
       } else if (testRecipient) {
@@ -82,10 +81,13 @@ export const sendGraphEmail = internalAction({
 
       // Resolve the actual sending mailbox vs reply-to address
       // Personal email domains (like Gmail) cannot send M365 emails directly
-      let senderEmail = args.taEmail;
+      let senderEmail: string = args.taEmail || process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "";
+      if (!senderEmail) {
+        throw new Error("[Graph Email] No sender email configured in args or environment variables (MS_SENDER_EMAIL).");
+      }
       let replyToRecipients: any[] = [];
 
-      const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL;
+      const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER;
       const isCareer141Domain = senderEmail.toLowerCase().endsWith("@career141.com");
 
       if (!isCareer141Domain && m365Sender) {
@@ -97,7 +99,7 @@ export const sendGraphEmail = internalAction({
         ];
         console.log(`[Graph Email] Recruiter email is external (${args.taEmail}). Using M365 sender fallback (${m365Sender}) with Reply-To.`);
       } else {
-        console.log(`[Graph Email] Recruiter email is native organization domain (${args.taEmail}). Sending directly.`);
+        console.log(`[Graph Email] Recruiter email is native organization domain (${senderEmail}). Sending directly.`);
       }
 
       const payload: any = {
