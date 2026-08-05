@@ -113,6 +113,45 @@ export default defineSchema({
     .index("by_lockKey", ["lockKey"])
     .index("by_cvUploadId", ["cvUploadId"]),
 
+  // ■■ CANDIDATE INQUIRIES & QUESTIONS ■■■■■■■■■■■■■■■■■■■■■
+  candidateInquiries: defineTable({
+    candidateId: v.id("candidates"),
+    applicationId: v.optional(v.id("applications")),
+    jobId: v.optional(v.id("jobs")),
+    communicationId: v.optional(v.id("communications")),
+    
+    channel: v.union(v.literal("whatsapp"), v.literal("email")),
+    questionText: v.string(),
+    category: v.union(
+      v.literal("salary_compensation"),
+      v.literal("visa_sponsorship"),
+      v.literal("location_remote"),
+      v.literal("notice_start_date"),
+      v.literal("tech_stack"),
+      v.literal("client_details"),
+      v.literal("general_inquiry")
+    ),
+    importanceLevel: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+    
+    status: v.union(
+      v.literal("unresolved"),
+      v.literal("answered_by_ai"),
+      v.literal("resolved_by_ta")
+    ),
+    
+    aiAutoReplyText: v.optional(v.string()),
+    taResponseText: v.optional(v.string()),
+    resolvedByUserId: v.optional(v.id("users")),
+    resolvedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_candidateId", ["candidateId"])
+    .index("by_applicationId", ["applicationId"])
+    .index("by_jobId", ["jobId"])
+    .index("by_channel", ["channel"])
+    .index("by_status", ["status"])
+    .index("by_importance", ["importanceLevel"]),
+
   // ■■ JOBS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   jobs: defineTable({
     // Core Details

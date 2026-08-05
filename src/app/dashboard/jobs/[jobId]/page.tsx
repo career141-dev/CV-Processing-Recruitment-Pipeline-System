@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, Plus
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, Plus, Mail, MessageSquare
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -55,8 +55,7 @@ const AI_CALL_STATUS: Record<string, { label: string; color: string; bg: string;
 // it lives in the Matches main tab as a separate entry point.
 const TABS = [
   { id: 'New CVs', label: 'New CVs', icon: FileText },
-  { id: 'TA Shortlist', label: 'TA Shortlisted', icon: ListTodo },
-  { id: 'Follow-up', label: 'Follow-up', icon: Clock },
+  { id: 'TA Shortlist & Follow-up', label: 'TA Shortlisted & Follow-up', icon: ListTodo },
   { id: '2nd Shortlist', label: 'Second Shortlist', icon: CheckCircle2 },
   { id: 'Director Shortlist', label: 'Director Shortlist', icon: UserCheck },
   { id: 'Client Review', label: 'Client Review', icon: Building2 },
@@ -810,95 +809,99 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
         </div>
       </td>
       <td className="p-4 text-right align-top">
-        <div className="flex flex-col items-end gap-1.5">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setTimelineAppId(item.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-border rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary transition-colors" title="View Timeline">
-              <Clock className="w-3.5 h-3.5" /> Timeline
-            </button>
-            {renderKanbanDropdown(item.id, 'follow_up')}
-          </div>
-          
-          <button onClick={() => setIsLoggingCall(true)} className="mt-1 text-[12px] font-medium text-primary hover:text-primary-container inline-flex items-center gap-1 self-end transition-colors">
-            <Phone className="w-3.5 h-3.5" /> Log Call
+        <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+          {/* Log Call Icon Button */}
+          <button
+            onClick={() => setIsLoggingCall(true)}
+            className="p-2 h-8 w-8 inline-flex items-center justify-center bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300/40 dark:border-amber-700/50 rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+            title="Log Call Outcome"
+          >
+            <Phone className="w-4 h-4" />
           </button>
 
-          <button disabled={sendingWhatsAppId === item.id} onClick={async () => {
-            setSendingWhatsAppId(item.id);
-            try {
-              const result = await triggerWhatsAppFollowUp({ applicationId: item.id });
-              if (result?.communicationId) {
-                let isSent = false;
-                let errorMessage = "";
-                for (let i = 0; i < 5; i++) {
-                  await new Promise((resolve) => setTimeout(resolve, 1000));
-                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, { communicationId: result.communicationId });
-                  if (statusRes) {
-                    if (statusRes.deliveryStatus === "sent") { isSent = true; break; }
-                    else if (statusRes.deliveryStatus === "failed") { errorMessage = statusRes.errorMessage || "Unknown error"; break; }
+          {/* Send WhatsApp Icon Button */}
+          <button
+            disabled={sendingWhatsAppId === item.id}
+            onClick={async () => {
+              setSendingWhatsAppId(item.id);
+              try {
+                const result = await triggerWhatsAppFollowUp({ applicationId: item.id });
+                if (result?.communicationId) {
+                  let isSent = false;
+                  let errorMessage = "";
+                  for (let i = 0; i < 5; i++) {
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                    const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, { communicationId: result.communicationId });
+                    if (statusRes) {
+                      if (statusRes.deliveryStatus === "sent") { isSent = true; break; }
+                      else if (statusRes.deliveryStatus === "failed") { errorMessage = statusRes.errorMessage || "Unknown error"; break; }
+                    }
                   }
+                  if (isSent) { toast.success("WhatsApp follow-up sent successfully!"); }
+                  else if (errorMessage) { showError(new Error(errorMessage), { title: "WhatsApp Delivery Failed" }); }
+                  else { toast.info("WhatsApp follow-up is queued. It should deliver shortly."); }
+                } else {
+                  toast.success("WhatsApp follow-up initiated successfully!");
                 }
-                if (isSent) { toast.success("WhatsApp follow-up sent successfully!"); }
-                else if (errorMessage) { showError(new Error(errorMessage), { title: "WhatsApp Delivery Failed" }); }
-                else { toast.info("WhatsApp follow-up is queued. It should deliver shortly."); }
-              } else {
-                toast.success("WhatsApp follow-up initiated successfully!");
+              } catch (err: any) {
+                console.error(err); showError(err, { title: "Failed to Send WhatsApp" });
+              } finally {
+                setSendingWhatsAppId(null);
               }
-            } catch (err: any) {
-              console.error(err); showError(err, { title: "Failed to Send WhatsApp" });
-            } finally {
-              setSendingWhatsAppId(null);
-            }
-          }} className="inline-flex items-center text-[11px] font-bold text-green-600 hover:text-green-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer">
-            {sendingWhatsAppId === item.id ? "Sending..." : "Send WhatsApp"}
+            }}
+            className="p-2 h-8 w-8 inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all disabled:opacity-50 shadow-xs cursor-pointer shrink-0"
+            title="Send WhatsApp Message"
+          >
+            <MessageSquare className={`w-4 h-4 ${sendingWhatsAppId === item.id ? 'animate-pulse' : ''}`} />
           </button>
-          <button disabled={sendingEmailId === item.id} onClick={async () => {
-            setSendingEmailId(item.id);
-            try {
-              const result = await triggerEmailFollowUp({ applicationId: item.id });
-              if (result?.communicationId) {
-                let isSent = false;
-                let errorMessage = "";
-                for (let i = 0; i < 5; i++) {
-                  await new Promise((resolve) => setTimeout(resolve, 1000));
-                  const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, { communicationId: result.communicationId });
-                  if (statusRes) {
-                    if (statusRes.deliveryStatus === "sent") { isSent = true; break; }
-                    else if (statusRes.deliveryStatus === "failed") { errorMessage = statusRes.errorMessage || "Unknown error"; break; }
+
+          {/* Send Email Icon Button */}
+          <button
+            disabled={sendingEmailId === item.id}
+            onClick={async () => {
+              setSendingEmailId(item.id);
+              try {
+                const result = await triggerEmailFollowUp({ applicationId: item.id });
+                if (result?.communicationId) {
+                  let isSent = false;
+                  let errorMessage = "";
+                  for (let i = 0; i < 5; i++) {
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                    const statusRes = await convex.query(api.pipeline.outreach.getCommunicationStatus, { communicationId: result.communicationId });
+                    if (statusRes) {
+                      if (statusRes.deliveryStatus === "sent") { isSent = true; break; }
+                      else if (statusRes.deliveryStatus === "failed") { errorMessage = statusRes.errorMessage || "Unknown error"; break; }
+                    }
                   }
+                  if (isSent) { toast.success("Email follow-up sent successfully!"); }
+                  else if (errorMessage) { showError(new Error(errorMessage), { title: "Email Delivery Failed" }); }
+                  else { toast.info("Email follow-up is queued. It should deliver shortly."); }
+                } else {
+                  toast.success("Email follow-up initiated successfully!");
                 }
-                if (isSent) { toast.success("Email follow-up sent successfully!"); }
-                else if (errorMessage) { showError(new Error(errorMessage), { title: "Email Delivery Failed" }); }
-                else { toast.info("Email follow-up is queued. It should deliver shortly."); }
-              } else {
-                toast.success("Email follow-up initiated successfully!");
+              } catch (err: any) {
+                console.error(err); showError(err, { title: "Failed to Send Email" });
+              } finally {
+                setSendingEmailId(null);
               }
-            } catch (err: any) {
-              console.error(err); showError(err, { title: "Failed to Send Email" });
-            } finally {
-              setSendingEmailId(null);
-            }
-          }} className="inline-flex items-center text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline transition-all disabled:opacity-50 mt-1 cursor-pointer">
-            {sendingEmailId === item.id ? "Sending..." : "Send Email"}
+            }}
+            className="p-2 h-8 w-8 inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all disabled:opacity-50 shadow-xs cursor-pointer shrink-0"
+            title="Send Email Message"
+          >
+            <Mail className={`w-4 h-4 ${sendingEmailId === item.id ? 'animate-pulse' : ''}`} />
           </button>
-          <button onClick={async () => {
-            try {
-              const targetCandidateId = item.candidateId || item.candidate?._id;
-              if (!targetCandidateId) {
-                toast.error("Candidate ID missing on record");
-                return;
-              }
-              await convex.mutation(api.admin.qaTests.resetCandidateTestDetails, {
-                candidateId: targetCandidateId,
-                applicationId: item.id,
-              });
-              toast.success("Candidate salary & notice period fields cleared for testing!");
-            } catch (err: any) {
-              console.error(err);
-              toast.error("Failed to clear details: " + (err.message || "Error"));
-            }
-          }} className="inline-flex items-center text-[11px] font-bold text-red-500 hover:text-red-600 hover:underline transition-all mt-1 cursor-pointer" title="Clear Salary & Notice Details to re-test follow-up">
-            Clear Test Details
+
+          {/* View Timeline Icon Button */}
+          <button
+            onClick={() => setTimelineAppId(item.id)}
+            className="p-2 h-8 w-8 inline-flex items-center justify-center bg-surface-container hover:bg-surface-container-high border border-border rounded-lg text-text-secondary hover:text-text-primary transition-all shadow-xs cursor-pointer shrink-0"
+            title="View Candidate Timeline"
+          >
+            <Clock className="w-4 h-4" />
           </button>
+
+          {/* Stage Change Dropdown */}
+          {renderKanbanDropdown(item.id, 'follow_up')}
         </div>
       </td>
     </tr>
@@ -1044,20 +1047,23 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
           </span>
         </td>
         <td className="p-4 text-right">
-          <div className="flex flex-col items-end gap-1.5">
-            <button 
-              onClick={() => onViewTimeline(u.applicationId)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-border rounded-[6px] text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
-              title="View Timeline"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Timeline
-            </button>
+          <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+            {/* Log Call Icon Button */}
             <button 
               onClick={() => setIsLoggingCall(true)}
-              className="text-[12px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[6px] hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap"
+              className="p-2 h-8 w-8 inline-flex items-center justify-center bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300/40 dark:border-amber-700/50 rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+              title="Log Call Outcome"
             >
-              Log Call
+              <Phone className="w-4 h-4" />
+            </button>
+
+            {/* View Timeline Icon Button */}
+            <button 
+              onClick={() => onViewTimeline(u.applicationId)}
+              className="p-2 h-8 w-8 inline-flex items-center justify-center bg-surface-container hover:bg-surface-container-high border border-border rounded-lg text-text-secondary hover:text-text-primary transition-all shadow-xs cursor-pointer shrink-0"
+              title="View Candidate Timeline"
+            >
+              <Clock className="w-4 h-4" />
             </button>
           </div>
         </td>
@@ -1434,22 +1440,21 @@ const AiCallStatusBadge = ({ status }: { status?: string }) => {
 // ─── Pipeline Tracker (stage count bar) ───────────────────────────────────────
 const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; onTabClick: (tab: string) => void }) => {
   const stages = [
-    { id: 'new_cvs',          label: 'New CVs',         tab: 'New CVs' },
-    { id: 'ta_shortlist',     label: 'TA Shortlist',    tab: 'TA Shortlist' },
-    { id: 'follow_up',        label: 'Follow-up',       tab: 'Follow-up' },
-    { id: 'second_shortlist', label: '2nd Shortlist',   tab: '2nd Shortlist' },
-    { id: 'director_shortlist', label: 'Director',      tab: 'Director Shortlist' },
-    { id: 'client_review',    label: 'Client Review',   tab: 'Client Review' },
-    { id: 'interview',        label: 'Interview',       tab: 'Interview' },
-    { id: 'offer',            label: 'Offer',           tab: 'Offer' },
-    { id: 'placed',           label: 'Placed',          tab: 'Placed', highlight: true },
+    { id: 'new_cvs',          label: 'New CVs',                   tab: 'New CVs' },
+    { id: 'ta_shortlist',     label: 'TA Shortlisted & Follow-up', tab: 'TA Shortlist & Follow-up' },
+    { id: 'second_shortlist', label: '2nd Shortlist',             tab: '2nd Shortlist' },
+    { id: 'director_shortlist', label: 'Director',                tab: 'Director Shortlist' },
+    { id: 'client_review',    label: 'Client Review',             tab: 'Client Review' },
+    { id: 'interview',        label: 'Interview',                 tab: 'Interview' },
+    { id: 'offer',            label: 'Offer',                     tab: 'Offer' },
+    { id: 'placed',           label: 'Placed',                    tab: 'Placed', highlight: true },
   ];
 
   return (
     <div className="flex items-center gap-1 overflow-x-auto pb-1 mb-5 scrollbar-hide">
       {stages.map((s, i) => {
         const count = s.id === 'ta_shortlist'
-          ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'matched_candidates').length
+          ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'follow_up' || a.currentStage === 'matched_candidates').length
           : applications.filter(a => a.currentStage === s.id).length;
         const isLast = i === stages.length - 1;
         return (
@@ -2057,6 +2062,7 @@ export default function JobDetailPage() {
     const stageMap: Record<string, string> = {
       'New CVs': 'new_cvs',
       'Matched Candidates': 'matched_candidates',
+      'TA Shortlist & Follow-up': 'ta_shortlist',
       'TA Shortlist': 'ta_shortlist',
       'Follow-up': 'follow_up',
       '2nd Shortlist': 'second_shortlist',
@@ -2071,8 +2077,8 @@ export default function JobDetailPage() {
     const currentStageId = stageMap[activePipelineTab];
     const stageApps = applications.filter(app => {
       let stageMatch = false;
-      if (activePipelineTab === 'TA Shortlist') {
-        stageMatch = app.currentStage === 'ta_shortlist' || app.currentStage === 'matched_candidates';
+      if (activePipelineTab === 'TA Shortlist & Follow-up' || activePipelineTab === 'TA Shortlist' || activePipelineTab === 'Follow-up') {
+        stageMatch = app.currentStage === 'ta_shortlist' || app.currentStage === 'follow_up' || app.currentStage === 'matched_candidates';
       } else {
         stageMatch = app.currentStage === currentStageId;
       }
@@ -2179,80 +2185,110 @@ export default function JobDetailPage() {
         break;
 
 
+      case 'TA Shortlist & Follow-up':
       case 'TA Shortlist':
-        tableContent = (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                <th className="p-4">Candidate</th>
-                <th className="p-4">Status / Score</th>
-                <th className="p-4">AI Reason</th>
-                <th className="p-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-[13px] text-text-primary divide-y divide-border">
-              {currentItems.length === 0 ? (
-                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No candidates in TA Shortlist.</td></tr>
-              ) : currentItems.map((item: any) => {
-                return (
-                  <FollowUpCandidateRow 
-                    key={item.id} 
-                    item={item} 
-                    api={api}
-                    convex={convex}
-                    showError={showError}
-                    setTimelineAppId={setTimelineAppId}
-                    renderKanbanDropdown={renderKanbanDropdown}
-                    triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
-                    triggerEmailFollowUp={triggerEmailFollowUp}
-                  />
-                );
-              })}
-            </tbody>
-          </table>
-        );
-        break;
       case 'Follow-up':
         const unresponsiveList = unresponsiveCandidates ?? [];
         tableContent = (
           <div className="flex flex-col gap-4">
-            <div className="border border-orange-200 dark:border-orange-800/50 rounded-xl overflow-hidden mt-2">
-              <div className="flex items-center justify-between px-5 py-3.5 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800/50">
-                <div className="flex items-center gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-orange-500" />
-                  <span className="text-[13px] font-semibold text-orange-700 dark:text-orange-400">Unresponsive After 7 Days — Manual Call Required</span>
+            <div className="bg-surface rounded-xl border border-border overflow-hidden">
+              {/* Internal Workspace Sub-Tab Navigation Header */}
+              <div className="p-3 border-b border-border bg-surface-bright flex flex-wrap justify-between items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveFollowUpTab('active')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                      activeFollowUpTab === 'active'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'bg-surface hover:bg-surface-container text-text-secondary border border-border'
+                    }`}
+                  >
+                    <span>Active Candidates</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      activeFollowUpTab === 'active' ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+                    }`}>
+                      {currentItems.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveFollowUpTab('unresponsive')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                      activeFollowUpTab === 'unresponsive'
+                        ? 'bg-orange-600 text-white shadow-sm'
+                        : 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800/50 hover:bg-orange-500/20'
+                    }`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>Unresponsive (7 Days)</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      activeFollowUpTab === 'unresponsive' ? 'bg-white/20 text-white' : 'bg-orange-500/20 text-orange-800 dark:text-orange-300'
+                    }`}>
+                      {unresponsiveList.length}
+                    </span>
+                  </button>
                 </div>
-                <span className="text-[11px] text-orange-600/70 dark:text-orange-400/60">
-                  No reply to WhatsApp &amp; Email after 7 days
-                </span>
               </div>
 
-              <table className="w-full text-left border-collapse bg-surface">
-                <thead>
-                  <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                    <th className="p-4">Candidate</th>
-                    <th className="p-4">Phone</th>
-                    <th className="p-4">Current Salary</th>
-                    <th className="p-4">Expected Salary</th>
-                    <th className="p-4">Notice Period</th>
-                    <th className="p-4">Days Unresponsive</th>
-                    <th className="p-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[13px] text-text-primary divide-y divide-border">
-                  {unresponsiveList.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-5 py-8 text-center text-[13px] text-text-secondary">
-                        No unresponsive candidates — great work! 🎉
-                      </td>
+              {/* Sub-Tab View Rendering */}
+              {activeFollowUpTab === 'active' ? (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                      <th className="p-4">Candidate</th>
+                      <th className="p-4">Type</th>
+                      <th className="p-4">Outreach Status</th>
+                      <th className="p-4">Required Details (4 Flags)</th>
+                      <th className="p-4">Time Left</th>
+                      <th className="p-4 text-right">Actions</th>
                     </tr>
-                  ) : (
-                    unresponsiveList.map((u: any) => (
-                      <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} onViewTimeline={setTimelineAppId} />
-                    ))
-                  )}
+                  </thead>
+                  <tbody className="text-[13px] text-text-primary divide-y divide-border">
+                    {currentItems.length === 0 ? (
+                      <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
+                    ) : currentItems.map((item: any) => (
+                      <FollowUpCandidateRow 
+                        key={item.id} 
+                        item={item} 
+                        api={api}
+                        convex={convex}
+                        showError={showError}
+                        setTimelineAppId={setTimelineAppId}
+                        renderKanbanDropdown={renderKanbanDropdown}
+                        triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
+                        triggerEmailFollowUp={triggerEmailFollowUp}
+                      />
+                    ))}
                   </tbody>
                 </table>
+              ) : (
+                <table className="w-full text-left border-collapse bg-surface">
+                  <thead>
+                    <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                      <th className="p-4">Candidate</th>
+                      <th className="p-4">Phone</th>
+                      <th className="p-4">Current Salary</th>
+                      <th className="p-4">Expected Salary</th>
+                      <th className="p-4">Notice Period</th>
+                      <th className="p-4">Days Unresponsive</th>
+                      <th className="p-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[13px] text-text-primary divide-y divide-border">
+                    {unresponsiveList.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-8 text-center text-[13px] text-text-secondary">
+                          No unresponsive candidates — great work! 🎉
+                        </td>
+                      </tr>
+                    ) : (
+                      unresponsiveList.map((u: any) => (
+                        <UnresponsiveCandidateRow key={u.applicationId} u={u} api={api} onViewTimeline={setTimelineAppId} />
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         );
@@ -2790,14 +2826,15 @@ export default function JobDetailPage() {
           const Icon = tab.icon;
           const stageId = {
             'New CVs': 'new_cvs',
+            'TA Shortlist & Follow-up': 'ta_shortlist',
             'TA Shortlist': 'ta_shortlist',
             'Follow-up': 'follow_up',
             '2nd Shortlist': 'second_shortlist',
             'Director Shortlist': 'director_shortlist', 'Client Review': 'client_review',
             'Interview': 'interview', 'Offer': 'offer', 'Placed': 'placed', 'Rejected': 'rejected'
           }[tab.id];
-          const count = tab.id === 'TA Shortlist'
-            ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'matched_candidates').length
+          const count = (tab.id === 'TA Shortlist & Follow-up' || tab.id === 'TA Shortlist' || tab.id === 'Follow-up')
+            ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'follow_up' || a.currentStage === 'matched_candidates').length
             : stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
           return (
             <button

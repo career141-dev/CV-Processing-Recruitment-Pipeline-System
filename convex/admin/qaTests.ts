@@ -892,6 +892,48 @@ export const createTestCandidateForFollowUp = mutation({
   },
 });
 
+export const seedUnresponsiveTestCandidate = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    fullName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const eightDaysAgo = now - 8 * 24 * 60 * 60 * 1000;
+    const name = args.fullName || "Test Unresponsive Candidate (7+ Days)";
+
+    const candidateId = await ctx.db.insert("candidates", {
+      fullName: name,
+      email: "unresponsive.test@example.com",
+      phone: "+1555000777",
+      phoneClean: "1555000777",
+      overallStatus: "unresponsive",
+      firstSeenAt: eightDaysAgo,
+    } as any);
+
+    const applicationId = await ctx.db.insert("applications", {
+      candidateId,
+      jobId: args.jobId,
+      currentStage: "unresponsive",
+      taRejectionReason: "Did not complete requirements within 7-day window",
+      followUpCvReceived: false,
+      followUpCurrentSalary: false,
+      followUpExpectedSalary: false,
+      followUpNoticePeriod: false,
+      sourceChannel: "whatsapp",
+      isActive: true,
+      loopIteration: 0,
+      createdAt: eightDaysAgo,
+      lastStageChangedAt: eightDaysAgo,
+      followUpEnteredAt: eightDaysAgo,
+    } as any);
+
+    await adjustJobStageStat(ctx, args.jobId, null, "unresponsive", true);
+
+    return { success: true, candidateId, applicationId, candidateName: name };
+  },
+});
+
 
 
 

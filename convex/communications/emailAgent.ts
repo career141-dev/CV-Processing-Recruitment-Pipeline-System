@@ -519,6 +519,52 @@ export const checkAndRecordEmailReply = internalMutation({
       textBody: args.body,
     });
 
+    // Non-blocking Email Candidate Inquiry tracking
+    try {
+      const textLower = (args.body || "").toLowerCase();
+      const isQuestionPattern = (args.body || "").includes("?") || 
+        textLower.includes("visa") || textLower.includes("remote") || textLower.includes("salary") || textLower.includes("relocat");
+
+      if (isQuestionPattern) {
+        let category: "salary_compensation" | "visa_sponsorship" | "location_remote" | "notice_start_date" | "tech_stack" | "client_details" | "general_inquiry" = "general_inquiry";
+        let importanceLevel: "high" | "medium" | "low" = "medium";
+
+        if (textLower.includes("visa") || textLower.includes("sponsor")) {
+          category = "visa_sponsorship";
+          importanceLevel = "high";
+        } else if (textLower.includes("salary") || textLower.includes("pay") || textLower.includes("compensation") || textLower.includes("package")) {
+          category = "salary_compensation";
+          importanceLevel = "high";
+        } else if (textLower.includes("remote") || textLower.includes("location") || textLower.includes("office") || textLower.includes("relocat")) {
+          category = "location_remote";
+          importanceLevel = "high";
+        } else if (textLower.includes("notice") || textLower.includes("start") || textLower.includes("join")) {
+          category = "notice_start_date";
+          importanceLevel = "medium";
+        } else if (textLower.includes("tech") || textLower.includes("stack") || textLower.includes("framework")) {
+          category = "tech_stack";
+          importanceLevel = "medium";
+        } else if (textLower.includes("client") || textLower.includes("company")) {
+          category = "client_details";
+          importanceLevel = "medium";
+        }
+
+        await ctx.db.insert("candidateInquiries", {
+          candidateId: candidate._id,
+          applicationId: activeApp?._id,
+          jobId: activeApp?.jobId,
+          channel: "email",
+          questionText: args.body,
+          category,
+          importanceLevel,
+          status: "unresolved",
+          createdAt: Date.now(),
+        });
+      }
+    } catch (inqErr: any) {
+      console.warn("[EmailAgent] Non-blocking inquiry logging error (safely swallowed):", inqErr.message || inqErr);
+    }
+
     const isFollowUp =
       activeApp?.currentStage === "follow_up" ||
       (activeApp?.currentStage === "rejected" && activeApp?.taRejectionReason === "Did not complete requirements within 7-day window");
