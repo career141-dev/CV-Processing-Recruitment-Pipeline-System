@@ -850,6 +850,48 @@ export const processPausedCvForCandidate = mutation({
   },
 });
 
+export const createTestCandidateForFollowUp = mutation({
+  args: {
+    fullName: v.string(),
+    phone: v.string(),
+    jobId: v.id("jobs"),
+  },
+  handler: async (ctx, args) => {
+    const cleanPhone = args.phone.replace(/[^0-9]/g, "");
+    
+    // Create candidate
+    const candidateId = await ctx.db.insert("candidates", {
+      fullName: args.fullName,
+      phone: args.phone,
+      phoneClean: cleanPhone,
+      overallStatus: "active",
+      firstSeenAt: Date.now(),
+    } as any);
+
+    // Create application
+    const applicationId = await ctx.db.insert("applications", {
+      candidateId,
+      jobId: args.jobId,
+      currentStage: "ta_shortlist",
+      taShortlistStatus: "shortlisted",
+      followUpCvReceived: false,
+      followUpCurrentSalary: false,
+      followUpExpectedSalary: false,
+      followUpNoticePeriod: false,
+      sourceChannel: "whatsapp",
+      isActive: true,
+      loopIteration: 0,
+      createdAt: Date.now(),
+      lastStageChangedAt: Date.now(),
+    } as any);
+
+    // Adjust job stats
+    await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
+
+    return { success: true, candidateId, applicationId };
+  },
+});
+
 
 
 
