@@ -168,6 +168,13 @@ export default function Sidebar() {
               <span className={labelClass}>Analytics</span>
               {renderTooltip("Analytics")}
             </Link>
+
+            {/* ── Candidate Inquiries: Full-access & Test TA ────── */}
+            <Link href="/dashboard/inquiries" className={linkClass('/dashboard/inquiries')}>
+              <span className={iconClass('/dashboard/inquiries')}>help_outline</span>
+              <span className={labelClass}>Candidate Inquiries</span>
+              {renderTooltip("Candidate Inquiries")}
+            </Link>
           </>
         )}
 

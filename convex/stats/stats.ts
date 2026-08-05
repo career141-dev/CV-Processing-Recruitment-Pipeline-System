@@ -1304,6 +1304,30 @@ export const getTodayInboxActivity = query({
   }
 });
 
+async function writeStatsHelper(ctx: any, args: { totalCandidates: number; totalCvUploads: number; totalApplications: number; activeJobsCount: number }) {
+  let sysStat = await ctx.db
+    .query("systemStats")
+    .withIndex("by_singletonKey", (q: any) => q.eq("singletonKey", "global_stats"))
+    .first();
+
+  if (sysStat) {
+    await ctx.db.patch(sysStat._id, {
+      totalCandidates: args.totalCandidates,
+      totalCvUploads: args.totalCvUploads,
+      totalApplications: args.totalApplications,
+      activeJobsCount: args.activeJobsCount,
+    });
+  } else {
+    await ctx.db.insert("systemStats", {
+      singletonKey: "global_stats",
+      totalCandidates: args.totalCandidates,
+      totalCvUploads: args.totalCvUploads,
+      totalApplications: args.totalApplications,
+      activeJobsCount: args.activeJobsCount,
+    });
+  }
+}
+
 // Mutation to write values back to the systemStats singleton
 export const saveSystemStats = internalMutation({
   args: {
@@ -1313,27 +1337,7 @@ export const saveSystemStats = internalMutation({
     activeJobsCount: v.number(),
   },
   handler: async (ctx, args) => {
-    let sysStat = await ctx.db
-      .query("systemStats")
-      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
-      .first();
-
-    if (sysStat) {
-      await ctx.db.patch(sysStat._id, {
-        totalCandidates: args.totalCandidates,
-        totalCvUploads: args.totalCvUploads,
-        totalApplications: args.totalApplications,
-        activeJobsCount: args.activeJobsCount,
-      });
-    } else {
-      await ctx.db.insert("systemStats", {
-        singletonKey: "global_stats",
-        totalCandidates: args.totalCandidates,
-        totalCvUploads: args.totalCvUploads,
-        totalApplications: args.totalApplications,
-        activeJobsCount: args.activeJobsCount,
-      });
-    }
+    await writeStatsHelper(ctx, args);
   },
 });
 
@@ -1347,7 +1351,7 @@ export const runSafeBackfill = action({
     activeJobsCount: number;
   }> => {
     console.log("Starting safe dashboard stats backfill...");
-    const limit = 1000;
+    const limit = 2500;
 
     // 1. Count Candidates
     let totalCandidates = 0;
@@ -1357,7 +1361,7 @@ export const runSafeBackfill = action({
         cursor: candidateCursor,
         limit,
       });
-      totalCandidates += page.page.length;
+      totalCandidates += page.count || 0;
       if (page.isDone) break;
       candidateCursor = page.continueCursor;
     }
@@ -1371,7 +1375,7 @@ export const runSafeBackfill = action({
         cursor: cvUploadCursor,
         limit,
       });
-      totalCvUploads += page.page.length;
+      totalCvUploads += page.count || 0;
       if (page.isDone) break;
       cvUploadCursor = page.continueCursor;
     }
@@ -1385,7 +1389,7 @@ export const runSafeBackfill = action({
         cursor: appCursor,
         limit,
       });
-      totalApplications += page.page.length;
+      totalApplications += page.count || 0;
       if (page.isDone) break;
       appCursor = page.continueCursor;
     }
@@ -1399,8 +1403,7 @@ export const runSafeBackfill = action({
         cursor: jobCursor,
         limit,
       });
-      // Filter active jobs in memory for the page
-      activeJobsCount += page.page.filter((j: any) => j.status === "active").length;
+      activeJobsCount += page.activeCount || 0;
       if (page.isDone) break;
       jobCursor = page.continueCursor;
     }
@@ -1415,6 +1418,36 @@ export const runSafeBackfill = action({
     });
 
     console.log("Safe backfill execution completed successfully.");
+    return {
+      totalCandidates,
+      totalCvUploads,
+      totalApplications,
+      activeJobsCount,
+    };
+  },
+});
+
+// Direct fast mutation backfill option
+export const runDirectBackfill = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("candidates").collect();
+    const cvUploads = await ctx.db.query("cvUploads").collect();
+    const apps = await ctx.db.query("applications").collect();
+    const jobs = await ctx.db.query("jobs").collect();
+
+    const totalCandidates = candidates.length;
+    const totalCvUploads = cvUploads.length;
+    const totalApplications = apps.length;
+    const activeJobsCount = jobs.filter(j => j.status === "active").length;
+
+    await writeStatsHelper(ctx, {
+      totalCandidates,
+      totalCvUploads,
+      totalApplications,
+      activeJobsCount,
+    });
+
     return {
       totalCandidates,
       totalCvUploads,

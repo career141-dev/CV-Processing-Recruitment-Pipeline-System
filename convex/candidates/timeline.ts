@@ -94,6 +94,43 @@ export const getTimeline = query({
       });
     }
 
+    // 4. Candidate Inquiries & Questions
+    const inquiries = await ctx.db
+      .query("candidateInquiries")
+      .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+      .collect();
+
+    for (const inq of inquiries) {
+      const categoryLabels: Record<string, string> = {
+        salary_compensation: "Salary / Compensation",
+        visa_sponsorship: "Visa / Sponsorship",
+        location_remote: "Location / Remote Work",
+        notice_start_date: "Notice Period / Start Date",
+        tech_stack: "Tech Stack",
+        client_details: "Client Details",
+        general_inquiry: "General Question",
+      };
+
+      events.push({
+        id: `inquiry_${inq._id}`,
+        type: "candidate_inquiry",
+        timestamp: inq.createdAt,
+        title: `Candidate Question (${inq.channel === "whatsapp" ? "WhatsApp" : "Email"})`,
+        description: inq.questionText,
+        metadata: {
+          inquiryId: inq._id,
+          channel: inq.channel,
+          category: inq.category,
+          categoryLabel: categoryLabels[inq.category] || "Question",
+          importanceLevel: inq.importanceLevel,
+          status: inq.status,
+          aiAutoReplyText: inq.aiAutoReplyText,
+          taResponseText: inq.taResponseText,
+          resolvedAt: inq.resolvedAt,
+        },
+      });
+    }
+
     // Sort descending (newest first)
     events.sort((a, b) => b.timestamp - a.timestamp);
 

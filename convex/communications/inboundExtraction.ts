@@ -82,6 +82,7 @@ Rules:
    - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
    - If 'provided_all' or 'not_interested', set nextActionMessage to null.
 5. 'nextActionTimeHours': Set to candidateEtaMinutes/60 if ETA given. Set to 3 for fallback nudge if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
+6. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
 
 Return ONLY a valid JSON object matching this schema. Do not add markdown formatting or backticks.
 Schema:
@@ -94,7 +95,13 @@ Schema:
   "intent": "provided_all" | "provided_partial" | "interested_no_eta" | "promised_eta" | "asked_question" | "not_interested",
   "candidateEtaMinutes": number | null,
   "nextActionTimeHours": number | null,
-  "nextActionMessage": string | null
+  "nextActionMessage": string | null,
+  "detectedQuestion": {
+    "hasQuestion": boolean,
+    "questionText": string | null,
+    "category": "salary_compensation" | "visa_sponsorship" | "location_remote" | "notice_start_date" | "tech_stack" | "client_details" | "general_inquiry" | null,
+    "importanceLevel": "high" | "medium" | "low" | null
+  } | null
 }
 If a field is not mentioned, return null for it. Do not invent or infer values.`;
 
@@ -160,6 +167,56 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
       if (extracted.customAnswers && Object.keys(extracted.customAnswers).length > 0) {
         finalCustomAnswers = { ...(activeApp.customFollowUpAnswers || {}), ...extracted.customAnswers };
         updates.customFollowUpAnswers = finalCustomAnswers;
+      }
+
+      // Candidate Inquiry placement (executed STRICTLY AFTER AI Analysis)
+      try {
+        const dq = extracted.detectedQuestion;
+        const textLower = args.textBody.toLowerCase();
+        const hasQuestion = dq?.hasQuestion === true || extracted.intent === "asked_question" || args.textBody.includes("?") ||
+          textLower.includes("visa") || textLower.includes("remote") || textLower.includes("salary") || textLower.includes("relocat");
+
+        if (hasQuestion) {
+          let category: "salary_compensation" | "visa_sponsorship" | "location_remote" | "notice_start_date" | "tech_stack" | "client_details" | "general_inquiry" = dq?.category || "general_inquiry";
+          let importanceLevel: "high" | "medium" | "low" = dq?.importanceLevel || "medium";
+
+          if (!dq?.category) {
+            if (textLower.includes("visa") || textLower.includes("sponsor")) {
+              category = "visa_sponsorship";
+              importanceLevel = "high";
+            } else if (textLower.includes("salary") || textLower.includes("pay") || textLower.includes("compensation") || textLower.includes("package")) {
+              category = "salary_compensation";
+              importanceLevel = "high";
+            } else if (textLower.includes("remote") || textLower.includes("location") || textLower.includes("office") || textLower.includes("relocat")) {
+              category = "location_remote";
+              importanceLevel = "high";
+            } else if (textLower.includes("notice") || textLower.includes("start") || textLower.includes("join")) {
+              category = "notice_start_date";
+              importanceLevel = "medium";
+            } else if (textLower.includes("tech") || textLower.includes("stack") || textLower.includes("framework")) {
+              category = "tech_stack";
+              importanceLevel = "medium";
+            } else if (textLower.includes("client") || textLower.includes("company")) {
+              category = "client_details";
+              importanceLevel = "medium";
+            }
+          }
+
+          await ctx.runMutation(internal.communications.inquiries.createInquiry, {
+            candidateId: args.candidateId,
+            applicationId: activeApp._id,
+            jobId: activeApp.jobId,
+            channel: "whatsapp",
+            questionText: dq?.questionText || args.textBody,
+            category,
+            importanceLevel,
+            aiAutoReplyText: extracted.nextActionMessage || undefined,
+            status: extracted.nextActionMessage ? "answered_by_ai" : "unresolved",
+          });
+          console.log(`[Inbound Extraction] Placed post-analysis candidate inquiry (${category}, ${importanceLevel}) for candidate ${args.candidateId}`);
+        }
+      } catch (inqErr: any) {
+        console.warn("[Inbound Extraction] Non-blocking inquiry logging error (safely swallowed):", inqErr.message || inqErr);
       }
 
       const hasUpdates = Object.keys(updates).length > 0 || extracted.cvReceived === true;
