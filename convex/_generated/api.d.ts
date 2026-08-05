@@ -41,6 +41,7 @@ import type * as candidates_timeline from "../candidates/timeline.js";
 import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
 import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
+import type * as communications_emailHtml from "../communications/emailHtml.js";
 import type * as communications_followUpMutations from "../communications/followUpMutations.js";
 import type * as communications_graphEmail from "../communications/graphEmail.js";
 import type * as communications_graphEmailMutations from "../communications/graphEmailMutations.js";
@@ -145,6 +146,7 @@ declare const fullApi: ApiFromModules<{
   "candidates/updateAllExp": typeof candidates_updateAllExp;
   "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
   "communications/emailAgent": typeof communications_emailAgent;
+  "communications/emailHtml": typeof communications_emailHtml;
   "communications/followUpMutations": typeof communications_followUpMutations;
   "communications/graphEmail": typeof communications_graphEmail;
   "communications/graphEmailMutations": typeof communications_graphEmailMutations;

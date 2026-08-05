@@ -4,6 +4,9 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { getGraphToken } from "../lib/graphClient";
+import { buildStructuredEmailHtml } from "./emailHtml";
+
+export { buildStructuredEmailHtml };
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
@@ -214,9 +217,79 @@ export const replyToMessage = internalAction({
     taEmail: v.string(),
     messageId: v.string(),
     replyText: v.string(),
+    replyHtml: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     const token = await getGraphToken();
+
+    // Rich HTML thread reply: create a reply draft (preserves conversation
+    // context / In-Reply-To / References headers), patch the HTML body, then send.
+    // Falls back to the simple text-comment reply if the draft flow fails.
+    if (args.replyHtml) {
+      try {
+        const createReplyRes = await fetch(
+          `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${args.messageId}/createReply`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({}),
+          }
+        );
+
+        if (!createReplyRes.ok) {
+          throw new Error(
+            `createReply failed (${createReplyRes.status}): ${await createReplyRes.text()}`
+          );
+        }
+
+        const draft = await createReplyRes.json();
+        const draftId = draft.id;
+
+        const patchRes = await fetch(
+          `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${draftId}`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              body: { contentType: "html", content: args.replyHtml },
+            }),
+          }
+        );
+
+        if (!patchRes.ok) {
+          throw new Error(
+            `Draft body patch failed (${patchRes.status}): ${await patchRes.text()}`
+          );
+        }
+
+        const sendRes = await fetch(
+          `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${draftId}/send`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (!sendRes.ok) {
+          throw new Error(
+            `Draft send failed (${sendRes.status}): ${await sendRes.text()}`
+          );
+        }
+
+        console.log(`[Graph Email] Rich HTML thread reply sent to message ${args.messageId}`);
+        return;
+      } catch (err: any) {
+        console.warn(
+          `[Graph Email] Rich HTML reply path failed (${err.message}). Falling back to text reply.`
+        );
+      }
+    }
 
     const res = await fetch(
       `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${args.messageId}/reply`,

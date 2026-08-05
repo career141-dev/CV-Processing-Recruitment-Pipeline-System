@@ -1039,6 +1039,7 @@ export const sendFollowUpEmail = internalAction({
     candidateEmail: v.string(),
     subject: v.string(),
     body: v.string(),
+    bodyHtml: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const senderEmail = process.env.OUTBOUND_EMAIL_SENDER || process.env.MS_SENDER_EMAIL;
@@ -1050,6 +1051,7 @@ export const sendFollowUpEmail = internalAction({
     const token = await getGraphToken();
     let sentSuccess = false;
     let errorMessage = "";
+    const replyTo = process.env.MS_SENDER_EMAIL || senderEmail;
 
     if (token) {
       try {
@@ -1064,8 +1066,8 @@ export const sendFollowUpEmail = internalAction({
             message: {
               subject: args.subject,
               body: {
-                contentType: "Text",
-                content: args.body,
+                contentType: args.bodyHtml ? "HTML" : "Text",
+                content: args.bodyHtml || args.body,
               },
               toRecipients: [
                 {
@@ -1073,6 +1075,9 @@ export const sendFollowUpEmail = internalAction({
                     address: args.candidateEmail,
                   },
                 },
+              ],
+              internetMessageHeaders: [
+                { name: "Reply-To", value: replyTo },
               ],
             },
             saveToSentItems: "true",

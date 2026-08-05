@@ -184,6 +184,54 @@ export const seedBinatTestCandidate = mutation({
 
 export const seedFollowUpTestCandidate = seedBinatTestCandidate;
 
+export const clearTestCandidateDetails = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const targetEmail = process.env.EMAIL_TEST_RECIPIENT || "hipergrin@gmail.com";
+
+    // 1. Find candidate
+    const candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_email", (q) => q.eq("email", targetEmail))
+      .first();
+
+    if (candidate) {
+      // Clear profile fields
+      await ctx.db.patch(candidate._id, {
+        currentSalary: undefined,
+        expectedSalary: undefined,
+        noticePeriod: undefined,
+        noticePeriodDays: undefined,
+        cvUploadId: undefined,
+      });
+
+      // Find applications for candidate
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q) => q.eq("candidateId", candidate._id))
+        .collect();
+
+      for (const app of apps) {
+        await ctx.db.patch(app._id, {
+          followUpCvReceived: false,
+          followUpCurrentSalary: false,
+          followUpExpectedSalary: false,
+          followUpNoticePeriod: false,
+          followUpAttemptCount: 0,
+          nextFollowUpScheduledAt: undefined,
+          nextFollowUpMessage: undefined,
+          customFollowUpAnswers: {},
+          flaggedForTaReview: false,
+          taReviewReason: undefined,
+        });
+      }
+    }
+
+    console.log(`[Clear Details] Successfully reset details and follow-up flags for ${targetEmail}`);
+    return { success: true, email: targetEmail };
+  },
+});
+
 export const removeBinatCandidate = mutation({
   args: {},
   handler: async (ctx) => {

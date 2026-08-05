@@ -3,6 +3,7 @@ import { internalMutation } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { syncCandidateOverallStatus } from "./candidates/candidates";
 import { adjustJobStageStat } from "./jobs/stats";
+import { buildStructuredEmailHtml } from "./communications/emailHtml";
 
 const crons = cronJobs();
 
@@ -269,6 +270,16 @@ export const evaluateFollowUpStage = internalMutation({
               .replace(/{job_title}/g, job.title || "Job")
               .replace(/{missing_fields}/g, missingFormatted);
 
+            // Structured rich HTML rendering for the nudge email
+            const emailBodyHtml = buildStructuredEmailHtml({
+              candidateName: candidate.fullName || "there",
+              jobTitle: job.title,
+              prelude: emailBody,
+              remainingMissing: missingList.length > 0
+                ? missingList.map((m) => m.replace(/^•\s*/, ""))
+                : undefined,
+            });
+
             const commId = await ctx.db.insert("communications", {
               candidateId: app.candidateId,
               jobId: app.jobId,
@@ -288,6 +299,7 @@ export const evaluateFollowUpStage = internalMutation({
               candidateEmail: candidate.email,
               subject: emailSubject,
               body: emailBody,
+              bodyHtml: emailBodyHtml,
             });
           }
 
@@ -693,12 +705,6 @@ crons.interval(
   "recover-stuck-uploads",
   { minutes: 10 },
   internal.cvs.cvUploads.recoverStuckUploads
-);
-
-crons.interval(
-  "evaluate-followups",
-  { minutes: 15 },
-  internal.crons.evaluateFollowUpStage
 );
 
 export default crons;

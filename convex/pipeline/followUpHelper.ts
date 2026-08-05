@@ -2,6 +2,7 @@ import { Id } from "../_generated/dataModel";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { internal } from "../_generated/api";
 import { adjustJobStageStat } from "../jobs/stats";
+import { buildStructuredEmailHtml } from "../communications/emailHtml";
 
 /**
  * Checks per-application follow-up completion flags.
@@ -267,7 +268,12 @@ export async function initiateFollowUpOutreach(
   const candidateEmail = candidate.email;
 
   if (taEmail && candidateEmail) {
-    const htmlBody = body.replace(/\n/g, "<br>");
+    const htmlBody = buildStructuredEmailHtml({
+      candidateName: candidate.fullName || "there",
+      jobTitle: job.title,
+      prelude: `Thank you for applying for the *${job.title}* role at Career141! We are excited to consider your profile. To progress your application, please provide the following details:`,
+      remainingMissing: missingFields,
+    });
     await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
       communicationId: emailCommId,
       candidateJobId: app._id as string,

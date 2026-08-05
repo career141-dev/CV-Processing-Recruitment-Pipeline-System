@@ -2,6 +2,7 @@ import { internalAction } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { getOpenAI, getModelForTask } from "../lib/llm";
+import { buildStructuredEmailHtml } from "./emailHtml";
 
 export const extractDetailsFromText = internalAction({
   args: {
@@ -247,27 +248,41 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         );
 
         let replyMessage: string | null = null;
+        let aiAnswer: string | null = null;
+
+        // Acknowledge the details that were successfully recorded in this reply
+        const recordedDetails: string[] = [];
+        if (typeof updates.currentSalary === "number") recordedDetails.push(`Current Salary: ${updates.currentSalary}`);
+        if (typeof updates.expectedSalary === "number") recordedDetails.push(`Expected Salary: ${updates.expectedSalary}`);
+        if (updates.noticePeriod) recordedDetails.push(`Notice Period: ${updates.noticePeriod}`);
+        else if (typeof updates.noticePeriodDays === "number") recordedDetails.push(`Notice Period: ${updates.noticePeriodDays} days`);
+
+        // Fields still missing after this reply (plain names, used in the rich HTML card)
+        const appRecord = updatedApp || activeApp;
+        const remainingMissing: string[] = [];
+        if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) remainingMissing.push("CV Document");
+        if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) remainingMissing.push("Current Salary");
+        if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) remainingMissing.push("Expected Salary");
+        if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined && (!updatedCandidate?.noticePeriod || updatedCandidate?.noticePeriod === "")) remainingMissing.push("Notice Period");
+        for (const q of customQuestions) {
+          const ans = appRecord.customFollowUpAnswers || {};
+          if (!ans[q]) remainingMissing.push(q);
+        }
+
+        const preludeText =
+          isCompleted
+            ? `Great news! We have received all your application details for *${job.title}* and your profile is now 100% complete. Your application has been advanced to Second Shortlist.`
+            : isQuestion
+              ? `Thank you for your message regarding your application for *${job.title}*.`
+              : `Thank you! We have recorded your update for *${job.title}*.`;
 
         if (isCompleted) {
           replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
         } else if (isQuestion) {
+          aiAnswer = extracted.nextActionMessage;
           replyMessage = extracted.nextActionMessage;
-        } else {
-          const stillMissing: string[] = [];
-          const appRecord = updatedApp || activeApp;
-          if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
-          if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
-          if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
-          if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined && (!updatedCandidate?.noticePeriod || updatedCandidate?.noticePeriod === "")) stillMissing.push("• Notice Period");
-
-          for (const q of customQuestions) {
-            const ans = appRecord.customFollowUpAnswers || {};
-            if (!ans[q]) stillMissing.push(`• ${q}`);
-          }
-
-          if (stillMissing.length > 0) {
-            replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
-          }
+        } else if (remainingMissing.length > 0) {
+          replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\n${preludeText}\n\nWe are still waiting on the following to progress your application:\n\n${remainingMissing.map(m => `• ${m}`).join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
         }
 
         if (replyMessage) {
@@ -276,6 +291,16 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             applicationId: activeApp._id,
             nextActionTimeHours: hours,
             messageBody: replyMessage,
+          });
+
+          // Build the structured rich HTML rendering for the email channel
+          const replyHtml = buildStructuredEmailHtml({
+            candidateName: updatedCandidate?.fullName || "there",
+            jobTitle: job.title,
+            prelude: preludeText,
+            aiAnswer,
+            recordedDetails: recordedDetails.length > 0 ? recordedDetails : undefined,
+            remainingMissing: remainingMissing.length > 0 ? remainingMissing : undefined,
           });
 
           // Send immediate reply over the originating channel (Email or WhatsApp)
@@ -294,6 +319,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
                 taEmail: senderBox,
                 messageId: args.messageId,
                 replyText: replyMessage,
+                replyHtml,
               });
             } else {
               await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
@@ -302,7 +328,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
                 taEmail: senderBox,
                 toAddress: updatedCandidate?.email || candidate?.email || "",
                 subject: `Re: Application for ${job.title}`,
-                bodyHtml: replyMessage.replace(/\n/g, "<br/>"),
+                bodyHtml: replyHtml,
               });
             }
             console.log(`[Inbound Extraction] Dispatched immediate post-update EMAIL response to candidate ${args.candidateId}`);
