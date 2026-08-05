@@ -947,12 +947,49 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
   const hasNoticePeriod = item.followUpNoticePeriod === true || (item.candidate?.noticePeriodDays !== undefined && item.candidate?.noticePeriodDays !== null) || (item.noticePeriod !== undefined && item.noticePeriod !== '—' && item.noticePeriod !== null);
   const allComplete = item.followUpCvReceived && item.followUpCurrentSalary && item.followUpExpectedSalary && item.followUpNoticePeriod;
 
-  const flagItem = (label: string, done: boolean) => (
-    <div className="flex items-center gap-1 text-[11px]">
-      {done ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-orange-400 shrink-0" />}
-      <span className={done ? 'text-green-700 dark:text-green-400' : 'text-orange-600 font-medium'}>{label}</span>
-    </div>
-  );
+  const flagItem = (label: string, done: boolean, value?: any) => {
+    const rawVal = value !== undefined && value !== null && value !== '—' && value !== '' ? String(value).trim() : '';
+    let displayVal = rawVal;
+    
+    if (rawVal && !rawVal.includes('$') && label.includes('Salary') && !isNaN(Number(rawVal.replace(/,/g, '')))) {
+      displayVal = '$' + Number(rawVal.replace(/,/g, '')).toLocaleString();
+    } else if (rawVal && label.includes('Notice') && !rawVal.toLowerCase().includes('day') && !isNaN(Number(rawVal))) {
+      displayVal = rawVal + ' days';
+    }
+
+    // When done=true but no actual value captured (e.g. test seeded flag or AI-only flag)
+    const badgeLabel = displayVal || (done ? '✓ Received' : '');
+    const tooltipValue = displayVal || (done ? 'Flagged as received — exact value not stored as text' : 'Missing / Pending');
+
+    return (
+      <div 
+        className="group/flag relative flex items-center gap-1.5 text-[11px] cursor-help w-fit py-0.5"
+        title={`${label}: ${tooltipValue}`}
+      >
+        {done ? (
+          <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+        ) : (
+          <XCircle className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+        )}
+        <span className={done ? 'text-green-700 dark:text-green-400 font-medium' : 'text-orange-600 font-medium'}>
+          {label}
+        </span>
+        {done && (
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border max-w-[140px] truncate ${displayVal ? 'bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400 border-gray-500/20'}`} title={`${label}: ${tooltipValue}`}>
+            {badgeLabel}
+          </span>
+        )}
+
+        {/* Hover Tooltip Card */}
+        <div className="absolute left-0 bottom-full mb-1 hidden group-hover/flag:flex flex-col bg-gray-900 text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none border border-gray-700">
+          <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider">{label}</span>
+          <span className={`font-semibold text-[12px] ${displayVal ? 'text-white' : 'text-gray-400 italic'}`}>
+            {tooltipValue}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   if (isLoggingCall) {
     return (
@@ -1020,12 +1057,36 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
         })()}
       </td>
       <td className="p-4 align-top">
-        <div className="flex flex-col gap-1">
-          {flagItem('CV', hasCV)}
-          {flagItem('Current Salary', hasCurrentSalary)}
-          {flagItem('Expected Salary', hasExpectedSalary)}
-          {flagItem('Notice Period', hasNoticePeriod)}
-        </div>
+        {(() => {
+          // Read from candidate profile (set by logManualCall when value is numeric)
+          const candidateObj = (item as any).candidate;
+          const customCallData = candidateObj?.customCallData || {};
+
+          // For each field: try raw number first, then customCallData string notes
+          const actualCurrentSalary = 
+            (item as any).rawCurrentSalary ??
+            customCallData['Current Salary (Note)'] ??
+            ((item.currentSalary && item.currentSalary !== '—') ? item.currentSalary : undefined);
+
+          const actualExpectedSalary = 
+            (item as any).rawExpectedSalary ??
+            customCallData['Expected Salary (Note)'] ??
+            ((item.expectedSalary && item.expectedSalary !== '—') ? item.expectedSalary : undefined);
+
+          const rawNotice = 
+            (item as any).rawNoticePeriodDays ??
+            customCallData['Notice Period (Note)'] ??
+            ((item.noticePeriod && item.noticePeriod !== '—') ? item.noticePeriod : undefined);
+
+          return (
+            <div className="flex flex-col gap-1">
+              {flagItem('CV', hasCV, item.cvUploadId ? 'CV Uploaded' : candidateObj?.cvUploadId ? 'CV Attached' : undefined)}
+              {flagItem('Current Salary', hasCurrentSalary, actualCurrentSalary)}
+              {flagItem('Expected Salary', hasExpectedSalary, actualExpectedSalary)}
+              {flagItem('Notice Period', hasNoticePeriod, rawNotice)}
+            </div>
+          );
+        })()}
       </td>
       <td className="p-4 align-top">
         <div className={`inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1 rounded-full ${
@@ -2289,9 +2350,16 @@ export default function JobDetailPage() {
       score: app.aiMatchScore || 'Pending',
       scoreReason: (app as any).aiMatchExplanation || undefined,
       status: app.taShortlistStatus || 'Pending',
-      currentSalary: (app.candidate as any)?.currentSalary ? '$' + (app.candidate as any).currentSalary : '—',
-      expectedSalary: (app.candidate as any)?.expectedSalary ? '$' + (app.candidate as any).expectedSalary : '—',
-      noticePeriod: (app.candidate as any)?.noticePeriodDays ? (app.candidate as any).noticePeriodDays + ' days' : '—',
+      // Raw values for tooltip display — pulled from candidate profile first (updated by logManualCall)
+      currentSalary: app.currentSalary !== undefined && app.currentSalary !== null ? String(app.currentSalary) : ((app.candidate as any)?.currentSalary ? String((app.candidate as any).currentSalary) : '—'),
+      expectedSalary: app.expectedSalary !== undefined && app.expectedSalary !== null ? String(app.expectedSalary) : ((app.candidate as any)?.expectedSalary ? String((app.candidate as any).expectedSalary) : '—'),
+      noticePeriod: app.noticePeriodDays !== undefined && app.noticePeriodDays !== null ? String(app.noticePeriodDays) : ((app.candidate as any)?.noticePeriodDays ? String((app.candidate as any).noticePeriodDays) : ((app as any).noticePeriod || '—')),
+      // Pass raw candidate object so FollowUpCandidateRow can read updated values directly
+      candidate: app.candidate,
+      // Also expose direct raw numbers for the tooltip
+      rawCurrentSalary: (app.candidate as any)?.currentSalary ?? app.currentSalary,
+      rawExpectedSalary: (app.candidate as any)?.expectedSalary ?? app.expectedSalary,
+      rawNoticePeriodDays: (app.candidate as any)?.noticePeriodDays ?? app.noticePeriodDays,
       budgetFit: true,
       fit: 'Good',
       salaryFit: 'Good',
