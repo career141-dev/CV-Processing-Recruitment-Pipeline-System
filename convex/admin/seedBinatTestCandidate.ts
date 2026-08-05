@@ -11,7 +11,7 @@ export const seedBinatTestCandidate = mutation({
   },
   handler: async (ctx, args) => {
     const targetEmail = process.env.EMAIL_TEST_RECIPIENT || "hipergrin@gmail.com";
-    const senderEmail = process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "jobs@career141.com";
+    const senderEmail = process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "job@career141.com";
     const targetStage = (args.stage || "new_cvs") as any;
 
     // 1. Find active user/recruiter

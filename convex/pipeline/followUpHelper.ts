@@ -304,10 +304,12 @@ export async function stopFollowUpSequenceForApp(
   const app = await ctx.db.get(applicationId);
   if (!app) return;
 
-  // 1. Clear scheduled follow-up timestamps on the application
+  // 1. Clear scheduled follow-up timestamps & TA review flags on the application
   await ctx.db.patch(applicationId, {
     nextFollowUpScheduledAt: undefined,
     nextFollowUpMessage: undefined,
+    flaggedForTaReview: false,
+    taReviewReason: undefined,
   });
 
   // 2. Mark any pending communications for this application as stopped/failed

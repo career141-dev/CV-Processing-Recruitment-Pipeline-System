@@ -132,7 +132,7 @@ async function fetchInboxEmails(inboxEmail: string, lastFetch: string | null, ig
       cutoffDate = new Date(Math.max(lastFetchTime - 5 * 60 * 1000, Date.now() - 30 * 24 * 60 * 60 * 1000)).toISOString();
     }
 
-    let filterClause = `hasAttachments eq true and receivedDateTime ge ${cutoffDate}`;
+    let filterClause = `receivedDateTime ge ${cutoffDate}`;
     if (!bypassReadCheck) {
       filterClause = `isRead eq false and ` + filterClause;
     }
@@ -264,6 +264,8 @@ export const pollEmailInbox = action({
           senderEmail,
           subject,
           body: emailBody,
+          messageId: message.id,
+          inboxEmail: targetInboxEmail,
         });
 
         if (checkResult) {
@@ -464,6 +466,8 @@ export const checkAndRecordEmailReply = internalMutation({
     senderEmail: v.string(),
     subject: v.string(),
     body: v.string(),
+    messageId: v.optional(v.string()),
+    inboxEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     let targetEmail = args.senderEmail;
@@ -513,10 +517,13 @@ export const checkAndRecordEmailReply = internalMutation({
       stoppedSequence: false,
     });
 
-    // Run text extraction in background to parse details
+    // Run text extraction in background to parse details and trigger dynamic email reply
     await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
       candidateId: candidate._id,
       textBody: args.body,
+      channel: "email",
+      inboxEmail: args.inboxEmail,
+      messageId: args.messageId,
     });
 
     const isFollowUp =

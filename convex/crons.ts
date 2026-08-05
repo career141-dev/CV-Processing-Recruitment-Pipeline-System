@@ -50,6 +50,12 @@ export const evaluateFollowUpStage = internalMutation({
     const jobCache = new Map<string, any>();
 
     for (const app of followUpApps) {
+      // 1. Skip if application is flagged for TA review (automated nudging paused)
+      if (app.flaggedForTaReview === true) {
+        console.log(`[Follow-Up Cron] Application ${app._id} is flagged for TA review (${app.taReviewReason}). Skipping automated nudge.`);
+        continue;
+      }
+
       const candidate = await ctx.db.get(app.candidateId);
       if (!candidate) continue;
 
@@ -66,6 +72,42 @@ export const evaluateFollowUpStage = internalMutation({
       
       if (!job) continue;
       if (job.status !== "active") continue;
+
+      // 3. Enforce Max Attempt Ceiling (Terminal Stop Condition)
+      const maxAttempts = job.maxFollowUpAttempts ?? 4;
+      const currentAttempts = app.followUpAttemptCount || 0;
+
+      if (currentAttempts >= maxAttempts) {
+        console.log(`[Follow-Up Cron] Max attempts (${maxAttempts}) reached for application ${app._id}. Moving to unresponsive.`);
+        await ctx.db.patch(app._id, {
+          currentStage: "unresponsive",
+          lastStageChangedAt: now,
+          nextFollowUpScheduledAt: undefined,
+          stageHistory: [
+            ...(app.stageHistory ?? []),
+            {
+              stage: "unresponsive",
+              enteredAt: new Date().toISOString(),
+              changedBy: "system" as any,
+              note: `Auto-moved to Unresponsive: Reached max follow-up attempt limit (${maxAttempts} attempts).`,
+            },
+          ],
+        });
+        await ctx.db.insert("pipelineEvents", {
+          applicationId: app._id,
+          candidateId: app.candidateId,
+          jobId: app.jobId,
+          eventType: "unresponsive_max_attempts",
+          fromStage: app.currentStage,
+          toStage: "unresponsive",
+          actorType: "system",
+          notes: `Auto-moved to Unresponsive: Exceeded ${maxAttempts} max follow-up attempts.`,
+          createdAt: now,
+        });
+        await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
+        await syncCandidateOverallStatus(ctx, app.candidateId);
+        continue;
+      }
 
       // ── Per-application completion flags (not global candidate fields) ──────
       // Falls back to candidate record for legacy apps that predate the flags.
@@ -128,42 +170,40 @@ export const evaluateFollowUpStage = internalMutation({
       const timeInStage = now - enteredAt;
       const daysInStage = Math.floor(timeInStage / (24 * 60 * 60 * 1000));
 
-      const isDynamicMode = typeof job.maxFollowUpDays === "number" && job.maxFollowUpDays > 0;
+      // 1. Check expiration if maxFollowUpDays is set
+      const maxDaysMs = (typeof job.maxFollowUpDays === "number" && job.maxFollowUpDays > 0)
+        ? job.maxFollowUpDays * 24 * 60 * 60 * 1000
+        : null;
 
-      if (isDynamicMode) {
-        // --- NEW DYNAMIC FLOW ---
-        const maxDaysMs = job.maxFollowUpDays! * 24 * 60 * 60 * 1000;
+      if (maxDaysMs && timeInStage >= maxDaysMs && !allFollowUpsPaused) {
+        // move to unresponsive
+        await ctx.db.patch(app._id, {
+          currentStage: "unresponsive",
+          lastStageChangedAt: now,
+          stageHistory: [
+            ...(app.stageHistory ?? []),
+            {
+              stage: "unresponsive",
+              enteredAt: new Date().toISOString(),
+              changedBy: "system" as any,
+              note: `Auto-moved to Unresponsive: Profile still incomplete after ${job.maxFollowUpDays} days.`,
+            },
+          ],
+        });
+        await ctx.db.patch(app._id, {
+          followUpState: {
+            lastContactDay: app.followUpState?.lastContactDay ?? 0,
+            firstChannelUsed: app.followUpState?.firstChannelUsed,
+            replyChannel: "unresponsive",
+          }
+        });
+        await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
+        await syncCandidateOverallStatus(ctx, app.candidateId);
+        continue;
+      }
 
-        // 1. Check expiration
-        if (timeInStage >= maxDaysMs && !allFollowUpsPaused) {
-          // move to unresponsive
-          await ctx.db.patch(app._id, {
-            currentStage: "unresponsive",
-            lastStageChangedAt: now,
-            stageHistory: [
-              ...(app.stageHistory ?? []),
-              {
-                stage: "unresponsive",
-                enteredAt: new Date().toISOString(),
-                changedBy: "system" as any,
-                note: `Auto-moved to Unresponsive: Profile still incomplete after ${job.maxFollowUpDays} days.`,
-              },
-            ],
-          });
-          await ctx.db.patch(app._id, {
-            followUpState: {
-              lastContactDay: app.followUpState?.lastContactDay ?? 0,
-              firstChannelUsed: app.followUpState?.firstChannelUsed,
-              replyChannel: "unresponsive",
-            }
-          });
-          await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
-          await syncCandidateOverallStatus(ctx, app.candidateId);
-          continue;
-        }
-
-        // 2. Check if a dynamic message is scheduled and it's time to send
-        if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt) {
+      // 2. Check if a dynamic message is scheduled and it's time to send
+      if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt) {
           // Check attempt count
           const currentAttempts = app.followUpAttemptCount || 0;
           if (job.maxFollowUpAttempts && currentAttempts >= job.maxFollowUpAttempts) {
@@ -259,11 +299,8 @@ export const evaluateFollowUpStage = internalMutation({
           });
 
           console.log(`[Dynamic Follow-up] Sent initial/scheduled message to ${candidate.fullName}`);
+          continue;
         }
-        
-        // Skip legacy logic for this candidate
-        continue;
-      }
 
       // --- LEGACY STATIC FLOW ---
       // 1. First, check if 7 days have elapsed without collecting all required fields.
@@ -534,10 +571,10 @@ crons.interval(
   { inboxEmail: "cv@career141.com" }
 );
 
-// Poll jobs website inbox every 5 minutes
+// Poll job sender mailbox every 2 minutes for candidate email follow-up replies
 crons.interval(
-  "poll-job-inbox",
-  { minutes: 5 },
+  "poll-jobs-sender-inbox",
+  { minutes: 2 },
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "job@career141.com" }
 );
@@ -651,6 +688,12 @@ crons.interval(
   "recover-stuck-uploads",
   { minutes: 10 },
   internal.cvs.cvUploads.recoverStuckUploads
+);
+
+crons.interval(
+  "evaluate-followups",
+  { minutes: 15 },
+  internal.crons.evaluateFollowUpStage
 );
 
 export default crons;

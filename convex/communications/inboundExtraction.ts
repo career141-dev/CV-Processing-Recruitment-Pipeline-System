@@ -7,6 +7,9 @@ export const extractDetailsFromText = internalAction({
   args: {
     candidateId: v.id("candidates"),
     textBody: v.string(),
+    channel: v.optional(v.string()),
+    inboxEmail: v.optional(v.string()),
+    messageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Guard: skip extraction if text is empty or trivially short
@@ -15,7 +18,7 @@ export const extractDetailsFromText = internalAction({
       return;
     }
 
-    console.log(`[Inbound Extraction] Starting extraction for candidate ${args.candidateId}. Text: "${args.textBody.substring(0, 200)}"`);
+    console.log(`[Inbound Extraction] Starting extraction for candidate ${args.candidateId} (channel: ${args.channel || "whatsapp"}). Text: "${args.textBody.substring(0, 200)}"`);
 
     const activeApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, {
       candidateId: args.candidateId,
@@ -51,8 +54,8 @@ export const extractDetailsFromText = internalAction({
       if (!answeredCustomQuestions[q]) missingFields.push(q);
     }
 
-    const openai = getOpenAI("jd_extraction");
-    const model = getModelForTask("jd_extraction");
+    const openai = getOpenAI("email_auto_reply");
+    const model = getModelForTask("email_auto_reply");
 
     const systemPrompt = `You are an AI recruitment assistant for Career141 managing candidate follow-ups.
 Currently, before reading this message, these details are missing from candidate profile:
@@ -68,8 +71,9 @@ SAMPLE FOLLOW-UP TEMPLATE:
 Your job is to analyze the candidate's chat message and output a JSON object.
 Rules:
 1. Extract the missing numeric/text details if provided in the candidate's message.
-2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA, a question, or declined.
-3. CRITICAL RULE FOR nextActionMessage:
+2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA (e.g., in an hour, tonight, tomorrow, next week), a question, or declined.
+3. If an ETA is promised, estimate 'candidateEtaMinutes' (numeric minutes from now until candidate promised to reply).
+4. CRITICAL RULE FOR nextActionMessage:
    - Calculate which fields are STILL missing AFTER accounting for the details provided in THIS candidate message.
    - If the candidate provided a field in THIS message (e.g., they gave Expected Salary), DO NOT ask for that field again!
    - If ALL missing details are now satisfied, set intent to 'provided_all' and nextActionMessage to null.
@@ -77,7 +81,7 @@ Rules:
    - If 'interested_no_eta', explicitly ask them "by what time could you provide these details?".
    - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
    - If 'provided_all' or 'not_interested', set nextActionMessage to null.
-4. 'nextActionTimeHours': Set to 0 for an immediate reply if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
+5. 'nextActionTimeHours': Set to candidateEtaMinutes/60 if ETA given. Set to 3 for fallback nudge if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
 
 Return ONLY a valid JSON object matching this schema. Do not add markdown formatting or backticks.
 Schema:
@@ -87,7 +91,8 @@ Schema:
   "noticePeriodDays": number | null,
   "noticePeriod": string | null,
   "customAnswers": { [question: string]: string } | null,
-  "intent": "provided_all" | "provided_partial" | "interested_no_eta" | "provided_eta" | "asked_question" | "not_interested",
+  "intent": "provided_all" | "provided_partial" | "interested_no_eta" | "promised_eta" | "asked_question" | "not_interested",
+  "candidateEtaMinutes": number | null,
   "nextActionTimeHours": number | null,
   "nextActionMessage": string | null
 }
@@ -116,10 +121,23 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
     try {
       const responseText = completion?.choices[0]?.message?.content?.trim() || "";
-      console.log(`[Inbound Extraction] Raw response: "${responseText}"`);
+      console.log(`[Inbound Extraction] Raw DeepSeek response: "${responseText}"`);
 
       const cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
       const extracted = JSON.parse(cleanJson);
+
+      // Check 72-hour ETA Ceiling Safeguard
+      const etaMins = typeof extracted.candidateEtaMinutes === "number" && extracted.candidateEtaMinutes > 0 ? extracted.candidateEtaMinutes : null;
+      const MAX_ETA_MINS = 72 * 60; // 72 hours ceiling
+
+      if (etaMins && etaMins > MAX_ETA_MINS) {
+        console.log(`[Inbound Extraction] Candidate ${args.candidateId} promised ETA of ${etaMins} mins (>72h). Flagging for TA review and pausing automated nudges.`);
+        await ctx.runMutation(internal.communications.followUpMutations.flagForTaReview, {
+          applicationId: activeApp._id,
+          reason: `Candidate promised long ETA (${Math.round(etaMins / 60)} hours > 72h max ceiling)`,
+        });
+        return;
+      }
 
       const updates: Record<string, any> = {};
       if (typeof extracted.currentSalary === "number") updates.currentSalary = extracted.currentSalary;
@@ -196,51 +214,74 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         }
 
         if (replyMessage) {
-          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
+          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 3;
           await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
             applicationId: activeApp._id,
             nextActionTimeHours: hours,
             messageBody: replyMessage,
           });
 
-          // Send immediate reply to candidate update
-          const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
-            candidateId: args.candidateId,
-            applicationId: activeApp._id,
-            jobId: activeApp.jobId,
-            body: replyMessage,
-          });
+          // Send immediate reply over the originating channel (Email or WhatsApp)
+          if (args.channel === "email") {
+            const senderBox = args.inboxEmail || process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "job@career141.com";
+            const commId = await ctx.runMutation(internal.communications.emailAgent.createOutboundEmailRecord, {
+              candidateId: args.candidateId,
+              applicationId: activeApp._id,
+              jobId: activeApp.jobId,
+              subject: `Re: Application for ${job.title}`,
+              body: replyMessage,
+            });
 
-          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-            communicationId: commId,
-            candidateId: args.candidateId,
-            jobId: activeApp.jobId,
-            body: replyMessage,
-          });
-          console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
+            if (args.messageId) {
+              await ctx.scheduler.runAfter(0, internal.communications.graphEmail.replyToMessage, {
+                taEmail: senderBox,
+                messageId: args.messageId,
+                replyText: replyMessage,
+              });
+            } else {
+              await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
+                communicationId: commId,
+                candidateJobId: activeApp._id,
+                taEmail: senderBox,
+                toAddress: updatedCandidate?.email || candidate?.email || "",
+                subject: `Re: Application for ${job.title}`,
+                bodyHtml: replyMessage.replace(/\n/g, "<br/>"),
+              });
+            }
+            console.log(`[Inbound Extraction] Dispatched immediate post-update EMAIL response to candidate ${args.candidateId}`);
+          } else {
+            const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+              candidateId: args.candidateId,
+              applicationId: activeApp._id,
+              jobId: activeApp.jobId,
+              body: replyMessage,
+            });
+
+            await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+              communicationId: commId,
+              candidateId: args.candidateId,
+              jobId: activeApp.jobId,
+              body: replyMessage,
+            });
+            console.log(`[Inbound Extraction] Dispatched immediate post-update WHATSAPP response to candidate ${args.candidateId}`);
+          }
         }
       } else {
         console.log(`[Inbound Extraction] No new updates extracted from message for candidate ${args.candidateId}. Suppressing duplicate reply loop.`);
       }
 
     } catch (err: any) {
-      console.error("[Inbound Extraction] Error during LLM details extraction:", err.message);
+      console.warn("[Inbound Extraction] Fail-open: Error during DeepSeek details extraction:", err.message);
       try {
-        const fallbackMsg = `Thank you! We've received your update regarding your *${job.title}* application. We are processing your details.`;
-        const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
-          candidateId: args.candidateId,
+        const fallbackHours = 3;
+        const fallbackMsg = `Thank you! We've received your update regarding your *${job.title}* application. Please share any remaining details at your earliest convenience.`;
+        await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
           applicationId: activeApp._id,
-          jobId: activeApp.jobId,
-          body: fallbackMsg,
-        });
-        await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-          communicationId: commId,
-          candidateId: args.candidateId,
-          jobId: activeApp.jobId,
-          body: fallbackMsg,
+          nextActionTimeHours: fallbackHours,
+          messageBody: fallbackMsg,
         });
       } catch (fallbackErr: any) {
-        console.error("[Inbound Extraction] Fallback reply error:", fallbackErr.message);
+        console.error("[Inbound Extraction] Fail-open fallback error:", fallbackErr.message);
       }
     }
   },

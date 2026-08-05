@@ -79,28 +79,18 @@ export const sendGraphEmail = internalAction({
     try {
       const token = await getGraphToken();
 
-      // Resolve the actual sending mailbox vs reply-to address
-      // Personal email domains (like Gmail) cannot send M365 emails directly
-      let senderEmail: string = args.taEmail || process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "";
-      if (!senderEmail) {
-        throw new Error("[Graph Email] No sender email configured in args or environment variables (MS_SENDER_EMAIL).");
-      }
-      let replyToRecipients: any[] = [];
+      // Resolve the actual sending mailbox & system reply-to inbox
+      const systemInbox = process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "job@career141.com";
+      let senderEmail: string = systemInbox;
 
-      const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER;
-      const isCareer141Domain = senderEmail.toLowerCase().endsWith("@career141.com");
-
-      if (!isCareer141Domain && m365Sender) {
-        senderEmail = m365Sender;
-        replyToRecipients = [
-          {
-            emailAddress: { address: args.taEmail }
-          }
-        ];
-        console.log(`[Graph Email] Recruiter email is external (${args.taEmail}). Using M365 sender fallback (${m365Sender}) with Reply-To.`);
-      } else {
-        console.log(`[Graph Email] Recruiter email is native organization domain (${senderEmail}). Sending directly.`);
-      }
+      // CRITICAL: Reply-To MUST always be set to systemInbox (job@career141.com)
+      // so candidate replies return directly to the system inbox for AI processing & DB logging.
+      const replyToRecipients = [
+        {
+          emailAddress: { address: systemInbox }
+        }
+      ];
+      console.log(`[Graph Email] Outbound email configured from ${senderEmail} with Reply-To set to ${systemInbox}.`);
 
       const payload: any = {
         message: {

@@ -750,6 +750,10 @@ export default defineSchema({
     followUpAttemptCount: v.optional(v.number()),
     nextFollowUpScheduledAt: v.optional(v.number()),
     nextFollowUpMessage: v.optional(v.string()),
+    promisedEtaTimestamp: v.optional(v.number()),
+    lastCandidateEmailMessageId: v.optional(v.string()),
+    flaggedForTaReview: v.optional(v.boolean()),
+    taReviewReason: v.optional(v.string()),
     // Per-application follow-up completion flags (scoped per-job to avoid cross-job contamination)
     followUpCvReceived: v.optional(v.boolean()),
     followUpCurrentSalary: v.optional(v.boolean()),
