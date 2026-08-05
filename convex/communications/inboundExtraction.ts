@@ -1,4 +1,4 @@
-import { internalAction } from "../_generated/server";
+import { internalAction, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { getOpenAI, getModelForTask } from "../lib/llm";
@@ -51,12 +51,20 @@ export const extractDetailsFromText = internalAction({
       if (!answeredCustomQuestions[q]) missingFields.push(q);
     }
 
+    // Fetch conversation history
+    const historyText = await ctx.runQuery(internal.communications.inboundExtraction.getRecentHistoryQuery, {
+      candidateId: args.candidateId,
+    });
+
     const openai = getOpenAI("jd_extraction");
     const model = getModelForTask("jd_extraction");
 
     const systemPrompt = `You are an AI recruitment assistant for Career141 managing candidate follow-ups.
 Currently, before reading this message, these details are missing from candidate profile:
 MISSING DETAILS BEFORE THIS MESSAGE: ${missingFields.join(", ")}
+
+CONVERSATION HISTORY (most recent first):
+${historyText || "No previous messages."}
 
 To understand the TA's tone, look at their templates:
 INITIAL OUTREACH TEMPLATE:
@@ -68,16 +76,21 @@ SAMPLE FOLLOW-UP TEMPLATE:
 Your job is to analyze the candidate's chat message and output a JSON object.
 Rules:
 1. Extract the missing numeric/text details if provided in the candidate's message.
-2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA, a question, or declined.
+2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA (when they will send details), a question, or declined.
 3. CRITICAL RULE FOR nextActionMessage:
    - Calculate which fields are STILL missing AFTER accounting for the details provided in THIS candidate message.
    - If the candidate provided a field in THIS message (e.g., they gave Expected Salary), DO NOT ask for that field again!
    - If ALL missing details are now satisfied, set intent to 'provided_all' and nextActionMessage to null.
    - If 'provided_partial', ask ONLY for the REMAINING fields that are STILL missing.
    - If 'interested_no_eta', explicitly ask them "by what time could you provide these details?".
+   - If 'provided_eta', write a polite acknowledgement confirming we will follow up after their promised time (e.g. "No problem! We'll follow up with you after tonight 😊"). Do NOT ask for the missing fields yet.
    - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
    - If 'provided_all' or 'not_interested', set nextActionMessage to null.
-4. 'nextActionTimeHours': Set to 0 for an immediate reply if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
+4. 'nextActionTimeHours': 
+   - For 'provided_eta', calculate the number of hours from now until their promised time (e.g. 8 for "tonight", 24 for "tomorrow"). If vague (e.g. "later"), default to 6.
+   - For 'interested_no_eta', set to 3 (as a safety net check-in).
+   - Set to 0 for an immediate reply if 'provided_partial', 'asked_question', or 'interested_no_eta'.
+   - Set to null if 'provided_all' or 'not_interested'.
 5. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
 
 Return ONLY a valid JSON object matching this schema. Do not add markdown formatting or backticks.
@@ -232,6 +245,15 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (isCompleted) {
           replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
+        } else if (extracted.intent === "provided_eta") {
+          replyMessage = extracted.nextActionMessage || `Got it! We'll follow up with you later.`;
+          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 6;
+          await ctx.runMutation(internal.communications.followUpMutations.updateCandidateEta, {
+            applicationId: activeApp._id,
+            candidateEtaMs: Date.now() + (hours * 60 * 60 * 1000),
+            candidateEtaText: extracted.nextActionMessage || "later",
+            waitingForCandidateEta: true,
+          });
         } else if (isQuestion) {
           replyMessage = extracted.nextActionMessage;
         } else {
@@ -254,11 +276,13 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (replyMessage) {
           const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
-          await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
-            applicationId: activeApp._id,
-            nextActionTimeHours: hours,
-            messageBody: replyMessage,
-          });
+          if (extracted.intent !== "provided_eta") {
+            await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
+              applicationId: activeApp._id,
+              nextActionTimeHours: hours,
+              messageBody: replyMessage,
+            });
+          }
 
           // Send immediate reply to candidate update
           const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
@@ -301,4 +325,16 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
       }
     }
   },
+});
+
+export const getRecentHistoryQuery = internalQuery({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .take(5);
+    return messages.map(m => `[${m.direction}] ${m.subject || "Message"}: ${m.body}`).join("\n");
+  }
 });

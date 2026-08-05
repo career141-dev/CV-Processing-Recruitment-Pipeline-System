@@ -60,3 +60,21 @@ export const resetToNewCvs = internalMutation({
     console.log(`[Pipeline] Reset application ${args.applicationId} back to New CVs stage.`);
   },
 });
+
+export const updateCandidateEta = internalMutation({
+  args: {
+    applicationId: v.id("applications"),
+    candidateEtaMs: v.number(),
+    candidateEtaText: v.string(),
+    waitingForCandidateEta: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      candidateEtaMs: args.candidateEtaMs,
+      candidateEtaText: args.candidateEtaText,
+      waitingForCandidateEta: args.waitingForCandidateEta,
+      nextFollowUpScheduledAt: args.candidateEtaMs, // align schedule with ETA
+    });
+    console.log(`[Follow-Up] Set ETA for application ${args.applicationId} to ${args.candidateEtaText} (at ${args.candidateEtaMs})`);
+  },
+});

@@ -820,6 +820,7 @@ export default defineSchema({
     rejectReason: v.optional(v.string()),
     placedAt: v.optional(v.number()),
     placedBy: v.optional(v.id("users")),
+    flaggedForTaReview: v.optional(v.boolean()),
   })
     .index("by_jobId", ["jobId"])
     .index("by_job_stage", ["jobId", "currentStage"])
