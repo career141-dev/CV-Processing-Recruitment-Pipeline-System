@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, Plus, Mail, MessageSquare
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, Plus, Mail, MessageSquare, DollarSign
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -581,6 +581,297 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   );
 };
 
+const LogManualCallCard = ({
+  candidateName,
+  outcome,
+  setOutcome,
+  currentSalary,
+  setCurrentSalary,
+  expectedSalary,
+  setExpectedSalary,
+  noticePeriod,
+  setNoticePeriod,
+  customFields,
+  setCustomFields,
+  cvFile,
+  setCvFile,
+  isSaving,
+  onCancel,
+  onSave,
+}: {
+  candidateName: string;
+  outcome: string;
+  setOutcome: (val: string) => void;
+  currentSalary: string;
+  setCurrentSalary: (val: string) => void;
+  expectedSalary: string;
+  setExpectedSalary: (val: string) => void;
+  noticePeriod: string;
+  setNoticePeriod: (val: string) => void;
+  customFields: { key: string; value: string }[];
+  setCustomFields: (val: { key: string; value: string }[]) => void;
+  cvFile: File | null;
+  setCvFile: (file: File | null) => void;
+  isSaving: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+}) => {
+  return (
+    <div className="bg-surface rounded-2xl border border-amber-300/40 dark:border-amber-700/50 p-5 shadow-lg relative overflow-hidden transition-all animate-in fade-in slide-in-from-top-2 duration-200">
+      {/* Top Banner Accent */}
+      <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600" />
+      
+      {/* Header */}
+      <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-border">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-300/30">
+            <Phone className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+              Log Manual Call Outcome
+            </h4>
+            <p className="text-xs text-text-secondary">
+              Record conversation response for <span className="font-semibold text-text-primary">{candidateName}</span>
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onCancel}
+          className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-bright transition-colors cursor-pointer"
+          title="Close Form"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Outcome Selection Buttons */}
+      <div className="mb-5">
+        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">
+          Call Outcome <span className="text-red-500">*</span>
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <button
+            type="button"
+            onClick={() => setOutcome("Interested")}
+            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
+              outcome === "Interested"
+                ? "bg-emerald-500/10 border-emerald-500 text-emerald-700 dark:text-emerald-400 ring-2 ring-emerald-500/20 shadow-xs"
+                : "bg-surface border-border text-text-secondary hover:bg-surface-bright hover:border-text-tertiary"
+            }`}
+          >
+            <CheckCircle2 className={`w-4 h-4 ${outcome === "Interested" ? "text-emerald-500" : "text-text-tertiary"}`} />
+            <div className="text-left">
+              <div className="font-bold">Interested</div>
+              <div className="text-[10px] opacity-75 font-normal">Advance to 2nd Shortlist</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOutcome("Not Interested")}
+            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
+              outcome === "Not Interested"
+                ? "bg-red-500/10 border-red-500 text-red-700 dark:text-red-400 ring-2 ring-red-500/20 shadow-xs"
+                : "bg-surface border-border text-text-secondary hover:bg-surface-bright hover:border-text-tertiary"
+            }`}
+          >
+            <XCircle className={`w-4 h-4 ${outcome === "Not Interested" ? "text-red-500" : "text-text-tertiary"}`} />
+            <div className="text-left">
+              <div className="font-bold">Not Interested</div>
+              <div className="text-[10px] opacity-75 font-normal">Move to Rejected</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOutcome("No Answer")}
+            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
+              outcome === "No Answer"
+                ? "bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-400 ring-2 ring-amber-500/20 shadow-xs"
+                : "bg-surface border-border text-text-secondary hover:bg-surface-bright hover:border-text-tertiary"
+            }`}
+          >
+            <Clock className={`w-4 h-4 ${outcome === "No Answer" ? "text-amber-500" : "text-text-tertiary"}`} />
+            <div className="text-left">
+              <div className="font-bold">No Answer</div>
+              <div className="text-[10px] opacity-75 font-normal">Keep in Follow-up</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Interested Details Fields */}
+      {outcome === "Interested" && (
+        <div className="space-y-4 pt-3 border-t border-border/60 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
+            <DollarSign className="w-4 h-4 text-emerald-500" />
+            <span>Update Mandatory Candidate Requirements</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Current Salary */}
+            <div>
+              <label className="block text-[11px] font-semibold text-text-secondary mb-1">
+                Current Salary
+              </label>
+              <div className="relative rounded-lg shadow-xs">
+                <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs text-text-tertiary font-medium">
+                  $
+                </span>
+                <input
+                  type="text"
+                  placeholder="50,000"
+                  value={currentSalary}
+                  onChange={(e) => setCurrentSalary(e.target.value)}
+                  className="w-full pl-7 pr-3 py-1.5 bg-surface border border-border rounded-lg text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Expected Salary */}
+            <div>
+              <label className="block text-[11px] font-semibold text-text-secondary mb-1">
+                Expected Salary
+              </label>
+              <div className="relative rounded-lg shadow-xs">
+                <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs text-text-tertiary font-medium">
+                  $
+                </span>
+                <input
+                  type="text"
+                  placeholder="60,000"
+                  value={expectedSalary}
+                  onChange={(e) => setExpectedSalary(e.target.value)}
+                  className="w-full pl-7 pr-3 py-1.5 bg-surface border border-border rounded-lg text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Notice Period */}
+            <div>
+              <label className="block text-[11px] font-semibold text-text-secondary mb-1">
+                Notice Period (Days)
+              </label>
+              <div className="relative rounded-lg shadow-xs">
+                <input
+                  type="text"
+                  placeholder="30"
+                  value={noticePeriod}
+                  onChange={(e) => setNoticePeriod(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-surface border border-border rounded-lg text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all"
+                />
+                <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-[10px] text-text-tertiary font-semibold uppercase">
+                  Days
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Custom Additional Fields */}
+          <div className="pt-2">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
+                <span>Additional Notes & Fields</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setCustomFields([...customFields, { key: '', value: '' }])}
+                className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3 h-3" /> Add Custom Field
+              </button>
+            </div>
+
+            {customFields.map((field, idx) => (
+              <div key={idx} className="flex gap-2 mb-2 items-center">
+                <input
+                  type="text"
+                  placeholder="Field Name (e.g. Reason for Leaving)"
+                  value={field.key}
+                  onChange={(e) => {
+                    const newFields = [...customFields];
+                    newFields[idx].key = e.target.value;
+                    setCustomFields(newFields);
+                  }}
+                  className="flex-1 px-3 py-1.5 bg-surface border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <input
+                  type="text"
+                  placeholder="Value"
+                  value={field.value}
+                  onChange={(e) => {
+                    const newFields = [...customFields];
+                    newFields[idx].value = e.target.value;
+                    setCustomFields(newFields);
+                  }}
+                  className="flex-1 px-3 py-1.5 bg-surface border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newFields = [...customFields];
+                    newFields.splice(idx, 1);
+                    setCustomFields(newFields);
+                  }}
+                  className="p-1.5 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Stylized File Upload Box */}
+          <div className="pt-2">
+            <label className="block text-xs font-bold text-text-secondary mb-1.5">
+              Upload Updated CV (Optional)
+            </label>
+            <div className="p-3 bg-surface border border-dashed border-border hover:border-amber-500/50 rounded-xl transition-all flex items-center gap-3">
+              <Upload className="w-5 h-5 text-amber-500 shrink-0" />
+              <input
+                type="file"
+                onChange={(e) => setCvFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-text-secondary file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-amber-500/10 file:text-amber-700 dark:file:text-amber-300 hover:file:bg-amber-500/20 transition-colors cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer Buttons */}
+      <div className="flex items-center justify-end gap-2.5 mt-5 pt-4 border-t border-border">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 rounded-xl text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-bright transition-colors cursor-pointer"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={isSaving || !outcome}
+          className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white transition-all disabled:opacity-50 shadow-sm cursor-pointer flex items-center gap-1.5"
+        >
+          {isSaving ? (
+            <>
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              Saving Call Log...
+            </>
+          ) : (
+            <>
+              <Phone className="w-3.5 h-3.5" />
+              Save Call Log
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp }: any) => {
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
@@ -627,30 +918,34 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
       }
 
       await logManualCall({
-        applicationId: item.id, candidateId: item.candidateId, outcome,
+        applicationId: item.id,
+        candidateId: item.candidateId,
+        outcome: outcome as any,
         currentSalary: finalCurrentSalary,
         expectedSalary: finalExpectedSalary,
-        noticePeriodDays: finalNoticePeriod,
-        customCallFields: customFields.length > 0 ? customFields : undefined,
+        noticePeriodDays: typeof finalNoticePeriod === 'number' ? finalNoticePeriod : undefined,
         cvUploadId,
+        customFields: customFields.filter(f => f.key.trim() && f.value.trim()),
       });
+
+      toast.success("Call log saved successfully!");
       setIsLoggingCall(false);
-      setCvFile(null);
-    } catch (e: any) {
-      showError(e, { title: "Failed to Save Call Log" });
+    } catch (err: any) {
+      console.error(err);
+      showError(err, { title: "Failed to Save Call Log" });
     } finally {
       setIsSaving(false);
     }
   };
 
   const daysInStage = Math.floor((item.timeInStageRaw || 0) / (1000 * 60 * 60 * 24));
-  const daysLeft = Math.max(0, 7 - daysInStage);
-  const isDbMatch = item.sourceChannel === 'database' || item.sourceChannel === 'headhunting';
+  const daysLeft = item.followUpEnteredAt ? Math.max(0, 7 - Math.floor((Date.now() - item.followUpEnteredAt) / (1000 * 60 * 60 * 24))) : 7;
+  const isDbMatch = item.isDbMatch || false;
   const hasCV = item.followUpCvReceived === true || !!item.cvUploadId || !!item.candidate?.cvUploadId;
   const hasCurrentSalary = item.followUpCurrentSalary === true || (item.candidate?.currentSalary !== undefined && item.candidate?.currentSalary !== null) || (item.currentSalary !== undefined && item.currentSalary !== '—' && item.currentSalary !== null);
   const hasExpectedSalary = item.followUpExpectedSalary === true || (item.candidate?.expectedSalary !== undefined && item.candidate?.expectedSalary !== null) || (item.expectedSalary !== undefined && item.expectedSalary !== '—' && item.expectedSalary !== null);
   const hasNoticePeriod = item.followUpNoticePeriod === true || (item.candidate?.noticePeriodDays !== undefined && item.candidate?.noticePeriodDays !== null) || (item.noticePeriod !== undefined && item.noticePeriod !== '—' && item.noticePeriod !== null);
-  const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod;
+  const allComplete = item.followUpCvReceived && item.followUpCurrentSalary && item.followUpExpectedSalary && item.followUpNoticePeriod;
 
   const flagItem = (label: string, done: boolean) => (
     <div className="flex items-center gap-1 text-[11px]">
@@ -661,92 +956,26 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
 
   if (isLoggingCall) {
     return (
-      <tr className="border-b border-border">
+      <tr className="border-b border-border bg-surface-bright/30">
         <td colSpan={6} className="p-4">
-          <div className="bg-surface-container rounded-lg border border-border p-4 shadow-sm relative w-full">
-            <button onClick={() => setIsLoggingCall(false)} className="absolute top-3 right-3 text-text-tertiary hover:text-text-primary"><X className="w-4 h-4" /></button>
-            <div className="flex items-center gap-2 mb-3">
-              <Phone className="w-4 h-4 text-primary" />
-              <span className="font-semibold text-text-primary">Logging manual call for {item.name}</span>
-            </div>
-            <select value={outcome} onChange={e => setOutcome(e.target.value)} className="bg-surface border border-border rounded px-2 py-2 text-[13px] focus:outline-none focus:border-primary-container max-w-xs block mb-3">
-              <option value="" disabled>Select Outcome...</option>
-              <option value="Interested">Interested (Advance candidate)</option>
-              <option value="Not Interested">Not Interested (Reject candidate)</option>
-              <option value="No Answer">No Answer</option>
-            </select>
-            {outcome === "Interested" && (
-              <div className="grid grid-cols-2 gap-3 max-w-lg mt-2 mb-3">
-                <div>
-                  <label className="block text-[11px] text-text-secondary mb-1">Current Salary</label>
-                  <input type="text" placeholder="e.g. 50000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-text-secondary mb-1">Expected Salary</label>
-                  <input type="text" placeholder="e.g. 60000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-text-secondary mb-1">Notice Period (Days)</label>
-                  <input type="text" placeholder="e.g. 30" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
-                </div>
-                <div className="col-span-2 mt-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-[11px] font-medium text-text-secondary">Additional Fields</label>
-                    <button 
-                      onClick={() => setCustomFields([...customFields, {key: '', value: ''}])}
-                      className="text-[11px] font-medium text-primary hover:text-primary/80 flex items-center gap-1"
-                    >
-                      <Plus className="w-3 h-3" /> Add Field
-                    </button>
-                  </div>
-                  {customFields.map((field, idx) => (
-                    <div key={idx} className="flex gap-2 mb-2 items-start">
-                      <input 
-                        type="text" 
-                        placeholder="Field Name (e.g. Reason for Leaving)" 
-                        className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
-                        value={field.key} 
-                        onChange={e => {
-                          const newFields = [...customFields];
-                          newFields[idx].key = e.target.value;
-                          setCustomFields(newFields);
-                        }} 
-                      />
-                      <input 
-                        type="text" 
-                        placeholder="Value" 
-                        className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
-                        value={field.value} 
-                        onChange={e => {
-                          const newFields = [...customFields];
-                          newFields[idx].value = e.target.value;
-                          setCustomFields(newFields);
-                        }} 
-                      />
-                      <button 
-                        onClick={() => {
-                          const newFields = [...customFields];
-                          newFields.splice(idx, 1);
-                          setCustomFields(newFields);
-                        }}
-                        className="p-1.5 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="col-span-2 mt-2">
-                  <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5"><Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)</label>
-                  <input type="file" onChange={e => setCvFile(e.target.files?.[0] || null)} className="w-full text-[11px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-surface-container-high file:text-text-primary hover:file:bg-border transition-colors cursor-pointer" />
-                </div>
-              </div>
-            )}
-            <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
-              <button onClick={() => setIsLoggingCall(false)} className="text-[12px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5">Cancel</button>
-              <button onClick={handleSaveLog} disabled={isSaving || !outcome} className="text-[12px] font-medium bg-primary text-on-primary px-4 py-1.5 rounded-[4px] hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm">{isSaving ? "Saving..." : "Save Call Log"}</button>
-            </div>
-          </div>
+          <LogManualCallCard
+            candidateName={item.name}
+            outcome={outcome}
+            setOutcome={setOutcome}
+            currentSalary={currentSalary}
+            setCurrentSalary={setCurrentSalary}
+            expectedSalary={expectedSalary}
+            setExpectedSalary={setExpectedSalary}
+            noticePeriod={noticePeriod}
+            setNoticePeriod={setNoticePeriod}
+            customFields={customFields}
+            setCustomFields={setCustomFields}
+            cvFile={cvFile}
+            setCvFile={setCvFile}
+            isSaving={isSaving}
+            onCancel={() => setIsLoggingCall(false)}
+            onSave={handleSaveLog}
+          />
         </td>
       </tr>
     );
@@ -902,6 +1131,57 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
 
           {/* Stage Change Dropdown */}
           {renderKanbanDropdown(item.id, 'follow_up')}
+
+          {/* Clear Test Details Helper Button */}
+          <button
+            onClick={async () => {
+              try {
+                const targetCandidateId = item.candidateId || item.candidate?._id;
+                if (!targetCandidateId) {
+                  toast.error("Candidate ID missing on record");
+                  return;
+                }
+                await convex.mutation(api.admin.qaTests.resetCandidateTestDetails, {
+                  candidateId: targetCandidateId,
+                  applicationId: item.id,
+                });
+                toast.success("Cleared salary & notice period fields for testing!");
+              } catch (err: any) {
+                console.error(err);
+                toast.error("Failed to clear details: " + (err.message || "Error"));
+              }
+            }}
+            className="p-2 h-8 w-8 inline-flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-300/40 dark:border-red-700/50 rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+            title="Clear Salary & Notice Details to re-test follow-up"
+          >
+            <RefreshCw className="w-4 h-4 text-red-500" />
+          </button>
+        </div>
+        
+        <div className="mt-1">
+          <button
+            onClick={async () => {
+              try {
+                const targetCandidateId = item.candidateId || item.candidate?._id;
+                if (!targetCandidateId) {
+                  toast.error("Candidate ID missing on record");
+                  return;
+                }
+                await convex.mutation(api.admin.qaTests.resetCandidateTestDetails, {
+                  candidateId: targetCandidateId,
+                  applicationId: item.id,
+                });
+                toast.success("Cleared salary & notice period fields for testing!");
+              } catch (err: any) {
+                console.error(err);
+                toast.error("Failed to clear details: " + (err.message || "Error"));
+              }
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-red-500 hover:text-red-600 hover:underline transition-all cursor-pointer"
+            title="Clear Salary & Notice Details to re-test follow-up"
+          >
+            <RefreshCw className="w-3 h-3" /> Clear Test Details
+          </button>
         </div>
       </td>
     </tr>
@@ -1073,116 +1353,26 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
 
   // Edit Mode
   return (
-    <tr className="bg-surface-container/30 border-b border-border">
+    <tr className="border-b border-border bg-surface-bright/30">
       <td colSpan={7} className="p-4">
-        <div className="flex flex-col gap-3 bg-surface-container p-4 rounded-lg border border-border">
-          <div className="flex justify-between items-center mb-2">
-            <span className="font-semibold text-text-primary">Logging manual call for {u.candidateName}</span>
-          </div>
-          
-          <select 
-            value={outcome}
-            onChange={e => setOutcome(e.target.value)}
-            className="bg-surface border border-border rounded px-2 py-2 text-[13px] focus:outline-none focus:border-primary-container max-w-xs"
-          >
-            <option value="" disabled>Select Outcome...</option>
-            <option value="Interested">Interested (Advance candidate)</option>
-            <option value="Not Interested">Not Interested (Reject candidate)</option>
-            <option value="No Answer">No Answer</option>
-          </select>
-          
-          {outcome === "Interested" && (
-            <div className="grid grid-cols-2 gap-3 max-w-lg mt-2">
-              <div>
-                <label className="block text-[11px] text-text-secondary mb-1">Current Salary</label>
-                <input type="text" placeholder="e.g. 50000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-[11px] text-text-secondary mb-1">Expected Salary</label>
-                <input type="text" placeholder="e.g. 60000" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-[11px] text-text-secondary mb-1">Notice Period (Days)</label>
-                <input type="text" placeholder="e.g. 30" className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
-              </div>
-              
-              <div className="col-span-2 mt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-[11px] font-medium text-text-secondary">Additional Fields</label>
-                  <button 
-                    onClick={() => setCustomFields([...customFields, {key: '', value: ''}])}
-                    className="text-[11px] font-medium text-primary hover:text-primary/80 flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" /> Add Field
-                  </button>
-                </div>
-                {customFields.map((field, idx) => (
-                  <div key={idx} className="flex gap-2 mb-2 items-start">
-                    <input 
-                      type="text" 
-                      placeholder="Field Name" 
-                      className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
-                      value={field.key} 
-                      onChange={e => {
-                        const newFields = [...customFields];
-                        newFields[idx].key = e.target.value;
-                        setCustomFields(newFields);
-                      }} 
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Value" 
-                      className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" 
-                      value={field.value} 
-                      onChange={e => {
-                        const newFields = [...customFields];
-                        newFields[idx].value = e.target.value;
-                        setCustomFields(newFields);
-                      }} 
-                    />
-                    <button 
-                      onClick={() => {
-                        const newFields = [...customFields];
-                        newFields.splice(idx, 1);
-                        setCustomFields(newFields);
-                      }}
-                      className="p-1.5 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="col-span-2 mt-2">
-                <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5">
-                  <Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)
-                </label>
-                <input 
-                  type="file" 
-                  onChange={e => setCvFile(e.target.files?.[0] || null)}
-                  className="w-full text-[11px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-surface-container-high file:text-text-primary hover:file:bg-border transition-colors cursor-pointer" 
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
-            <button 
-              onClick={() => setIsLoggingCall(false)}
-              className="text-[12px] font-medium text-text-secondary hover:text-text-primary px-3 py-1.5"
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleSaveLog} 
-              disabled={isSaving || !outcome}
-              className="text-[12px] font-medium bg-primary text-on-primary px-4 py-1.5 rounded-[4px] hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
-            >
-              {isSaving ? "Saving..." : "Save Call Log"}
-            </button>
-          </div>
-        </div>
+        <LogManualCallCard
+          candidateName={u.candidateName}
+          outcome={outcome}
+          setOutcome={setOutcome}
+          currentSalary={currentSalary}
+          setCurrentSalary={setCurrentSalary}
+          expectedSalary={expectedSalary}
+          setExpectedSalary={setExpectedSalary}
+          noticePeriod={noticePeriod}
+          setNoticePeriod={setNoticePeriod}
+          customFields={customFields}
+          setCustomFields={setCustomFields}
+          cvFile={cvFile}
+          setCvFile={setCvFile}
+          isSaving={isSaving}
+          onCancel={() => setIsLoggingCall(false)}
+          onSave={handleSaveLog}
+        />
       </td>
     </tr>
   );
