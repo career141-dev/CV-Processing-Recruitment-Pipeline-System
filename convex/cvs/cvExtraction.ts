@@ -1598,28 +1598,27 @@ Respond ONLY with a valid JSON object in this exact format:
 });
 
 // ──────────────────────────────────────────────────
-// Background Queue Cron Worker — Continuously drains unextracted R2 uploads
+// Background Queue Cron Worker — Paced, reliable extraction at ~15 CVs/min
 // ──────────────────────────────────────────────────
 
 export const processUnextractedQueueCron = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
-    // 1. Atomically claim up to 100 'uploaded' records (marks status: "processing")
+    // 1. Claim up to 15 'uploaded' records per 1-minute run for smooth processing
     let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-      limit: 100,
+      limit: 15,
     });
 
     // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
     if (!claimed || claimed.length === 0) {
       const recovery = await ctx.runMutation(internal.cvs.cvUploads.requeueAllStuckUploads, {
-        limit: 200,
+        limit: 50,
       });
 
       if (recovery.requeuedCount > 0) {
         console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
-        // Claim newly requeued batch
         claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-          limit: 100,
+          limit: 15,
         });
       }
     }
@@ -1628,43 +1627,24 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Non-stop maximum speed parallel extraction of ${claimed.length} claimed CVs from R2...`);
+    console.log(`[processUnextractedQueueCron] Smooth paced extraction of ${claimed.length} claimed CVs from R2...`);
 
     let count = 0;
-    const CONCURRENCY = 10;
-    for (let i = 0; i < claimed.length; i += CONCURRENCY) {
-      const chunk = claimed.slice(i, i + CONCURRENCY);
-      await Promise.all(
-        chunk.map(async (upload) => {
-          try {
-            await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
-              cvUploadId: upload._id,
-              s3Key: upload.s3Key,
-              storageProvider: upload.storageProvider,
-              fileType: upload.fileType || "pdf",
-              sourceChannel: upload.source || "Manual Directory Import",
-              uploadedBy: upload.uploadedBy || "System Worker",
-            });
-            count++;
-          } catch (err: any) {
-            console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
-          }
-        })
-      );
-    }
-
-    // 3. Non-Stop Auto-Reschedule: Immediately trigger next 100-item batch if more unextracted CVs remain
-    try {
-      const remainingUnextracted = await ctx.runQuery(api.candidates.candidates.listUploadsByStatus, {
-        status: "uploaded",
-        limit: 1,
-      });
-      if (remainingUnextracted && remainingUnextracted.length > 0) {
-        console.log(`[processUnextractedQueueCron] Queue has remaining unextracted CVs — auto-triggering next batch immediately...`);
-        await ctx.scheduler.runAfter(0, internal.cvs.cvExtraction.processUnextractedQueueCron, {});
+    for (let i = 0; i < claimed.length; i++) {
+      const upload = claimed[i];
+      try {
+        await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+          cvUploadId: upload._id,
+          s3Key: upload.s3Key,
+          storageProvider: upload.storageProvider,
+          fileType: upload.fileType || "pdf",
+          sourceChannel: upload.source || "Manual Directory Import",
+          uploadedBy: upload.uploadedBy || "System Worker",
+        });
+        count++;
+      } catch (err: any) {
+        console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
       }
-    } catch (schedErr: any) {
-      console.warn(`[processUnextractedQueueCron] Self-reschedule check note:`, schedErr?.message || schedErr);
     }
 
     return { processed: count };
