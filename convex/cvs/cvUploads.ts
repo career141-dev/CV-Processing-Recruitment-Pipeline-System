@@ -469,8 +469,9 @@ export const claimUploadedBatch = internalMutation({
 });
 
 /**
- * One-time / background recovery tool: Resets failed/cancelled/stuck cvUploads back to 'uploaded'
- * so the automated cron worker can process them into candidate profiles.
+ * Recovery tool: Guarantees ANY cvUploads record without a candidate profile
+ * (failed, cancelled, failed_retry, or stuck processing) gets re-queued as 'uploaded'
+ * so the background worker extracts it into a complete candidate profile.
  */
 export const requeueAllStuckUploads = internalMutation({
   args: {
@@ -478,8 +479,7 @@ export const requeueAllStuckUploads = internalMutation({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 100;
-    
-    // Find failed, cancelled, or failed_retry uploads
+
     const failedList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "failed"))
@@ -495,7 +495,19 @@ export const requeueAllStuckUploads = internalMutation({
       .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
       .take(limit);
 
-    const allStuck = [...failedList, ...cancelledList, ...failedRetryList].slice(0, limit);
+    // Also check stuck processing (> 5 mins ago)
+    const processingList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(limit);
+
+    const fiveMinsAgo = Date.now() - 5 * 60 * 1000;
+    const stuckProcessing = processingList.filter((u) => {
+      const startMs = (u as any).processingStartedAt ?? u._creationTime;
+      return startMs < fiveMinsAgo;
+    });
+
+    const allStuck = [...failedList, ...cancelledList, ...failedRetryList, ...stuckProcessing].slice(0, limit);
 
     let requeuedCount = 0;
     for (const upload of allStuck) {
