@@ -81,6 +81,7 @@ function StatBox({
 
 export default function IngestionMonitorPage() {
   const stats = useQuery(api.stats.stats.getIngestionStats);
+  const liveStatus = useQuery(api.stats.stats.getDirectUploadLiveStatus);
   const toggles = useQuery(api.admin.settings.getSystemSettings);
   const updateToggles = useMutation(api.admin.settings.updateChannelToggles);
 
@@ -823,6 +824,71 @@ export default function IngestionMonitorPage() {
                   <FolderUp className="w-4 h-4" />
                   <span>Upload from Directory</span>
                 </Link>
+              </div>
+
+              {/* Real-Time Extraction & Queue Live Status Card */}
+              <div className="bg-surface border border-border rounded-xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+                    <h3 className="text-sm font-bold text-text-primary">Live CV Extraction & Queue Status</h3>
+                  </div>
+                  <span className="text-[11px] font-semibold text-text-secondary">
+                    {liveStatus?.lastExtractedAt
+                      ? `Last Extracted: ${new Date(liveStatus.lastExtractedAt).toLocaleTimeString()}`
+                      : "Live Sync Active"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Queued */}
+                  <div className="bg-surface-container-low border border-border p-3.5 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between text-xs font-semibold text-text-secondary">
+                      <span>Queued (In R2)</span>
+                      <Clock className="w-4 h-4 text-amber-500" />
+                    </div>
+                    <div className="text-2xl font-extrabold text-amber-600 dark:text-amber-400">
+                      {(liveStatus?.queuedCount ?? 0).toLocaleString()}
+                    </div>
+                    <p className="text-[10px] text-text-secondary">Waiting in AI queue</p>
+                  </div>
+
+                  {/* Extracting Now */}
+                  <div className="bg-surface-container-low border border-border p-3.5 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between text-xs font-semibold text-text-secondary">
+                      <span>Extracting Now</span>
+                      <Loader2 className={`w-4 h-4 text-blue-500 ${(liveStatus?.extractingCount ?? 0) > 0 ? "animate-spin" : ""}`} />
+                    </div>
+                    <div className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">
+                      {(liveStatus?.extractingCount ?? 0).toLocaleString()}
+                    </div>
+                    <p className="text-[10px] text-text-secondary">Active in AI pipeline</p>
+                  </div>
+
+                  {/* Extracted Profiles */}
+                  <div className="bg-surface-container-low border border-border p-3.5 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between text-xs font-semibold text-text-secondary">
+                      <span>Extracted Profiles</span>
+                      <CheckCircle2 className="w-4 h-4 text-[#006E1C]" />
+                    </div>
+                    <div className="text-2xl font-extrabold text-[#006E1C]">
+                      {(liveStatus?.extractedCandidatesCount ?? 0).toLocaleString()}
+                    </div>
+                    <p className="text-[10px] text-text-secondary">Extracted in Database</p>
+                  </div>
+
+                  {/* Failed / Retried */}
+                  <div className="bg-surface-container-low border border-border p-3.5 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between text-xs font-semibold text-text-secondary">
+                      <span>Interrupted / Failed</span>
+                      <AlertTriangle className="w-4 h-4 text-red-500" />
+                    </div>
+                    <div className="text-2xl font-extrabold text-red-600">
+                      {(liveStatus?.failedCount ?? 0).toLocaleString()}
+                    </div>
+                    <p className="text-[10px] text-text-secondary">Auto-requeued by cron</p>
+                  </div>
+                </div>
               </div>
 
               <div
