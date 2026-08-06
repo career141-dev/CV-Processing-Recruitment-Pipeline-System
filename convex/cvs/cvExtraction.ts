@@ -246,9 +246,16 @@ const ExtractionActionArgs = {
 // Text Extraction
 // ──────────────────────────────────────────────────
 
+function safeSliceBuffer(buffer: ArrayBuffer): ArrayBuffer {
+  if (!buffer || buffer.byteLength === 0) {
+    return new ArrayBuffer(0);
+  }
+  return buffer.slice(0);
+}
+
 function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
   try {
-    const str = Buffer.from(buffer).toString("latin1");
+    const str = Buffer.from(safeSliceBuffer(buffer)).toString("latin1");
     const textMatches: string[] = [];
     
     // Match text within BT (Begin Text) and ET (End Text) operators
@@ -282,7 +289,7 @@ async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string>
     // @ts-ignore
     const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
     const loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(buffer),
+      data: new Uint8Array(safeSliceBuffer(buffer)),
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -339,7 +346,7 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
         }
         resolve(text || "");
       });
-      pdfParser.parseBuffer(Buffer.from(buffer));
+      pdfParser.parseBuffer(Buffer.from(safeSliceBuffer(buffer)));
     });
   } catch (err: any) {
     console.warn("[pdf2json] Uncaught parser exception, using raw stream fallback:", err.message || err);
@@ -465,7 +472,7 @@ async function extractImagesFromPdfBuffer(
     }
 
     const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(buffer),
+      data: new Uint8Array(safeSliceBuffer(buffer)),
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -1384,7 +1391,21 @@ export async function runCvExtraction(
 export const processCvExtraction = action({
   args: ExtractionActionArgs,
   handler: async (ctx, args): Promise<string | null> => {
-    return runCvExtraction(ctx, args);
+    try {
+      return await runCvExtraction(ctx, args);
+    } catch (err: any) {
+      console.error(`[processCvExtraction] Top-level uncaught action error for upload ${args.cvUploadId}:`, err?.message || err);
+      try {
+        await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+          cvUploadId: args.cvUploadId,
+          status: "failed",
+          errorMessage: err?.message || String(err),
+        });
+      } catch (updateErr) {
+        console.error(`[processCvExtraction] Failed to mark upload as failed:`, updateErr);
+      }
+      return null;
+    }
   },
 });
 
