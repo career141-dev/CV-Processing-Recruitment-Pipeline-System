@@ -747,4 +747,10 @@ crons.interval(
   internal.cvs.cvUploads.recoverStuckUploads
 );
 
+crons.interval(
+  "process-unextracted-cv-queue",
+  { minutes: 1 },
+  internal.cvs.cvExtraction.processUnextractedQueueCron
+);
+
 export default crons;

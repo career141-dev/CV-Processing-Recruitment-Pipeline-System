@@ -1596,3 +1596,45 @@ Respond ONLY with a valid JSON object in this exact format:
     }
   },
 });
+
+// ──────────────────────────────────────────────────
+// Background Queue Cron Worker — Continuously drains unextracted R2 uploads
+// ──────────────────────────────────────────────────
+
+export const processUnextractedQueueCron = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ processed: number }> => {
+    // 1. Query up to 5 unextracted uploads with status === "uploaded"
+    const unextracted = await ctx.runQuery(api.candidates.candidates.listUploadsByStatus, {
+      status: "uploaded",
+      limit: 5,
+    });
+
+    if (!unextracted || unextracted.length === 0) {
+      return { processed: 0 };
+    }
+
+    console.log(`[processUnextractedQueueCron] Auto-draining ${unextracted.length} unextracted CVs in R2...`);
+
+    let count = 0;
+    for (let i = 0; i < unextracted.length; i++) {
+      const upload = unextracted[i];
+      try {
+        await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+          cvUploadId: upload._id,
+          s3Key: upload.s3Key,
+          storageProvider: upload.storageProvider,
+          fileName: upload.fileName,
+          fileType: upload.fileType || "pdf",
+          sourceChannel: upload.source || "Manual Directory Import",
+          uploadedBy: upload.uploadedBy || "System Worker",
+        });
+        count++;
+      } catch (err: any) {
+        console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
+      }
+    }
+
+    return { processed: count };
+  },
+});

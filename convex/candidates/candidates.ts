@@ -819,6 +819,20 @@ export const findCandidateByHash = query({
 });
 
 // Paginated query used by resumeBatch to retry paused/failed uploads
+export const listUploadsByStatus = query({
+  args: {
+    status: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    return await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", args.status as any))
+      .take(limit);
+  },
+});
+
 export const listFailedUploads = query({
   args: {
     cursor: v.optional(v.string()),
