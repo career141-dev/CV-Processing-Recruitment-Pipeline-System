@@ -1598,15 +1598,15 @@ Respond ONLY with a valid JSON object in this exact format:
 });
 
 // ──────────────────────────────────────────────────
-// Background Queue Cron Worker — Paced, reliable extraction at ~15 CVs/min
+// Background Queue Cron Worker — High-reliability paced extraction at 25 CVs/min
 // ──────────────────────────────────────────────────
 
 export const processUnextractedQueueCron = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
-    // 1. Claim up to 15 'uploaded' records per 1-minute run for smooth processing
+    // 1. Claim up to 25 'uploaded' records per 1-minute run
     let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-      limit: 15,
+      limit: 25,
     });
 
     // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
@@ -1618,7 +1618,7 @@ export const processUnextractedQueueCron = internalAction({
       if (recovery.requeuedCount > 0) {
         console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
         claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-          limit: 15,
+          limit: 25,
         });
       }
     }
@@ -1627,24 +1627,29 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Smooth paced extraction of ${claimed.length} claimed CVs from R2...`);
+    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs/min through AI LLM extraction pipeline...`);
 
     let count = 0;
-    for (let i = 0; i < claimed.length; i++) {
-      const upload = claimed[i];
-      try {
-        await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
-          cvUploadId: upload._id,
-          s3Key: upload.s3Key,
-          storageProvider: upload.storageProvider,
-          fileType: upload.fileType || "pdf",
-          sourceChannel: upload.source || "Manual Directory Import",
-          uploadedBy: upload.uploadedBy || "System Worker",
-        });
-        count++;
-      } catch (err: any) {
-        console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
-      }
+    const CONCURRENCY = 5;
+    for (let i = 0; i < claimed.length; i += CONCURRENCY) {
+      const chunk = claimed.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        chunk.map(async (upload) => {
+          try {
+            await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+              cvUploadId: upload._id,
+              s3Key: upload.s3Key,
+              storageProvider: upload.storageProvider,
+              fileType: upload.fileType || "pdf",
+              sourceChannel: upload.source || "Manual Directory Import",
+              uploadedBy: upload.uploadedBy || "System Worker",
+            });
+            count++;
+          } catch (err: any) {
+            console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
+          }
+        })
+      );
     }
 
     return { processed: count };
