@@ -1604,9 +1604,9 @@ Respond ONLY with a valid JSON object in this exact format:
 export const processUnextractedQueueCron = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
-    // 1. Atomically claim up to 10 'uploaded' records (marks status: "processing")
+    // 1. Atomically claim up to 30 'uploaded' records (marks status: "processing")
     let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-      limit: 10,
+      limit: 30,
     });
 
     // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
@@ -1619,7 +1619,7 @@ export const processUnextractedQueueCron = internalAction({
         console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
         // Claim newly requeued batch
         claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-          limit: 10,
+          limit: 30,
         });
       }
     }
@@ -1628,25 +1628,29 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} claimed CVs from R2...`);
+    console.log(`[processUnextractedQueueCron] High-speed parallel extraction of ${claimed.length} claimed CVs from R2...`);
 
     let count = 0;
-    for (let i = 0; i < claimed.length; i++) {
-      const upload = claimed[i];
-      try {
-        await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
-          cvUploadId: upload._id,
-          s3Key: upload.s3Key,
-          storageProvider: upload.storageProvider,
-          fileName: upload.fileName,
-          fileType: upload.fileType || "pdf",
-          sourceChannel: upload.source || "Manual Directory Import",
-          uploadedBy: upload.uploadedBy || "System Worker",
-        });
-        count++;
-      } catch (err: any) {
-        console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
-      }
+    const CONCURRENCY = 5;
+    for (let i = 0; i < claimed.length; i += CONCURRENCY) {
+      const chunk = claimed.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        chunk.map(async (upload) => {
+          try {
+            await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+              cvUploadId: upload._id,
+              s3Key: upload.s3Key,
+              storageProvider: upload.storageProvider,
+              fileType: upload.fileType || "pdf",
+              sourceChannel: upload.source || "Manual Directory Import",
+              uploadedBy: upload.uploadedBy || "System Worker",
+            });
+            count++;
+          } catch (err: any) {
+            console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
+          }
+        })
+      );
     }
 
     return { processed: count };
