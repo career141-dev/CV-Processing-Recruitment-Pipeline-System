@@ -50,6 +50,7 @@ export default function FolderUploadPage() {
   const [failedCount, setFailedCount] = useState<number>(0);
   const [currentBatchIndex, setCurrentBatchIndex] = useState<number>(1);
   const [totalBatches, setTotalBatches] = useState<number>(1);
+  const [copiedCliCommand, setCopiedCliCommand] = useState<boolean>(false);
 
   const uploadFolderCandidate = useAction(api.cvs.folderIngestion.uploadFolderCandidate);
   const cancelAllRunningExtractions = useMutation(api.cvs.cvUploads.cancelAllRunningExtractions);
