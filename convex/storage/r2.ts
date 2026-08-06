@@ -97,7 +97,18 @@ export const uploadBufferToR2 = internalAction({
       Body: buffer,
     });
 
-    await s3.send(command);
+    let attempts = 0;
+    while (attempts < 3) {
+      try {
+        attempts++;
+        await s3.send(command);
+        return key;
+      } catch (err: any) {
+        if (attempts >= 3) throw err;
+        console.warn(`[R2 Upload] Cloudflare R2 connection flicker (attempt ${attempts}/3), retrying in ${attempts * 1000}ms...`, err?.message || err);
+        await new Promise((r) => setTimeout(r, attempts * 1000));
+      }
+    }
     return key;
   },
 });
