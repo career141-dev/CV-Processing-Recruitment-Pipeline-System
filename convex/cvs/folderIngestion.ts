@@ -13,8 +13,22 @@ export const uploadFolderCandidate = action({
     sourceChannel: v.optional(v.string()),
     batchIndex: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<{ cvUploadId: string; s3Key: string }> => {
+  handler: async (ctx, args): Promise<{ cvUploadId: string; s3Key: string; isSkipped?: boolean }> => {
     const sourceChannel = args.sourceChannel || "Manual Directory Import";
+
+    // 0. Pre-check if this file was already uploaded in a previous import session
+    const existingCheck = await ctx.runQuery(api.cvs.cvUploads.checkUploadedFile, {
+      fileName: args.fileName,
+      sourceChannel,
+    });
+
+    if (existingCheck.isUploaded && existingCheck.cvUploadId) {
+      return {
+        cvUploadId: existingCheck.cvUploadId,
+        s3Key: existingCheck.s3Key || "",
+        isSkipped: true,
+      };
+    }
 
     // 1. Upload CV buffer to Cloudflare R2 storage
     const s3Key: string = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {

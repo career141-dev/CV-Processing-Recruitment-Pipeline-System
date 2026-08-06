@@ -253,17 +253,31 @@ async function main() {
             batchIndex: bIdx,
           });
 
-          state.processedFolders[folderName] = {
-            status: "uploaded",
-            file: resumeFile.fileName,
-            cvUploadId: result.cvUploadId,
-            timestamp: new Date().toISOString(),
-          };
-          state.processedCount++;
-          state.uploadedCount++;
-          state.lastStoppedFolder = folderName;
-          state.lastStoppedIndex = i;
-          console.log(`✅ Success`);
+          if (result.isSkipped) {
+            state.processedFolders[folderName] = {
+              status: "skipped_duplicate",
+              file: resumeFile.fileName,
+              cvUploadId: result.cvUploadId,
+              timestamp: new Date().toISOString(),
+            };
+            state.processedCount++;
+            state.skippedNoResumeCount++;
+            state.lastStoppedFolder = folderName;
+            state.lastStoppedIndex = i;
+            console.log(`⏩ Skipped (Already in DB)`);
+          } else {
+            state.processedFolders[folderName] = {
+              status: "uploaded",
+              file: resumeFile.fileName,
+              cvUploadId: result.cvUploadId,
+              timestamp: new Date().toISOString(),
+            };
+            state.processedCount++;
+            state.uploadedCount++;
+            state.lastStoppedFolder = folderName;
+            state.lastStoppedIndex = i;
+            console.log(`✅ Success`);
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.log(`❌ Failed: ${msg}`);

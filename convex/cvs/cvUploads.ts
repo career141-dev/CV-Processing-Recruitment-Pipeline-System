@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
-import { mutation, internalQuery, internalMutation } from "../_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { adjustGlobalStat } from "../stats/statsHelper";
 import { requireUser, requireFullAccess } from "../lib/permissions";
@@ -349,4 +349,52 @@ export const restoreAllCandidatesFromUploads = mutation({
     return { checkedCount, requeuedRestored: requeued };
   },
 });
+
+/**
+ * Returns list of all uploaded filenames for Manual Directory Import
+ */
+export const getUploadedDirectoryFiles = query({
+  args: {
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetSource = args.sourceChannel || "Manual Directory Import";
+    const records = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_source_fileName", (q) => q.eq("source", targetSource))
+      .collect();
+
+    return records.map((r) => r.fileName);
+  },
+});
+
+/**
+ * Checks if a specific file name has already been uploaded for a source channel
+ */
+export const checkUploadedFile = query({
+  args: {
+    fileName: v.string(),
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetSource = args.sourceChannel || "Manual Directory Import";
+    const existing = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_source_fileName", (q) =>
+        q.eq("source", targetSource).eq("fileName", args.fileName)
+      )
+      .first();
+
+    if (existing) {
+      return {
+        isUploaded: true,
+        cvUploadId: existing._id,
+        s3Key: existing.s3Key || "",
+        status: existing.status,
+      };
+    }
+    return { isUploaded: false };
+  },
+});
+
 

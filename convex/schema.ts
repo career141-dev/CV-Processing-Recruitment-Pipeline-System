@@ -526,7 +526,9 @@ export default defineSchema({
     .index("by_fileHash", ["fileHash"])
     .index("by_batchId", ["batchId"])
     .index("by_storageId", ["storageId"])
-    .index("by_s3Key", ["s3Key"]),
+    .index("by_s3Key", ["s3Key"])
+    .index("by_source_fileName", ["source", "fileName"])
+    .index("by_fileName", ["fileName"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
