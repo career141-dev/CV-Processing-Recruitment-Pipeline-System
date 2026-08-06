@@ -1604,22 +1604,22 @@ Respond ONLY with a valid JSON object in this exact format:
 export const processUnextractedQueueCron = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
-    // 1. Atomically claim up to 30 'uploaded' records (marks status: "processing")
+    // 1. Atomically claim up to 100 'uploaded' records (marks status: "processing")
     let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-      limit: 30,
+      limit: 100,
     });
 
     // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
     if (!claimed || claimed.length === 0) {
       const recovery = await ctx.runMutation(internal.cvs.cvUploads.requeueAllStuckUploads, {
-        limit: 100,
+        limit: 200,
       });
 
       if (recovery.requeuedCount > 0) {
         console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
         // Claim newly requeued batch
         claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-          limit: 30,
+          limit: 100,
         });
       }
     }
@@ -1628,10 +1628,10 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] High-speed parallel extraction of ${claimed.length} claimed CVs from R2...`);
+    console.log(`[processUnextractedQueueCron] Non-stop maximum speed parallel extraction of ${claimed.length} claimed CVs from R2...`);
 
     let count = 0;
-    const CONCURRENCY = 5;
+    const CONCURRENCY = 10;
     for (let i = 0; i < claimed.length; i += CONCURRENCY) {
       const chunk = claimed.slice(i, i + CONCURRENCY);
       await Promise.all(
@@ -1651,6 +1651,20 @@ export const processUnextractedQueueCron = internalAction({
           }
         })
       );
+    }
+
+    // 3. Non-Stop Auto-Reschedule: Immediately trigger next 100-item batch if more unextracted CVs remain
+    try {
+      const remainingUnextracted = await ctx.runQuery(api.candidates.candidates.listUploadsByStatus, {
+        status: "uploaded",
+        limit: 1,
+      });
+      if (remainingUnextracted && remainingUnextracted.length > 0) {
+        console.log(`[processUnextractedQueueCron] Queue has remaining unextracted CVs — auto-triggering next batch immediately...`);
+        await ctx.scheduler.runAfter(0, internal.cvs.cvExtraction.processUnextractedQueueCron, {});
+      }
+    } catch (schedErr: any) {
+      console.warn(`[processUnextractedQueueCron] Self-reschedule check note:`, schedErr?.message || schedErr);
     }
 
     return { processed: count };
