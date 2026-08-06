@@ -1158,7 +1158,8 @@ export default defineSchema({
     occurredAt: v.string(),
   })
     .index("by_actorId", ["actorId"])
-    .index("by_entityType_entityId", ["entityType", "entityId"]),
+    .index("by_entityType_entityId", ["entityType", "entityId"])
+    .index("by_occurredAt", ["occurredAt"]),
 
   // ■■ CANDIDATE_CONSENT ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   candidateConsent: defineTable({
