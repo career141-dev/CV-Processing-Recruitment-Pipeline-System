@@ -351,7 +351,7 @@ export const restoreAllCandidatesFromUploads = mutation({
 });
 
 /**
- * Returns list of all uploaded filenames for Manual Directory Import
+ * Returns list of successfully uploaded/processing filenames for Manual Directory Import
  */
 export const getUploadedDirectoryFiles = query({
   args: {
@@ -364,12 +364,22 @@ export const getUploadedDirectoryFiles = query({
       .withIndex("by_source_fileName", (q) => q.eq("source", targetSource))
       .collect();
 
-    return records.map((r) => r.fileName);
+    // Only count active/successful uploads, ignore failed or cancelled records
+    const validRecords = records.filter(
+      (r) =>
+        r.status === "uploaded" ||
+        r.status === "processing" ||
+        r.status === "processed" ||
+        r.status === "completed" ||
+        r.status === "pending_retry"
+    );
+
+    return validRecords.map((r) => r.fileName);
   },
 });
 
 /**
- * Checks if a specific file name has already been uploaded for a source channel
+ * Checks if a specific file name has already been successfully uploaded for a source channel
  */
 export const checkUploadedFile = query({
   args: {
@@ -378,22 +388,57 @@ export const checkUploadedFile = query({
   },
   handler: async (ctx, args) => {
     const targetSource = args.sourceChannel || "Manual Directory Import";
-    const existing = await ctx.db
+    const existingRecords = await ctx.db
       .query("cvUploads")
       .withIndex("by_source_fileName", (q) =>
         q.eq("source", targetSource).eq("fileName", args.fileName)
       )
-      .first();
+      .collect();
 
-    if (existing) {
+    const validExisting = existingRecords.find(
+      (r) =>
+        r.status === "uploaded" ||
+        r.status === "processing" ||
+        r.status === "processed" ||
+        r.status === "completed" ||
+        r.status === "pending_retry"
+    );
+
+    if (validExisting) {
       return {
         isUploaded: true,
-        cvUploadId: existing._id,
-        s3Key: existing.s3Key || "",
-        status: existing.status,
+        cvUploadId: validExisting._id,
+        s3Key: validExisting.s3Key || "",
+        status: validExisting.status,
       };
     }
     return { isUploaded: false };
+  },
+});
+
+/**
+ * Clears failed cvUploads records for directory import so they can be clean-retried
+ */
+export const clearFailedDirectoryUploads = mutation({
+  args: {
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetSource = args.sourceChannel || "Manual Directory Import";
+    const records = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_source_fileName", (q) => q.eq("source", targetSource))
+      .collect();
+
+    const failed = records.filter(
+      (r) => r.status === "failed" || r.status === "cancelled" || r.status === "failed_retry"
+    );
+
+    for (const rec of failed) {
+      await ctx.db.delete(rec._id);
+    }
+
+    return { deletedCount: failed.length };
   },
 });
 
