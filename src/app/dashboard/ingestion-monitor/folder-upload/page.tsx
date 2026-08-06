@@ -106,14 +106,22 @@ export default function FolderUploadPage() {
       })
     );
 
-    // Count already uploaded items in Convex DB
+    // Count already uploaded items in Convex DB & find first unprocessed candidate
     let alreadyInDbCount = 0;
-    items.forEach((item) => {
+    let firstUnprocessedIndex = -1;
+
+    items.forEach((item, index) => {
       const uploadFileName = `${item.folderName}_${item.file.name}`;
       if (uploadedFilesSet.has(uploadFileName)) {
         alreadyInDbCount++;
+      } else if (firstUnprocessedIndex === -1) {
+        firstUnprocessedIndex = index;
       }
     });
+
+    if (firstUnprocessedIndex === -1) {
+      firstUnprocessedIndex = items.length;
+    }
 
     setCandidateItems(items);
     setSelectedPath(rootFolderName ? `Selected Folder: ${rootFolderName}` : "External Drive Folder");
@@ -122,9 +130,19 @@ export default function FolderUploadPage() {
 
     if (alreadyInDbCount > 0) {
       setUploadedCount(alreadyInDbCount);
-      toast.info(
-        `Auto-Resume Active! Discovered ${items.length.toLocaleString()} candidates. ${alreadyInDbCount.toLocaleString()} are already in the database and will be automatically skipped.`
-      );
+      setProcessedCount(firstUnprocessedIndex);
+
+      // Auto-switch to full import mode if test 100 batch is already completely imported
+      if (alreadyInDbCount >= 100) {
+        setImportMode("full");
+        toast.info(
+          `Auto-Resume Active: First ${alreadyInDbCount.toLocaleString()} candidates are already in the database! Switched to Full Import Mode to continue from Candidate #${firstUnprocessedIndex + 1}.`
+        );
+      } else {
+        toast.info(
+          `Auto-Resume Active: Discovered ${items.length.toLocaleString()} candidates. ${alreadyInDbCount.toLocaleString()} are already in the database. Resuming from Candidate #${firstUnprocessedIndex + 1}.`
+        );
+      }
     } else {
       toast.success(`Discovered ${items.length.toLocaleString()} candidates with resumes in Downloads folders!`);
     }
@@ -193,8 +211,6 @@ export default function FolderUploadPage() {
 
       // Fast-skip if already uploaded in Convex DB
       if (uploadedFilesSet.has(uploadFileName)) {
-        currentSkipped++;
-        setSkippedCount(currentSkipped);
         setProcessedCount(i + 1);
         setLastStoppedItem({ index: i + 1, folderName: item.folderName });
         continue;
