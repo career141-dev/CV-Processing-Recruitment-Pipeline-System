@@ -86,13 +86,17 @@ export const uploadBufferToR2 = internalAction({
     const date = new Date();
     const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     const key = `cvs/${yearMonth}/${Date.now()}-${safeName}`;
-    const buffer = Buffer.from(args.base64Data, "base64");
+    const binaryString = atob(args.base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
 
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME!,
       Key: key,
       ContentType: args.contentType,
-      Body: buffer,
+      Body: bytes,
     });
 
     let attempts = 0;
