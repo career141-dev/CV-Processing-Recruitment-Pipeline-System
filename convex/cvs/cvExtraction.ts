@@ -1604,21 +1604,35 @@ Respond ONLY with a valid JSON object in this exact format:
 export const processUnextractedQueueCron = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
-    // 1. Query up to 5 unextracted uploads with status === "uploaded"
-    const unextracted = await ctx.runQuery(api.candidates.candidates.listUploadsByStatus, {
-      status: "uploaded",
-      limit: 5,
+    // 1. Atomically claim up to 10 'uploaded' records (marks status: "processing")
+    let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
+      limit: 10,
     });
 
-    if (!unextracted || unextracted.length === 0) {
+    // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
+    if (!claimed || claimed.length === 0) {
+      const recovery = await ctx.runMutation(internal.cvs.cvUploads.requeueAllStuckUploads, {
+        limit: 100,
+      });
+
+      if (recovery.requeuedCount > 0) {
+        console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
+        // Claim newly requeued batch
+        claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
+          limit: 10,
+        });
+      }
+    }
+
+    if (!claimed || claimed.length === 0) {
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Auto-draining ${unextracted.length} unextracted CVs in R2...`);
+    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} claimed CVs from R2...`);
 
     let count = 0;
-    for (let i = 0; i < unextracted.length; i++) {
-      const upload = unextracted[i];
+    for (let i = 0; i < claimed.length; i++) {
+      const upload = claimed[i];
       try {
         await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
           cvUploadId: upload._id,

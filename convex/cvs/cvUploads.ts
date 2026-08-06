@@ -441,5 +441,71 @@ export const clearFailedDirectoryUploads = mutation({
     return { deletedCount: failed.length };
   },
 });
+/**
+ * Atomically claims up to limit 'uploaded' items and marks them 'processing'
+ * to prevent race conditions during concurrent worker runs.
+ */
+export const claimUploadedBatch = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    const uploadedRecords = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "uploaded"))
+      .take(limit);
 
+    const claimed = [];
+    for (const record of uploadedRecords) {
+      await ctx.db.patch(record._id, {
+        status: "processing",
+        processingStartedAt: Date.now(),
+      });
+      claimed.push(record);
+    }
+    return claimed;
+  },
+});
 
+/**
+ * One-time / background recovery tool: Resets failed/cancelled/stuck cvUploads back to 'uploaded'
+ * so the automated cron worker can process them into candidate profiles.
+ */
+export const requeueAllStuckUploads = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+    
+    // Find failed, cancelled, or failed_retry uploads
+    const failedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed"))
+      .take(limit);
+
+    const cancelledList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "cancelled"))
+      .take(limit);
+
+    const failedRetryList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
+      .take(limit);
+
+    const allStuck = [...failedList, ...cancelledList, ...failedRetryList].slice(0, limit);
+
+    let requeuedCount = 0;
+    for (const upload of allStuck) {
+      await ctx.db.patch(upload._id, {
+        status: "uploaded",
+        errorMessage: undefined,
+      });
+      requeuedCount++;
+    }
+
+    return { requeuedCount, remaining: allStuck.length };
+  },
+});
