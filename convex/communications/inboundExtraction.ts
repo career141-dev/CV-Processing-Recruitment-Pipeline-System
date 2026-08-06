@@ -1,4 +1,4 @@
-import { internalAction } from "../_generated/server";
+import { internalAction, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { getOpenAI, getModelForTask } from "../lib/llm";
@@ -55,12 +55,20 @@ export const extractDetailsFromText = internalAction({
       if (!answeredCustomQuestions[q]) missingFields.push(q);
     }
 
+    // Fetch conversation history
+    const historyText = await ctx.runQuery(internal.communications.inboundExtraction.getRecentHistoryQuery, {
+      candidateId: args.candidateId,
+    });
+
     const openai = getOpenAI("email_auto_reply");
     const model = getModelForTask("email_auto_reply");
 
     const systemPrompt = `You are an AI recruitment assistant for Career141 managing candidate follow-ups.
 Currently, before reading this message, these details are missing from candidate profile:
 MISSING DETAILS BEFORE THIS MESSAGE: ${missingFields.join(", ")}
+
+CONVERSATION HISTORY (most recent first):
+${historyText || "No previous messages."}
 
 To understand the TA's tone, look at their templates:
 INITIAL OUTREACH TEMPLATE:
@@ -80,6 +88,7 @@ Rules:
    - If ALL missing details are now satisfied, set intent to 'provided_all' and nextActionMessage to null.
    - If 'provided_partial', ask ONLY for the REMAINING fields that are STILL missing.
    - If 'interested_no_eta', explicitly ask them "by what time could you provide these details?".
+   - If 'provided_eta', write a polite acknowledgement confirming we will follow up after their promised time (e.g. "No problem! We'll follow up with you after tonight 😊"). Do NOT ask for the missing fields yet.
    - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
    - If 'provided_all' or 'not_interested', set nextActionMessage to null.
 5. 'nextActionTimeHours': Set to candidateEtaMinutes/60 if ETA given. Set to 24 for the default 24-hour fallback nudge if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
@@ -278,6 +287,15 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (isCompleted) {
           replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
+        } else if (extracted.intent === "provided_eta") {
+          replyMessage = extracted.nextActionMessage || `Got it! We'll follow up with you later.`;
+          const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 6;
+          await ctx.runMutation(internal.communications.followUpMutations.updateCandidateEta, {
+            applicationId: activeApp._id,
+            candidateEtaMs: Date.now() + (hours * 60 * 60 * 1000),
+            candidateEtaText: extracted.nextActionMessage || "later",
+            waitingForCandidateEta: true,
+          });
         } else if (isQuestion) {
           aiAnswer = extracted.nextActionMessage;
           replyMessage = extracted.nextActionMessage;
@@ -287,11 +305,13 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (replyMessage) {
           const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
-          await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
-            applicationId: activeApp._id,
-            nextActionTimeHours: hours,
-            messageBody: replyMessage,
-          });
+          if (extracted.intent !== "provided_eta") {
+            await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
+              applicationId: activeApp._id,
+              nextActionTimeHours: hours,
+              messageBody: replyMessage,
+            });
+          }
 
           // Build the structured rich HTML rendering for the email channel
           const replyHtml = buildStructuredEmailHtml({
@@ -368,4 +388,16 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
       }
     }
   },
+});
+
+export const getRecentHistoryQuery = internalQuery({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .take(5);
+    return messages.map(m => `[${m.direction}] ${m.subject || "Message"}: ${m.body}`).join("\n");
+  }
 });

@@ -332,16 +332,16 @@ export const sendWhatsApp = internalAction({
     let targetPhone = candidate.phone;
     let logNote = "";
 
+    const activeInboundSession = await ctx.runQuery(internal.communications.whatsappOutbound.hasRecentInboundComm, {
+      candidateId: candidate._id,
+      withinMs: 24 * 60 * 60 * 1000,
+    });
+
     if (isTestMode) {
       const candidateDigits = candidate.phone.replace(/\D/g, "");
       const testDigits = testRecipient ? testRecipient.replace(/\D/g, "") : "";
 
       const isExactOrTailMatch = testDigits && (candidateDigits === testDigits || candidateDigits.endsWith(testDigits.slice(-9)) || testDigits.endsWith(candidateDigits.slice(-9)));
-
-      const activeInboundSession = await ctx.runQuery(internal.communications.whatsappOutbound.hasRecentInboundComm, {
-        candidateId: candidate._id,
-        withinMs: 24 * 60 * 60 * 1000,
-      });
 
       if (isExactOrTailMatch || activeInboundSession) {
         // Candidate IS the test phone OR candidate actively sent an inbound message in last 24h -> send directly
@@ -396,6 +396,44 @@ export const sendWhatsApp = internalAction({
       
       const cleanPhone = targetPhone.replace(/[^0-9]/g, "");
       const cleanPhoneId = phoneId.replace(/[^0-9]/g, "");
+
+      const isRedirected = isTestMode && !!testRecipient && targetPhone === testRecipient;
+      const isSessionOpen = activeInboundSession;
+
+      if (!isSessionOpen) {
+        console.log(`[WhatsApp Outbound] 24h window closed for +${cleanPhone}. Dispatching Meta re-engagement template instead.`);
+        // Instead of sending free-text (which would fail outside 24h window),
+        // dispatch the approved Meta re-engagement template to re-open the window.
+        if (commRecord?.applicationId) {
+          try {
+            await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+              applicationId: commRecord.applicationId,
+              templateType: "reengagement",
+            });
+            await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+              communicationId: args.communicationId,
+              status: "sent",
+            });
+            return;
+          } catch (templateErr: any) {
+            console.error(`[WhatsApp Outbound] Failed to send re-engagement template:`, templateErr.message);
+            await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+              communicationId: args.communicationId,
+              status: "failed",
+              error: `Failed to re-open 24h window: ${templateErr.message}`,
+            });
+            return;
+          }
+        } else {
+          // No applicationId on comm record — can't send template, mark failed
+          await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+            communicationId: args.communicationId,
+            status: "failed",
+            error: "24h window closed and no applicationId to dispatch template",
+          });
+          return;
+        }
+      }
 
       let sentSuccess = false;
       let sendError = "";
@@ -567,6 +605,11 @@ export const checkAndRecordFollowUpReply = internalMutation({
       stoppedSequence: false,
     });
 
+    // Update lastCandidateReplyAt on application
+    await ctx.db.patch(activeApp._id, {
+      lastCandidateReplyAt: Date.now(),
+    });
+
     // ONLY run text extraction if textBody is non-empty (> 2 chars to skip trivial "ok", "hi")
     if (args.textBody && args.textBody.trim().length > 2) {
       // Run text extraction in background to parse details
@@ -630,6 +673,12 @@ export const processLocalWhatsappInbound = internalMutation({
         sentAt: Date.now(),
         stoppedSequence: false,
       });
+
+      if (activeApp) {
+        await ctx.db.patch(activeApp._id, {
+          lastCandidateReplyAt: Date.now(),
+        });
+      }
     }
 
     // Get last 5 messages for chat history context

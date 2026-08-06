@@ -214,21 +214,6 @@ export async function initiateFollowUpOutreach(
 
   const now = Date.now();
 
-  // Create WhatsApp communication record
-  const commId = await ctx.db.insert("communications", {
-    candidateId: app.candidateId,
-    jobId: app.jobId,
-    applicationId: app._id,
-    direction: "outbound",
-    channel: "whatsapp",
-    subject: `Action Required: Missing info for your ${job.title} application`,
-    body,
-    deliveryStatus: "pending",
-    sentAt: now,
-    stoppedSequence: false,
-    sequenceDay: 0,
-  });
-
   // Create Email communication record (pending — will be sent via Graph)
   const emailCommId = await ctx.db.insert("communications", {
     candidateId: app.candidateId,
@@ -254,12 +239,10 @@ export async function initiateFollowUpOutreach(
     },
   });
 
-  // Schedule the actual WhatsApp delivery
-  await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-    communicationId: commId,
-    candidateId: app.candidateId,
-    jobId: app.jobId,
-    body,
+  // Schedule the actual WhatsApp delivery using Meta Approved Template
+  await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+    applicationId: app._id,
+    templateType: "initial_outreach",
   });
 
   // Schedule the actual Email delivery via Microsoft Graph
@@ -297,7 +280,7 @@ export async function initiateFollowUpOutreach(
   }
 
   console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId} (Test Mode active: real candidates protected)`);
-  return commId;
+  return undefined;
 }
 
 /**

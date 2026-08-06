@@ -205,6 +205,15 @@ export const evaluateFollowUpStage = internalMutation({
 
       // 2. Check if a dynamic message is scheduled and it's time to send
       if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt) {
+        // If we were waiting for Candidate's promised ETA:
+        if (app.waitingForCandidateEta === true) {
+          await ctx.db.patch(app._id, {
+            waitingForCandidateEta: undefined,
+            candidateEtaMs: undefined,
+            candidateEtaText: undefined,
+          });
+          console.log(`[Dynamic Follow-up] ETA passed for ${candidate.fullName}. Resuming outreach.`);
+        }
           // Check attempt count
           const currentAttempts = app.followUpAttemptCount || 0;
           if (job.maxFollowUpAttempts && currentAttempts >= job.maxFollowUpAttempts) {
@@ -235,26 +244,34 @@ export const evaluateFollowUpStage = internalMutation({
 
           // Send via WhatsApp if enabled
           if (!whatsappFollowUpPaused && (job.enableWhatsAppFollowUp !== false)) { 
-            const commId = await ctx.db.insert("communications", {
-              candidateId: app.candidateId,
-              jobId: app.jobId,
-              applicationId: app._id,
-              direction: "outbound",
-              channel: "whatsapp",
-              subject: `Follow-up: Missing info for your ${job.title} application`,
-              body: messageToSend,
-              deliveryStatus: "pending",
-              sentAt: now,
-              stoppedSequence: false,
-              sequenceDay: daysInStage,
-            });
+            if (currentAttempts === 0 && !app.nextFollowUpMessage) {
+              await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+                applicationId: app._id,
+                templateType: "initial_outreach",
+              });
+              console.log(`[Dynamic Follow-up] Dispatched initial Meta template outreach for ${candidate.fullName}`);
+            } else {
+              const commId = await ctx.db.insert("communications", {
+                candidateId: app.candidateId,
+                jobId: app.jobId,
+                applicationId: app._id,
+                direction: "outbound",
+                channel: "whatsapp",
+                subject: `Follow-up: Missing info for your ${job.title} application`,
+                body: messageToSend,
+                deliveryStatus: "pending",
+                sentAt: now,
+                stoppedSequence: false,
+                sequenceDay: daysInStage,
+              });
 
-            await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-              communicationId: commId,
-              candidateId: app.candidateId,
-              jobId: app.jobId,
-              body: messageToSend,
-            });
+              await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+                communicationId: commId,
+                candidateId: app.candidateId,
+                jobId: app.jobId,
+                body: messageToSend,
+              });
+            }
           }
 
           // Send via Email if enabled
@@ -351,7 +368,22 @@ export const evaluateFollowUpStage = internalMutation({
         continue;
       }
 
-      // 2. If under 7 days, check if candidate replied (inbound messages or completed AI calls)
+      // 2. If under 7 days, check if candidate promised an ETA and handle the hold window
+      if (app.waitingForCandidateEta === true) {
+        if (now < (app.candidateEtaMs || 0)) {
+          console.log(`[Follow-up] Candidate ${candidate.fullName} is within promised ETA window. Skipping static check-in.`);
+          continue; // Hold sequence
+        } else {
+          // ETA passed! Clear the ETA flags.
+          await ctx.db.patch(app._id, {
+            waitingForCandidateEta: undefined,
+            candidateEtaMs: undefined,
+            candidateEtaText: undefined,
+          });
+          console.log(`[Follow-up] Candidate ${candidate.fullName} missed promised ETA. Resuming static flow.`);
+        }
+      }
+
       const inboundComms = await ctx.db.query("communications")
         .withIndex("by_applicationId", (q: any) => q.eq("applicationId", app._id))
         .filter((q: any) => q.eq(q.field("direction"), "inbound"))
@@ -398,7 +430,7 @@ export const evaluateFollowUpStage = internalMutation({
             }
           });
         }
-        continue; // Candidate has replied, stop automated follow-up sequence
+        // Do NOT halt sequence forever, just let the scheduling below handle the next nudge if fields are still missing.
       }
 
       // Day-tier outreach scheduling
@@ -504,28 +536,36 @@ export const evaluateFollowUpStage = internalMutation({
       }
 
       if (triggerWhatsApp) {
-        const commId = await ctx.db.insert("communications", {
-          candidateId: app.candidateId,
-          jobId: app.jobId,
-          applicationId: app._id,
-          direction: "outbound",
-          channel: "whatsapp",
-          subject: `Action Required: Missing info for your ${job.title} application`,
-          body,
-          deliveryStatus: "pending",
-          sentAt: now,
-          stoppedSequence: false,
-          sequenceDay: targetDay,
-        });
+        if (targetDay === 0) {
+          await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+            applicationId: app._id,
+            templateType: "initial_outreach",
+          });
+          console.log(`[Follow-up Day 0] Dispatched Meta template outreach for ${candidate.fullName ?? "unknown"}`);
+        } else {
+          const commId = await ctx.db.insert("communications", {
+            candidateId: app.candidateId,
+            jobId: app.jobId,
+            applicationId: app._id,
+            direction: "outbound",
+            channel: "whatsapp",
+            subject: `Action Required: Missing info for your ${job.title} application`,
+            body,
+            deliveryStatus: "pending",
+            sentAt: now,
+            stoppedSequence: false,
+            sequenceDay: targetDay,
+          });
 
-        await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-          communicationId: commId,
-          candidateId: app.candidateId,
-          jobId: app.jobId,
-          body,
-        });
+          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+            communicationId: commId,
+            candidateId: app.candidateId,
+            jobId: app.jobId,
+            body,
+          });
 
-        console.log(`[Follow-up Day ${targetDay}] Scheduled WhatsApp to ${candidate.fullName ?? "unknown"}`);
+          console.log(`[Follow-up Day ${targetDay}] Scheduled WhatsApp to ${candidate.fullName ?? "unknown"}`);
+        }
       }
 
       // ── Follow-up AI call (Day 2 elapsed / Day 3) ─────────────────────────

@@ -25,6 +25,7 @@ export const add = mutation({
     name: v.string(),
     phone: v.string(),
     whatchimpPhoneId: v.string(),
+    wabaId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Basic formatting for phone
@@ -44,6 +45,7 @@ export const add = mutation({
       name: args.name,
       phone: cleanPhone,
       whatchimpPhoneId: args.whatchimpPhoneId,
+      wabaId: args.wabaId,
       createdAt: new Date().toISOString(),
     });
   },
