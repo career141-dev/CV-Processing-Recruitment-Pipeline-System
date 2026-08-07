@@ -226,8 +226,8 @@ async function main() {
       console.log(`⚡ Processing Batch #${state.currentBatchIndex} (${currentBatch.length} candidates)...`);
       console.log(`-----------------------------------------------------------------`);
 
-      // Process batch items in parallel chunks of 15 concurrent uploads for maximum speed
-      const CONCURRENCY = 15;
+      // Process batch items in parallel chunks of 5 concurrent uploads for maximum speed
+      const CONCURRENCY = 5;
       for (let bIdx = 0; bIdx < currentBatch.length; bIdx += CONCURRENCY) {
         if (isStopping) {
           console.log("\n⏹️ Stopped by user. State recorded cleanly in progress file.");

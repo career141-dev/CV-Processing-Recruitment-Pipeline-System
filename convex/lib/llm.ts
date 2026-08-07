@@ -345,25 +345,26 @@ export async function executeLLMWithNvidiaFallback(
   options: LLMCompletionOptions
 ): Promise<{ content: string; provider: "openrouter" | "nvidia"; model: string }> {
   if (IS_CV_EXTRACTION_TASK(taskType)) {
-    // Single-Model Hard Constraint: DeepSeek V4 Flash via OpenRouter ONLY
     const candidateModels = [
       OPENROUTER_CV_EXTRACTION_MODEL,
+      "google/gemini-2.0-flash-lite-001",
+      NVIDIA_PRIMARY_MODEL,
     ];
 
     let lastError: any = null;
 
     for (const model of candidateModels) {
-      const isNvidiaModel = false;
-      const maxRetries = 3;
+      const isNvidiaModel = model.startsWith("meta/");
+      const maxRetries = isNvidiaModel ? 1 : 3;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const client = getOpenAI(taskType);
+          const client = isNvidiaModel ? getNvidiaOpenAI() : getOpenAI(taskType);
           const response = await client.chat.completions.create({
             model,
             messages: options.messages,
             temperature: options.temperature ?? 0.1,
-            max_tokens: options.max_tokens ?? 2500,
+            max_tokens: options.max_tokens ?? 4096,
             ...(options.response_format ? { response_format: options.response_format } : {}),
           });
 
@@ -389,24 +390,8 @@ export async function executeLLMWithNvidiaFallback(
           throw new Error(`${model} returned empty response`);
         } catch (err: any) {
           lastError = err;
-          const errorMsg = (err?.message || String(err)).toLowerCase();
-          const isRateLimit =
-            errorMsg.includes("429") ||
-            errorMsg.includes("rate_limit") ||
-            errorMsg.includes("rate limit") ||
-            errorMsg.includes("too many requests") ||
-            errorMsg.includes("quota");
-
-          console.warn(
-            `[executeLLMWithNvidiaFallback] Model ${model} attempt ${attempt}/${maxRetries} failed ${
-              isRateLimit ? "(RATE LIMITED -> Instant Failover)" : ""
-            }: ${errorMsg}`
-          );
-
-          // If rate-limited, skip remaining retries on this model to failover to secondary provider immediately
-          if (isRateLimit) {
-            break;
-          }
+          const errorMsg = err?.message || String(err);
+          console.warn(`[executeLLMWithNvidiaFallback] Model ${model} attempt ${attempt}/${maxRetries} failed: ${errorMsg}`);
 
           if (attempt < maxRetries) {
             const waitMs = Math.pow(2, attempt) * 1000;
