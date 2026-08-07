@@ -610,40 +610,58 @@ async function extractImagesFromPdfBuffer(
 
 export async function extractTextWithTesseract(
   buffer: ArrayBuffer,
-  fileType: string
+  fileType: string,
+  ctx?: ActionCtx,
+  cvUploadId?: Id<"cvUploads">
 ): Promise<string> {
   const type = fileType.toLowerCase();
-  console.log(`[Tesseract OCR] Running Tesseract OCR on document (${type})...`);
+  console.log(`[OCR Extraction] Processing document OCR (${type})...`);
 
   try {
     if (type === "pdf" || type === "application/pdf") {
       const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
       if (!pageImages || pageImages.length === 0) {
-        console.warn("[Tesseract OCR] Could not render page images from PDF for Tesseract OCR");
+        console.warn("[OCR Extraction] Could not render page images from PDF");
         return "";
+      }
+
+      if (ctx) {
+        try {
+          console.log(`[OCR Extraction] Invoking NVIDIA NIM Vision OCR across ${pageImages.length} page(s)...`);
+          const visionText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
+          if (visionText && visionText.trim().length >= 20) {
+            return visionText.trim();
+          }
+        } catch (vErr: any) {
+          console.warn("[OCR Extraction] NVIDIA Vision OCR attempt failed:", vErr?.message || vErr);
+        }
       }
 
       let fullText = "";
       for (let i = 0; i < pageImages.length; i++) {
         const pageImg = pageImages[i];
-        console.log(`[Tesseract OCR] Running Tesseract OCR on page ${i + 1}/${pageImages.length}...`);
-        const result = await recognize(pageImg, "eng");
-        if (result?.data?.text) {
-          fullText += `\n${result.data.text}`;
+        try {
+          const result = await recognize(pageImg, "eng");
+          if (result?.data?.text) {
+            fullText += `\n${result.data.text}`;
+          }
+        } catch (tErr: any) {
+          console.warn(`[OCR Extraction] Local OCR failed on page ${i + 1}:`, tErr?.message || tErr);
         }
       }
-      console.log(`[Tesseract OCR] Tesseract OCR completed. Extracted ${fullText.trim().length} characters.`);
       return fullText.trim();
     } else {
       const imageBuffer = Buffer.from(buffer);
-      console.log(`[Tesseract OCR] Running Tesseract OCR on image file...`);
-      const result = await recognize(imageBuffer, "eng");
-      const text = result?.data?.text || "";
-      console.log(`[Tesseract OCR] Tesseract OCR completed. Extracted ${text.trim().length} characters.`);
-      return text.trim();
+      try {
+        const result = await recognize(imageBuffer, "eng");
+        return (result?.data?.text || "").trim();
+      } catch (tErr: any) {
+        console.warn("[OCR Extraction] Local image OCR failed:", tErr?.message || tErr);
+        return "";
+      }
     }
   } catch (err: any) {
-    console.error("[Tesseract OCR] Tesseract OCR failed:", err.message || err);
+    console.error("[OCR Extraction] OCR failed gracefully:", err.message || err);
     return "";
   }
 }
