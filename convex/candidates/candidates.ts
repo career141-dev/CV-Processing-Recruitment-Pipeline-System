@@ -1290,8 +1290,11 @@ export const deleteCandidate = mutation({
       }
     }
 
-    // Finally, delete the candidate
-    await ctx.db.delete(candidateId);
+    // Finally, delete the candidate if it exists in DB
+    const finalCandidateCheck = candidate || (await ctx.db.get(candidateId));
+    if (finalCandidateCheck) {
+      await ctx.db.delete(candidateId);
+    }
   }
 });
 

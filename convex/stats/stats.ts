@@ -1458,33 +1458,33 @@ export const runDirectBackfill = mutation({
 export const getDirectUploadLiveStatus = query({
   args: {},
   handler: async (ctx) => {
-    // 1. Queued CVs waiting in R2 (status: "uploaded") — uncapped up to 10,000
+    // 1. Queued CVs waiting in R2 (status: "uploaded") — bounded to 1,000 per query tick
     const uploadedList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "uploaded"))
-      .take(10000);
+      .take(1000);
 
     // 2. Currently Extracting CVs (status: "processing")
     const processingList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "processing"))
-      .take(10000);
+      .take(1000);
 
     // 3. Failed / Cancelled Uploads
     const failedList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "failed"))
-      .take(10000);
+      .take(1000);
 
     const cancelledList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "cancelled"))
-      .take(10000);
+      .take(1000);
 
     const failedRetryList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
-      .take(10000);
+      .take(1000);
 
     // 4. Latest processed/extracted item for live timestamp
     const latestProcessed = await ctx.db
