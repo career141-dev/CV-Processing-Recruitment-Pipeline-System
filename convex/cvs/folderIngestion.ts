@@ -37,7 +37,7 @@ export const uploadFolderCandidate = action({
 
     const fileSize = Math.round((args.base64Data.length * 3) / 4);
 
-    // 2. Save cvUploads record
+    // 2. Save cvUploads record with status 'uploaded' (Batch worker extracts in strict 10-by-10 sequence)
     const cvUploadId: any = await ctx.runMutation(api.cvs.cvUploads.saveUpload, {
       s3Key,
       storageProvider: "r2",
@@ -46,19 +46,6 @@ export const uploadFolderCandidate = action({
       fileType: args.fileType,
       source: sourceChannel,
       uploadedBy: args.uploadedBy,
-    });
-
-    // 3. Queue background DeepSeek V4 Flash AI extraction
-    const delayMs = (args.batchIndex ?? 0) * 500; // Paced 500ms delay per candidate in batch
-    await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
-      cvUploadId,
-      s3Key,
-      storageProvider: "r2",
-      fileName: args.fileName,
-      fileType: args.fileType,
-      sourceChannel,
-      uploadedBy: args.uploadedBy,
-      delayMs,
     });
 
     return { cvUploadId, s3Key };

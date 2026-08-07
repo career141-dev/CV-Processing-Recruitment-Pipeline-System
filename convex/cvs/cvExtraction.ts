@@ -1598,27 +1598,34 @@ Respond ONLY with a valid JSON object in this exact format:
 });
 
 // ──────────────────────────────────────────────────
-// Background Queue Cron Worker — High-reliability paced extraction at 25 CVs/min
+// Strict 10-by-10 Sequential Batch Queue Worker — Decoupled Extraction Pipeline
 // ──────────────────────────────────────────────────
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
 
 export const processUnextractedQueueCron = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
-    // 1. Claim up to 25 'uploaded' records per 1-minute run
+    // 1. Claim exactly 10 'uploaded' records per sequential batch
     let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-      limit: 25,
+      limit: 10,
     });
 
-    // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
+    // 2. If active queue is empty, run stuck-item recovery (prevents OCC write collisions with active updateCvUpload calls)
     if (!claimed || claimed.length === 0) {
       const recovery = await ctx.runMutation(internal.cvs.cvUploads.requeueAllStuckUploads, {
         limit: 50,
       });
-
       if (recovery.requeuedCount > 0) {
-        console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
+        console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active queue.`);
         claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-          limit: 25,
+          limit: 10,
         });
       }
     }
@@ -1627,29 +1634,36 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs/min through AI LLM extraction pipeline...`);
+    console.log(`[processUnextractedQueueCron] Processing batch of ${claimed.length} CVs (Sequential 10-by-10 queue, 30s timeout per item)...`);
 
     let count = 0;
-    const CONCURRENCY = 5;
-    for (let i = 0; i < claimed.length; i += CONCURRENCY) {
-      const chunk = claimed.slice(i, i + CONCURRENCY);
-      await Promise.all(
-        chunk.map(async (upload) => {
-          try {
-            await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+    // Extract all 10 CVs in parallel with a 30-second hard timeout per item to prevent tail-latency stalls
+    await Promise.all(
+      claimed.map(async (upload) => {
+        try {
+          await withTimeout(
+            ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
               cvUploadId: upload._id,
               s3Key: upload.s3Key,
               storageProvider: upload.storageProvider,
               fileType: upload.fileType || "pdf",
               sourceChannel: upload.source || "Manual Directory Import",
               uploadedBy: upload.uploadedBy || "System Worker",
-            });
-            count++;
-          } catch (err: any) {
-            console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
-          }
-        })
-      );
+            }),
+            30000,
+            `Extraction timed out after 30 seconds for CV upload ${upload._id}`
+          );
+          count++;
+        } catch (err: any) {
+          console.error(`[processUnextractedQueueCron] Error/Timeout processing upload ${upload._id}:`, err?.message || err);
+        }
+      })
+    );
+
+    // 3. Sequential Queue Trigger: ONLY AFTER all 10 CVs in current batch complete/timeout, schedule next 10 CV batch immediately
+    if (claimed.length > 0) {
+      console.log(`[processUnextractedQueueCron] Batch of ${count}/${claimed.length} CVs completed extraction. Triggering next 10-CV batch...`);
+      await ctx.scheduler.runAfter(0, internal.cvs.cvExtraction.processUnextractedQueueCron, {});
     }
 
     return { processed: count };
