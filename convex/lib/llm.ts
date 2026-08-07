@@ -345,10 +345,9 @@ export async function executeLLMWithNvidiaFallback(
   options: LLMCompletionOptions
 ): Promise<{ content: string; provider: "openrouter" | "nvidia"; model: string }> {
   if (IS_CV_EXTRACTION_TASK(taskType)) {
+    // CV Extraction uses DeepSeek V4 Flash via OpenRouter ONLY
     const candidateModels = [
       OPENROUTER_CV_EXTRACTION_MODEL,
-      "google/gemini-2.0-flash-lite-001",
-      NVIDIA_PRIMARY_MODEL,
     ];
 
     let lastError: any = null;
