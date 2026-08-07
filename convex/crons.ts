@@ -753,4 +753,10 @@ crons.interval(
   internal.cvs.cvExtraction.processUnextractedQueueCron
 );
 
+crons.interval(
+  "bg-healer-cv-extractor",
+  { minutes: 2 },
+  internal.cvs.healerActions.healNextUnparsedCandidate
+);
+
 export default crons;
