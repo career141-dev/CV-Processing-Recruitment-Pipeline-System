@@ -59,3 +59,23 @@ export const remove = mutation({
     await ctx.db.delete(args.id);
   },
 });
+
+export const removeNumberByPattern = mutation({
+  args: { pattern: v.string() },
+  handler: async (ctx, args) => {
+    const all = await ctx.db.query("whatsappNumbers").collect();
+    let removed = 0;
+    for (const num of all) {
+      if (
+        num.phone.includes(args.pattern) ||
+        num.whatchimpPhoneId.includes(args.pattern) ||
+        num.name.toLowerCase().includes(args.pattern.toLowerCase())
+      ) {
+        await ctx.db.delete(num._id);
+        removed++;
+      }
+    }
+    return { removed };
+  },
+});
+

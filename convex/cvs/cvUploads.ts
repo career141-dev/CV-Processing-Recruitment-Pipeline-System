@@ -524,6 +524,15 @@ export const requeueAllStuckUploads = internalMutation({
 
     let requeuedCount = 0;
     for (const upload of allStuck) {
+      if ((!upload.storageId && !upload.s3Key) || upload.errorMessage?.includes("File URL not found") || upload.errorMessage?.includes("No file data")) {
+        // Record has no physical file in storage or was deleted — mark permanently failed so it doesn't loop
+        await ctx.db.patch(upload._id, {
+          status: "failed",
+          errorMessage: upload.errorMessage || "No file data associated with this upload record (storage file missing)",
+        });
+        continue;
+      }
+
       await ctx.db.patch(upload._id, {
         status: "uploaded",
         errorMessage: undefined,

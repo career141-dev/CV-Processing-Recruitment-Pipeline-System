@@ -992,21 +992,16 @@ export async function runCvExtraction(
     let url: string | null = null;
     const tDownloadStart = Date.now();
 
-    const s3Key = args.s3Key || cvUpload?.s3Key;
-    const storageProvider = args.storageProvider || cvUpload?.storageProvider || "r2";
-    const storageId = args.storageId || cvUpload?.storageId;
+    const effectiveS3Key = args.s3Key || cvUpload.s3Key;
+    const effectiveStorageId = args.storageId || cvUpload.storageId;
+    const effectiveStorageProvider = args.storageProvider || cvUpload.storageProvider || (effectiveS3Key ? "r2" : "convex");
 
-    if (s3Key && storageProvider === "r2") {
-      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: s3Key });
-    }
-    if (!url && storageId) {
-      url = await ctx.storage.getUrl(storageId as any);
-    }
-    if (!url && cvUpload?.s3Key) {
-      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: cvUpload.s3Key });
-    }
-    if (!url && cvUpload?.storageId) {
-      url = await ctx.storage.getUrl(cvUpload.storageId as any);
+    if (effectiveS3Key && effectiveStorageProvider === "r2") {
+      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: effectiveS3Key });
+    } else if (effectiveStorageId) {
+      url = await ctx.storage.getUrl(effectiveStorageId);
+    } else if (effectiveS3Key) {
+      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: effectiveS3Key });
     }
 
     if (!url) throw new Error("File URL not found (neither R2 nor Convex storage)");
@@ -1383,7 +1378,6 @@ export async function runCvExtraction(
       status: (isInsufficientBalance || isNotACV)
         ? "processed"
         : ((args as any).isRetry ? "failed_retry" : "failed"),
-      isHealAttempted: true,
       errorMessage: isInsufficientBalance
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : isNotACV
@@ -1670,7 +1664,7 @@ export const processUnextractedQueueCron = internalAction({
               cvUploadId: upload._id,
               storageId: upload.storageId,
               s3Key: upload.s3Key,
-              storageProvider: upload.storageProvider,
+              storageProvider: upload.storageProvider || (upload.s3Key ? "r2" : "convex"),
               fileType: upload.fileType || "pdf",
               sourceChannel: upload.source || "Manual Directory Import",
               uploadedBy: upload.uploadedBy || "System Worker",
