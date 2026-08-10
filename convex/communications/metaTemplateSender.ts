@@ -3,7 +3,8 @@ import { internalAction, internalMutation, internalQuery } from "../_generated/s
 import { internal } from "../_generated/api";
 
 const DEFAULT_META_ACCESS_TOKEN = "EAAVsiEb3mHEBSIuLifLIqEvWVh9P0EkUnxKufE7fFRgay0IwCTZAPOTjv3gYxSk4iC2mNOKs8JTT3Qb0ZAdTHsP4WbZCiNZAiw4WOj5vLPQ9CSI4uiivAWKDhLnVzN6toTXdfvMRkZAUibXh3Rgg2bJkFOQ7YUbZAp005nlKdX9fbM7sZBcyZBjWBIzUST8t2QZDZD";
-const DEFAULT_META_PHONE_ID = "965783109962872";
+// Connected, verified WhatsApp Business Phone Number ID (+94 72 285 8346)
+const DEFAULT_META_PHONE_ID = "893484140519882";
 
 export const sendMetaTemplate = internalAction({
   args: {
@@ -142,10 +143,7 @@ export const sendMetaTemplate = internalAction({
       loggedBody = `Hi ${candidateName}, we're still looking forward to progressing your application for the *${jobTitle}* role at Career141.\n\nWe just need a few details from you to move things forward. Could you please reply to this message at your earliest convenience?\n\nWe'd love to keep you in the process! 😊`;
     }
 
-    console.log(`[Meta Template Sender] Dispatching template "${templateName}" to target phone +${cleanRecipientPhone} using phone_number_id ${phoneId}`);
-
-    // 4. Send request to Meta Cloud API
-    const metaUrl = `https://graph.facebook.com/v19.0/${phoneId}/messages`;
+    // 4. Send request to Meta Cloud API with fallback to verified connected phone ID
     const payload = {
       messaging_product: "whatsapp",
       to: cleanRecipientPhone,
@@ -164,35 +162,47 @@ export const sendMetaTemplate = internalAction({
       },
     };
 
+    const candidatePhoneIds = [phoneId];
+    if (phoneId !== DEFAULT_META_PHONE_ID) {
+      candidatePhoneIds.push(DEFAULT_META_PHONE_ID);
+    }
+
     let sentSuccess = false;
     let errorMessage = "";
 
-    try {
-      const response = await fetch(metaUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${metaAccessToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
+    for (const currentPhoneId of candidatePhoneIds) {
+      try {
+        console.log(`[Meta Template Sender] Dispatching template "${templateName}" to target phone +${cleanRecipientPhone} using phone_number_id ${currentPhoneId}`);
+        const metaUrl = `https://graph.facebook.com/v19.0/${currentPhoneId}/messages`;
 
-      const responseText = await response.text();
-      if (response.ok) {
-        const responseData = JSON.parse(responseText);
-        if (responseData.messages && responseData.messages.length > 0) {
-          sentSuccess = true;
-          console.log(`[Meta Template Sender] Successfully sent template message. Meta Msg ID: ${responseData.messages[0].id}`);
+        const response = await fetch(metaUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${metaAccessToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const responseText = await response.text();
+        if (response.ok) {
+          const responseData = JSON.parse(responseText);
+          if (responseData.messages && responseData.messages.length > 0) {
+            sentSuccess = true;
+            console.log(`[Meta Template Sender] Successfully sent template message. Meta Msg ID: ${responseData.messages[0].id}`);
+            break;
+          } else {
+            errorMessage = `Response payload missing message ID: ${responseText}`;
+          }
         } else {
-          errorMessage = `Response payload missing message ID: ${responseText}`;
+          errorMessage = `HTTP ${response.status}: ${responseText}`;
+          console.warn(`[Meta Template Sender] Meta API returned failure for phoneId ${currentPhoneId}: ${errorMessage}`);
+          // If error is 133010 (Account not registered), the loop will try DEFAULT_META_PHONE_ID
         }
-      } else {
-        errorMessage = `HTTP ${response.status}: ${responseText}`;
-        console.error(`[Meta Template Sender] Meta API returned failure: ${errorMessage}`);
+      } catch (err: any) {
+        errorMessage = err.message || String(err);
+        console.warn(`[Meta Template Sender] HTTP request exception for phoneId ${currentPhoneId}: ${errorMessage}`);
       }
-    } catch (err: any) {
-      errorMessage = err.message || String(err);
-      console.error(`[Meta Template Sender] HTTP request failed: ${errorMessage}`);
     }
 
     // 5. Record / Update the message in communications history

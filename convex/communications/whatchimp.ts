@@ -100,7 +100,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
             const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
               targetWhatsAppNumber: toNumber 
             });
-            const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
+            const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "893484140519882";
 
             if (phoneNumberId && !job.muteDefaultWhatsappReply) {
               const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
@@ -392,7 +392,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
         targetWhatsAppNumber: cleanTo 
       });
-      const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
+      const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "893484140519882";
       if (phoneNumberId) {
         let replyMessage = "Thank you! Your CV has been successfully received and is being processed by our system. We will contact you if there is a match.";
         
@@ -626,7 +626,7 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
       
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
+      let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "893484140519882";
       if (outboundNumber) {
         const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
           targetWhatsAppNumber: outboundNumber 

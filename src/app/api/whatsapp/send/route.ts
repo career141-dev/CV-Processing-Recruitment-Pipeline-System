@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     }
 
     const apiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
-    const rawPhoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
+    const rawPhoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID || "893484140519882";
     const phoneId = rawPhoneId.replace(/\D/g, "");
 
     const cleanDigits = phone.replace(/\D/g, "");

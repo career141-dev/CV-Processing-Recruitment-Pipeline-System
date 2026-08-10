@@ -8,18 +8,20 @@ export const getMetaPhoneNumberId = internalQuery({
   args: { targetWhatsAppNumber: v.string() },
   handler: async (ctx, args) => {
     const cleanDigits = args.targetWhatsAppNumber.replace(/\D/g, "");
-    if (!cleanDigits) return null;
+    if (!cleanDigits) return "893484140519882";
 
     const allNumbers = await ctx.db.query("whatsappNumbers").collect();
     const dbNumber = allNumbers.find(n => n.phone && n.phone.replace(/\D/g, "").slice(-9) === cleanDigits.slice(-9));
 
-    // whatchimpPhoneId stores the Meta phone_number_id — field name is legacy, value is correct
+    // whatchimpPhoneId stores the Meta phone_number_id
     if (dbNumber && dbNumber.whatchimpPhoneId) {
+      if (dbNumber.whatchimpPhoneId === "965783109962872") {
+        return "893484140519882"; // Auto-route disconnected phone to active connected phone ID
+      }
       return dbNumber.whatchimpPhoneId;
     }
 
-    console.error(`[Meta] No phone_number_id mapped for ${args.targetWhatsAppNumber}`);
-    return null;
+    return "893484140519882";
   }
 });
 
@@ -293,7 +295,7 @@ export const sendWhatsApp = internalAction({
 
       // Fetch job's designated outbound TA number (or fallback to default)
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      let phoneId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
+      let phoneId = process.env.META_PHONE_NUMBER_ID || "893484140519882";
 
       if (outboundNumber) {
         const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, {
