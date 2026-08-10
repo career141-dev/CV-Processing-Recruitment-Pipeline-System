@@ -46,7 +46,7 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
       
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "893484140519882";
+      let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
       if (outboundNumber) {
         const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
           targetWhatsAppNumber: outboundNumber 

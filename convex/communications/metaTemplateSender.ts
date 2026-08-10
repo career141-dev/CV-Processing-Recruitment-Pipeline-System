@@ -3,8 +3,8 @@ import { internalAction, internalMutation, internalQuery } from "../_generated/s
 import { internal } from "../_generated/api";
 
 const DEFAULT_META_ACCESS_TOKEN = "EAAVsiEb3mHEBSIuLifLIqEvWVh9P0EkUnxKufE7fFRgay0IwCTZAPOTjv3gYxSk4iC2mNOKs8JTT3Qb0ZAdTHsP4WbZCiNZAiw4WOj5vLPQ9CSI4uiivAWKDhLnVzN6toTXdfvMRkZAUibXh3Rgg2bJkFOQ7YUbZAp005nlKdX9fbM7sZBcyZBjWBIzUST8t2QZDZD";
-// Connected, verified WhatsApp Business Phone Number ID (+94 72 285 8346)
-const DEFAULT_META_PHONE_ID = "893484140519882";
+// Primary Career141 WhatsApp Business Phone Number ID (+94 74 219 7476)
+const DEFAULT_META_PHONE_ID = "965783109962872";
 
 export const sendMetaTemplate = internalAction({
   args: {
@@ -162,47 +162,38 @@ export const sendMetaTemplate = internalAction({
       },
     };
 
-    const candidatePhoneIds = [phoneId];
-    if (phoneId !== DEFAULT_META_PHONE_ID) {
-      candidatePhoneIds.push(DEFAULT_META_PHONE_ID);
-    }
-
     let sentSuccess = false;
     let errorMessage = "";
 
-    for (const currentPhoneId of candidatePhoneIds) {
-      try {
-        console.log(`[Meta Template Sender] Dispatching template "${templateName}" to target phone +${cleanRecipientPhone} using phone_number_id ${currentPhoneId}`);
-        const metaUrl = `https://graph.facebook.com/v19.0/${currentPhoneId}/messages`;
+    try {
+      console.log(`[Meta Template Sender] Dispatching template "${templateName}" to target phone +${cleanRecipientPhone} using phone_number_id ${phoneId}`);
+      const metaUrl = `https://graph.facebook.com/v19.0/${phoneId}/messages`;
 
-        const response = await fetch(metaUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${metaAccessToken}`,
-          },
-          body: JSON.stringify(payload),
-        });
+      const response = await fetch(metaUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${metaAccessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-        const responseText = await response.text();
-        if (response.ok) {
-          const responseData = JSON.parse(responseText);
-          if (responseData.messages && responseData.messages.length > 0) {
-            sentSuccess = true;
-            console.log(`[Meta Template Sender] Successfully sent template message. Meta Msg ID: ${responseData.messages[0].id}`);
-            break;
-          } else {
-            errorMessage = `Response payload missing message ID: ${responseText}`;
-          }
+      const responseText = await response.text();
+      if (response.ok) {
+        const responseData = JSON.parse(responseText);
+        if (responseData.messages && responseData.messages.length > 0) {
+          sentSuccess = true;
+          console.log(`[Meta Template Sender] Successfully sent template message. Meta Msg ID: ${responseData.messages[0].id}`);
         } else {
-          errorMessage = `HTTP ${response.status}: ${responseText}`;
-          console.warn(`[Meta Template Sender] Meta API returned failure for phoneId ${currentPhoneId}: ${errorMessage}`);
-          // If error is 133010 (Account not registered), the loop will try DEFAULT_META_PHONE_ID
+          errorMessage = `Response payload missing message ID: ${responseText}`;
         }
-      } catch (err: any) {
-        errorMessage = err.message || String(err);
-        console.warn(`[Meta Template Sender] HTTP request exception for phoneId ${currentPhoneId}: ${errorMessage}`);
+      } else {
+        errorMessage = `HTTP ${response.status}: ${responseText}`;
+        console.error(`[Meta Template Sender] Meta API returned failure for phoneId ${phoneId}: ${errorMessage}`);
       }
+    } catch (err: any) {
+      errorMessage = err.message || String(err);
+      console.error(`[Meta Template Sender] HTTP request exception for phoneId ${phoneId}: ${errorMessage}`);
     }
 
     // 5. Record / Update the message in communications history
