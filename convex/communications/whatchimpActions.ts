@@ -3,6 +3,7 @@ import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { getOpenAI, getModelForTask } from "../lib/llm";
+import { sendMetaFreeText } from "./metaDirectSender";
 
 export const handlePreApplicationChat = internalAction({
   args: {
@@ -45,9 +46,9 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
       
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      let phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
       if (outboundNumber) {
-        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
           targetWhatsAppNumber: outboundNumber 
         });
         if (fetchedId) {
@@ -56,18 +57,11 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
         }
       }
       
-      if (apiToken && phoneNumberId) {
-        const params = new URLSearchParams();
-        params.append("apiToken", apiToken);
-        params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
-        params.append("phone_number", args.phone);
-        params.append("message", replyMessage);
-
-        await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: params
-        }).then(r => r.text()).catch(console.error);
+      if (phoneNumberId) {
+        const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+        await sendMetaFreeText(phoneNumberId, args.phone, replyMessage, metaAccessToken)
+          .then(r => { if (!r.success) console.error("[PreApp Chat] Meta send failed:", r.error); })
+          .catch(console.error);
       }
     } catch (e: any) {
       console.error("[PreApp Chat] Error:", e);

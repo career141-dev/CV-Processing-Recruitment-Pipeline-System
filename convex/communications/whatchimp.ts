@@ -2,6 +2,7 @@ import { httpAction, mutation, query, action, internalAction } from "../_generat
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { getOpenAI, getModelForTask } from "../lib/llm";
+import { sendMetaFreeText } from "./metaDirectSender";
 
 export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const webhookSecret = process.env.WHATCHIMP_WEBHOOK_SECRET;
@@ -31,7 +32,11 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   // 0. Early return for Meta status-only webhooks (delivery receipts, read receipts)
   // These have entry[0].changes[0].value.statuses but NO .messages — they contain zero text
   if (body.entry && body.entry[0]?.changes && body.entry[0].changes[0]?.value?.statuses && !body.entry[0].changes[0]?.value?.messages) {
-    console.log("[WhatChimp Webhook] Ignoring Meta status-only webhook (delivery/read receipt).");
+    const statusObj = body.entry[0].changes[0].value.statuses[0];
+    console.log("[Meta Status Webhook] Status update received:", JSON.stringify(statusObj));
+    if (statusObj?.errors) {
+      console.error("[Meta Status Webhook ERROR]:", JSON.stringify(statusObj.errors));
+    }
     return new Response("OK", { status: 200 });
   }
 
@@ -92,26 +97,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
             });
 
             const apiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
-            const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+            const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
               targetWhatsAppNumber: toNumber 
             });
-            const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
+            const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
 
-            if (apiToken && phoneNumberId && !job.muteDefaultWhatsappReply) {
+            if (phoneNumberId && !job.muteDefaultWhatsappReply) {
               const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
-              const params = new URLSearchParams();
-              params.append("apiToken", apiToken);
-              params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
-              params.append("phone_number", cleanSender);
-              params.append("message", replyMessage);
-
-              await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/x-www-form-urlencoded"
-                },
-                body: params
-              }).then(r => r.text()).catch(console.error);
+              const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+              await sendMetaFreeText(phoneNumberId, cleanSender, replyMessage, metaAccessToken)
+                .then(r => { if (!r.success) console.error("[WhatsApp Webhook] Keyword reply failed:", r.error); })
+                .catch(console.error);
             } else if (job.muteDefaultWhatsappReply) {
               console.log(`[WhatChimp Webhook] Skipped default reply for ${firstWord} because muteDefaultWhatsappReply is true`);
             }
@@ -393,30 +389,21 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
 
       // 6. Send acknowledgment back to candidate
       const apiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
-      const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+      const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
         targetWhatsAppNumber: cleanTo 
       });
-      const phoneNumberId = fetchedPhoneId || process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
-      if (apiToken && phoneNumberId) {
+      const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
+      if (phoneNumberId) {
         let replyMessage = "Thank you! Your CV has been successfully received and is being processed by our system. We will contact you if there is a match.";
         
         if (ingestionResult && (ingestionResult as any).reason === "duplicate_file") {
            replyMessage = "We already have this exact CV on file for this position. We'll be in touch if your profile matches our requirements. Thank you!";
         }
-        
-        const params = new URLSearchParams();
-        params.append("apiToken", apiToken);
-        params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
-        params.append("phone_number", cleanFrom);
-        params.append("message", replyMessage);
 
-        await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-          },
-          body: params
-        }).then(r => r.text()).catch(console.error);
+        const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+        await sendMetaFreeText(phoneNumberId, cleanFrom, replyMessage, metaAccessToken)
+          .then(r => { if (!r.success) console.error("[WhatsApp Webhook] CV ack reply failed:", r.error); })
+          .catch(console.error);
       }
     } catch (err: any) {
       console.error("[WhatChimp Webhook] Inbound media processing error:", err.message);
@@ -639,9 +626,9 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
       const apiToken = process.env.WHATCHIMP_API_TOKEN;
       
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      let phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
+      let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
       if (outboundNumber) {
-        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
           targetWhatsAppNumber: outboundNumber 
         });
         if (fetchedId) {
@@ -650,18 +637,11 @@ ALWAYS end your message by reminding them to "Please upload your CV as a PDF to 
         }
       }
       
-      if (apiToken && phoneNumberId) {
-        const params = new URLSearchParams();
-        params.append("apiToken", apiToken);
-        params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
-        params.append("phone_number", args.phone);
-        params.append("message", replyMessage);
-
-        await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: params
-        }).then(r => r.text()).catch(console.error);
+      if (phoneNumberId) {
+        const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+        await sendMetaFreeText(phoneNumberId, args.phone, replyMessage, metaAccessToken)
+          .then(r => { if (!r.success) console.error("[PreApp Chat] Meta send failed:", r.error); })
+          .catch(console.error);
       }
     } catch (e: any) {
       console.error("[PreApp Chat] Error:", e);

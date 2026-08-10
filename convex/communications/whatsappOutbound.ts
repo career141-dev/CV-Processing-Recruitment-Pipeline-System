@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import { sendMetaFreeText } from "./metaDirectSender";
 
-// Internal query to fetch the correct phone_number_id based on the whatsapp number string from the database
-export const getWhatChimpPhoneId = internalQuery({
+// Internal query to fetch the correct Meta phone_number_id based on the whatsapp number string from the database
+export const getMetaPhoneNumberId = internalQuery({
   args: { targetWhatsAppNumber: v.string() },
   handler: async (ctx, args) => {
     const cleanDigits = args.targetWhatsAppNumber.replace(/\D/g, "");
@@ -11,12 +12,13 @@ export const getWhatChimpPhoneId = internalQuery({
 
     const allNumbers = await ctx.db.query("whatsappNumbers").collect();
     const dbNumber = allNumbers.find(n => n.phone && n.phone.replace(/\D/g, "").slice(-9) === cleanDigits.slice(-9));
-      
+
+    // whatchimpPhoneId stores the Meta phone_number_id — field name is legacy, value is correct
     if (dbNumber && dbNumber.whatchimpPhoneId) {
       return dbNumber.whatchimpPhoneId;
     }
-    
-    console.error(`[WhatChimp] No phone_number_id mapped for ${args.targetWhatsAppNumber}`);
+
+    console.error(`[Meta] No phone_number_id mapped for ${args.targetWhatsAppNumber}`);
     return null;
   }
 });
@@ -47,102 +49,16 @@ export const hasRecentInboundComm = internalQuery({
   },
 });
 
-// Internal action to tag a candidate in WhatChimp
+// WhatChimp labels are no longer available after migrating to Meta Cloud API direct.
+// This function is kept as a no-op so existing call sites don't break.
 export const assignAiFollowUpLabel = internalAction({
   args: {
     candidatePhone: v.string(),
     jobId: v.id("jobs"),
   },
-  handler: async (ctx, args) => {
-    try {
-      const apiToken = process.env.WHATCHIMP_API_TOKEN;
-      if (!apiToken) return;
-
-      // 1. Find the assigned WhatsApp number from the job
-      const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      
-      let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
-      
-      if (outboundNumber) {
-        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
-          targetWhatsAppNumber: outboundNumber 
-        });
-        if (fetchedId) phoneId = fetchedId;
-      }
-      
-      if (!phoneId) {
-        console.error("[WhatChimp Labels] No phone_number_id available for labeling");
-        return;
-      }
-
-      // 2. Fetch all labels to find "AI Follow-ups"
-      const labelListRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/label/list", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ apiToken, phone_number_id: phoneId }),
-      });
-      
-      let labelId = null;
-      if (labelListRes.ok) {
-        const labelData = await labelListRes.json();
-        const labels = Array.isArray(labelData.message) ? labelData.message : [];
-        const existingLabel = labels.find((l: any) => l.label_name && l.label_name.toLowerCase() === "ai follow-ups");
-        
-        if (existingLabel) {
-          labelId = existingLabel.id;
-        }
-      }
-
-      // 3. Create the label if it doesn't exist
-      if (!labelId) {
-        const createRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/label/create", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ apiToken, phone_number_id: phoneId, label_name: "AI Follow-ups" }),
-        });
-        
-        if (createRes.ok) {
-          const newLabelListRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/label/list", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({ apiToken, phone_number_id: phoneId }),
-          });
-          if (newLabelListRes.ok) {
-            const newLabelData = await newLabelListRes.json();
-            const newLabels = Array.isArray(newLabelData.message) ? newLabelData.message : [];
-            const newExisting = newLabels.find((l: any) => l.label_name && l.label_name.toLowerCase() === "ai follow-ups");
-            if (newExisting) labelId = newExisting.id;
-          }
-        }
-      }
-
-      if (!labelId) {
-        console.error("[WhatChimp Labels] Failed to find or create 'AI Follow-ups' label");
-        return;
-      }
-
-      // 4. Assign the label to the subscriber
-      const cleanTargetPhone = args.candidatePhone.replace(/[^0-9]/g, "");
-      const assignRes = await fetch("https://app.whatchimp.com/api/v1/whatsapp/subscriber/chat/assign-labels", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ 
-          apiToken, 
-          phone_number_id: phoneId, 
-          phone_number: cleanTargetPhone, 
-          label_ids: String(labelId) 
-        }),
-      });
-
-      if (!assignRes.ok) {
-        console.error("[WhatChimp Labels] Failed to assign label:", await assignRes.text());
-      } else {
-        console.log(`[WhatChimp Labels] Successfully assigned 'AI Follow-ups' label to ${cleanTargetPhone}`);
-      }
-    } catch (e: any) {
-      console.error("[WhatChimp Labels] Error in assignAiFollowUpLabel:", e);
-    }
-  }
+  handler: async (_ctx, args) => {
+    console.log(`[Meta Migration] assignAiFollowUpLabel is disabled — Meta Cloud API has no label equivalent. Skipping for ${args.candidatePhone}.`);
+  },
 });
 
 export const getJobWhatsAppChannel = internalQuery({
@@ -362,19 +278,26 @@ export const sendWhatsApp = internalAction({
         return;
       }
     }
-    // 3. Send message to WhatChimp API
+    // 3. Send message directly via Meta Cloud API
     try {
-      const baseApiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
+      const metaAccessToken = process.env.META_ACCESS_TOKEN;
+      if (!metaAccessToken) {
+        console.error("[WhatsApp Outbound] META_ACCESS_TOKEN env variable is not set.");
+        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
+          communicationId: args.communicationId,
+          status: "failed",
+          error: "META_ACCESS_TOKEN is not configured in environment variables.",
+        });
+        return;
+      }
 
-      // Fetch job's designated outbound TA number (or fallback)
+      // Fetch job's designated outbound TA number (or fallback to default)
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      
-      let apiKey = baseApiToken;
-      let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
+      let phoneId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
 
       if (outboundNumber) {
-        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, { 
-          targetWhatsAppNumber: outboundNumber 
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, {
+          targetWhatsAppNumber: outboundNumber,
         });
         if (fetchedId) {
           phoneId = fetchedId;
@@ -382,28 +305,12 @@ export const sendWhatsApp = internalAction({
         }
       }
 
-      if (!apiKey || !phoneId) {
-        console.error("[WhatsApp Outbound] WhatChimp configuration is missing.");
-        await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
-          communicationId: args.communicationId,
-          status: "failed",
-          error: "WhatChimp WHATCHIMP_API_TOKEN or WHATCHIMP_PHONE_NUMBER_ID is not configured in environment variables.",
-        });
-        return;
-      }
-
-      console.log(`[WhatsApp Outbound] Sending message to +${targetPhone.replace(/[^0-9]/g, '')}${logNote} via WhatChimp`);
-      
       const cleanPhone = targetPhone.replace(/[^0-9]/g, "");
-      const cleanPhoneId = phoneId.replace(/[^0-9]/g, "");
-
-      const isRedirected = isTestMode && !!testRecipient && targetPhone === testRecipient;
       const isSessionOpen = activeInboundSession;
 
       if (!isSessionOpen) {
         console.log(`[WhatsApp Outbound] 24h window closed for +${cleanPhone}. Dispatching Meta re-engagement template instead.`);
-        // Instead of sending free-text (which would fail outside 24h window),
-        // dispatch the approved Meta re-engagement template to re-open the window.
+        // Outside the 24h window, free-text fails — send an approved template to re-open it.
         if (commRecord?.applicationId) {
           try {
             await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
@@ -425,7 +332,6 @@ export const sendWhatsApp = internalAction({
             return;
           }
         } else {
-          // No applicationId on comm record — can't send template, mark failed
           await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
             communicationId: args.communicationId,
             status: "failed",
@@ -435,92 +341,29 @@ export const sendWhatsApp = internalAction({
         }
       }
 
-      let sentSuccess = false;
-      let sendError = "";
+      console.log(`[WhatsApp Outbound] Sending message to +${cleanPhone}${logNote} via Meta Cloud API`);
 
-      try {
-        const params = new URLSearchParams({
-          apiToken: apiKey,
-          phone_number_id: cleanPhoneId,
-          phone_number: cleanPhone,
-          message: args.body,
-        });
+      const result = await sendMetaFreeText(phoneId, cleanPhone, args.body, metaAccessToken);
 
-        const res = await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: params.toString(),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          console.log(`[WhatsApp Outbound] WhatChimp direct response:`, JSON.stringify(data));
-          if (data.status === "1" || data.status === 1 || data.wa_message_id) {
-            sentSuccess = true;
-          } else {
-            sendError = data.message || "WhatChimp returned status 0";
-            console.warn(`[WhatsApp Outbound] WhatChimp status error: ${sendError}`);
-          }
-        } else {
-          sendError = await res.text();
-          console.warn(`[WhatsApp Outbound] Direct WhatChimp call returned HTTP ${res.status}: ${sendError}`);
-        }
-      } catch (directErr: any) {
-        sendError = directErr.message || String(directErr);
-        console.warn(`[WhatsApp Outbound] Direct WhatChimp call exception: ${sendError}`);
-      }
-
-      // Fallback: If direct call failed or experienced Docker DNS lookup error, proxy through Next.js API route on host
-      if (!sentSuccess) {
-        try {
-          console.log(`[WhatsApp Outbound] Attempting Next.js API route fallback (http://127.0.0.1:3000/api/whatsapp/send)...`);
-          const nextApiRes = await fetch("http://127.0.0.1:3000/api/whatsapp/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              phone: `+${cleanPhone}`,
-              body: args.body,
-            }),
-          });
-
-          if (nextApiRes.ok) {
-            const nextData = await nextApiRes.json();
-            if (nextData.success) {
-              sentSuccess = true;
-              sendError = "";
-              console.log(`[WhatsApp Outbound] Successfully sent WhatsApp via Next.js API route!`);
-            } else {
-              sendError = nextData.error || "Next.js API route returned failure";
-            }
-          } else {
-            sendError = `Next.js API route returned HTTP ${nextApiRes.status}: ${await nextApiRes.text()}`;
-          }
-        } catch (nextErr: any) {
-          console.error("[WhatsApp Outbound] Next.js API route fallback error:", nextErr.message || nextErr);
-        }
-      }
-
-      if (sentSuccess) {
+      if (result.success) {
         await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
           communicationId: args.communicationId,
           status: "sent",
           error: undefined,
         });
-        console.log(`[WhatsApp Outbound] Message successfully sent via WhatChimp.`);
+        console.log(`[WhatsApp Outbound] Message successfully sent via Meta Cloud API. Message ID: ${result.messageId}`);
 
-        // 4. Async tag the candidate in WhatChimp Lists/Labels
+        // No-op: WhatChimp label tagging removed — Meta has no equivalent
         await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.assignAiFollowUpLabel, {
           candidatePhone: targetPhone,
           jobId: args.jobId,
         });
       } else {
-        throw new Error(sendError || "Failed to send WhatsApp message");
+        throw new Error(result.error || "Failed to send WhatsApp message via Meta");
       }
 
     } catch (err: any) {
-      console.error("[WhatsApp Outbound] Failed to dispatch via WhatChimp:", err.message);
+      console.error("[WhatsApp Outbound] Failed to dispatch via Meta Cloud API:", err.message);
       await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
         communicationId: args.communicationId,
         status: "failed",
