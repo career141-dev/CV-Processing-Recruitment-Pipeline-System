@@ -309,33 +309,23 @@ export const sendWhatsApp = internalAction({
       const isSessionOpen = activeInboundSession;
 
       if (!isSessionOpen) {
-        console.log(`[WhatsApp Outbound] 24h window closed for +${cleanPhone}. Dispatching Meta re-engagement template instead.`);
+        console.log(`[WhatsApp Outbound] 24h window closed for +${cleanPhone}. Dispatching Meta approved template instead.`);
         // Outside the 24h window, free-text fails — send an approved template to re-open it.
-        if (commRecord?.applicationId) {
-          try {
-            await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
-              applicationId: commRecord.applicationId,
-              templateType: "reengagement",
-            });
-            await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
-              communicationId: args.communicationId,
-              status: "sent",
-            });
-            return;
-          } catch (templateErr: any) {
-            console.error(`[WhatsApp Outbound] Failed to send re-engagement template:`, templateErr.message);
-            await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
-              communicationId: args.communicationId,
-              status: "failed",
-              error: `Failed to re-open 24h window: ${templateErr.message}`,
-            });
-            return;
-          }
-        } else {
+        try {
+          await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+            applicationId: commRecord?.applicationId,
+            candidateId: args.candidateId,
+            jobId: args.jobId,
+            communicationId: args.communicationId,
+            templateType: "reengagement",
+          });
+          return;
+        } catch (templateErr: any) {
+          console.error(`[WhatsApp Outbound] Failed to send re-engagement template:`, templateErr.message);
           await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
             communicationId: args.communicationId,
             status: "failed",
-            error: "24h window closed and no applicationId to dispatch template",
+            error: `Failed to dispatch template: ${templateErr.message}`,
           });
           return;
         }

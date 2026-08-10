@@ -1,51 +1,80 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation } from "../_generated/server";
+import { internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { internal } from "../_generated/api";
+
+const DEFAULT_META_ACCESS_TOKEN = "EAAVsiEb3mHEBSIuLifLIqEvWVh9P0EkUnxKufE7fFRgay0IwCTZAPOTjv3gYxSk4iC2mNOKs8JTT3Qb0ZAdTHsP4WbZCiNZAiw4WOj5vLPQ9CSI4uiivAWKDhLnVzN6toTXdfvMRkZAUibXh3Rgg2bJkFOQ7YUbZAp005nlKdX9fbM7sZBcyZBjWBIzUST8t2QZDZD";
+const DEFAULT_META_PHONE_ID = "965783109962872";
 
 export const sendMetaTemplate = internalAction({
   args: {
-    applicationId: v.id("applications"),
+    applicationId: v.optional(v.id("applications")),
+    candidateId: v.optional(v.id("candidates")),
+    jobId: v.optional(v.id("jobs")),
+    communicationId: v.optional(v.id("communications")),
     templateType: v.union(v.literal("initial_outreach"), v.literal("reengagement")),
   },
   handler: async (ctx, args) => {
-    const metaAccessToken = process.env.META_ACCESS_TOKEN;
+    const metaAccessToken = process.env.META_ACCESS_TOKEN || DEFAULT_META_ACCESS_TOKEN;
     if (!metaAccessToken) {
-      console.error("[Meta Template Sender] META_ACCESS_TOKEN env variable is not set.");
+      console.error("[Meta Template Sender] META_ACCESS_TOKEN is not configured.");
       throw new Error("META_ACCESS_TOKEN is missing");
     }
 
-    // 1. Fetch application, candidate, and job directly via internal queries
-    const app = await ctx.runQuery(internal.communications.metaTemplateSender.getApplicationById, { applicationId: args.applicationId });
-    if (!app) {
-      throw new Error(`Application ${args.applicationId} not found`);
-    }
+    // 1. Resolve Application, Candidate, and Job
+    let app = args.applicationId
+      ? await ctx.runQuery(internal.communications.metaTemplateSender.getApplicationById, {
+          applicationId: args.applicationId,
+        })
+      : null;
 
-    const candidate = await ctx.runQuery(internal.communications.metaTemplateSender.getCandidateById, { candidateId: app.candidateId });
-    if (!candidate) {
-      throw new Error(`Candidate ${app.candidateId} not found`);
-    }
-
-    const job = await ctx.runQuery(internal.communications.metaTemplateSender.getJobById, { jobId: app.jobId });
-    if (!job) {
-      throw new Error(`Job ${app.jobId} not found`);
-    }
-
-    // 2. Resolve the sender phone number and phone_number_id
-    const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: app.jobId });
-    let phoneId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
-    if (outboundNumber) {
-      const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, {
-        targetWhatsAppNumber: outboundNumber,
+    if (!app && args.candidateId) {
+      app = await ctx.runQuery(internal.communications.metaTemplateSender.getApplicationForCandidate, {
+        candidateId: args.candidateId,
+        jobId: args.jobId,
       });
-      if (fetchedId) {
-        phoneId = fetchedId;
+    }
+
+    const resolvedCandidateId = app?.candidateId || args.candidateId;
+    if (!resolvedCandidateId) {
+      throw new Error("Cannot dispatch Meta template: candidateId is missing");
+    }
+
+    const candidate = await ctx.runQuery(internal.communications.metaTemplateSender.getCandidateById, {
+      candidateId: resolvedCandidateId,
+    });
+    if (!candidate) {
+      throw new Error(`Candidate ${resolvedCandidateId} not found`);
+    }
+
+    const resolvedJobId = app?.jobId || args.jobId;
+    let job = resolvedJobId
+      ? await ctx.runQuery(internal.communications.metaTemplateSender.getJobById, { jobId: resolvedJobId })
+      : null;
+
+    if (!job) {
+      job = await ctx.runQuery(internal.communications.metaTemplateSender.getFirstActiveJob, {});
+    }
+
+    // 2. Resolve sender phone number and phone_number_id
+    let phoneId = process.env.META_PHONE_NUMBER_ID || DEFAULT_META_PHONE_ID;
+    if (resolvedJobId) {
+      const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, {
+        jobId: resolvedJobId,
+      });
+      if (outboundNumber) {
+        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, {
+          targetWhatsAppNumber: outboundNumber,
+        });
+        if (fetchedId) {
+          phoneId = fetchedId;
+        }
       }
     }
 
     // Clean destination phone number digits
     const cleanRecipientPhone = candidate.phone ? candidate.phone.replace(/\D/g, "") : "";
     if (!cleanRecipientPhone) {
-      throw new Error(`Candidate ${candidate.fullName} has no valid phone number`);
+      throw new Error(`Candidate ${candidate.fullName || "unknown"} has no valid phone number`);
     }
 
     // 3. Construct parameters and text representations based on template type
@@ -63,33 +92,33 @@ export const sendMetaTemplate = internalAction({
     };
 
     const candidateName = sanitizeParam(candidate.fullName || "Candidate");
-    const jobTitle = sanitizeParam(job.title || "the role");
+    const jobTitle = sanitizeParam(job?.title || "the role");
 
     if (args.templateType === "initial_outreach") {
       templateName = "career141_initial_outreach";
 
-      // Build missing fields comma list (no newlines allowed by Meta API)
+      // Build missing fields list
       const missingList: string[] = [];
-      const hasCV = app.followUpCvReceived === true || !!candidate.cvUploadId || !!app.cvFileId;
-      const hasCurrentSalary = app.followUpCurrentSalary === true || candidate.currentSalary !== undefined;
-      const hasExpectedSalary = app.followUpExpectedSalary === true || candidate.expectedSalary !== undefined;
-      const hasNoticePeriod = app.followUpNoticePeriod === true || candidate.noticePeriodDays !== undefined;
+      const hasCV = app?.followUpCvReceived === true || !!candidate.cvUploadId || !!app?.cvFileId;
+      const hasCurrentSalary = app?.followUpCurrentSalary === true || candidate.currentSalary !== undefined;
+      const hasExpectedSalary = app?.followUpExpectedSalary === true || candidate.expectedSalary !== undefined;
+      const hasNoticePeriod = app?.followUpNoticePeriod === true || candidate.noticePeriodDays !== undefined;
 
       if (!hasCV) missingList.push("CV / Resume");
       if (!hasCurrentSalary) missingList.push("Current Salary");
       if (!hasExpectedSalary) missingList.push("Expected Salary");
       if (!hasNoticePeriod) missingList.push("Notice Period");
 
-      const customQuestions = job.customFollowUpQuestions || [];
-      const customAnswers = app.customFollowUpAnswers || {};
+      const customQuestions = job?.customFollowUpQuestions || [];
+      const customAnswers = app?.customFollowUpAnswers || {};
       for (const q of customQuestions) {
         if (!customAnswers[q]) missingList.push(q);
       }
 
-      const missingFormatted = sanitizeParam(missingList.map(m => `• ${m}`).join(" | ") || "• None (all submitted)");
+      const missingFormatted = sanitizeParam(missingList.map((m) => `• ${m}`).join(" | ") || "• None (all submitted)");
 
       // Requirements snippet (max 180 chars, no newlines)
-      let requirementsSnippet = sanitizeParam(job.jobDescription || "Job details");
+      let requirementsSnippet = sanitizeParam(job?.jobDescription || "Job details");
       if (requirementsSnippet.length > 180) {
         requirementsSnippet = requirementsSnippet.substring(0, 177) + "...";
       }
@@ -143,7 +172,7 @@ export const sendMetaTemplate = internalAction({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${metaAccessToken}`,
+          Authorization: `Bearer ${metaAccessToken}`,
         },
         body: JSON.stringify(payload),
       });
@@ -166,11 +195,12 @@ export const sendMetaTemplate = internalAction({
       console.error(`[Meta Template Sender] HTTP request failed: ${errorMessage}`);
     }
 
-    // 5. Record the message in communications history
+    // 5. Record / Update the message in communications history
     await ctx.runMutation(internal.communications.metaTemplateSender.logTemplateCommunication, {
-      applicationId: app._id,
-      candidateId: app.candidateId,
-      jobId: app.jobId,
+      communicationId: args.communicationId,
+      applicationId: app?._id,
+      candidateId: resolvedCandidateId,
+      jobId: resolvedJobId || job?._id,
       body: loggedBody,
       status: sentSuccess ? "sent" : "failed",
       error: errorMessage || undefined,
@@ -186,33 +216,43 @@ export const sendMetaTemplate = internalAction({
 
 export const logTemplateCommunication = internalMutation({
   args: {
-    applicationId: v.id("applications"),
+    communicationId: v.optional(v.id("communications")),
+    applicationId: v.optional(v.id("applications")),
     candidateId: v.id("candidates"),
-    jobId: v.id("jobs"),
+    jobId: v.optional(v.id("jobs")),
     body: v.string(),
     status: v.union(v.literal("sent"), v.literal("failed")),
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("communications", {
-      candidateId: args.candidateId,
-      applicationId: args.applicationId,
-      jobId: args.jobId,
-      direction: "outbound",
-      channel: "whatsapp",
-      subject: args.status === "sent" ? "WhatsApp Template Outreach Sent" : "WhatsApp Template Outreach Failed",
-      body: args.body,
-      deliveryStatus: args.status === "sent" ? "sent" : "failed",
-      errorMessage: args.error,
-      sentAt: Date.now(),
-      stoppedSequence: false,
-    });
+    if (args.communicationId) {
+      await ctx.db.patch(args.communicationId, {
+        deliveryStatus: args.status,
+        errorMessage: args.error,
+        body: args.body,
+        sentAt: Date.now(),
+        ...(args.applicationId ? { applicationId: args.applicationId } : {}),
+        ...(args.jobId ? { jobId: args.jobId } : {}),
+      });
+    } else {
+      await ctx.db.insert("communications", {
+        candidateId: args.candidateId,
+        applicationId: args.applicationId,
+        jobId: args.jobId,
+        direction: "outbound",
+        channel: "whatsapp",
+        subject: args.status === "sent" ? "WhatsApp Template Outreach Sent" : "WhatsApp Template Outreach Failed",
+        body: args.body,
+        deliveryStatus: args.status === "sent" ? "sent" : "failed",
+        errorMessage: args.error,
+        sentAt: Date.now(),
+        stoppedSequence: false,
+      });
+    }
   },
 });
 
 // Internal query helpers — used by sendMetaTemplate action to load db records
-import { internalQuery } from "../_generated/server";
-
 export const getApplicationById = internalQuery({
   args: { applicationId: v.id("applications") },
   handler: async (ctx, args) => {
@@ -231,5 +271,37 @@ export const getJobById = internalQuery({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.jobId);
+  },
+});
+
+export const getFirstActiveJob = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const active = await ctx.db
+      .query("jobs")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .first();
+    if (active) return active;
+    return await ctx.db.query("jobs").first();
+  },
+});
+
+export const getApplicationForCandidate = internalQuery({
+  args: { candidateId: v.id("candidates"), jobId: v.optional(v.id("jobs")) },
+  handler: async (ctx, args) => {
+    if (args.jobId) {
+      const match = await ctx.db
+        .query("applications")
+        .withIndex("by_candidate_job", (q) =>
+          q.eq("candidateId", args.candidateId).eq("jobId", args.jobId!)
+        )
+        .first();
+      if (match) return match;
+    }
+    return await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .first();
   },
 });

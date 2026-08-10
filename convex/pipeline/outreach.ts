@@ -166,23 +166,46 @@ export const sendMessage = mutation({
     const isEmail = args.channel === "email";
     const isWhatsApp = args.channel === "whatsapp";
 
+    // 1. Resolve application for candidate (by jobId if provided, or latest application)
+    let application = null;
+    if (args.jobId) {
+      application = await ctx.db
+        .query("applications")
+        .withIndex("by_candidate_job", (q) =>
+          q.eq("candidateId", args.candidateId).eq("jobId", args.jobId!)
+        )
+        .first();
+    }
+
+    if (!application) {
+      application = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+        .order("desc")
+        .first();
+    }
+
+    const targetJobId = args.jobId || application?.jobId;
+
+    // 2. Insert communication record with pending delivery
     const commId = await ctx.db.insert("communications", {
       candidateId: args.candidateId,
-      jobId: args.jobId,
+      jobId: targetJobId,
+      applicationId: application?._id,
       direction: "outbound",
       channel: args.channel,
-      subject: args.subject,
+      subject: args.subject ?? (isWhatsApp ? "WhatsApp Template Outreach" : "Career141 Communication"),
       body: args.body,
-      deliveryStatus: "pending",  // Always pending until actually sent
+      deliveryStatus: "pending",
       sentAt: Date.now(),
       stoppedSequence: !args.setupFollowUps,
       senderAgent: "system",
     });
 
-    if (isEmail && args.jobId) {
+    if (isEmail && targetJobId) {
       // Schedule actual Graph email delivery
       const candidate = await ctx.db.get(args.candidateId);
-      const job = await ctx.db.get(args.jobId);
+      const job = await ctx.db.get(targetJobId);
       const recruiter = job ? await ctx.db.get(job.primaryRecruiterId) : null;
 
       const taEmail = recruiter?.email;
@@ -201,52 +224,24 @@ export const sendMessage = mutation({
       } else {
         await ctx.db.patch(commId, { deliveryStatus: "failed", errorMessage: "Missing TA or candidate email" });
       }
-    } else if (isWhatsApp && args.jobId) {
-      // Look up active application for this candidate+job to use Meta Template
-      const application = await ctx.db
-        .query("applications")
-        .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
-        .filter((q) => q.eq(q.field("jobId"), args.jobId!))
-        .filter((q) => q.eq(q.field("isActive"), true))
-        .first();
+    } else if (isWhatsApp) {
+      // For WhatsApp: Dispatch approved Meta Cloud API template directly to the candidate's phone
+      const candidate = await ctx.db.get(args.candidateId);
+      const cleanPhone = candidate?.phone ? candidate.phone.replace(/\D/g, "") : "";
 
-      if (application) {
-        // Use Meta approved template for WhatsApp
+      if (cleanPhone) {
         await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
-          applicationId: application._id,
+          applicationId: application?._id,
+          candidateId: args.candidateId,
+          jobId: targetJobId,
+          communicationId: commId,
           templateType: "initial_outreach",
         });
-        // Mark the comm record as "sent" — the action will create its own record too, 
-        // so update the original to avoid duplicate UI entries
-        await ctx.db.patch(commId, { deliveryStatus: "sent" });
       } else {
-        // Fallback: no application found — send via WhatChimp free-text (session must be open)
-        const candidate = await ctx.db.get(args.candidateId);
-        const phone = candidate?.phone?.replace(/\D/g, "");
-        if (phone) {
-          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-            communicationId: commId,
-            candidateId: args.candidateId,
-            jobId: args.jobId,
-            body: args.body,
-          });
-        } else {
-          await ctx.db.patch(commId, { deliveryStatus: "failed", errorMessage: "Candidate has no phone number" });
-        }
-      }
-    } else if (isWhatsApp && !args.jobId) {
-      // WhatsApp without a jobId — use WhatChimp free-text fallback
-      const candidate = await ctx.db.get(args.candidateId);
-      const phone = candidate?.phone?.replace(/\D/g, "");
-      if (phone) {
-        await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-          communicationId: commId,
-          candidateId: args.candidateId,
-          jobId: args.jobId,
-          body: args.body,
+        await ctx.db.patch(commId, {
+          deliveryStatus: "failed",
+          errorMessage: `Candidate ${candidate?.fullName || "unknown"} has no valid phone number`,
         });
-      } else {
-        await ctx.db.patch(commId, { deliveryStatus: "failed", errorMessage: "Candidate has no phone number" });
       }
     }
 
