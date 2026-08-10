@@ -521,7 +521,6 @@ export default defineSchema({
     batchId: v.optional(v.id("ingestionBatches")),
     isHealAttempted: v.optional(v.boolean()),
     processingStartedAt: v.optional(v.number()), // Timestamp when extraction action began; used by stuck-upload recovery
-    isHealAttempted: v.optional(v.boolean()),
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
@@ -696,7 +695,6 @@ export default defineSchema({
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
     customCallData: v.optional(v.any()),
-    isHealAttempted: v.optional(v.boolean()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
