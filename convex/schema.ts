@@ -520,6 +520,7 @@ export default defineSchema({
     candidateId: v.optional(v.id("candidates")),
     batchId: v.optional(v.id("ingestionBatches")),
     processingStartedAt: v.optional(v.number()), // Timestamp when extraction action began; used by stuck-upload recovery
+    isHealAttempted: v.optional(v.boolean()),
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
@@ -528,7 +529,8 @@ export default defineSchema({
     .index("by_storageId", ["storageId"])
     .index("by_s3Key", ["s3Key"])
     .index("by_source_fileName", ["source", "fileName"])
-    .index("by_fileName", ["fileName"]),
+    .index("by_fileName", ["fileName"])
+    .index("by_isHealAttempted", ["isHealAttempted"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
@@ -692,6 +694,7 @@ export default defineSchema({
     doNotContactAt: v.optional(v.number()),
     candidateQuestions: v.optional(v.string()),
     customCallData: v.optional(v.any()),
+    isHealAttempted: v.optional(v.boolean()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -707,6 +710,7 @@ export default defineSchema({
     .index("by_extractionModel", ["extractionModel"])
     .index("by_sourceChannel", ["sourceChannel"])
     .index("by_firstSourceChannel", ["firstSourceChannel"])
+    .index("by_isHealAttempted", ["isHealAttempted"])
     .searchIndex("search_skills", {
       searchField: "skills",
     })

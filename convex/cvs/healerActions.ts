@@ -3,23 +3,21 @@
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
-const HEALER_MODEL_TAG = "llama31-70b-healer";
-
 /**
  * 24/7 Background Healer Worker — Runs every 2 minutes.
- * Claims strictly 1 unextracted CV upload using fast B-tree index (by_status: "uploaded"),
- * processes extraction, and updates candidate status.
+ * Claims strictly 1 unextracted or incomplete candidate/upload missing 5 core fields (name, contact, skills, experience, summary),
+ * attempts AI LLM re-extraction ONCE, and cleanly moves to the next file if any error occurs.
  */
 export const healNextUnparsedCandidate = internalAction({
   args: {},
   handler: async (ctx): Promise<{ healed: boolean; cvUploadId?: string }> => {
-    // 1. Claim 1 unextracted record via fast B-tree index
+    // 1. Claim 1 unextracted or incomplete candidate/upload record (single-attempt policy)
     const target = await ctx.runMutation(internal.cvs.healer.claimNextUnparsedRecord, {});
     if (!target) {
       return { healed: false };
     }
 
-    console.log(`[Healer 24/7] Claimed CV upload ${target.cvUploadId} (${target.fileName}) for extraction sweep...`);
+    console.log(`[Healer 24/7] Claimed record ${target.cvUploadId} (${target.fileName}) for single-attempt extraction sweep...`);
 
     try {
       // Process full AI extraction using processCvExtraction pipeline
@@ -33,14 +31,23 @@ export const healNextUnparsedCandidate = internalAction({
         uploadedBy: target.uploadedBy,
       });
 
-      console.log(`[Healer 24/7] Successfully extracted & healed CV upload ${target.cvUploadId}`);
+      await ctx.runMutation(internal.cvs.healer.saveHealedCandidate, {
+        cvUploadId: target.cvUploadId as any,
+        candidateId: target.candidateId as any,
+        extracted: true,
+        extractionModel: "deepseek/deepseek-v4-flash",
+      });
+
+      console.log(`[Healer 24/7] Successfully extracted & healed record ${target.cvUploadId}`);
       return { healed: true, cvUploadId: target.cvUploadId };
     } catch (err: any) {
       const errorMsg = err?.message || String(err);
-      console.error(`[Healer 24/7] Failed to process CV upload ${target.cvUploadId}:`, errorMsg);
+      console.warn(`[Healer 24/7] Extraction attempt failed for ${target.cvUploadId} (${errorMsg}). Moving to next candidate...`);
       
+      // Record single-attempt failure and leave record intact so healer moves to next file
       await ctx.runMutation(internal.cvs.healer.releaseFailedClaim, {
         cvUploadId: target.cvUploadId as any,
+        candidateId: target.candidateId as any,
         errorMessage: errorMsg,
       });
       return { healed: false };
