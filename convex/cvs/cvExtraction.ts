@@ -1,5 +1,11 @@
 "use node";
 
+if (typeof process !== "undefined" && process.on) {
+  process.on("uncaughtException", (err) => {
+    console.warn("[CvExtraction] Trapped uncaught exception in Node worker process:", err?.message || err);
+  });
+}
+
 if (typeof (globalThis as any).DOMMatrix === "undefined") {
   class DOMMatrixPolyfill {
     a: number; b: number; c: number; d: number; e: number; f: number;
@@ -292,6 +298,7 @@ async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string>
       data: new Uint8Array(safeSliceBuffer(buffer)),
       useSystemFonts: true,
       disableFontFace: true,
+      verbosity: 0,
     });
     const pdfDocument = await loadingTask.promise;
     let fullText = "";
