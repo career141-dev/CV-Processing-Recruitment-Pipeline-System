@@ -519,6 +519,7 @@ export default defineSchema({
     errorMessage: v.optional(v.string()),
     candidateId: v.optional(v.id("candidates")),
     batchId: v.optional(v.id("ingestionBatches")),
+    isHealAttempted: v.optional(v.boolean()),
     processingStartedAt: v.optional(v.number()), // Timestamp when extraction action began; used by stuck-upload recovery
     isHealAttempted: v.optional(v.boolean()),
   })
@@ -572,6 +573,7 @@ export default defineSchema({
     // New fields from PDF (kept optional to avoid breaking existing queries)
     fullName: v.optional(v.string()),
     isParsed: v.optional(v.boolean()),
+    isHealAttempted: v.optional(v.boolean()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     phoneClean: v.optional(v.string()),
