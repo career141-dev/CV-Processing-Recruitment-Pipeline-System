@@ -570,6 +570,7 @@ export default defineSchema({
     // New fields from PDF (kept optional to avoid breaking existing queries)
     fullName: v.optional(v.string()),
     isParsed: v.optional(v.boolean()),
+    isHealAttempted: v.optional(v.boolean()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     phoneClean: v.optional(v.string()),
