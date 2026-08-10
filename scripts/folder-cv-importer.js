@@ -226,57 +226,76 @@ async function main() {
       console.log(`⚡ Processing Batch #${state.currentBatchIndex} (${currentBatch.length} candidates)...`);
       console.log(`-----------------------------------------------------------------`);
 
-      for (let bIdx = 0; bIdx < currentBatch.length; bIdx++) {
+      // Process batch items in parallel chunks of 5 concurrent uploads for maximum speed
+      const CONCURRENCY = 5;
+      for (let bIdx = 0; bIdx < currentBatch.length; bIdx += CONCURRENCY) {
         if (isStopping) {
           console.log("\n⏹️ Stopped by user. State recorded cleanly in progress file.");
           saveProgressState(state);
           process.exit(0);
         }
 
-        const item = currentBatch[bIdx];
-        const { folderName, resumeFile } = item;
+        const chunk = currentBatch.slice(bIdx, bIdx + CONCURRENCY);
+        await Promise.all(
+          chunk.map(async (item, chunkOffset) => {
+            const globalIdx = bIdx + chunkOffset;
+            const { folderName, resumeFile } = item;
 
-        try {
-          const fileBuffer = fs.readFileSync(resumeFile.filePath);
-          const base64Data = fileBuffer.toString("base64");
-          const uploadFileName = `${folderName}_${resumeFile.fileName}`;
+            try {
+              const fileBuffer = fs.readFileSync(resumeFile.filePath);
+              const base64Data = fileBuffer.toString("base64");
+              const uploadFileName = `${folderName}_${resumeFile.fileName}`;
 
-          process.stdout.write(`  [${bIdx + 1}/${currentBatch.length}] Uploading ${folderName} (${resumeFile.fileName})... `);
+              // Call Convex folder candidate upload action
+              const result = await client.action("cvs/folderIngestion:uploadFolderCandidate", {
+                fileName: uploadFileName,
+                fileType: resumeFile.ext,
+                base64Data,
+                uploadedBy: "Local Directory Worker",
+                sourceChannel: "Manual Directory Import",
+                batchIndex: globalIdx,
+              });
 
-          // Call Convex folder candidate upload action
-          const result = await client.action("cvs/folderIngestion:uploadFolderCandidate", {
-            fileName: uploadFileName,
-            fileType: resumeFile.ext,
-            base64Data,
-            uploadedBy: "Local Directory Worker",
-            sourceChannel: "Manual Directory Import",
-            batchIndex: bIdx,
-          });
-
-          state.processedFolders[folderName] = {
-            status: "uploaded",
-            file: resumeFile.fileName,
-            cvUploadId: result.cvUploadId,
-            timestamp: new Date().toISOString(),
-          };
-          state.processedCount++;
-          state.uploadedCount++;
-          state.lastStoppedFolder = folderName;
-          state.lastStoppedIndex = i;
-          console.log(`✅ Success`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.log(`❌ Failed: ${msg}`);
-          state.processedFolders[folderName] = {
-            status: "failed",
-            error: msg,
-            timestamp: new Date().toISOString(),
-          };
-          state.processedCount++;
-          state.failedCount++;
-          state.lastStoppedFolder = folderName;
-          state.lastStoppedIndex = i;
-        }
+              if (result.isSkipped) {
+                state.processedFolders[folderName] = {
+                  status: "skipped_duplicate",
+                  file: resumeFile.fileName,
+                  cvUploadId: result.cvUploadId,
+                  timestamp: new Date().toISOString(),
+                };
+                state.processedCount++;
+                state.skippedNoResumeCount++;
+                state.lastStoppedFolder = folderName;
+                state.lastStoppedIndex = i;
+                console.log(`  [${globalIdx + 1}/${currentBatch.length}] ${folderName} ⏩ Skipped (Already in DB)`);
+              } else {
+                state.processedFolders[folderName] = {
+                  status: "uploaded",
+                  file: resumeFile.fileName,
+                  cvUploadId: result.cvUploadId,
+                  timestamp: new Date().toISOString(),
+                };
+                state.processedCount++;
+                state.uploadedCount++;
+                state.lastStoppedFolder = folderName;
+                state.lastStoppedIndex = i;
+                console.log(`  [${globalIdx + 1}/${currentBatch.length}] ${folderName} ✅ Uploaded`);
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.log(`  [${globalIdx + 1}/${currentBatch.length}] ${folderName} ❌ Failed: ${msg}`);
+              state.processedFolders[folderName] = {
+                status: "failed",
+                error: msg,
+                timestamp: new Date().toISOString(),
+              };
+              state.processedCount++;
+              state.failedCount++;
+              state.lastStoppedFolder = folderName;
+              state.lastStoppedIndex = i;
+            }
+          })
+        );
 
         saveProgressState(state);
       }

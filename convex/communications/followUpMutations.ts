@@ -49,6 +49,8 @@ export const resetToNewCvs = internalMutation({
       followUpAttemptCount: 0,
       nextFollowUpScheduledAt: undefined,
       nextFollowUpMessage: undefined,
+      flaggedForTaReview: false,
+      taReviewReason: undefined,
       stageHistory: [
         {
           stage: "new_cvs",
@@ -58,6 +60,51 @@ export const resetToNewCvs = internalMutation({
       ],
     });
     console.log(`[Pipeline] Reset application ${args.applicationId} back to New CVs stage.`);
+  },
+});
+
+export const flagForTaReview = internalMutation({
+  args: {
+    applicationId: v.id("applications"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      flaggedForTaReview: true,
+      taReviewReason: args.reason,
+      nextFollowUpScheduledAt: undefined, // Pause automated nudging completely
+      nextFollowUpMessage: undefined,
+    });
+
+    const app = await ctx.db.get(args.applicationId);
+    if (app) {
+      await ctx.db.insert("pipelineEvents", {
+        applicationId: args.applicationId,
+        candidateId: app.candidateId,
+        jobId: app.jobId,
+        eventType: "flagged_for_ta_review",
+        fromStage: app.currentStage,
+        toStage: app.currentStage,
+        actorType: "system",
+        notes: `Flagged for TA Review: ${args.reason}`,
+        createdAt: Date.now(),
+      });
+    }
+
+    console.log(`[Follow-Up] Application ${args.applicationId} flagged for TA review (${args.reason}). Automated follow-up paused.`);
+  },
+});
+
+export const clearTaReviewFlag = internalMutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      flaggedForTaReview: false,
+      taReviewReason: undefined,
+    });
+    console.log(`[Follow-Up] Cleared TA review flag for application ${args.applicationId}.`);
   },
 });
 

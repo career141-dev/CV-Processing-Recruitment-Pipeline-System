@@ -2,11 +2,15 @@ import { internalAction, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { getOpenAI, getModelForTask } from "../lib/llm";
+import { buildStructuredEmailHtml } from "./emailHtml";
 
 export const extractDetailsFromText = internalAction({
   args: {
     candidateId: v.id("candidates"),
     textBody: v.string(),
+    channel: v.optional(v.string()),
+    inboxEmail: v.optional(v.string()),
+    messageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Guard: skip extraction if text is empty or trivially short
@@ -15,7 +19,7 @@ export const extractDetailsFromText = internalAction({
       return;
     }
 
-    console.log(`[Inbound Extraction] Starting extraction for candidate ${args.candidateId}. Text: "${args.textBody.substring(0, 200)}"`);
+    console.log(`[Inbound Extraction] Starting extraction for candidate ${args.candidateId} (channel: ${args.channel || "whatsapp"}). Text: "${args.textBody.substring(0, 200)}"`);
 
     const activeApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, {
       candidateId: args.candidateId,
@@ -56,8 +60,8 @@ export const extractDetailsFromText = internalAction({
       candidateId: args.candidateId,
     });
 
-    const openai = getOpenAI("jd_extraction");
-    const model = getModelForTask("jd_extraction");
+    const openai = getOpenAI("email_auto_reply");
+    const model = getModelForTask("email_auto_reply");
 
     const systemPrompt = `You are an AI recruitment assistant for Career141 managing candidate follow-ups.
 Currently, before reading this message, these details are missing from candidate profile:
@@ -76,8 +80,9 @@ SAMPLE FOLLOW-UP TEMPLATE:
 Your job is to analyze the candidate's chat message and output a JSON object.
 Rules:
 1. Extract the missing numeric/text details if provided in the candidate's message.
-2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA (when they will send details), a question, or declined.
-3. CRITICAL RULE FOR nextActionMessage:
+2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA (e.g., in an hour, tonight, tomorrow, next week), a question, or declined.
+3. If an ETA is promised, estimate 'candidateEtaMinutes' (numeric minutes from now until candidate promised to reply).
+4. CRITICAL RULE FOR nextActionMessage:
    - Calculate which fields are STILL missing AFTER accounting for the details provided in THIS candidate message.
    - If the candidate provided a field in THIS message (e.g., they gave Expected Salary), DO NOT ask for that field again!
    - If ALL missing details are now satisfied, set intent to 'provided_all' and nextActionMessage to null.
@@ -86,12 +91,8 @@ Rules:
    - If 'provided_eta', write a polite acknowledgement confirming we will follow up after their promised time (e.g. "No problem! We'll follow up with you after tonight 😊"). Do NOT ask for the missing fields yet.
    - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
    - If 'provided_all' or 'not_interested', set nextActionMessage to null.
-4. 'nextActionTimeHours': 
-   - For 'provided_eta', calculate the number of hours from now until their promised time (e.g. 8 for "tonight", 24 for "tomorrow"). If vague (e.g. "later"), default to 6.
-   - For 'interested_no_eta', set to 3 (as a safety net check-in).
-   - Set to 0 for an immediate reply if 'provided_partial', 'asked_question', or 'interested_no_eta'.
-   - Set to null if 'provided_all' or 'not_interested'.
-5. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
+5. 'nextActionTimeHours': Set to candidateEtaMinutes/60 if ETA given. Set to 24 for the default 24-hour fallback nudge if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
+6. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
 
 Return ONLY a valid JSON object matching this schema. Do not add markdown formatting or backticks.
 Schema:
@@ -101,7 +102,8 @@ Schema:
   "noticePeriodDays": number | null,
   "noticePeriod": string | null,
   "customAnswers": { [question: string]: string } | null,
-  "intent": "provided_all" | "provided_partial" | "interested_no_eta" | "provided_eta" | "asked_question" | "not_interested",
+  "intent": "provided_all" | "provided_partial" | "interested_no_eta" | "promised_eta" | "asked_question" | "not_interested",
+  "candidateEtaMinutes": number | null,
   "nextActionTimeHours": number | null,
   "nextActionMessage": string | null,
   "detectedQuestion": {
@@ -136,10 +138,23 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
     try {
       const responseText = completion?.choices[0]?.message?.content?.trim() || "";
-      console.log(`[Inbound Extraction] Raw response: "${responseText}"`);
+      console.log(`[Inbound Extraction] Raw DeepSeek response: "${responseText}"`);
 
       const cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
       const extracted = JSON.parse(cleanJson);
+
+      // Check 72-hour ETA Ceiling Safeguard
+      const etaMins = typeof extracted.candidateEtaMinutes === "number" && extracted.candidateEtaMinutes > 0 ? extracted.candidateEtaMinutes : null;
+      const MAX_ETA_MINS = 72 * 60; // 72 hours ceiling
+
+      if (etaMins && etaMins > MAX_ETA_MINS) {
+        console.log(`[Inbound Extraction] Candidate ${args.candidateId} promised ETA of ${etaMins} mins (>72h). Flagging for TA review and pausing automated nudges.`);
+        await ctx.runMutation(internal.communications.followUpMutations.flagForTaReview, {
+          applicationId: activeApp._id,
+          reason: `Candidate promised long ETA (${Math.round(etaMins / 60)} hours > 72h max ceiling)`,
+        });
+        return;
+      }
 
       const updates: Record<string, any> = {};
       if (typeof extracted.currentSalary === "number") updates.currentSalary = extracted.currentSalary;
@@ -242,6 +257,33 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         );
 
         let replyMessage: string | null = null;
+        let aiAnswer: string | null = null;
+
+        // Acknowledge the details that were successfully recorded in this reply
+        const recordedDetails: string[] = [];
+        if (typeof updates.currentSalary === "number") recordedDetails.push(`Current Salary: ${updates.currentSalary}`);
+        if (typeof updates.expectedSalary === "number") recordedDetails.push(`Expected Salary: ${updates.expectedSalary}`);
+        if (updates.noticePeriod) recordedDetails.push(`Notice Period: ${updates.noticePeriod}`);
+        else if (typeof updates.noticePeriodDays === "number") recordedDetails.push(`Notice Period: ${updates.noticePeriodDays} days`);
+
+        // Fields still missing after this reply (plain names, used in the rich HTML card)
+        const appRecord = updatedApp || activeApp;
+        const remainingMissing: string[] = [];
+        if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) remainingMissing.push("CV Document");
+        if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) remainingMissing.push("Current Salary");
+        if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) remainingMissing.push("Expected Salary");
+        if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined && (!updatedCandidate?.noticePeriod || updatedCandidate?.noticePeriod === "")) remainingMissing.push("Notice Period");
+        for (const q of customQuestions) {
+          const ans = appRecord.customFollowUpAnswers || {};
+          if (!ans[q]) remainingMissing.push(q);
+        }
+
+        const preludeText =
+          isCompleted
+            ? `Great news! We have received all your application details for *${job.title}* and your profile is now 100% complete. Your application has been advanced to Second Shortlist.`
+            : isQuestion
+              ? `Thank you for your message regarding your application for *${job.title}*.`
+              : `Thank you! We have recorded your update for *${job.title}*:`;
 
         if (isCompleted) {
           replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
@@ -255,23 +297,10 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             waitingForCandidateEta: true,
           });
         } else if (isQuestion) {
+          aiAnswer = extracted.nextActionMessage;
           replyMessage = extracted.nextActionMessage;
-        } else {
-          const stillMissing: string[] = [];
-          const appRecord = updatedApp || activeApp;
-          if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) stillMissing.push("• CV Document");
-          if (!appRecord.followUpCurrentSalary && updatedCandidate?.currentSalary === undefined) stillMissing.push("• Current Salary");
-          if (!appRecord.followUpExpectedSalary && updatedCandidate?.expectedSalary === undefined) stillMissing.push("• Expected Salary");
-          if (!appRecord.followUpNoticePeriod && updatedCandidate?.noticePeriodDays === undefined && (!updatedCandidate?.noticePeriod || updatedCandidate?.noticePeriod === "")) stillMissing.push("• Notice Period");
-
-          for (const q of customQuestions) {
-            const ans = appRecord.customFollowUpAnswers || {};
-            if (!ans[q]) stillMissing.push(`• ${q}`);
-          }
-
-          if (stillMissing.length > 0) {
-            replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\nThank you! We've recorded your update for *${job.title}*.\n\nWe are still waiting on the following to progress your application:\n\n${stillMissing.join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
-          }
+        } else if (remainingMissing.length > 0) {
+          replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\n${preludeText}\n\nWe are still waiting on the following to progress your application:\n\n${remainingMissing.map(m => `• ${m}`).join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
         }
 
         if (replyMessage) {
@@ -284,44 +313,78 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             });
           }
 
-          // Send immediate reply to candidate update
-          const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
-            candidateId: args.candidateId,
-            applicationId: activeApp._id,
-            jobId: activeApp.jobId,
-            body: replyMessage,
+          // Build the structured rich HTML rendering for the email channel
+          const replyHtml = buildStructuredEmailHtml({
+            candidateName: updatedCandidate?.fullName || "there",
+            jobTitle: job.title,
+            prelude: preludeText,
+            aiAnswer,
+            recordedDetails: recordedDetails.length > 0 ? recordedDetails : undefined,
+            remainingMissing: remainingMissing.length > 0 ? remainingMissing : undefined,
           });
 
-          await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-            communicationId: commId,
-            candidateId: args.candidateId,
-            jobId: activeApp.jobId,
-            body: replyMessage,
-          });
-          console.log(`[Inbound Extraction] Dispatched immediate post-update AI response to candidate ${args.candidateId}`);
+          // Send immediate reply over the originating channel (Email or WhatsApp)
+          if (args.channel === "email") {
+            const senderBox = args.inboxEmail || process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "job@career141.com";
+            const commId = await ctx.runMutation(internal.communications.emailAgent.createOutboundEmailRecord, {
+              candidateId: args.candidateId,
+              applicationId: activeApp._id,
+              jobId: activeApp.jobId,
+              subject: `Re: Application for ${job.title}`,
+              body: replyMessage,
+            });
+
+            if (args.messageId) {
+              await ctx.scheduler.runAfter(0, internal.communications.graphEmail.replyToMessage, {
+                taEmail: senderBox,
+                messageId: args.messageId,
+                replyText: replyMessage,
+                replyHtml,
+              });
+            } else {
+              await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
+                communicationId: commId,
+                candidateJobId: activeApp._id,
+                taEmail: senderBox,
+                toAddress: updatedCandidate?.email || candidate?.email || "",
+                subject: `Re: Application for ${job.title}`,
+                bodyHtml: replyHtml,
+              });
+            }
+            console.log(`[Inbound Extraction] Dispatched immediate post-update EMAIL response to candidate ${args.candidateId}`);
+          } else {
+            const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+              candidateId: args.candidateId,
+              applicationId: activeApp._id,
+              jobId: activeApp.jobId,
+              body: replyMessage,
+            });
+
+            await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+              communicationId: commId,
+              candidateId: args.candidateId,
+              jobId: activeApp.jobId,
+              body: replyMessage,
+            });
+            console.log(`[Inbound Extraction] Dispatched immediate post-update WHATSAPP response to candidate ${args.candidateId}`);
+          }
         }
       } else {
         console.log(`[Inbound Extraction] No new updates extracted from message for candidate ${args.candidateId}. Suppressing duplicate reply loop.`);
       }
 
     } catch (err: any) {
-      console.error("[Inbound Extraction] Error during LLM details extraction:", err.message);
+      console.warn("[Inbound Extraction] Fail-open: Error during DeepSeek details extraction:", err.message);
       try {
-        const fallbackMsg = `Thank you! We've received your update regarding your *${job.title}* application. We are processing your details.`;
-        const commId = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
-          candidateId: args.candidateId,
+        const fallbackHours = 24;
+        const fallbackMsg = `Thank you! We've received your update regarding your *${job.title}* application. Please share any remaining details at your earliest convenience.`;
+        await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
           applicationId: activeApp._id,
-          jobId: activeApp.jobId,
-          body: fallbackMsg,
-        });
-        await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-          communicationId: commId,
-          candidateId: args.candidateId,
-          jobId: activeApp.jobId,
-          body: fallbackMsg,
+          nextActionTimeHours: fallbackHours,
+          messageBody: fallbackMsg,
         });
       } catch (fallbackErr: any) {
-        console.error("[Inbound Extraction] Fallback reply error:", fallbackErr.message);
+        console.error("[Inbound Extraction] Fail-open fallback error:", fallbackErr.message);
       }
     }
   },

@@ -345,57 +345,76 @@ export async function executeLLMWithNvidiaFallback(
   options: LLMCompletionOptions
 ): Promise<{ content: string; provider: "openrouter" | "nvidia"; model: string }> {
   if (IS_CV_EXTRACTION_TASK(taskType)) {
-    // CV Extractions: Use OpenRouter API exclusively with deepseek/deepseek-v4-flash (no fallback models)
-    const model = OPENROUTER_CV_EXTRACTION_MODEL;
-    try {
-      const openai = getOpenAI(taskType);
-      const response = await openai.chat.completions.create({
-        model,
-        messages: options.messages,
-        temperature: options.temperature ?? 0.1,
-        max_tokens: options.max_tokens ?? 4096,
-        ...(options.response_format ? { response_format: options.response_format } : {}),
-      });
+    // CV Extraction uses DeepSeek V4 Flash via OpenRouter ONLY
+    const candidateModels = [
+      OPENROUTER_CV_EXTRACTION_MODEL,
+    ];
 
-      if (response.usage) {
-        await logLLMUsage(
-          ctx,
-          taskType,
-          model,
-          response.usage.prompt_tokens,
-          response.usage.completion_tokens,
-          true,
-          undefined,
-          options.cvUploadId,
-          "openrouter",
-          options.sourceChannel
-        );
+    let lastError: any = null;
+
+    for (const model of candidateModels) {
+      const isNvidiaModel = model.startsWith("meta/");
+      const maxRetries = isNvidiaModel ? 1 : 3;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const client = isNvidiaModel ? getNvidiaOpenAI() : getOpenAI(taskType);
+          const response = await client.chat.completions.create({
+            model,
+            messages: options.messages,
+            temperature: options.temperature ?? 0.1,
+            max_tokens: options.max_tokens ?? 4096,
+            ...(options.response_format ? { response_format: options.response_format } : {}),
+          });
+
+          if (response.usage) {
+            await logLLMUsage(
+              ctx,
+              taskType,
+              model,
+              response.usage.prompt_tokens,
+              response.usage.completion_tokens,
+              true,
+              undefined,
+              options.cvUploadId,
+              isNvidiaModel ? "nvidia" : "openrouter",
+              options.sourceChannel
+            );
+          }
+
+          const content = response.choices[0]?.message?.content?.trim() || "";
+          if (content) {
+            return { content, provider: isNvidiaModel ? "nvidia" : "openrouter", model };
+          }
+          throw new Error(`${model} returned empty response`);
+        } catch (err: any) {
+          lastError = err;
+          const errorMsg = err?.message || String(err);
+          console.warn(`[executeLLMWithNvidiaFallback] Model ${model} attempt ${attempt}/${maxRetries} failed: ${errorMsg}`);
+
+          if (attempt < maxRetries) {
+            const waitMs = Math.pow(2, attempt) * 1000;
+            await new Promise((r) => setTimeout(r, waitMs));
+          }
+        }
       }
-
-      const content = response.choices[0]?.message?.content?.trim() || "";
-      if (content) {
-        return { content, provider: "openrouter", model };
-      }
-      throw new Error("OpenRouter deepseek/deepseek-v4-flash returned empty response");
-    } catch (openRouterError: any) {
-      const errorMsg = openRouterError?.message || String(openRouterError);
-      console.error(`[executeLLMWithNvidiaFallback] CV extraction call (${model}) failed for task "${taskType}": ${errorMsg}`);
-      
-      await logLLMUsage(
-        ctx,
-        taskType,
-        model,
-        0,
-        0,
-        false,
-        `CV Extraction Failed: ${errorMsg}`,
-        options.cvUploadId,
-        "openrouter",
-        options.sourceChannel
-      );
-
-      throw openRouterError;
     }
+
+    const finalErrorMsg = lastError?.message || String(lastError);
+    await logLLMUsage(
+      ctx,
+      taskType,
+      OPENROUTER_CV_EXTRACTION_MODEL,
+      0,
+      0,
+      false,
+      `CV Extraction Failed across all fallback models: ${finalErrorMsg}`,
+      options.cvUploadId,
+      "openrouter",
+      options.sourceChannel
+    );
+
+    throw lastError || new Error("CV extraction LLM call failed across primary and fallback models");
   }
 
   // Non-CV Tasks (Reverse Match, Search, JD Extraction, Email Routing, etc.): Use NVIDIA NIM API

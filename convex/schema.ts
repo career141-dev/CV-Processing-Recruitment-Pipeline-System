@@ -526,7 +526,9 @@ export default defineSchema({
     .index("by_fileHash", ["fileHash"])
     .index("by_batchId", ["batchId"])
     .index("by_storageId", ["storageId"])
-    .index("by_s3Key", ["s3Key"]),
+    .index("by_s3Key", ["s3Key"])
+    .index("by_source_fileName", ["source", "fileName"])
+    .index("by_fileName", ["fileName"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
@@ -789,6 +791,10 @@ export default defineSchema({
     followUpAttemptCount: v.optional(v.number()),
     nextFollowUpScheduledAt: v.optional(v.number()),
     nextFollowUpMessage: v.optional(v.string()),
+    promisedEtaTimestamp: v.optional(v.number()),
+    lastCandidateEmailMessageId: v.optional(v.string()),
+    flaggedForTaReview: v.optional(v.boolean()),
+    taReviewReason: v.optional(v.string()),
     // Per-application follow-up completion flags (scoped per-job to avoid cross-job contamination)
     followUpCvReceived: v.optional(v.boolean()),
     followUpCurrentSalary: v.optional(v.boolean()),
@@ -820,7 +826,6 @@ export default defineSchema({
     rejectReason: v.optional(v.string()),
     placedAt: v.optional(v.number()),
     placedBy: v.optional(v.id("users")),
-    flaggedForTaReview: v.optional(v.boolean()),
   })
     .index("by_jobId", ["jobId"])
     .index("by_job_stage", ["jobId", "currentStage"])
@@ -1153,7 +1158,8 @@ export default defineSchema({
     occurredAt: v.string(),
   })
     .index("by_actorId", ["actorId"])
-    .index("by_entityType_entityId", ["entityType", "entityId"]),
+    .index("by_entityType_entityId", ["entityType", "entityId"])
+    .index("by_occurredAt", ["occurredAt"]),
 
   // ■■ CANDIDATE_CONSENT ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   candidateConsent: defineTable({

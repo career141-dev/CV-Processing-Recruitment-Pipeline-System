@@ -1,5 +1,3 @@
-"use node";
-
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { action, internalAction } from "../_generated/server";
@@ -88,16 +86,31 @@ export const uploadBufferToR2 = internalAction({
     const date = new Date();
     const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     const key = `cvs/${yearMonth}/${Date.now()}-${safeName}`;
-    const buffer = Buffer.from(args.base64Data, "base64");
+    const binaryString = atob(args.base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
 
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME!,
       Key: key,
       ContentType: args.contentType,
-      Body: buffer,
+      Body: bytes,
     });
 
-    await s3.send(command);
+    let attempts = 0;
+    while (attempts < 3) {
+      try {
+        attempts++;
+        await s3.send(command);
+        return key;
+      } catch (err: any) {
+        if (attempts >= 3) throw err;
+        console.warn(`[R2 Upload] Cloudflare R2 connection flicker (attempt ${attempts}/3), retrying in ${attempts * 1000}ms...`, err?.message || err);
+        await new Promise((r) => setTimeout(r, attempts * 1000));
+      }
+    }
     return key;
   },
 });

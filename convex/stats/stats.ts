@@ -25,14 +25,17 @@ export const getIngestionStats = query({
       .withIndex("by_dateStr", q => q.eq("dateStr", todayStr))
       .first();
 
-    // Fetch only recent uploads for active/failed lists and lastReceived timestamp
-    const recentUploads = await ctx.db.query("cvUploads").order("desc").take(50);
+    // Query bounded lists via by_status index — zero full-table scan, instant O(1) reads
+    const activeUploads = await ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processing")).take(20);
+    const queuedUploads = await ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "queued")).take(20);
+    const uploadedList  = await ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).take(20);
+    const failedUploads = await ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).take(20);
+    const failedRetryUploads = await ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed_retry")).take(20);
+    const recentDone = await ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processed")).take(30);
+
+    const activeCombined = [...activeUploads, ...queuedUploads, ...uploadedList];
 
     const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {};
-    const activeUploads = [];
-    const failedUploads = [];
-    const failedRetryUploads = [];
-    const recentDone = [];
 
     if (dailyStat && dailyStat.cvsBySource) {
       for (const [source, count] of Object.entries(dailyStat.cvsBySource)) {
@@ -40,30 +43,20 @@ export const getIngestionStats = query({
       }
     }
 
-    for (const upload of recentUploads) {
+    const allRecent = [...activeCombined, ...failedUploads, ...failedRetryUploads, ...recentDone];
+    for (const upload of allRecent) {
       const source = upload.source || "Manual";
       if (!statsBySource[source]) {
         statsBySource[source] = { todayCount: 0, lastReceived: null };
       }
-
       if (statsBySource[source].lastReceived === null) {
         statsBySource[source].lastReceived = upload._creationTime;
-      }
-
-      if (upload.status === "failed") {
-        failedUploads.push(upload);
-      } else if (upload.status === "failed_retry") {
-        failedRetryUploads.push(upload);
-      } else if (upload.status === "uploaded" || upload.status === "processing" || upload.status === "queued") {
-        activeUploads.push(upload);
-      } else if ((upload.status === "done" || upload.status === "processed") && recentDone.length < 50) {
-        recentDone.push(upload);
       }
     }
 
     return {
       statsBySource,
-      activeUploads,
+      activeUploads: activeCombined,
       failedUploads,
       failedRetryUploads,
       recentDone
@@ -328,6 +321,7 @@ export const getTeamActivity = query({
   args: {},
   handler: async (ctx) => {
     const logs = await ctx.db.query("activityLog")
+      .withIndex("by_occurredAt")
       .order("desc")
       .take(5);
 
@@ -1456,5 +1450,69 @@ export const runDirectBackfill = mutation({
     };
   },
 });
+
+/**
+ * Live, real-time status query for Direct Upload / Manual Extraction Queue Card.
+ * Returns exact live counts of queued, extracting, extracted, and failed CVs.
+ */
+export const getDirectUploadLiveStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    // 1. Queued CVs waiting in R2 (status: "uploaded") — bounded to 1,000 per query tick
+    const uploadedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "uploaded"))
+      .take(1000);
+
+    // 2. Currently Extracting CVs (status: "processing")
+    const processingList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(1000);
+
+    // 3. Failed / Cancelled Uploads
+    const failedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed"))
+      .take(1000);
+
+    const cancelledList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "cancelled"))
+      .take(1000);
+
+    const failedRetryList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
+      .take(1000);
+
+    // 4. Latest processed/extracted item for live timestamp
+    const latestProcessed = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processed"))
+      .order("desc")
+      .first();
+
+    const sysStat = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
+      .first();
+
+    const totalExtractedCandidates = sysStat?.totalCandidates || 0;
+    const totalUploads = sysStat?.totalCvUploads || 0;
+    const failedCount = failedList.length + cancelledList.length + failedRetryList.length;
+
+    return {
+      queuedCount: uploadedList.length,
+      extractingCount: processingList.length,
+      extractedCandidatesCount: totalExtractedCandidates,
+      totalUploadsCount: totalUploads,
+      failedCount,
+      lastExtractedAt: latestProcessed?._creationTime || null,
+      lastExtractedFileName: latestProcessed?.fileName || null,
+    };
+  },
+});
+
 
 

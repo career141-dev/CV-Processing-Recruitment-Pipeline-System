@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
-import { mutation, internalQuery, internalMutation } from "../_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { adjustGlobalStat } from "../stats/statsHelper";
 import { requireUser, requireFullAccess } from "../lib/permissions";
@@ -350,3 +350,174 @@ export const restoreAllCandidatesFromUploads = mutation({
   },
 });
 
+/**
+ * Returns list of successfully uploaded/processing filenames for Manual Directory Import
+ */
+export const getUploadedDirectoryFiles = query({
+  args: {
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetSource = args.sourceChannel || "Manual Directory Import";
+    const records = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_source_fileName", (q) => q.eq("source", targetSource))
+      .collect();
+
+    // Only count active/successful uploads, ignore failed or cancelled records
+    const validRecords = records.filter(
+      (r) =>
+        r.status === "uploaded" ||
+        r.status === "processing" ||
+        r.status === "processed" ||
+        r.status === "completed" ||
+        r.status === "pending_retry"
+    );
+
+    return validRecords.map((r) => r.fileName);
+  },
+});
+
+/**
+ * Checks if a specific file name has already been successfully uploaded for a source channel
+ */
+export const checkUploadedFile = query({
+  args: {
+    fileName: v.string(),
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetSource = args.sourceChannel || "Manual Directory Import";
+    const existingRecords = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_source_fileName", (q) =>
+        q.eq("source", targetSource).eq("fileName", args.fileName)
+      )
+      .collect();
+
+    const validExisting = existingRecords.find(
+      (r) =>
+        r.status === "uploaded" ||
+        r.status === "processing" ||
+        r.status === "processed" ||
+        r.status === "completed" ||
+        r.status === "pending_retry"
+    );
+
+    if (validExisting) {
+      return {
+        isUploaded: true,
+        cvUploadId: validExisting._id,
+        s3Key: validExisting.s3Key || "",
+        status: validExisting.status,
+      };
+    }
+    return { isUploaded: false };
+  },
+});
+
+/**
+ * Clears failed cvUploads records for directory import so they can be clean-retried
+ */
+export const clearFailedDirectoryUploads = mutation({
+  args: {
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetSource = args.sourceChannel || "Manual Directory Import";
+    const records = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_source_fileName", (q) => q.eq("source", targetSource))
+      .collect();
+
+    const failed = records.filter(
+      (r) => r.status === "failed" || r.status === "cancelled" || r.status === "failed_retry"
+    );
+
+    for (const rec of failed) {
+      await ctx.db.delete(rec._id);
+    }
+
+    return { deletedCount: failed.length };
+  },
+});
+/**
+ * Atomically claims up to limit 'uploaded' items and marks them 'processing'
+ * to prevent race conditions during concurrent worker runs.
+ */
+export const claimUploadedBatch = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    const uploadedRecords = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "uploaded"))
+      .take(limit);
+
+    const claimed = [];
+    for (const record of uploadedRecords) {
+      await ctx.db.patch(record._id, {
+        status: "processing",
+        processingStartedAt: Date.now(),
+      });
+      claimed.push(record);
+    }
+    return claimed;
+  },
+});
+
+/**
+ * Recovery tool: Guarantees ANY cvUploads record without a candidate profile
+ * (failed, cancelled, failed_retry, or stuck processing) gets re-queued as 'uploaded'
+ * so the background worker extracts it into a complete candidate profile.
+ */
+export const requeueAllStuckUploads = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+
+    const failedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed"))
+      .take(limit);
+
+    const cancelledList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "cancelled"))
+      .take(limit);
+
+    const failedRetryList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
+      .take(limit);
+
+    // Also check stuck processing (> 5 mins ago)
+    const processingList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(limit);
+
+    const fiveMinsAgo = Date.now() - 5 * 60 * 1000;
+    const stuckProcessing = processingList.filter((u) => {
+      const startMs = (u as any).processingStartedAt ?? u._creationTime;
+      return startMs < fiveMinsAgo;
+    });
+
+    const allStuck = [...failedList, ...cancelledList, ...failedRetryList, ...stuckProcessing].slice(0, limit);
+
+    let requeuedCount = 0;
+    for (const upload of allStuck) {
+      await ctx.db.patch(upload._id, {
+        status: "uploaded",
+        errorMessage: undefined,
+      });
+      requeuedCount++;
+    }
+
+    return { requeuedCount, remaining: allStuck.length };
+  },
+});

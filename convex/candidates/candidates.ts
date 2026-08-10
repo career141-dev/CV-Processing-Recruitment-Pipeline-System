@@ -97,7 +97,7 @@ export const listCandidatesPaginated = query({
     } else if (overallStatus) {
       q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
     } else {
-      q = ctx.db.query("candidates").order("desc");
+      q = ctx.db.query("candidates").withIndex("by_lastUpdatedAt").order("desc");
     }
 
     if (sourceChannel) {
@@ -819,6 +819,20 @@ export const findCandidateByHash = query({
 });
 
 // Paginated query used by resumeBatch to retry paused/failed uploads
+export const listUploadsByStatus = query({
+  args: {
+    status: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    return await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", args.status as any))
+      .take(limit);
+  },
+});
+
 export const listFailedUploads = query({
   args: {
     cursor: v.optional(v.string()),
@@ -1276,8 +1290,11 @@ export const deleteCandidate = mutation({
       }
     }
 
-    // Finally, delete the candidate
-    await ctx.db.delete(candidateId);
+    // Finally, delete the candidate if it exists in DB
+    const finalCandidateCheck = candidate || (await ctx.db.get(candidateId));
+    if (finalCandidateCheck) {
+      await ctx.db.delete(candidateId);
+    }
   }
 });
 

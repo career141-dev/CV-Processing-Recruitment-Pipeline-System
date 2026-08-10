@@ -50,11 +50,17 @@ export default function FolderUploadPage() {
   const [failedCount, setFailedCount] = useState<number>(0);
   const [currentBatchIndex, setCurrentBatchIndex] = useState<number>(1);
   const [totalBatches, setTotalBatches] = useState<number>(1);
-
   const [copiedCliCommand, setCopiedCliCommand] = useState<boolean>(false);
 
   const uploadFolderCandidate = useAction(api.cvs.folderIngestion.uploadFolderCandidate);
   const cancelAllRunningExtractions = useMutation(api.cvs.cvUploads.cancelAllRunningExtractions);
+  const uploadedDbFiles = useQuery(api.cvs.cvUploads.getUploadedDirectoryFiles, {
+    sourceChannel: "Manual Directory Import",
+  });
+  const uploadedFilesSet = React.useMemo(
+    () => new Set(uploadedDbFiles || []),
+    [uploadedDbFiles]
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,12 +107,46 @@ export default function FolderUploadPage() {
       })
     );
 
+    // Count already uploaded items in Convex DB & find first unprocessed candidate
+    let alreadyInDbCount = 0;
+    let firstUnprocessedIndex = -1;
+
+    items.forEach((item, index) => {
+      const uploadFileName = `${item.folderName}_${item.file.name}`;
+      if (uploadedFilesSet.has(uploadFileName)) {
+        alreadyInDbCount++;
+      } else if (firstUnprocessedIndex === -1) {
+        firstUnprocessedIndex = index;
+      }
+    });
+
+    if (firstUnprocessedIndex === -1) {
+      firstUnprocessedIndex = items.length;
+    }
+
     setCandidateItems(items);
     setSelectedPath(rootFolderName ? `Selected Folder: ${rootFolderName}` : "External Drive Folder");
     setTotalBatches(Math.ceil(items.length / BATCH_SIZE) || 1);
     setIsScanning(false);
 
-    toast.success(`Discovered ${items.length.toLocaleString()} candidates with resumes in Downloads folders!`);
+    if (alreadyInDbCount > 0) {
+      setUploadedCount(alreadyInDbCount);
+      setProcessedCount(firstUnprocessedIndex);
+
+      // Auto-switch to full import mode if test 100 batch is already completely imported
+      if (alreadyInDbCount >= 100) {
+        setImportMode("full");
+        toast.info(
+          `Auto-Resume Active: First ${alreadyInDbCount.toLocaleString()} candidates are already in the database! Switched to Full Import Mode to continue from Candidate #${firstUnprocessedIndex + 1}.`
+        );
+      } else {
+        toast.info(
+          `Auto-Resume Active: Discovered ${items.length.toLocaleString()} candidates. ${alreadyInDbCount.toLocaleString()} are already in the database. Resuming from Candidate #${firstUnprocessedIndex + 1}.`
+        );
+      }
+    } else {
+      toast.success(`Discovered ${items.length.toLocaleString()} candidates with resumes in Downloads folders!`);
+    }
   };
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -168,17 +208,25 @@ export default function FolderUploadPage() {
       const batchIdx = Math.floor(i / BATCH_SIZE) + 1;
       setCurrentBatchIndex(batchIdx);
 
+      const uploadFileName = `${item.folderName}_${item.file.name}`;
+
+      // Fast-skip if already uploaded in Convex DB
+      if (uploadedFilesSet.has(uploadFileName)) {
+        setProcessedCount(i + 1);
+        setLastStoppedItem({ index: i + 1, folderName: item.folderName });
+        continue;
+      }
+
       try {
         const base64Data = await fileToBase64(item.file);
         const ext = item.file.name.split(".").pop()?.toLowerCase() || "pdf";
-        const uploadFileName = `${item.folderName}_${item.file.name}`;
 
         let success = false;
         let retries = 3;
 
         while (retries > 0 && !success) {
           try {
-            await uploadFolderCandidate({
+            const res = await uploadFolderCandidate({
               fileName: uploadFileName,
               fileType: ext,
               base64Data,
@@ -186,6 +234,15 @@ export default function FolderUploadPage() {
               sourceChannel: "Manual Directory Import",
               batchIndex: i % BATCH_SIZE,
             });
+
+            if (res.isSkipped) {
+              currentSkipped++;
+              setSkippedCount(currentSkipped);
+            } else {
+              currentUploaded++;
+              setUploadedCount(currentUploaded);
+            }
+            uploadedFilesSet.add(uploadFileName);
             success = true;
           } catch (err: any) {
             retries--;
@@ -198,8 +255,6 @@ export default function FolderUploadPage() {
           }
         }
 
-        currentUploaded++;
-        setUploadedCount(currentUploaded);
         setLastStoppedItem({ index: i + 1, folderName: item.folderName });
       } catch (err) {
         console.error(`Failed to upload ${item.folderName}:`, err);

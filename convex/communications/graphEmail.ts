@@ -4,6 +4,9 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { getGraphToken } from "../lib/graphClient";
+import { buildStructuredEmailHtml } from "./emailHtml";
+
+export { buildStructuredEmailHtml };
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
@@ -46,8 +49,7 @@ export const sendGraphEmail = internalAction({
     const testRecipient = 
       process.env.EMAIL_TEST_RECIPIENT || 
       process.env.TEST_EMAIL_ADDRESS || 
-      systemSettings?.testEmailAddress ||
-      "sanjaysanjeev2000@gmail.com";
+      systemSettings?.testEmailAddress;
 
     let targetAddress = args.toAddress;
     let logNote = "";
@@ -56,7 +58,7 @@ export const sendGraphEmail = internalAction({
       const candidateEmailNorm = args.toAddress.toLowerCase().trim();
       const testEmailNorm = testRecipient ? testRecipient.toLowerCase().trim() : "";
 
-      if ((testEmailNorm && candidateEmailNorm === testEmailNorm) || candidateEmailNorm === "sanjaysanjeev2000@gmail.com") {
+      if (testEmailNorm && candidateEmailNorm === testEmailNorm) {
         targetAddress = args.toAddress;
         logNote = ` [TEST CANDIDATE]`;
       } else if (testRecipient) {
@@ -80,25 +82,18 @@ export const sendGraphEmail = internalAction({
     try {
       const token = await getGraphToken();
 
-      // Resolve the actual sending mailbox vs reply-to address
-      // Personal email domains (like Gmail) cannot send M365 emails directly
-      let senderEmail = args.taEmail;
-      let replyToRecipients: any[] = [];
+      // Resolve the actual sending mailbox & system reply-to inbox
+      const systemInbox = process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "job@career141.com";
+      let senderEmail: string = systemInbox;
 
-      const m365Sender = process.env.MS_SENDER_EMAIL || process.env.MICROSOFT_SENDER_EMAIL;
-      const isCareer141Domain = senderEmail.toLowerCase().endsWith("@career141.com");
-
-      if (!isCareer141Domain && m365Sender) {
-        senderEmail = m365Sender;
-        replyToRecipients = [
-          {
-            emailAddress: { address: args.taEmail }
-          }
-        ];
-        console.log(`[Graph Email] Recruiter email is external (${args.taEmail}). Using M365 sender fallback (${m365Sender}) with Reply-To.`);
-      } else {
-        console.log(`[Graph Email] Recruiter email is native organization domain (${args.taEmail}). Sending directly.`);
-      }
+      // CRITICAL: Reply-To MUST always be set to systemInbox (job@career141.com)
+      // so candidate replies return directly to the system inbox for AI processing & DB logging.
+      const replyToRecipients = [
+        {
+          emailAddress: { address: systemInbox }
+        }
+      ];
+      console.log(`[Graph Email] Outbound email configured from ${senderEmail} with Reply-To set to ${systemInbox}.`);
 
       const payload: any = {
         message: {
@@ -222,9 +217,79 @@ export const replyToMessage = internalAction({
     taEmail: v.string(),
     messageId: v.string(),
     replyText: v.string(),
+    replyHtml: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     const token = await getGraphToken();
+
+    // Rich HTML thread reply: create a reply draft (preserves conversation
+    // context / In-Reply-To / References headers), patch the HTML body, then send.
+    // Falls back to the simple text-comment reply if the draft flow fails.
+    if (args.replyHtml) {
+      try {
+        const createReplyRes = await fetch(
+          `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${args.messageId}/createReply`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({}),
+          }
+        );
+
+        if (!createReplyRes.ok) {
+          throw new Error(
+            `createReply failed (${createReplyRes.status}): ${await createReplyRes.text()}`
+          );
+        }
+
+        const draft = await createReplyRes.json();
+        const draftId = draft.id;
+
+        const patchRes = await fetch(
+          `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${draftId}`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              body: { contentType: "html", content: args.replyHtml },
+            }),
+          }
+        );
+
+        if (!patchRes.ok) {
+          throw new Error(
+            `Draft body patch failed (${patchRes.status}): ${await patchRes.text()}`
+          );
+        }
+
+        const sendRes = await fetch(
+          `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${draftId}/send`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (!sendRes.ok) {
+          throw new Error(
+            `Draft send failed (${sendRes.status}): ${await sendRes.text()}`
+          );
+        }
+
+        console.log(`[Graph Email] Rich HTML thread reply sent to message ${args.messageId}`);
+        return;
+      } catch (err: any) {
+        console.warn(
+          `[Graph Email] Rich HTML reply path failed (${err.message}). Falling back to text reply.`
+        );
+      }
+    }
 
     const res = await fetch(
       `${GRAPH_BASE}/users/${encodeURIComponent(args.taEmail)}/messages/${args.messageId}/reply`,

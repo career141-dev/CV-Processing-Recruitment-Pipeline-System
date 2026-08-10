@@ -246,9 +246,16 @@ const ExtractionActionArgs = {
 // Text Extraction
 // ──────────────────────────────────────────────────
 
+function safeSliceBuffer(buffer: ArrayBuffer): ArrayBuffer {
+  if (!buffer || buffer.byteLength === 0) {
+    return new ArrayBuffer(0);
+  }
+  return buffer.slice(0);
+}
+
 function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
   try {
-    const str = Buffer.from(buffer).toString("latin1");
+    const str = Buffer.from(safeSliceBuffer(buffer)).toString("latin1");
     const textMatches: string[] = [];
     
     // Match text within BT (Begin Text) and ET (End Text) operators
@@ -282,7 +289,7 @@ async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string>
     // @ts-ignore
     const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
     const loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(buffer),
+      data: new Uint8Array(safeSliceBuffer(buffer)),
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -339,7 +346,7 @@ async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
         }
         resolve(text || "");
       });
-      pdfParser.parseBuffer(Buffer.from(buffer));
+      pdfParser.parseBuffer(Buffer.from(safeSliceBuffer(buffer)));
     });
   } catch (err: any) {
     console.warn("[pdf2json] Uncaught parser exception, using raw stream fallback:", err.message || err);
@@ -465,7 +472,7 @@ async function extractImagesFromPdfBuffer(
     }
 
     const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(buffer),
+      data: new Uint8Array(safeSliceBuffer(buffer)),
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -603,40 +610,58 @@ async function extractImagesFromPdfBuffer(
 
 export async function extractTextWithTesseract(
   buffer: ArrayBuffer,
-  fileType: string
+  fileType: string,
+  ctx?: ActionCtx,
+  cvUploadId?: Id<"cvUploads">
 ): Promise<string> {
   const type = fileType.toLowerCase();
-  console.log(`[Tesseract OCR] Running Tesseract OCR on document (${type})...`);
+  console.log(`[OCR Extraction] Processing document OCR (${type})...`);
 
   try {
     if (type === "pdf" || type === "application/pdf") {
       const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
       if (!pageImages || pageImages.length === 0) {
-        console.warn("[Tesseract OCR] Could not render page images from PDF for Tesseract OCR");
+        console.warn("[OCR Extraction] Could not render page images from PDF");
         return "";
+      }
+
+      if (ctx) {
+        try {
+          console.log(`[OCR Extraction] Invoking NVIDIA NIM Vision OCR across ${pageImages.length} page(s)...`);
+          const visionText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
+          if (visionText && visionText.trim().length >= 20) {
+            return visionText.trim();
+          }
+        } catch (vErr: any) {
+          console.warn("[OCR Extraction] NVIDIA Vision OCR attempt failed:", vErr?.message || vErr);
+        }
       }
 
       let fullText = "";
       for (let i = 0; i < pageImages.length; i++) {
         const pageImg = pageImages[i];
-        console.log(`[Tesseract OCR] Running Tesseract OCR on page ${i + 1}/${pageImages.length}...`);
-        const result = await recognize(pageImg, "eng");
-        if (result?.data?.text) {
-          fullText += `\n${result.data.text}`;
+        try {
+          const result = await recognize(pageImg, "eng");
+          if (result?.data?.text) {
+            fullText += `\n${result.data.text}`;
+          }
+        } catch (tErr: any) {
+          console.warn(`[OCR Extraction] Local OCR failed on page ${i + 1}:`, tErr?.message || tErr);
         }
       }
-      console.log(`[Tesseract OCR] Tesseract OCR completed. Extracted ${fullText.trim().length} characters.`);
       return fullText.trim();
     } else {
       const imageBuffer = Buffer.from(buffer);
-      console.log(`[Tesseract OCR] Running Tesseract OCR on image file...`);
-      const result = await recognize(imageBuffer, "eng");
-      const text = result?.data?.text || "";
-      console.log(`[Tesseract OCR] Tesseract OCR completed. Extracted ${text.trim().length} characters.`);
-      return text.trim();
+      try {
+        const result = await recognize(imageBuffer, "eng");
+        return (result?.data?.text || "").trim();
+      } catch (tErr: any) {
+        console.warn("[OCR Extraction] Local image OCR failed:", tErr?.message || tErr);
+        return "";
+      }
     }
   } catch (err: any) {
-    console.error("[Tesseract OCR] Tesseract OCR failed:", err.message || err);
+    console.error("[OCR Extraction] OCR failed gracefully:", err.message || err);
     return "";
   }
 }
@@ -1384,7 +1409,21 @@ export async function runCvExtraction(
 export const processCvExtraction = action({
   args: ExtractionActionArgs,
   handler: async (ctx, args): Promise<string | null> => {
-    return runCvExtraction(ctx, args);
+    try {
+      return await runCvExtraction(ctx, args);
+    } catch (err: any) {
+      console.error(`[processCvExtraction] Top-level uncaught action error for upload ${args.cvUploadId}:`, err?.message || err);
+      try {
+        await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+          cvUploadId: args.cvUploadId,
+          status: "failed",
+          errorMessage: err?.message || String(err),
+        });
+      } catch (updateErr) {
+        console.error(`[processCvExtraction] Failed to mark upload as failed:`, updateErr);
+      }
+      return null;
+    }
   },
 });
 
@@ -1573,5 +1612,64 @@ Respond ONLY with a valid JSON object in this exact format:
     } catch (err: any) {
       console.error(`[matchExtractedCandidateToActiveJobs] Error matching candidate ${args.candidateId}:`, err.message || err);
     }
+  },
+});
+
+// ──────────────────────────────────────────────────
+// Background Queue Cron Worker — High-reliability paced extraction at 25 CVs/min
+// ──────────────────────────────────────────────────
+
+export const processUnextractedQueueCron = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ processed: number }> => {
+    // 1. Claim up to 25 'uploaded' records per 1-minute run
+    let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
+      limit: 25,
+    });
+
+    // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
+    if (!claimed || claimed.length === 0) {
+      const recovery = await ctx.runMutation(internal.cvs.cvUploads.requeueAllStuckUploads, {
+        limit: 50,
+      });
+
+      if (recovery.requeuedCount > 0) {
+        console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
+        claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
+          limit: 25,
+        });
+      }
+    }
+
+    if (!claimed || claimed.length === 0) {
+      return { processed: 0 };
+    }
+
+    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs/min through AI LLM extraction pipeline...`);
+
+    let count = 0;
+    const CONCURRENCY = 5;
+    for (let i = 0; i < claimed.length; i += CONCURRENCY) {
+      const chunk = claimed.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        chunk.map(async (upload) => {
+          try {
+            await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+              cvUploadId: upload._id,
+              s3Key: upload.s3Key,
+              storageProvider: upload.storageProvider,
+              fileType: upload.fileType || "pdf",
+              sourceChannel: upload.source || "Manual Directory Import",
+              uploadedBy: upload.uploadedBy || "System Worker",
+            });
+            count++;
+          } catch (err: any) {
+            console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
+          }
+        })
+      );
+    }
+
+    return { processed: count };
   },
 });

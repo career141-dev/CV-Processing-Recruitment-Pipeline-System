@@ -2,6 +2,7 @@ import { Id } from "../_generated/dataModel";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { internal } from "../_generated/api";
 import { adjustJobStageStat } from "../jobs/stats";
+import { buildStructuredEmailHtml } from "../communications/emailHtml";
 
 /**
  * Checks per-application follow-up completion flags.
@@ -250,7 +251,13 @@ export async function initiateFollowUpOutreach(
   const candidateEmail = candidate.email;
 
   if (taEmail && candidateEmail) {
-    const htmlBody = body.replace(/\n/g, "<br>");
+    const htmlBody = buildStructuredEmailHtml({
+      candidateName: candidate.fullName || "there",
+      jobTitle: job.title,
+      missingHeader: `We're still waiting on the following to progress your application for ${job.title}:`,
+      remainingMissing: missingFields,
+      ctaText: "Please share these at your earliest convenience. Thank you!",
+    });
     await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
       communicationId: emailCommId,
       candidateJobId: app._id as string,
@@ -287,10 +294,12 @@ export async function stopFollowUpSequenceForApp(
   const app = await ctx.db.get(applicationId);
   if (!app) return;
 
-  // 1. Clear scheduled follow-up timestamps on the application
+  // 1. Clear scheduled follow-up timestamps & TA review flags on the application
   await ctx.db.patch(applicationId, {
     nextFollowUpScheduledAt: undefined,
     nextFollowUpMessage: undefined,
+    flaggedForTaReview: false,
+    taReviewReason: undefined,
   });
 
   // 2. Mark any pending communications for this application as stopped/failed
