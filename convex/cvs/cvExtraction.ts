@@ -1383,6 +1383,7 @@ export async function runCvExtraction(
       status: (isInsufficientBalance || isNotACV)
         ? "processed"
         : ((args as any).isRetry ? "failed_retry" : "failed"),
+      isHealAttempted: true,
       errorMessage: isInsufficientBalance
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : isNotACV

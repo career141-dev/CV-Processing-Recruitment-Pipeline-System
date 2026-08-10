@@ -793,6 +793,7 @@ export const updateCvUpload = mutation({
     candidateId: v.optional(v.id("candidates")),
     errorMessage: v.optional(v.string()),
     processingStartedAt: v.optional(v.number()),
+    isHealAttempted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const updates: Record<string, unknown> = { status: args.status };
@@ -800,6 +801,7 @@ export const updateCvUpload = mutation({
     if (args.candidateId !== undefined) updates.candidateId = args.candidateId;
     if (args.errorMessage !== undefined) updates.errorMessage = args.errorMessage;
     if (args.processingStartedAt !== undefined) updates.processingStartedAt = args.processingStartedAt;
+    if (args.isHealAttempted !== undefined) updates.isHealAttempted = args.isHealAttempted;
     await ctx.db.patch(args.cvUploadId, updates);
     const upload = await ctx.db.get(args.cvUploadId);
     return upload?.assignToJob;

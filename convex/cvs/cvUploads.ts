@@ -515,7 +515,11 @@ export const requeueAllStuckUploads = internalMutation({
     });
 
     const allStuck = [...failedList, ...cancelledList, ...failedRetryList, ...stuckProcessing]
-      .filter((u) => Boolean(u.s3Key || u.storageId))
+      .filter((u) => {
+        if ((u as any).isHealAttempted) return false;
+        if (u.errorMessage?.includes("File URL not found")) return false;
+        return Boolean(u.s3Key || u.storageId);
+      })
       .slice(0, limit);
 
     let requeuedCount = 0;
