@@ -458,6 +458,13 @@ export const claimUploadedBatch = internalMutation({
 
     const claimed = [];
     for (const record of uploadedRecords) {
+      if (!record.s3Key && !record.storageId) {
+        await ctx.db.patch(record._id, {
+          status: "failed",
+          errorMessage: "File URL not found (neither R2 nor Convex storage)",
+        });
+        continue;
+      }
       await ctx.db.patch(record._id, {
         status: "processing",
         processingStartedAt: Date.now(),
@@ -507,7 +514,9 @@ export const requeueAllStuckUploads = internalMutation({
       return startMs < fiveMinsAgo;
     });
 
-    const allStuck = [...failedList, ...cancelledList, ...failedRetryList, ...stuckProcessing].slice(0, limit);
+    const allStuck = [...failedList, ...cancelledList, ...failedRetryList, ...stuckProcessing]
+      .filter((u) => Boolean(u.s3Key || u.storageId))
+      .slice(0, limit);
 
     let requeuedCount = 0;
     for (const upload of allStuck) {

@@ -992,10 +992,21 @@ export async function runCvExtraction(
     let url: string | null = null;
     const tDownloadStart = Date.now();
 
-    if (args.s3Key && args.storageProvider === "r2") {
-      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: args.s3Key });
-    } else if (args.storageId) {
-      url = await ctx.storage.getUrl(args.storageId);
+    const s3Key = args.s3Key || cvUpload?.s3Key;
+    const storageProvider = args.storageProvider || cvUpload?.storageProvider || "r2";
+    const storageId = args.storageId || cvUpload?.storageId;
+
+    if (s3Key && storageProvider === "r2") {
+      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: s3Key });
+    }
+    if (!url && storageId) {
+      url = await ctx.storage.getUrl(storageId as any);
+    }
+    if (!url && cvUpload?.s3Key) {
+      url = await ctx.runAction(api.storage.r2.generateDownloadUrl, { key: cvUpload.s3Key });
+    }
+    if (!url && cvUpload?.storageId) {
+      url = await ctx.storage.getUrl(cvUpload.storageId as any);
     }
 
     if (!url) throw new Error("File URL not found (neither R2 nor Convex storage)");
@@ -1656,6 +1667,7 @@ export const processUnextractedQueueCron = internalAction({
           try {
             await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
               cvUploadId: upload._id,
+              storageId: upload.storageId,
               s3Key: upload.s3Key,
               storageProvider: upload.storageProvider,
               fileType: upload.fileType || "pdf",

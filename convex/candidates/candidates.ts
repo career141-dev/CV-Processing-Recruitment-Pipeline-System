@@ -96,11 +96,13 @@ export const listCandidatesPaginated = query({
       }
     } else if (overallStatus) {
       q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
+    } else if (sourceChannel) {
+      q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel));
     } else {
       q = ctx.db.query("candidates").withIndex("by_lastUpdatedAt").order("desc");
     }
 
-    if (sourceChannel) {
+    if (sourceChannel && (args.searchQuery || overallStatus)) {
       q = q.filter(q => 
         q.or(
           q.eq(q.field("firstSourceChannel"), sourceChannel as any),
@@ -113,7 +115,18 @@ export const listCandidatesPaginated = query({
       q = q.filter(q => q.eq(q.field("overallStatus"), overallStatus as any));
     }
 
-    const page = await q.paginate(args.paginationOpts);
+    let page;
+    try {
+      page = await q.paginate(args.paginationOpts);
+    } catch (err: any) {
+      const errStr = String(err?.message || err);
+      if (errStr.includes("InvalidCursor") || errStr.includes("cursor")) {
+        console.warn("[listCandidatesPaginated] Invalid cursor detected, resetting pagination to page 1");
+        page = await q.paginate({ ...args.paginationOpts, cursor: null });
+      } else {
+        throw err;
+      }
+    }
       
     return {
       ...page,

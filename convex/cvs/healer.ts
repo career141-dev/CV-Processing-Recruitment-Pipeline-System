@@ -53,7 +53,10 @@ export const releaseFailedClaim = internalMutation({
     errorMessage: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.cvUploadId, { status: "uploaded" });
+    await ctx.db.patch(args.cvUploadId, {
+      status: "failed",
+      errorMessage: args.errorMessage,
+    });
   },
 });
 

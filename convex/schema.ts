@@ -705,6 +705,8 @@ export default defineSchema({
     .index("by_overallStatus", ["overallStatus"])
     .index("by_lastUpdatedAt", ["lastUpdatedAt"])
     .index("by_extractionModel", ["extractionModel"])
+    .index("by_sourceChannel", ["sourceChannel"])
+    .index("by_firstSourceChannel", ["firstSourceChannel"])
     .searchIndex("search_skills", {
       searchField: "skills",
     })
