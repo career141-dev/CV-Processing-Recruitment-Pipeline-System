@@ -32,9 +32,9 @@ export const sendMetaTemplate = internalAction({
 
     // 2. Resolve the sender phone number and phone_number_id
     const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: app.jobId });
-    let phoneId = process.env.WHATCHIMP_PHONE_NUMBER_ID || "965783109962872";
+    let phoneId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
     if (outboundNumber) {
-      const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getWhatChimpPhoneId, {
+      const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, {
         targetWhatsAppNumber: outboundNumber,
       });
       if (fetchedId) {
