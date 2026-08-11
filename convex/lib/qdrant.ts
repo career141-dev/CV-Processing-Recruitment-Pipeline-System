@@ -1,3 +1,4 @@
+// @ts-ignore
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 export const QDRANT_CANDIDATE_COLLECTION = "candidate_vectors";
@@ -103,7 +104,7 @@ export async function ensureCandidateCollection(): Promise<boolean> {
       });
 
       const collections = await client.getCollections();
-      const exists = collections.collections?.some((c) => c.name === QDRANT_CANDIDATE_COLLECTION);
+      const exists = collections.collections?.some((c: any) => c.name === QDRANT_CANDIDATE_COLLECTION);
 
       if (!exists) {
         console.log(`[Qdrant] Creating collection "${QDRANT_CANDIDATE_COLLECTION}" (dim: ${QDRANT_VECTOR_DIM}, metric: ${QDRANT_DISTANCE_METRIC}) on ${url}...`);

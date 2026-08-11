@@ -88,9 +88,10 @@ export function CvPreviewModal({
           </div>
         ) : iframeUrl ? (
           <iframe
-            src={iframeUrl}
+            src={`${iframeUrl}#target=_blank`}
             className="w-full h-full border-0 bg-white"
             title={modalTitle}
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads allow-forms"
           />
         ) : (
           <div className="flex flex-col items-center justify-center text-center p-8 max-w-md gap-3">
