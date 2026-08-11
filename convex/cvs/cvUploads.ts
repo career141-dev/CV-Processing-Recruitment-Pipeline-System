@@ -358,23 +358,9 @@ export const getUploadedDirectoryFiles = query({
     sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const targetSource = args.sourceChannel || "Manual Directory Import";
-    const records = await ctx.db
-      .query("cvUploads")
-      .withIndex("by_source_fileName", (q) => q.eq("source", targetSource))
-      .collect();
-
-    // Only count active/successful uploads, ignore failed or cancelled records
-    const validRecords = records.filter(
-      (r) =>
-        r.status === "uploaded" ||
-        r.status === "processing" ||
-        r.status === "processed" ||
-        r.status === "completed" ||
-        r.status === "pending_retry"
-    );
-
-    return validRecords.map((r) => r.fileName);
+    // Return empty array to prevent client timeout on 12,000+ items.
+    // Individual file deduplication is performed O(1) per file via uploadFolderCandidate backend action.
+    return [] as string[];
   },
 });
 

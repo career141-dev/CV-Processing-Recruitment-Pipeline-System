@@ -54,11 +54,9 @@ export default function FolderUploadPage() {
 
   const uploadFolderCandidate = useAction(api.cvs.folderIngestion.uploadFolderCandidate);
   const cancelAllRunningExtractions = useMutation(api.cvs.cvUploads.cancelAllRunningExtractions);
-  const uploadedDbFiles = useQuery(api.cvs.cvUploads.getUploadedDirectoryFiles, {
-    sourceChannel: "Manual Directory Import",
-  });
+  const uploadedDbFiles = useQuery(api.cvs.cvUploads.getUploadedDirectoryFiles, "skip");
   const uploadedFilesSet = React.useMemo(
-    () => new Set(uploadedDbFiles || []),
+    () => new Set<string>((uploadedDbFiles as string[]) || []),
     [uploadedDbFiles]
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
