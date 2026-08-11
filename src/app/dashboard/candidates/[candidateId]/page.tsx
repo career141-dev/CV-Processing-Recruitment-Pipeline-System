@@ -334,9 +334,10 @@ export default function CandidateProfile() {
                       </div>
                     ) : cvUpload && cvUpload.url ? (
                       <iframe
-                        src={cvUpload.url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}
+                        src={`${cvUpload.url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}#target=_blank`}
                         className="w-full h-[800px] border-0"
                         title="CV Preview"
+                        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads allow-forms"
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center gap-3 h-[600px]">
