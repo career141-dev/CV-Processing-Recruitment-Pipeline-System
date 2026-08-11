@@ -56,28 +56,78 @@ function prepareTextForSpeech(rawText: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.DEEPGRAM_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "DEEPGRAM_API_KEY is not configured" }, { status: 500 });
-    }
-
     const { text, voiceId } = await req.json();
 
     if (!text || typeof text !== "string" || text.trim().length === 0) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    // Default Deepgram Aura Voice: aura-asteria-en (Warm & Natural English Female)
-    // Alternatives: aura-luna-en, aura-stella-en, aura-athena-en, aura-orion-en, aura-arcas-en
-    const selectedModel = voiceId && voiceId.startsWith("aura-") ? voiceId : "aura-asteria-en";
-
     const spokenTranscript = prepareTextForSpeech(text);
 
+    // 1. Try Cartesia TTS if CARTESIA_API_KEY is configured
+    const cartesiaApiKey = process.env.CARTESIA_API_KEY;
+    if (cartesiaApiKey) {
+      try {
+        const cartesiaVoiceId =
+          voiceId && voiceId.length > 20 && !voiceId.startsWith("aura-")
+            ? voiceId
+            : "a0e99841-438c-4a64-b679-ae501e7d6091"; // Sonic English default voice
+
+        const cartesiaRes = await fetch("https://api.cartesia.ai/tts/bytes", {
+          method: "POST",
+          headers: {
+            "X-API-Key": cartesiaApiKey,
+            "Cartesia-Version": "2024-06-10",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model_id: "sonic-english",
+            transcript: spokenTranscript,
+            voice: {
+              mode: "id",
+              id: cartesiaVoiceId,
+            },
+            output_format: {
+              container: "mp3",
+              bit_rate: 128000,
+              sample_rate: 44100,
+            },
+          }),
+        });
+
+        if (cartesiaRes.ok) {
+          const audioArrayBuffer = await cartesiaRes.arrayBuffer();
+          return new NextResponse(audioArrayBuffer, {
+            status: 200,
+            headers: {
+              "Content-Type": "audio/mp3",
+              "Content-Length": audioArrayBuffer.byteLength.toString(),
+            },
+          });
+        } else {
+          const errText = await cartesiaRes.text();
+          console.warn("[Cartesia TTS] Error response, falling back to Deepgram:", cartesiaRes.status, errText);
+        }
+      } catch (err: any) {
+        console.warn("[Cartesia TTS] Exception, falling back to Deepgram:", err?.message);
+      }
+    }
+
+    // 2. Deepgram Aura TTS Fallback
+    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+    if (!deepgramApiKey) {
+      return NextResponse.json(
+        { error: "Neither CARTESIA_API_KEY nor DEEPGRAM_API_KEY is configured" },
+        { status: 500 }
+      );
+    }
+
+    const selectedModel = voiceId && voiceId.startsWith("aura-") ? voiceId : "aura-asteria-en";
     const url = `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(selectedModel)}`;
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Token ${apiKey}`,
+        Authorization: `Token ${deepgramApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -101,7 +151,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("[Deepgram TTS] Exception:", error);
-    return NextResponse.json({ error: error.message || "Internal Deepgram TTS synthesis error" }, { status: 500 });
+    console.error("[Voice Speak] Exception:", error);
+    return NextResponse.json({ error: error.message || "Internal TTS synthesis error" }, { status: 500 });
   }
 }

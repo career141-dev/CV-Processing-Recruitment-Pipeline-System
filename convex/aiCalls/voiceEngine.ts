@@ -113,7 +113,7 @@ You MUST respond with a valid JSON object matching this schema:
       model,
       messages: formattedMessages,
       temperature: 0.2,
-      max_tokens: 600,
+      max_tokens: 200,
       response_format: { type: "json_object" },
     });
 
