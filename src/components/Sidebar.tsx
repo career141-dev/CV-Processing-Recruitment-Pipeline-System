@@ -193,18 +193,6 @@ export default function Sidebar() {
               <span className={labelClass}>Ingestion Monitor</span>
               {renderTooltip("Ingestion Monitor")}
             </Link>
-
-            <Link href="/dashboard/token-monitor" className={linkClass('/dashboard/token-monitor')}>
-              <span className={iconClass('/dashboard/token-monitor')}>bar_chart</span>
-              <span className={labelClass}>Token Monitor</span>
-              {renderTooltip("Token Monitor")}
-            </Link>
-
-            <Link href="/dashboard/test-errors" className={linkClass('/dashboard/test-errors')}>
-              <span className={iconClass('/dashboard/test-errors')}>bug_report</span>
-              <span className={labelClass}>Error Audit Test</span>
-              {renderTooltip("Error Audit Test")}
-            </Link>
           </>
         )}
 
