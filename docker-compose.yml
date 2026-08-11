@@ -57,9 +57,9 @@ services:
       start_period: 10s
       timeout: 5s
       retries: 5
-    # ── SCALE FIX: Increased to 8g to handle bulk candidate processing load ──
-    mem_limit: 8g
-    mem_reservation: 2g
+    # ── SCALE & STABILITY FIX: 6g limit ensures system never OOM crashes ──
+    mem_limit: 6g
+    mem_reservation: 1.5g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
       driver: "json-file"
@@ -100,8 +100,8 @@ services:
       - qdrant_storage:/qdrant/storage:z
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
-    mem_limit: 4g
-    mem_reservation: 1g
+    mem_limit: 2g
+    mem_reservation: 256m
     logging:
       driver: "json-file"
       options:
