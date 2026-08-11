@@ -304,6 +304,20 @@ async function main() {
       console.log(`   Uploaded: ${state.uploadedCount} | Skipped: ${state.skippedNoResumeCount} | Failed: ${state.failedCount}`);
       console.log(`   Overall Progress: ${state.processedCount} / ${candidateFolders.length} (${((state.processedCount / candidateFolders.length) * 100).toFixed(1)}%)\n`);
 
+      try {
+        await client.mutation("cvs/folderIngestion:updateFolderImportProgress", {
+          sourceChannel: "Manual Directory Import",
+          lastProcessedIndex: state.processedCount,
+          lastProcessedFolderName: state.lastStoppedFolder || "Completed Batch",
+          uploadedCount: state.uploadedCount,
+          skippedCount: state.skippedNoResumeCount,
+          failedCount: state.failedCount,
+          totalDiscoveredFolders: state.totalFoldersDiscovered,
+        });
+      } catch (e) {
+        // Ignore progress sync error
+      }
+
       state.currentBatchIndex++;
       saveProgressState(state);
       currentBatch = [];

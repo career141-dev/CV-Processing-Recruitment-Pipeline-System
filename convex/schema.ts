@@ -532,6 +532,17 @@ export default defineSchema({
     .index("by_fileName", ["fileName"])
     .index("by_isHealAttempted", ["isHealAttempted"]),
 
+  folderImportProgress: defineTable({
+    sourceChannel: v.string(),
+    lastProcessedIndex: v.number(),
+    lastProcessedFolderName: v.string(),
+    totalDiscoveredFolders: v.optional(v.number()),
+    uploadedCount: v.number(),
+    skippedCount: v.number(),
+    failedCount: v.number(),
+    updatedAt: v.number(),
+  }).index("by_sourceChannel", ["sourceChannel"]),
+
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
     rawText: v.string(),

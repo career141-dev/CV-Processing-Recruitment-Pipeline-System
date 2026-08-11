@@ -64,3 +64,55 @@ export const uploadFolderCandidate = action({
     return { cvUploadId, s3Key };
   },
 });
+
+export const getFolderImportProgress = query({
+  args: {
+    sourceChannel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const sourceChannel = args.sourceChannel || "Manual Directory Import";
+    const record = await ctx.db
+      .query("folderImportProgress")
+      .withIndex("by_sourceChannel", (q) => q.eq("sourceChannel", sourceChannel))
+      .first();
+
+    return record || null;
+  },
+});
+
+export const updateFolderImportProgress = mutation({
+  args: {
+    sourceChannel: v.optional(v.string()),
+    lastProcessedIndex: v.number(),
+    lastProcessedFolderName: v.string(),
+    totalDiscoveredFolders: v.optional(v.number()),
+    uploadedCount: v.number(),
+    skippedCount: v.number(),
+    failedCount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const sourceChannel = args.sourceChannel || "Manual Directory Import";
+    const existing = await ctx.db
+      .query("folderImportProgress")
+      .withIndex("by_sourceChannel", (q) => q.eq("sourceChannel", sourceChannel))
+      .first();
+
+    const payload = {
+      sourceChannel,
+      lastProcessedIndex: args.lastProcessedIndex,
+      lastProcessedFolderName: args.lastProcessedFolderName,
+      totalDiscoveredFolders: args.totalDiscoveredFolders,
+      uploadedCount: args.uploadedCount,
+      skippedCount: args.skippedCount,
+      failedCount: args.failedCount,
+      updatedAt: Date.now(),
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, payload);
+      return existing._id;
+    } else {
+      return await ctx.db.insert("folderImportProgress", payload);
+    }
+  },
+});
