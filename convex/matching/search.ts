@@ -26,11 +26,19 @@ export const searchCandidates = query({
         return q.search(field, args.query);
       }).take(limit);
 
-    const [titleResults, summaryResults, resumeResults] = await Promise.all([
-      searchWithFilters("search_title", "currentJobTitle"),
-      searchWithFilters("search_summary", "summary"),
-      ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
-    ]);
+    let titleResults: Doc<"candidates">[] = [];
+    let summaryResults: Doc<"candidates">[] = [];
+    let resumeResults: Doc<"candidateResumes">[] = [];
+
+    try {
+      [titleResults, summaryResults, resumeResults] = await Promise.all([
+        searchWithFilters("search_title", "currentJobTitle"),
+        searchWithFilters("search_summary", "summary"),
+        ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
+      ]);
+    } catch (searchIndexErr: any) {
+      console.warn("[searchCandidates] Text search index warning:", searchIndexErr?.message);
+    }
 
     const resumeCandidateIds: { candidateId: Id<"candidates">; resumeId: Id<"candidateResumes"> }[] = [];
     for (const res of resumeResults) {
@@ -193,26 +201,53 @@ export const aiSearch = action({
       }
     }
 
-    // 2. Run vector search only if embedding succeeded
-    let vectorResults: { _id: Id<"candidateResumes">; _score: number }[] = [];
-    if (queryEmbedding) {
-      vectorResults = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
-        vector: queryEmbedding,
-        limit: fetchLimit,
-      });
-    }
-
-    // 3. Get candidate IDs from vector search results using new lightweight query
-    const scoreByResumeId = new Map(vectorResults.map((r) => [r._id, r._score]));
+    // 2. Run High-Recall Vector Search (Qdrant Primary with Convex Fail-Open Fallback)
     let vectorCandidateIds: { candidateId: Id<"candidates">; vectorScore: number }[] = [];
-    if (vectorResults.length) {
-      const mapped = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
-        resumeIds: vectorResults.map((r) => r._id),
-      });
-      vectorCandidateIds = mapped.map((item: { resumeId: Id<"candidateResumes">; candidateId: Id<"candidates"> }) => ({
-        candidateId: item.candidateId as Id<"candidates">,
-        vectorScore: scoreByResumeId.get(item.resumeId as Id<"candidateResumes">) ?? 0,
-      }));
+
+    if (queryEmbedding) {
+      // Try Stage 1 High-Throughput Scan in Qdrant (top 1,000 vectors)
+      try {
+        const { queryCandidateVectors } = await import("../lib/qdrant.js");
+        const qdrantMatches = await queryCandidateVectors(queryEmbedding, {
+          limit: 1000,
+          minExperience: args.minExperience,
+          locationCity: args.location,
+          seniorityLevel: args.seniority,
+        });
+
+        if (qdrantMatches.length > 0) {
+          vectorCandidateIds = qdrantMatches.map((m) => ({
+            candidateId: m.candidateId as Id<"candidates">,
+            vectorScore: m.score,
+          }));
+        }
+      } catch (qdrantErr: any) {
+        console.warn("[aiSearch] Qdrant search error, falling back to Convex native vectorSearch:", qdrantErr?.message);
+        vectorCandidateIds = [];
+      }
+
+      // Convex Fallback if Qdrant returned 0 or was unreachable
+      if (vectorCandidateIds.length === 0) {
+        try {
+          const vectorResults = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
+            vector: queryEmbedding,
+            limit: fetchLimit,
+          });
+
+          if (vectorResults.length > 0) {
+            const scoreByResumeId = new Map(vectorResults.map((r) => [r._id, r._score]));
+            const mapped = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
+              resumeIds: vectorResults.map((r) => r._id),
+            });
+            vectorCandidateIds = mapped.map((item: { resumeId: Id<"candidateResumes">; candidateId: Id<"candidates"> }) => ({
+              candidateId: item.candidateId as Id<"candidates">,
+              vectorScore: scoreByResumeId.get(item.resumeId as Id<"candidateResumes">) ?? 0,
+            }));
+          }
+        } catch (convexVecErr: any) {
+          console.warn("[aiSearch] Convex vectorSearch fallback notice:", convexVecErr?.message);
+        }
+      }
     }
 
     // Extract query terms for keyword search if query is empty
@@ -236,13 +271,23 @@ export const aiSearch = action({
           ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: 40 })
         );
       }
-      searchBatches = await Promise.all(batchQueries);
+      try {
+        searchBatches = await Promise.all(batchQueries);
+      } catch (kwErr: any) {
+        console.warn("[aiSearch] Keyword batch search notice:", kwErr?.message);
+        searchBatches = [];
+      }
     } else if (filterTerms.length > 0) {
-      searchBatches = await Promise.all(
-        filterTerms.slice(0, 3).map((term) =>
-          ctx.runQuery(api.matching.search.searchCandidates, { query: term, limit: 50 })
-        )
-      );
+      try {
+        searchBatches = await Promise.all(
+          filterTerms.slice(0, 3).map((term) =>
+            ctx.runQuery(api.matching.search.searchCandidates, { query: term, limit: 50 })
+          )
+        );
+      } catch (kwErr: any) {
+        console.warn("[aiSearch] Keyword filter search notice:", kwErr?.message);
+        searchBatches = [];
+      }
     }
 
     // 5. Merge and deduplicate candidate IDs in memory

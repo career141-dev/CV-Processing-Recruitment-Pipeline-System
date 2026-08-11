@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as addDemoCandidate from "../addDemoCandidate.js";
 import type * as admin_activateReactDev from "../admin/activateReactDev.js";
 import type * as admin_backfillEmbeddingFlags from "../admin/backfillEmbeddingFlags.js";
 import type * as admin_backfillTokenCache from "../admin/backfillTokenCache.js";
@@ -21,13 +20,15 @@ import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
 import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
 import type * as admin_mute from "../admin/mute.js";
 import type * as admin_qaTests from "../admin/qaTests.js";
+import type * as admin_qdrantBackfill from "../admin/qdrantBackfill.js";
 import type * as admin_recalculateGlobalStats from "../admin/recalculateGlobalStats.js";
 import type * as admin_removeProfileImages from "../admin/removeProfileImages.js";
 import type * as admin_runBackfill from "../admin/runBackfill.js";
-import type * as admin_seedBinatTestCandidate from "../admin/seedBinatTestCandidate.js";
 import type * as admin_setActiveJobs from "../admin/setActiveJobs.js";
 import type * as admin_settings from "../admin/settings.js";
 import type * as admin_updateJDs from "../admin/updateJDs.js";
+import type * as aiCalls_voiceCalls from "../aiCalls/voiceCalls.js";
+import type * as aiCalls_voiceEngine from "../aiCalls/voiceEngine.js";
 import type * as analytics from "../analytics.js";
 import type * as applications_applications from "../applications/applications.js";
 import type * as candidates_candidates from "../candidates/candidates.js";
@@ -84,6 +85,7 @@ import type * as lib_jdParser from "../lib/jdParser.js";
 import type * as lib_jobSynthesizer from "../lib/jobSynthesizer.js";
 import type * as lib_llm from "../lib/llm.js";
 import type * as lib_permissions from "../lib/permissions.js";
+import type * as lib_qdrant from "../lib/qdrant.js";
 import type * as lib_validate from "../lib/validate.js";
 import type * as lib_webhookSecurity from "../lib/webhookSecurity.js";
 import type * as matching_agent2 from "../matching/agent2.js";
@@ -97,10 +99,6 @@ import type * as pipeline_ingestion from "../pipeline/ingestion.js";
 import type * as pipeline_outreach from "../pipeline/outreach.js";
 import type * as pipeline_pipelineStateMachine from "../pipeline/pipelineStateMachine.js";
 import type * as pipeline_stages from "../pipeline/stages.js";
-import type * as resetBinathCandidate from "../resetBinathCandidate.js";
-import type * as seedTestCandidate from "../seedTestCandidate.js";
-import type * as seedTestJobAndCandidates from "../seedTestJobAndCandidates.js";
-import type * as seedTimeline from "../seedTimeline.js";
 import type * as settings_whatsappNumbers from "../settings/whatsappNumbers.js";
 import type * as stats_stats from "../stats/stats.js";
 import type * as stats_statsHelper from "../stats/statsHelper.js";
@@ -117,7 +115,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  addDemoCandidate: typeof addDemoCandidate;
   "admin/activateReactDev": typeof admin_activateReactDev;
   "admin/backfillEmbeddingFlags": typeof admin_backfillEmbeddingFlags;
   "admin/backfillTokenCache": typeof admin_backfillTokenCache;
@@ -130,13 +127,15 @@ declare const fullApi: ApiFromModules<{
   "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
   "admin/mute": typeof admin_mute;
   "admin/qaTests": typeof admin_qaTests;
+  "admin/qdrantBackfill": typeof admin_qdrantBackfill;
   "admin/recalculateGlobalStats": typeof admin_recalculateGlobalStats;
   "admin/removeProfileImages": typeof admin_removeProfileImages;
   "admin/runBackfill": typeof admin_runBackfill;
-  "admin/seedBinatTestCandidate": typeof admin_seedBinatTestCandidate;
   "admin/setActiveJobs": typeof admin_setActiveJobs;
   "admin/settings": typeof admin_settings;
   "admin/updateJDs": typeof admin_updateJDs;
+  "aiCalls/voiceCalls": typeof aiCalls_voiceCalls;
+  "aiCalls/voiceEngine": typeof aiCalls_voiceEngine;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
   "candidates/candidates": typeof candidates_candidates;
@@ -193,6 +192,7 @@ declare const fullApi: ApiFromModules<{
   "lib/jobSynthesizer": typeof lib_jobSynthesizer;
   "lib/llm": typeof lib_llm;
   "lib/permissions": typeof lib_permissions;
+  "lib/qdrant": typeof lib_qdrant;
   "lib/validate": typeof lib_validate;
   "lib/webhookSecurity": typeof lib_webhookSecurity;
   "matching/agent2": typeof matching_agent2;
@@ -206,10 +206,6 @@ declare const fullApi: ApiFromModules<{
   "pipeline/outreach": typeof pipeline_outreach;
   "pipeline/pipelineStateMachine": typeof pipeline_pipelineStateMachine;
   "pipeline/stages": typeof pipeline_stages;
-  resetBinathCandidate: typeof resetBinathCandidate;
-  seedTestCandidate: typeof seedTestCandidate;
-  seedTestJobAndCandidates: typeof seedTestJobAndCandidates;
-  seedTimeline: typeof seedTimeline;
   "settings/whatsappNumbers": typeof settings_whatsappNumbers;
   "stats/stats": typeof stats_stats;
   "stats/statsHelper": typeof stats_statsHelper;

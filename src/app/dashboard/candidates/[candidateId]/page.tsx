@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useParams } from "next/navigation";
 import { AddToJobModal } from '@/components/candidates/modals/AddToJobModal';
+import { VoiceTestModal } from '@/components/voice/VoiceTestModal';
 import { toast } from 'sonner';
 import { ChevronLeft } from 'lucide-react';
 
@@ -53,6 +54,7 @@ export default function CandidateProfile() {
   const reparseReferees = useAction(api.candidates.refereeActions.reparseSingleCandidateReferees);
   
   const [isAddToJobOpen, setIsAddToJobOpen] = useState(false);
+  const [isVoiceTestOpen, setIsVoiceTestOpen] = useState(false);
   const [isTriggeringCall, setIsTriggeringCall] = useState(false);
   const [isReparsingReferees, setIsReparsingReferees] = useState(false);
 
@@ -229,11 +231,13 @@ export default function CandidateProfile() {
                   </button>
                   <div className="flex items-center gap-2 w-full">
                     <button 
-                      disabled
-                      title="AI Call feature is disabled for now"
-                      className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border opacity-50 cursor-not-allowed"
+                      onClick={() => setIsVoiceTestOpen(true)}
+                      title="Test real-time AI Voice prescreening in browser"
+                      className="flex-1 flex justify-center items-center bg-emerald-50 hover:bg-emerald-100 py-2 px-2 gap-1 rounded-md border border-solid border-emerald-300 transition-colors shadow-sm cursor-pointer"
                     >
-                      <span className="text-text-disabled text-[13px] whitespace-nowrap">AI Call (Disabled)</span>
+                      <span className="text-emerald-800 font-bold text-[12px] whitespace-nowrap flex items-center gap-1">
+                        🎙️ Test AI Call
+                      </span>
                     </button>
                     <button className="flex-1 flex justify-center items-center bg-transparent py-2 px-2 gap-1 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors"
                       onClick={() => setActiveTab("communications")}>
@@ -265,6 +269,19 @@ export default function CandidateProfile() {
                 });
               }}
             />
+
+            {isVoiceTestOpen && (
+              <VoiceTestModal
+                isOpen={isVoiceTestOpen}
+                onClose={() => setIsVoiceTestOpen(false)}
+                candidateId={candidateId}
+                jobId={applications?.[0]?.jobId || candidate?.firstSourceJobId || ("j9700000000000000000000000" as any)}
+                applicationId={applications?.[0]?._id}
+                candidateName={candidate.fullName || "Candidate"}
+                jobTitle={applications?.[0]?.jobTitle || candidate.currentTitle || "Open Role"}
+                jobDescription={candidate.summary || "General recruitment prescreening"}
+              />
+            )}
 
             {/* Tab Menu */}
             <div className="flex items-center self-stretch mb-6 border-b border-gray-200">
