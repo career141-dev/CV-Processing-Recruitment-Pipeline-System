@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Badge, AvatarBadge } from '@/components/ui/Badge';
-import { MessageCircle, Trash2, Sparkles, MapPin } from 'lucide-react';
+import { MessageCircle, Trash2, Sparkles, MapPin, FileText } from 'lucide-react';
 
 interface CandidateCardProps {
   id: string;
@@ -21,6 +21,7 @@ interface CandidateCardProps {
   onToggle: () => void;
   onMessage?: () => void;
   onDelete?: () => void;
+  onShowCv?: () => void;
   profileHref?: string;
   matchReason?: string;
   imageUrl?: string | null;
@@ -50,6 +51,7 @@ export function CandidateCard({
   onToggle,
   onMessage,
   onDelete,
+  onShowCv,
   profileHref = '/dashboard/candidates/kasun',
   matchReason,
   imageUrl,
@@ -116,6 +118,20 @@ export function CandidateCard({
         
         <div className="flex flex-col shrink-0 items-end gap-2 mt-[6px]">
           <div className="flex items-center gap-2">
+            {onShowCv && (
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onShowCv();
+                }}
+                className="flex items-center justify-center bg-[#EAF5EC] py-1 px-3 rounded-md border border-solid border-[#CDE5D2] hover:bg-[#D4EBD8] text-[#1B5E20] text-xs font-bold transition-colors cursor-pointer"
+                title="Show candidate CV document"
+              >
+                <FileText className="w-3.5 h-3.5 mr-1 text-[#1B5E20]" />
+                Show CV
+              </button>
+            )}
             {onMessage && (
               <button 
                 onClick={onMessage}

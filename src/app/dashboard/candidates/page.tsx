@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { X, Loader2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Sparkles, Pin, SlidersHorizontal, Filter } from 'lucide-react';
 import { MessageComposer } from '@/components/communications/MessageComposer';
 import { DeleteCandidateModal } from '@/components/candidates/modals/DeleteCandidateModal';
+import { CvPreviewModal } from '@/components/candidates/modals/CvPreviewModal';
 import { toast } from 'sonner';
 
 function getInitials(name?: string | null): string {
@@ -122,6 +123,7 @@ export default function CandidatesSearch() {
   // Message Composer State
   const [messageCandidate, setMessageCandidate] = useState<{ id: string; name: string; initials: string; role: string } | null>(null);
   const [deletingCandidateId, setDeletingCandidateId] = useState<string | null>(null);
+  const [cvPreviewCandidate, setCvPreviewCandidate] = useState<{ id: string; name: string } | null>(null);
 
   const [isRestored, setIsRestored] = useState(false);
 
@@ -830,6 +832,10 @@ function formatShortHistoryText(entry: any): string {
                       profileHref={`/dashboard/candidates/${c._id}`}
                       imageUrl={(c as any).profileImageUrl}
                       onDelete={() => setDeletingCandidateId(c._id)}
+                      onShowCv={() => setCvPreviewCandidate({
+                        id: c._id,
+                        name: c.fullName || (c.email ? c.email.split("@")[0] : "Candidate")
+                      })}
                       onMessage={() => setMessageCandidate({
                         id: c._id,
                         name: c.fullName || "Unknown",
@@ -890,6 +896,13 @@ function formatShortHistoryText(entry: any): string {
         isOpen={!!deletingCandidateId}
         onClose={() => setDeletingCandidateId(null)}
         candidateId={deletingCandidateId}
+      />
+
+      <CvPreviewModal
+        isOpen={!!cvPreviewCandidate}
+        onClose={() => setCvPreviewCandidate(null)}
+        candidateId={cvPreviewCandidate?.id || null}
+        candidateName={cvPreviewCandidate?.name}
       />
 
     </div>
