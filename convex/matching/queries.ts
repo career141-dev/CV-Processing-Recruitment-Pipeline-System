@@ -20,6 +20,16 @@ export const getCandidatesBatch = internalQuery({
   },
 });
 
+export const getCandidatesBatchPublic = query({
+  args: { candidateIds: v.array(v.id("candidates")) },
+  handler: async (ctx, args) => {
+    const results = await Promise.all(
+      args.candidateIds.map((id) => ctx.db.get(id))
+    );
+    return results.filter((c): c is Doc<"candidates"> => c !== null);
+  },
+});
+
 export const getCandidatesByResumeIds = internalQuery({
   args: { resumeIds: v.array(v.id("candidateResumes")) },
   handler: async (ctx, args) => {
@@ -148,17 +158,43 @@ export const getApplicationsByJobIdInternal = internalQuery({
 export const getEmbeddingStats = query({
   args: {},
   handler: async (ctx) => {
-    const candidatePage = await ctx.db.query("candidates").take(1000);
-    const resumePage = await ctx.db.query("candidateResumes").take(1000);
-    const withEmbeddingPage = await ctx.db.query("candidateResumes").withIndex("by_hasEmbedding", q => q.eq("hasEmbedding", true)).take(1000);
-    const missingEmbeddingPage = await ctx.db.query("candidateResumes").withIndex("by_hasEmbedding", q => q.eq("hasEmbedding", false)).take(1000);
+    const withEmbeddingPage = await ctx.db.query("candidateResumes").withIndex("by_hasEmbedding", q => q.eq("hasEmbedding", true)).take(100);
+    const missingEmbeddingPage = await ctx.db.query("candidateResumes").withIndex("by_hasEmbedding", q => q.eq("hasEmbedding", false)).take(100);
 
     return {
-      sampleCandidatesEvaluated: candidatePage.length,
-      sampleResumesEvaluated: resumePage.length,
       resumesWithEmbeddingCount: withEmbeddingPage.length,
       resumesMissingEmbeddingCount: missingEmbeddingPage.length,
     };
+  },
+});
+
+export const getAllResumesWithEmbeddings = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const q = ctx.db
+      .query("candidateResumes")
+      .withIndex("by_hasEmbedding", (q) => q.eq("hasEmbedding", true));
+    
+    if (args.limit) {
+      return await q.take(args.limit);
+    }
+    return await q.take(500);
+  },
+});
+
+export const getPaginatedResumesWithEmbeddings = query({
+  args: {
+    limit: v.number(),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("candidateResumes")
+      .withIndex("by_hasEmbedding", (q) => q.eq("hasEmbedding", true))
+      .paginate({
+        numItems: args.limit,
+        cursor: args.cursor ?? null,
+      });
   },
 });
 

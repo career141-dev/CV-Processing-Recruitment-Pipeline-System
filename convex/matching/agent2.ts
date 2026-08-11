@@ -6,6 +6,7 @@ import type { Id } from "../_generated/dataModel.d.ts";
 import { mapJobSeniorityTo10LevelRank, checkSeniorityConflict, scoreCandidateAgainstRequirements, getSkillDomain } from "../cvs/cvScoring";
 import { classifyJobRoleFamily, classifyCurrentRolesBatch } from "../lib/currentRoleClassifier";
 import { synthesizeJobRequirements } from "../lib/jobSynthesizer";
+import { upsertCandidateVector } from "../lib/qdrant";
 
 /**
  * Helper to get vector embeddings from NVIDIA API
@@ -84,6 +85,29 @@ export const generateAndStoreEmbedding = internalAction({
         candidateId: args.candidateId,
         embedding,
       });
+
+      // Asynchronous non-blocking sync to Qdrant Vector Engine
+      try {
+        await upsertCandidateVector({
+          candidateId: args.candidateId,
+          vector: embedding,
+          payload: {
+            candidateId: args.candidateId,
+            fullName: candidate.fullName || "Candidate",
+            currentJobTitle: candidate.currentJobTitle,
+            skills: candidate.skills || [],
+            totalExperienceYears: candidate.totalExperienceYears,
+            seniorityLevel: candidate.seniorityLevel,
+            locationCity: candidate.locationCity,
+            locationCountry: candidate.locationCountry,
+            sourceChannel: candidate.firstSourceChannel || candidate.sourceChannel,
+            overallStatus: candidate.overallStatus,
+            updatedAt: Date.now(),
+          },
+        });
+      } catch (qdrantErr: any) {
+        console.warn(`[Agent2] Non-blocking Qdrant sync warning for candidate ${args.candidateId}:`, qdrantErr?.message);
+      }
 
       await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
         logs: [
@@ -395,23 +419,47 @@ Return ONLY valid JSON matching this schema:
         }
       }
 
-      // 3. Perform Vector Search across all candidates (Pool limit widened to 256)
-      const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
-        vector: jobEmbedding,
-        limit: 256,
-      });
-
+      // 3. Perform Vector Search across all candidates using Qdrant (top 1,000 vectors with Convex fail-open fallback)
       const vectorResultsMap = new Map<string, number>();
-      if (results.length > 0) {
-        const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
-          resumeIds: results.map((r) => r._id),
+      try {
+        const { queryCandidateVectors } = await import("../lib/qdrant.js");
+        const qdrantMatches = await queryCandidateVectors(jobEmbedding, {
+          limit: 1000,
+          locationCity: job.location,
+          seniorityLevel: job.seniorityLevel,
         });
-        const resumeIdToCandidateId = new Map(mappedResumes.map((item) => [item.resumeId, item.candidateId]));
-        for (const r of results) {
-          const cId = resumeIdToCandidateId.get(r._id);
-          if (cId) {
-            vectorResultsMap.set(cId.toString(), r._score);
+
+        for (const m of qdrantMatches) {
+          if (m.candidateId) {
+            vectorResultsMap.set(m.candidateId, m.score);
           }
+        }
+      } catch (qdrantErr: any) {
+        console.warn("[Agent2 reverseMatchJob] Qdrant search error, falling back to Convex vectorSearch:", qdrantErr?.message);
+      }
+
+      // Fallback to Convex native vectorSearch if Qdrant returned 0 or was unreachable
+      if (vectorResultsMap.size === 0) {
+        try {
+          const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
+            vector: jobEmbedding,
+            limit: 256,
+          });
+
+          if (results.length > 0) {
+            const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
+              resumeIds: results.map((r) => r._id),
+            });
+            const resumeIdToCandidateId = new Map(mappedResumes.map((item) => [item.resumeId, item.candidateId]));
+            for (const r of results) {
+              const cId = resumeIdToCandidateId.get(r._id);
+              if (cId) {
+                vectorResultsMap.set(cId.toString(), r._score);
+              }
+            }
+          }
+        } catch (convErr: any) {
+          console.warn("[Agent2 reverseMatchJob] Convex vectorSearch fallback notice:", convErr?.message);
         }
       }
 
