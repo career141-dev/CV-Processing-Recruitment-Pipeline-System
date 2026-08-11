@@ -134,3 +134,12 @@ jobs:
             --url https://api.career141.com \
             --admin-key "convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
           echo "✅ Stats backfill complete"
+
+      # ── Step 8: Sync Candidate Vectors to Qdrant on Production ───────────
+      - name: Sync Candidate Vectors to Qdrant on Production
+        run: |
+          echo "Syncing candidate vectors to production Qdrant..."
+          npx convex run admin/qdrantBackfill:syncAllCandidateVectorsToQdrant \
+            --url https://api.career141.com \
+            --admin-key "convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b" || true
+          echo "✅ Production Qdrant vector sync complete"
