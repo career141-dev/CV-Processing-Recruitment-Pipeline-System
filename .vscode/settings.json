@@ -1,0 +1,25 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/.next/**": true,
+    "**/node_modules/**": true,
+    "**/agent/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.convex/**": true,
+    "**/_storage_temp/**": true
+  },
+  "search.exclude": {
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/agent/node_modules": true,
+    "**/dist": true,
+    "**/.convex": true
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.next": true,
+    "**/agent/node_modules": true,
+    "**/dist": true
+  }
+}
