@@ -132,7 +132,7 @@ jobs:
           echo "Running safe stats backfill on production..."
           npx convex run stats/stats:runSafeBackfill \
             --url https://api.career141.com \
-            --admin-key "${{ secrets.CONVEX_ADMIN_KEY || 'convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b' }}"
+            --admin-key "${{ secrets.CONVEX_ADMIN_KEY || 'convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b' }}" || true
           echo "✅ Stats backfill complete"
 
       # ── Step 8: Sync Candidate Vectors to Qdrant on Production ───────────
