@@ -47,5 +47,45 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: career141-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50200:50000-50200/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    mem_limit: 1g
+    mem_reservation: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  voice-agent:
+    build:
+      context: ./agent
+    container_name: career141-voice-agent
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    env_file:
+      - .env.production
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-career141_livekit_key}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2}
+    mem_limit: 1g
+    mem_reservation: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
 volumes:
   qdrant_storage:
