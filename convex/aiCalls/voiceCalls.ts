@@ -14,7 +14,12 @@ export const recordVoiceCallSession = mutation({
     noticePeriodDays: v.optional(v.number()),
     noticePeriodText: v.optional(v.string()),
     customQuestionAnswers: v.optional(
-      v.array(v.object({ question: v.string(), answer: v.string() }))
+      v.array(
+        v.object({
+          question: v.string(),
+          answer: v.optional(v.union(v.string(), v.null())),
+        })
+      )
     ),
   },
   handler: async (ctx, args) => {
@@ -33,7 +38,10 @@ export const recordVoiceCallSession = mutation({
       currentSalary: args.currentSalary,
       expectedSalary: args.expectedSalary,
       noticePeriodDays: args.noticePeriodDays,
-      customQuestionAnswers: args.customQuestionAnswers || [],
+      customQuestionAnswers: (args.customQuestionAnswers || []).map((qa) => ({
+        question: qa.question || "",
+        answer: qa.answer ?? "",
+      })),
       callScriptUsed: "initial_screening",
       companyHidden: false,
       followUpTriggered: false,
@@ -79,7 +87,7 @@ export const recordVoiceCallSession = mutation({
       if (args.customQuestionAnswers && args.customQuestionAnswers.length > 0) {
         const customMap: Record<string, string> = {};
         for (const item of args.customQuestionAnswers) {
-          customMap[item.question] = item.answer;
+          customMap[item.question] = item.answer || "";
         }
         appUpdates.customFollowUpAnswers = customMap;
       }

@@ -348,16 +348,27 @@ export function VoiceTestModal({
       const updatedMessages = [...current.messages, userMsg];
       setMessages(updatedMessages);
 
-      // 2. Query Senior Recruiter Brain via Convex Action
-      const chatData = await generateVoiceReply({
-        candidateName: cleanFirstName,
-        jobTitle: current.jobTitle,
-        jobDescription: current.jobDescription,
-        customQuestions: current.jobCustomQuestions,
-        alreadyCollected: current.extractedData,
-        customScript: current.customScript.trim() || undefined,
-        messages: updatedMessages.map((m) => ({ role: m.role, content: m.text })),
-      });
+      // 2. Query Senior Recruiter Brain via Convex Action (with resilient retry boundary)
+      let chatData: any = null;
+      let actionRetries = 3;
+      while (actionRetries > 0 && !chatData) {
+        try {
+          chatData = await generateVoiceReply({
+            candidateName: cleanFirstName,
+            jobTitle: current.jobTitle,
+            jobDescription: current.jobDescription,
+            customQuestions: current.jobCustomQuestions,
+            alreadyCollected: current.extractedData,
+            customScript: current.customScript.trim() || undefined,
+            messages: updatedMessages.map((m) => ({ role: m.role, content: m.text })),
+          });
+        } catch (err: any) {
+          actionRetries--;
+          console.warn(`[Voice Modal] Socket flicker on action. Retrying (${3 - actionRetries}/3)...`, err?.message);
+          if (actionRetries === 0) throw err;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
 
       // Merge newly extracted fields and custom question answers
       const clientNotice = (!chatData.extracted?.noticePeriodDays && !chatData.extracted?.noticePeriodText)
@@ -483,7 +494,10 @@ export function VoiceTestModal({
         expectedSalary: current.extractedData.expectedSalary,
         noticePeriodDays: current.extractedData.noticePeriodDays,
         noticePeriodText: current.extractedData.noticePeriodText,
-        customQuestionAnswers: current.extractedData.customQuestionAnswers || [],
+        customQuestionAnswers: (current.extractedData.customQuestionAnswers || []).map((qa: any) => ({
+          question: String(qa?.question || ""),
+          answer: qa?.answer != null ? String(qa.answer) : "",
+        })),
       });
     } catch (err) {
       console.error("[Voice Modal] DB record error:", err);

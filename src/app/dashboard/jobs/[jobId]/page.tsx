@@ -367,7 +367,6 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
                   src={`${cvUpload.url.replace(/^http:\/\/(127\.0\.0\.1|localhost|convex)(:\d+)?/, process.env.NEXT_PUBLIC_CONVEX_URL || "https://api.career141.com")}#toolbar=1&view=FitH&target=_blank`}
                   className="w-full h-full border-0"
                   title="CV Preview"
-                  sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads allow-forms"
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full gap-2 text-text-secondary text-sm">
