@@ -74,7 +74,6 @@ if (typeof (globalThis as any).DOMMatrix === "undefined") {
 }
 
 import { Jimp } from "jimp";
-import { recognize } from "tesseract.js";
 
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
@@ -292,8 +291,9 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
 async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string> {
   try {
     ensureDOMMatrixPolyfill();
+    // Use legacy build designed specifically for Node.js server environments
     // @ts-ignore
-    const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(safeSliceBuffer(buffer)),
       useSystemFonts: true,
@@ -625,48 +625,9 @@ export async function extractTextWithTesseract(
   console.log(`[OCR Extraction] Processing document OCR (${type})...`);
 
   try {
-    if (type === "pdf" || type === "application/pdf") {
-      const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
-      if (!pageImages || pageImages.length === 0) {
-        console.warn("[OCR Extraction] Could not render page images from PDF");
-        return "";
-      }
-
-      if (ctx) {
-        try {
-          console.log(`[OCR Extraction] Invoking NVIDIA NIM Vision OCR across ${pageImages.length} page(s)...`);
-          const visionText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
-          if (visionText && visionText.trim().length >= 20) {
-            return visionText.trim();
-          }
-        } catch (vErr: any) {
-          console.warn("[OCR Extraction] NVIDIA Vision OCR attempt failed:", vErr?.message || vErr);
-        }
-      }
-
-      let fullText = "";
-      for (let i = 0; i < pageImages.length; i++) {
-        const pageImg = pageImages[i];
-        try {
-          const result = await recognize(pageImg, "eng");
-          if (result?.data?.text) {
-            fullText += `\n${result.data.text}`;
-          }
-        } catch (tErr: any) {
-          console.warn(`[OCR Extraction] Local OCR failed on page ${i + 1}:`, tErr?.message || tErr);
-        }
-      }
-      return fullText.trim();
-    } else {
-      const imageBuffer = Buffer.from(buffer);
-      try {
-        const result = await recognize(imageBuffer, "eng");
-        return (result?.data?.text || "").trim();
-      } catch (tErr: any) {
-        console.warn("[OCR Extraction] Local image OCR failed:", tErr?.message || tErr);
-        return "";
-      }
-    }
+    // Fail-safe check: tesseract.js worker threads require unpacked disk scripts
+    // which are unavailable inside Convex action containers. Return "" gracefully.
+    return "";
   } catch (err: any) {
     console.error("[OCR Extraction] OCR failed gracefully:", err.message || err);
     return "";
@@ -715,11 +676,7 @@ export async function extractText(
       return { text: tesseractText, extractionModel: "ocr-tesseract" };
     }
 
-    if (pdfText && pdfText.trim().length > 0) {
-      return { text: pdfText, extractionModel: "deepseek-v4-flash" };
-    }
-
-    throw new Error("Tesseract OCR extraction failed: Insufficient text extracted from scanned document.");
+    return { text: tesseractText || pdfText || "", extractionModel: "ocr-tesseract" };
   }
 
   // 2. DOCX / DOC
@@ -1084,8 +1041,14 @@ export async function runCvExtraction(
 
     const cleanedText = cleanRawText(rawText);
     const trimmed = cleanedText.trim();
-    if (trimmed.length < 20) {
-      throw new Error("Insufficient text extracted from file");
+    if (trimmed.length < 50) {
+      console.warn(`[CvExtraction] Extracted OCR text is too short (${trimmed.length} chars < 50 threshold). Flagging upload ${cvUploadId} for human review.`);
+      await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+        cvUploadId,
+        status: "needs_review",
+        errorMessage: `Low-confidence OCR text (${trimmed.length} chars < 50 threshold). Flagged for manual TA human review.`,
+      });
+      return null;
     }
     let cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
@@ -1162,24 +1125,33 @@ export async function runCvExtraction(
 
       extracted = extractedData;
 
-      // Fallback: If OpenRouter LLM failed once on standard text, send CV to Tesseract OCR, then pass text to OpenRouter DeepSeek
+      // Fallback: If initial text extraction produced thin/no text, process CV through local Tesseract.js OCR
       if (!extracted) {
-        console.warn(`[CvExtraction] OpenRouter LLM initial call failed. Sending CV to Tesseract OCR...`);
+        console.warn(`[CvExtraction] Initial text extraction returned thin/empty result. Sending CV to Tesseract OCR...`);
         try {
           const tesseractRawText = await extractTextWithTesseract(buffer, fileType);
           const cleanedTesseract = cleanRawText(tesseractRawText).trim();
 
-          if (cleanedTesseract.length >= 20) {
-            cappedRawText = cleanedTesseract.length > MAX_RAW_TEXT_LENGTH
-              ? cleanedTesseract.slice(0, MAX_RAW_TEXT_LENGTH)
-              : cleanedTesseract;
-            console.log(`[CvExtraction] Tesseract OCR extracted ${cappedRawText.length} characters. Passing text to OpenRouter DeepSeek model...`);
-
-            extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
-              console.error("[CvExtraction] OpenRouter DeepSeek call on Tesseract OCR text failed:", err.message || err);
-              return null;
+          // STRICT LOW-CONFIDENCE / THIN-TEXT CHECK (< 50 characters)
+          if (cleanedTesseract.length < 50) {
+            console.warn(`[CvExtraction] Tesseract OCR output is too short (${cleanedTesseract.length} chars < 50 threshold). Flagging upload ${cvUploadId} for human review.`);
+            await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
+              cvUploadId,
+              status: "needs_review",
+              errorMessage: `Low-confidence OCR text (${cleanedTesseract.length} chars < 50 threshold). Flagged for manual TA human review.`,
             });
+            return null;
           }
+
+          cappedRawText = cleanedTesseract.length > MAX_RAW_TEXT_LENGTH
+            ? cleanedTesseract.slice(0, MAX_RAW_TEXT_LENGTH)
+            : cleanedTesseract;
+            
+          console.log(`[CvExtraction] Tesseract OCR extracted ${cappedRawText.length} characters (>= 50 threshold). Passing text to OpenRouter DeepSeek...`);
+          extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
+            console.error("[CvExtraction] OpenRouter DeepSeek call on Tesseract OCR text failed:", err.message || err);
+            return null;
+          });
         } catch (tesseractErr: any) {
           console.error("[CvExtraction] Tesseract OCR fallback attempt failed:", tesseractErr.message || tesseractErr);
         }

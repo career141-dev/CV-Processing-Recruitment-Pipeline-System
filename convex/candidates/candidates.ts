@@ -857,11 +857,13 @@ export const listFailedUploads = query({
     const limit = args.limit ?? 50;
     const q = ctx.db
       .query("cvUploads")
+      .order("desc")
       .filter((q) =>
         q.or(
           q.eq(q.field("status"), "failed"),
           q.eq(q.field("status"), "failed_retry"),
           q.eq(q.field("status"), "paused"),
+          q.eq(q.field("status"), "needs_review"),
         ),
       );
     const result = await q.paginate({ cursor: args.cursor ?? null, numItems: limit });
@@ -872,6 +874,27 @@ export const listFailedUploads = query({
     };
   },
 });
+
+export const deleteCvUploadRecord = mutation({
+  args: { cvUploadId: v.id("cvUploads") },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.cvUploadId);
+    if (doc) {
+      if (doc.storageId) {
+        try {
+          await ctx.storage.delete(doc.storageId);
+        } catch (e) {
+          console.warn("[deleteCvUploadRecord] Failed to delete file storage:", e);
+        }
+      }
+      await ctx.db.delete(args.cvUploadId);
+      return { success: true, deletedId: args.cvUploadId };
+    }
+    return { success: false, reason: "not_found" };
+  },
+});
+
+
 
 export const getCvUploadUrl = query({
   args: { cvUploadId: v.string() },

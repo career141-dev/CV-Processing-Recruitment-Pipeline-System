@@ -25,11 +25,104 @@ export const getRecentUploads = query({
 
 
 
-export const getCvUploadsForIT = query({
+export const getBacklogCompositionMetrics = query({
   args: {},
   handler: async (ctx) => {
-    const all = await ctx.db.query("cvUploads").collect();
-    return all.filter((u) => u.assignToJob === "m17abwpzg8ekcqq34e4kw5y6jx8b1p7r");
+    const uploaded = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "uploaded"))
+      .collect();
+
+    const processing = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .collect();
+
+    const needsReview = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "needs_review"))
+      .collect();
+
+    const now = Date.now();
+    const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+
+    let groupA = 0; // Text (PDF, DOCX, DOC, TXT, RTF)
+    let groupB = 0; // Image / Scanned (PNG, JPG, JPEG, WEBP, TIFF)
+    let freshCount = 0; // < 48 hours old
+    let historicalCount = 0; // >= 48 hours old
+
+    for (const item of uploaded) {
+      const ext = (item.fileType || item.fileName || "").toLowerCase();
+      if (ext.includes("png") || ext.includes("jpg") || ext.includes("jpeg") || ext.includes("webp") || ext.includes("tiff") || ext.includes("image")) {
+        groupB++;
+      } else {
+        groupA++;
+      }
+
+      if (now - item._creationTime < fortyEightHoursMs) {
+        freshCount++;
+      } else {
+        historicalCount++;
+      }
+    }
+
+    return {
+      totalUploaded: uploaded.length,
+      totalProcessing: processing.length,
+      totalNeedsReview: needsReview.length,
+      groupA_text: groupA,
+      groupB_scanned: groupB,
+      freshUnder48h: freshCount,
+      historicalOver48h: historicalCount,
+      sampleUploadedIds: uploaded.slice(0, 25).map((u) => ({
+        id: u._id,
+        fileName: u.fileName,
+        fileType: u.fileType,
+        creationTime: new Date(u._creationTime).toISOString(),
+      })),
+    };
+  },
+});
+
+export const resetStuckProcessingToUploaded = mutation({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+    const processing = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(limit);
+
+    let resetCount = 0;
+    for (const item of processing) {
+      if (item.storageId || item.s3Key) {
+        await ctx.db.patch(item._id, {
+          status: "uploaded",
+          processingStartedAt: undefined,
+          errorMessage: undefined,
+        });
+        resetCount++;
+      }
+    }
+    return { resetCount, remainingProcessing: processing.length - resetCount };
+  },
+});
+
+export const getCandidateDetailsForQa = query({
+  args: { candidateId: v.string() },
+  handler: async (ctx, args) => {
+    const validId = ctx.db.normalizeId("candidates", args.candidateId);
+    if (!validId) return null;
+    const cand = await ctx.db.get(validId);
+    if (!cand) return null;
+    return {
+      id: cand._id,
+      fullName: cand.fullName,
+      email: cand.email,
+      phone: cand.phone,
+      skills: cand.skills,
+      jobHistory: cand.jobHistory,
+    };
   },
 });
 
@@ -451,83 +544,45 @@ export const addTestCandidateForDevJob = mutation({
   },
 });
 
-export const getCvSourceBreakdown = query({
+
+
+export const listStuckScheduledTasks = query({
   args: {},
   handler: async (ctx) => {
-    const uploads = await ctx.db.query("cvUploads").collect();
-    const apps = await ctx.db.query("applications").collect();
-
-    const uploadSources: Record<string, number> = {};
-    for (const u of uploads) {
-      const src = u.source || "unknown";
-      uploadSources[src] = (uploadSources[src] || 0) + 1;
-    }
-
-    const appSources: Record<string, number> = {};
-    for (const a of apps) {
-      const src = a.sourceChannel || "unknown";
-      appSources[src] = (appSources[src] || 0) + 1;
-    }
-
-    // Ingestion log inspect
-    const logs = await ctx.db.query("ingestionLog").take(100);
-    const logSources: Record<string, number> = {};
-    for (const l of logs) {
-      const src = (l as any).channelType || (l as any).channel || "unknown";
-      logSources[src] = (logSources[src] || 0) + 1;
-    }
-
-    return {
-      totalUploads: uploads.length,
-      uploadSources,
-      totalApplications: apps.length,
-      appSources,
-      logSourcesSample: logSources,
-    };
+    const scheduled = await ctx.db.system.query("_scheduled_functions").collect();
+    return scheduled.map((job) => ({
+      id: job._id,
+      name: job.name,
+      state: job.state,
+      scheduledTime: job.scheduledTime,
+      completedTime: job.completedTime,
+    }));
   },
 });
 
-export const lookupCandidateDetails = query({
-  args: { name: v.string() },
-  handler: async (ctx, args) => {
-    // Look at most recent 300 candidates first
-    const candidates = await ctx.db.query("candidates").order("desc").take(300);
-    const candidate = candidates.find(c => c.fullName?.toLowerCase().includes(args.name.toLowerCase()));
-    if (!candidate) return null;
+export const cancelStuckScheduledTasks = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const scheduled = await ctx.db.system.query("_scheduled_functions").collect();
+    let canceledCount = 0;
+    const canceledNames: string[] = [];
 
-    const cvUpload = candidate.cvUploadId ? await ctx.db.get(candidate.cvUploadId) : null;
-    const application = await ctx.db.query("applications").withIndex("by_candidateId", (q) => q.eq("candidateId", candidate._id)).first();
+    for (const job of scheduled) {
+      if (job.state.kind === "pending" || job.state.kind === "inProgress") {
+        try {
+          await ctx.scheduler.cancel(job._id);
+          canceledCount++;
+          canceledNames.push(job.name);
+        } catch (err) {
+          console.warn(`[cancelStuckScheduledTasks] Could not cancel task ${job._id}:`, err);
+        }
+      }
+    }
 
     return {
-      candidate: {
-        _id: candidate._id,
-        fullName: candidate.fullName,
-        email: candidate.email,
-        phone: candidate.phone,
-        currentTitle: candidate.currentTitle,
-        sourceChannel: candidate.sourceChannel,
-        _creationTime: candidate._creationTime,
-      },
-      cvUpload: cvUpload ? {
-        _id: cvUpload._id,
-        fileName: cvUpload.fileName,
-        source: cvUpload.source,
-        uploadedBy: cvUpload.uploadedBy,
-        campaignLabel: cvUpload.campaignLabel,
-        rawSender: (cvUpload as any).rawSender,
-        targetInboxEmail: (cvUpload as any).targetInboxEmail,
-        _creationTime: cvUpload._creationTime,
-      } : null,
-      application: application ? {
-        _id: application._id,
-        jobId: application.jobId,
-        currentStage: application.currentStage,
-        sourceChannel: application.sourceChannel,
-        _creationTime: application._creationTime,
-      } : null,
+      success: true,
+      canceledCount,
+      canceledNames,
     };
   },
 });
-
-
-
