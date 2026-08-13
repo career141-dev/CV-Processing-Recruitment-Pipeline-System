@@ -76,10 +76,14 @@ export async function POST(req: NextRequest) {
           latency: "normal",
         };
 
-        // If a Fish Audio reference_id (voice model ID) is supplied via voiceId, use it
-        if (voiceId && !voiceId.startsWith("aura-") && voiceId.length > 10) {
-          fishBody.reference_id = voiceId;
-        }
+        // Use specified Fish Audio voice reference_id or default to a consistent professional female recruiter voice
+        const DEFAULT_FISH_VOICE_ID = "fb52b0c3c8a44e41b234da575d009d4c"; // Sarah (Professional Recruiter)
+        const selectedReferenceId =
+          voiceId && !voiceId.startsWith("aura-") && voiceId !== "default" && voiceId.length >= 20
+            ? voiceId
+            : DEFAULT_FISH_VOICE_ID;
+
+        fishBody.reference_id = selectedReferenceId;
 
         const fishRes = await fetch("https://api.fish.audio/v1/tts", {
           method: "POST",

@@ -36,10 +36,9 @@ function getCleanSpokenFirstName(fullName?: string | null): string {
   return chosen.charAt(0).toUpperCase() + chosen.slice(1).toLowerCase();
 }
 
-// Fish Audio voice presets — use "default" for the system voice, or supply a
-// Fish Audio reference_id (voice model ID) from your Fish Audio dashboard.
+// Fish Audio voice presets with fixed reference_ids to maintain a consistent voice throughout the call
 const VOICE_PRESETS = [
-  { id: "default", name: "Sarah — Default (Fish Audio S2.1 Pro)" },
+  { id: "fb52b0c3c8a44e41b234da575d009d4c", name: "Sarah (Professional Female Recruiter)" },
 ];
 
 export function VoiceTestModal({
@@ -255,7 +254,26 @@ export function VoiceTestModal({
       const source = audioCtx.createMediaStreamSource(micStreamRef.current);
       source.connect(analyser);
 
-      const mediaRecorder = new MediaRecorder(micStreamRef.current, { mimeType: "audio/webm" });
+      // Find supported mimeType for browser MediaRecorder
+      let mimeType = "audio/webm";
+      if (typeof MediaRecorder !== "undefined") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm";
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4";
+        } else if (MediaRecorder.isTypeSupported("audio/ogg")) {
+          mimeType = "audio/ogg";
+        }
+      }
+
+      // Stop previous recorder instance if active
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try { mediaRecorderRef.current.stop(); } catch {}
+      }
+
+      const mediaRecorder = new MediaRecorder(micStreamRef.current, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
@@ -263,7 +281,7 @@ export function VoiceTestModal({
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         if (audioBlob.size < 2000) {
           if (!isAiSpeakingRef.current) startListeningWithVAD();
           return;
@@ -271,7 +289,9 @@ export function VoiceTestModal({
         await processCandidateAudio(audioBlob);
       };
 
-      mediaRecorder.start(200);
+      if (mediaRecorder.state === "inactive") {
+        mediaRecorder.start(200);
+      }
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const SILENCE_THRESHOLD_MS = 600; // Snappy 600ms natural human pause
