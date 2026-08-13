@@ -20,8 +20,8 @@ export const healNextUnparsedCandidate = internalAction({
     console.log(`[Healer 24/7] Claimed record ${target.cvUploadId} (${target.fileName}) for single-attempt extraction sweep...`);
 
     try {
-      // Process full AI extraction using processCvExtraction pipeline
-      await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
+      // Dispatch AI extraction asynchronously via scheduler to prevent worker timeouts
+      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
         cvUploadId: target.cvUploadId as any,
         storageId: target.storageId,
         s3Key: target.s3Key || undefined,
@@ -31,18 +31,11 @@ export const healNextUnparsedCandidate = internalAction({
         uploadedBy: target.uploadedBy,
       });
 
-      await ctx.runMutation(internal.cvs.healer.saveHealedCandidate, {
-        cvUploadId: target.cvUploadId as any,
-        candidateId: target.candidateId as any,
-        extracted: true,
-        extractionModel: "deepseek/deepseek-v4-flash",
-      });
-
-      console.log(`[Healer 24/7] Successfully extracted & healed record ${target.cvUploadId}`);
+      console.log(`[Healer 24/7] Dispatched extraction for record ${target.cvUploadId}`);
       return { healed: true, cvUploadId: target.cvUploadId };
     } catch (err: any) {
       const errorMsg = err?.message || String(err);
-      console.warn(`[Healer 24/7] Extraction attempt failed for ${target.cvUploadId} (${errorMsg}). Moving to next candidate...`);
+      console.warn(`[Healer 24/7] Extraction dispatch failed for ${target.cvUploadId} (${errorMsg}). Moving to next candidate...`);
       
       // Record single-attempt failure and leave record intact so healer moves to next file
       await ctx.runMutation(internal.cvs.healer.releaseFailedClaim, {

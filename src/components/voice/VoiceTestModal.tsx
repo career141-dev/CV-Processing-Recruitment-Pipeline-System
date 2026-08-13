@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useMutation, useAction, useQuery } from "convex/react";
+import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant } from "livekit-client";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 
@@ -55,6 +56,7 @@ export function VoiceTestModal({
   jobDescription,
 }: VoiceTestModalProps) {
   const [callState, setCallState] = useState<"idle" | "connecting" | "speaking" | "listening" | "processing" | "ended">("idle");
+  const [engineMode, setEngineMode] = useState<"livekit" | "browser_vad">("livekit");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [callDuration, setCallDuration] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -77,6 +79,8 @@ export function VoiceTestModal({
     noticePeriodText?: string;
     customQuestionAnswers?: Array<{ question: string; answer: string }>;
   }>({});
+
+  const roomRef = useRef<Room | null>(null);
 
   const recordSession = useMutation(api.aiCalls.voiceCalls.recordVoiceCallSession);
   const generateVoiceReply = useAction(api.aiCalls.voiceEngine.generateVoicePrescreeningReply);
@@ -142,6 +146,12 @@ export function VoiceTestModal({
   }, [callState]);
 
   const cleanupAudio = () => {
+    if (roomRef.current) {
+      try {
+        roomRef.current.disconnect();
+      } catch {}
+      roomRef.current = null;
+    }
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -454,7 +464,60 @@ export function VoiceTestModal({
     setExtractedData({});
 
     try {
+      // 1. Request microphone permission
       await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // 2. Attempt real-time LiveKit WebRTC connection
+      try {
+        const tokenRes = await fetch("/api/voice/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            roomName: `screening-${candidateId}-${Date.now()}`,
+            participantName: `recruiter-${cleanFirstName}`,
+            metadata: {
+              candidateName: cleanFirstName,
+              jobTitle,
+              jobDescription: jobDescription || job?.jobDescription,
+              customScript: customScript.trim() || undefined,
+              customQuestions: jobCustomQuestions,
+            },
+          }),
+        });
+
+        if (tokenRes.ok) {
+          const { token, url } = await tokenRes.json();
+          const room = new Room({
+            adaptiveStream: true,
+            dynacast: true,
+          });
+
+          roomRef.current = room;
+
+          room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+            if (track.kind === Track.Kind.Audio) {
+              const el = track.attach();
+              document.body.appendChild(el);
+              setCallState("speaking");
+            }
+          });
+
+          room.on(RoomEvent.Disconnected, () => {
+            handleEndCall();
+          });
+
+          await room.connect(url, token);
+          await room.localParticipant.setMicrophoneEnabled(true);
+          setCallState("listening");
+          setEngineMode("livekit");
+          return;
+        }
+      } catch (lkErr: any) {
+        console.warn("[Voice Modal] LiveKit room connect unavailable, switching to browser audio engine:", lkErr?.message);
+      }
+
+      // 3. Fallback to Browser VAD Engine
+      setEngineMode("browser_vad");
       setCallState("speaking");
 
       const greeting = `Hi ${cleanFirstName}, this is Sarah from Career One-Four-One calling regarding your application for the ${jobTitle} position. Are you interested in this role?`;
@@ -517,8 +580,8 @@ export function VoiceTestModal({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold text-slate-100 text-base">Senior AI Recruiter Prescreening</h3>
-                <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  Career141 Voice
+                <span className={`px-2 py-0.5 text-[11px] font-medium rounded-full border ${engineMode === 'livekit' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                  {engineMode === "livekit" ? "⚡ LiveKit WebRTC" : "Career141 Voice"}
                 </span>
               </div>
               <p className="text-xs text-slate-400">

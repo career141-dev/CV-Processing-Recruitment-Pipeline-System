@@ -1,0 +1,26 @@
+{
+  "name": "career141-voice-agent",
+  "version": "1.0.0",
+  "description": "LiveKit Voice Agent Worker for Career141 Senior Recruiter Prescreening",
+  "main": "dist/agent.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/agent.js start",
+    "dev": "tsx src/agent.ts dev"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.6.2",
+    "@livekit/agents-plugin-cartesia": "^1.6.2",
+    "@livekit/agents-plugin-deepgram": "^1.6.2",
+    "@livekit/agents-plugin-openai": "^1.6.2",
+    "@livekit/agents-plugin-silero": "^1.6.2",
+    "dotenv": "^17.4.2",
+    "livekit-server-sdk": "^2.16.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

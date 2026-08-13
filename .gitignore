@@ -1,24 +1,28 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
-/.pnp
+node_modules/
+**/node_modules/
+agent/node_modules/
+**/agent/node_modules/
+dist/
+**/dist/
+agent/dist/
+.pnp
 .pnp.*
 .yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
 
 # testing
-/coverage
+coverage/
+**/coverage/
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
+# next.js & turbopack
+.next/
+**/.next/
+.turbo/
+out/
+build/
+.convex/
 
 # misc
 .DS_Store

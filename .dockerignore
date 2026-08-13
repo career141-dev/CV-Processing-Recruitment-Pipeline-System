@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.turbo
+agent
+backups
+backup_unzipped
+_storage
+_storage_temp
+*.zip
+*.log
+.env.local
+.env.localdev
+.agents
+.vscode

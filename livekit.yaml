@@ -1,0 +1,16 @@
+# LiveKit Server Configuration (Self-Hosted for Career141)
+port: 7880
+bind_addresses:
+  - ""
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50200
+  use_external_ip: true
+
+logging:
+  level: info
+
+keys:
+  career141_livekit_key: career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2
