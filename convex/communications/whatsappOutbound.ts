@@ -410,8 +410,8 @@ export const checkAndRecordFollowUpReply = internalMutation({
       return { isFollowUpReply: false, candidateId: candidate._id, jobId: activeApp.jobId };
     }
 
-    // Inbound Deduplication: check if identical message was received from this candidate in the last 5 minutes (300s) to absorb Webhook retries
-    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    // Inbound Deduplication: check if identical message was received from this candidate in the last 30 seconds to absorb Webhook retries
+    const thirtySecAgo = Date.now() - 30 * 1000;
     const recentInbound = await ctx.db
       .query("communications")
       .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", candidate._id))
@@ -419,8 +419,8 @@ export const checkAndRecordFollowUpReply = internalMutation({
       .filter((q: any) => q.and(q.eq(q.field("direction"), "inbound"), q.eq(q.field("channel"), "whatsapp")))
       .first();
 
-    if (recentInbound && Number(recentInbound.sentAt) > fiveMinAgo && recentInbound.body === args.textBody) {
-      console.log(`[checkAndRecordFollowUpReply] DEDUPLICATION: Skipping duplicate retried inbound message "${args.textBody}" from candidate ${candidate._id} within 5 minutes.`);
+    if (recentInbound && Number(recentInbound.sentAt) > thirtySecAgo && recentInbound.body === args.textBody) {
+      console.log(`[checkAndRecordFollowUpReply] DEDUPLICATION: Skipping duplicate retried inbound message "${args.textBody}" from candidate ${candidate._id} within 30 seconds.`);
       return { isFollowUpReply: true, candidateId: candidate._id, jobId: activeApp.jobId };
     }
 
