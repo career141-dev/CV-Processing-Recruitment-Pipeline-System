@@ -1511,3 +1511,77 @@ export const updateCandidateRoleCacheBatch = mutation({
     }
   },
 });
+
+export const purgeCandidateByPhone = mutation({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    const cleanPhone = args.phone.replace(/[^0-9]/g, "");
+    let deletedCandidates = 0;
+    let deletedApps = 0;
+    let deletedComms = 0;
+    let deletedUploads = 0;
+
+    // 1. Delete whatsappSessions for this phone
+    const sessions = await ctx.db
+      .query("whatsappSessions")
+      .withIndex("by_phone", (q: any) => q.eq("phone", cleanPhone))
+      .collect();
+    for (const s of sessions) {
+      await ctx.db.delete(s._id);
+    }
+
+    // 2. Find candidate by phone clean / raw
+    const candidates1 = await ctx.db
+      .query("candidates")
+      .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", cleanPhone))
+      .collect();
+    const candidates2 = await ctx.db
+      .query("candidates")
+      .withIndex("by_phone", (q: any) => q.eq("phone", "+" + cleanPhone))
+      .collect();
+    
+    const candidateMap = new Map();
+    [...candidates1, ...candidates2].forEach(c => candidateMap.set(c._id, c));
+
+    for (const candidate of candidateMap.values()) {
+      // Delete applications
+      const apps = await ctx.db
+        .query("applications")
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+        .collect();
+      for (const app of apps) {
+        await ctx.db.delete(app._id);
+        deletedApps++;
+      }
+
+      // Delete communications
+      const comms = await ctx.db
+        .query("communications")
+        .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", candidate._id))
+        .collect();
+      for (const comm of comms) {
+        await ctx.db.delete(comm._id);
+        deletedComms++;
+      }
+
+      if (candidate.cvUploadId) {
+        await ctx.db.delete(candidate.cvUploadId).catch(() => null);
+        deletedUploads++;
+      }
+
+      // Delete candidate
+      await ctx.db.delete(candidate._id);
+      deletedCandidates++;
+    }
+
+    return {
+      success: true,
+      phone: cleanPhone,
+      deletedCandidates,
+      deletedApps,
+      deletedComms,
+      deletedUploads,
+      deletedSessions: sessions.length,
+    };
+  },
+});

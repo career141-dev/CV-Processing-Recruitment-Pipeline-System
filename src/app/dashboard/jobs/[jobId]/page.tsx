@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, Plus, Mail, MessageSquare, DollarSign
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, DollarSign
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -1261,10 +1261,24 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
   const [customFields, setCustomFields] = useState<{key: string, value: string}[]>([]);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
 
   const logManualCall = useMutation(api.applications.applications.logManualCall);
+  const moveToFollowUp = useMutation(api.applications.applications.moveToFollowUp);
   const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const saveUpload = useMutation(api.cvs.cvUploads.saveUpload);
+
+  const handleMoveToFollowUp = async () => {
+    setIsMoving(true);
+    try {
+      await moveToFollowUp({ applicationId: u.applicationId });
+      toast.success(`${u.candidateName || "Candidate"} moved back to Follow-up with a fresh 7-day window!`);
+    } catch (err: any) {
+      showError(err, { title: "Failed to move candidate to Follow-up" });
+    } finally {
+      setIsMoving(false);
+    }
+  };
 
   const handleSaveLog = async () => {
     setIsSaving(true);
@@ -1389,6 +1403,16 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
         </td>
         <td className="p-4 text-right">
           <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+            {/* Move back to Follow-up Button */}
+            <button 
+              onClick={handleMoveToFollowUp}
+              disabled={isMoving}
+              className="p-2 h-8 w-8 inline-flex items-center justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-300/40 dark:border-blue-700/50 rounded-lg transition-all shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+              title="Move back to Follow-up (Reset 7-Day Window)"
+            >
+              {isMoving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            </button>
+
             {/* Log Call Icon Button */}
             <button 
               onClick={() => setIsLoggingCall(true)}

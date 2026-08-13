@@ -47,9 +47,10 @@ export const sendGraphEmail = internalAction({
       systemSettings?.testModeEnabled === true;
 
     const testRecipient = 
+      systemSettings?.testEmailAddress ||
       process.env.EMAIL_TEST_RECIPIENT || 
-      process.env.TEST_EMAIL_ADDRESS || 
-      systemSettings?.testEmailAddress;
+      process.env.TEST_EMAIL_ADDRESS ||
+      "sanjaysanjeev2000@gmail.com";
 
     let targetAddress = args.toAddress;
     let logNote = "";

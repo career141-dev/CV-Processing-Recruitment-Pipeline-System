@@ -2,7 +2,6 @@
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
-import { getOpenAI, getModelForTask } from "../lib/llm";
 import { sendMetaFreeText } from "./metaDirectSender";
 
 export const handlePreApplicationChat = internalAction({
@@ -16,35 +15,43 @@ export const handlePreApplicationChat = internalAction({
       const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
       if (!job) return;
 
-      const openai = getOpenAI("jd_matching"); // Use a fast chat model
-      const model = getModelForTask("jd_matching") || "deepseek/deepseek-v4-flash";
+      let replyMessage = "";
 
-      const systemPrompt = `You are an intelligent recruitment assistant for Career141. 
+      try {
+        const { executeLLMWithNvidiaFallback } = await import("../lib/llm");
+        const systemPrompt = `You are an intelligent recruitment assistant for Career141. 
 The candidate is interested in the "${job.title}" position. 
-Job Description: ${job.jobDescription.substring(0, 2000)}
+Job Description: ${job.jobDescription ? job.jobDescription.substring(0, 2000) : "Not specified"}
 Salary: ${job.salaryMin ? job.salaryMin + " to " + job.salaryMax + " " + (job.salaryCurrency || "") : "Not specified"}
 Location: ${job.location || "Not specified"}
 
-The candidate has NOT uploaded their CV yet. They just asked a question.
+The candidate has NOT uploaded their CV yet. They just asked: "${args.textBody}".
 Answer their question politely and accurately based ONLY on the provided job details. Keep it very concise (1-2 short sentences max). Do not hallucinate details.
-ALWAYS end your message by reminding them to "Please upload your CV as a PDF to apply!"`;
+ALWAYS end your message by reminding them: "Please upload your CV as a PDF to apply!"`;
 
-      const completion = await openai.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: args.textBody }
-        ],
-        temperature: 0.5,
-      });
+        const llmResult = await executeLLMWithNvidiaFallback(ctx, "email_auto_reply", {
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: args.textBody }
+          ],
+          temperature: 0.3,
+          max_tokens: 300,
+        });
 
-      const replyMessage = completion.choices[0]?.message?.content?.trim();
-      if (!replyMessage) return;
+        replyMessage = llmResult?.content?.trim() || "";
+      } catch (llmErr: any) {
+        console.warn("[PreApp Chat] LLM call failed, using intelligent template response:", llmErr?.message || llmErr);
+        const locInfo = job.location ? `This role is based in ${job.location}.` : "";
+        replyMessage = `Thank you for your inquiry regarding the ${job.title} position! ${locInfo} Please upload your latest CV to continue your application.`;
+      }
+
+      if (!replyMessage) {
+        const locInfo = job.location ? `This role is based in ${job.location}.` : "";
+        replyMessage = `Thank you for your inquiry regarding the ${job.title} position! ${locInfo} Please upload your latest CV to continue your application.`;
+      }
 
       console.log(`[PreApp Chat] Replying to +${args.phone}: ${replyMessage.substring(0, 100)}...`);
 
-      const apiToken = process.env.WHATCHIMP_API_TOKEN;
-      
       const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
       let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
       if (outboundNumber) {

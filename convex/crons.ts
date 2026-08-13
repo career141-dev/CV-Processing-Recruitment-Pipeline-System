@@ -26,7 +26,18 @@ export const evaluateFollowUpStage = internalMutation({
 
     const followUpApps = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .take(200);
+      .order("desc")
+      .take(300);
+
+    const taShortlistApps = await ctx.db.query("applications")
+      .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
+      .order("desc")
+      .take(500);
+
+    const appsToEvaluate = [
+      ...followUpApps,
+      ...taShortlistApps.filter((a: any) => a.nextFollowUpScheduledAt !== undefined)
+    ];
 
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -50,7 +61,7 @@ export const evaluateFollowUpStage = internalMutation({
 
     const jobCache = new Map<string, any>();
 
-    for (const app of followUpApps) {
+    for (const app of appsToEvaluate) {
       // 1. Skip if application is flagged for TA review (automated nudging paused)
       if (app.flaggedForTaReview === true) {
         console.log(`[Follow-Up Cron] Application ${app._id} is flagged for TA review (${app.taReviewReason}). Skipping automated nudge.`);
@@ -205,6 +216,11 @@ export const evaluateFollowUpStage = internalMutation({
 
       // 2. Check if a dynamic message is scheduled and it's time to send
       if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt) {
+        // ANTI-DUPLICATE LOCK: Clear nextFollowUpScheduledAt immediately so that
+        // any concurrent cron run sees undefined and skips this app.
+        // This is the first DB write in this block — it acts as a mutex.
+        await ctx.db.patch(app._id, { nextFollowUpScheduledAt: undefined });
+
         // If we were waiting for Candidate's promised ETA:
         if (app.waitingForCandidateEta === true) {
           await ctx.db.patch(app._id, {
@@ -218,7 +234,7 @@ export const evaluateFollowUpStage = internalMutation({
           const currentAttempts = app.followUpAttemptCount || 0;
           if (job.maxFollowUpAttempts && currentAttempts >= job.maxFollowUpAttempts) {
              console.log(`[Dynamic Follow-up] Max attempts reached for ${candidate.fullName}. Skipping message.`);
-             await ctx.db.patch(app._id, { nextFollowUpScheduledAt: undefined });
+             // nextFollowUpScheduledAt already cleared above
              continue; 
           }
 
@@ -602,7 +618,7 @@ export const evaluateFollowUpStage = internalMutation({
 
 crons.interval(
   "evaluate-follow-up",
-  { minutes: 15 },
+  { minutes: 1 },
   internal.crons.evaluateFollowUpStage
 );
 

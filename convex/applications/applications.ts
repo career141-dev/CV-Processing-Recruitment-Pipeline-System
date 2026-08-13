@@ -1,4 +1,4 @@
-import { query, mutation } from "../_generated/server";
+import { query, mutation, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
@@ -997,6 +997,104 @@ export const rollbackFollowUpState = mutation({
     }
   }
 });
+
+export const moveToFollowUp = mutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) throw new Error("Application not found");
+
+    const fromStage = app.currentStage;
+    const now = Date.now();
+
+    await ctx.db.patch(args.applicationId, {
+      currentStage: "follow_up",
+      followUpEnteredAt: now,
+      lastStageChangedAt: now,
+      followUpAttemptCount: 0,
+      nextFollowUpScheduledAt: undefined,
+      nextFollowUpMessage: undefined,
+      waitingForCandidateEta: undefined,
+      candidateEtaMs: undefined,
+      candidateEtaText: undefined,
+      flaggedForTaReview: false,
+      taReviewReason: undefined,
+      stageHistory: [
+        ...(app.stageHistory ?? []),
+        {
+          stage: "follow_up",
+          enteredAt: new Date().toISOString(),
+          changedBy: user._id,
+          note: `Moved back to Follow-up stage from ${fromStage} with fresh 7-day window.`,
+        },
+      ],
+    });
+
+    await adjustJobStageStat(ctx, app.jobId, fromStage, "follow_up");
+    await syncCandidateOverallStatus(ctx, app.candidateId);
+
+    await ctx.db.insert("pipelineEvents", {
+      applicationId: args.applicationId,
+      candidateId: app.candidateId,
+      jobId: app.jobId,
+      eventType: "stage_changed",
+      fromStage,
+      toStage: "follow_up",
+      actorType: "user",
+      actorId: user._id,
+      notes: "Moved back to Follow-up stage with fresh 7-day window",
+      createdAt: now,
+    });
+
+    console.log(`[Pipeline] Application ${args.applicationId} moved back to Follow-up by user ${user._id}.`);
+    return { success: true };
+  },
+});
+
+export const resetAllUnresponsiveForJob = internalMutation({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_job_stage", q => q.eq("jobId", args.jobId).eq("currentStage", "unresponsive"))
+      .collect();
+
+    const now = Date.now();
+    for (const app of apps) {
+      await ctx.db.patch(app._id, {
+        currentStage: "follow_up",
+        followUpEnteredAt: now,
+        lastStageChangedAt: now,
+        followUpAttemptCount: 0,
+        nextFollowUpScheduledAt: undefined,
+        nextFollowUpMessage: undefined,
+        waitingForCandidateEta: undefined,
+        candidateEtaMs: undefined,
+        candidateEtaText: undefined,
+        flaggedForTaReview: false,
+        taReviewReason: undefined,
+        stageHistory: [
+          ...(app.stageHistory ?? []),
+          {
+            stage: "follow_up",
+            enteredAt: new Date().toISOString(),
+            changedBy: "system",
+            note: "Reset to Follow-up stage with fresh 7-day window.",
+          },
+        ],
+      });
+      await adjustJobStageStat(ctx, args.jobId, "unresponsive", "follow_up");
+      await syncCandidateOverallStatus(ctx, app.candidateId);
+      console.log(`[Follow-Up] Reset application ${app._id} to Follow-up stage.`);
+    }
+    return { resetCount: apps.length };
+  },
+});
+
+
 
 
 

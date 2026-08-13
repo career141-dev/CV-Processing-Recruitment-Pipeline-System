@@ -24,7 +24,7 @@ http.route({
   }),
 });
 
-// Meta / WhatChimp Inbound POST Events
+// Meta / WhatChimp Inbound POST Events (supports both /api/whatsapp-whatchimp and /whatsapp-whatchimp)
 http.route({
   path: "/api/whatsapp",
   method: "POST",
@@ -32,7 +32,19 @@ http.route({
 });
 
 http.route({
+  path: "/whatsapp",
+  method: "POST",
+  handler: handleWhatChimpWebhook,
+});
+
+http.route({
   path: "/api/whatsapp-whatchimp",
+  method: "POST",
+  handler: handleWhatChimpWebhook,
+});
+
+http.route({
+  path: "/whatsapp-whatchimp",
   method: "POST",
   handler: handleWhatChimpWebhook,
 });

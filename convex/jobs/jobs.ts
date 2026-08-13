@@ -1086,3 +1086,201 @@ export const setMuteDefaultWhatsappReply = mutation({
     return { success: true, jobId: args.jobId, muteDefaultWhatsappReply: args.mute };
   },
 });
+
+export const setJobCustomQuestions = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    customFollowUpQuestions: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      customFollowUpQuestions: args.customFollowUpQuestions,
+    });
+    return { success: true, jobId: args.jobId, customFollowUpQuestions: args.customFollowUpQuestions };
+  },
+});
+
+export const createOrUpdateCreativeJobs = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let user = await ctx.db.query("users").first();
+    if (!user) {
+      const fallbackUserId = await ctx.db.insert("users", {
+        fullName: "Sudaraka De Alwis",
+        email: "sudaraka@career141.com",
+        tokenIdentifier: "system|admin",
+        role: "admin",
+        createdAt: new Date().toISOString(),
+        isActive: true,
+      });
+      user = await ctx.db.get(fallbackUserId);
+    }
+    const primaryRecruiterId = user!._id;
+
+    // --- 1. Video Editor Job ---
+    const videoEditorTitle = "Video Editor";
+    const videoEditorKeyword = "VIDEO EDITOR";
+    const videoEditorDesc = `Career141 is looking for a creative, detail-oriented and digitally minded Video Editor to join our team and help shape how our brand communicates through video.
+
+Key Responsibilities:
+• Video Editing & Post-Production: Edit raw footage into high-quality short-form (Reels, TikToks, Shorts) and long-form video content.
+• Edit interviews, podcasts, event highlights, promotional videos, recruitment content, and corporate videos.
+• Colour correction, colour grading, visual enhancement, audio cleanup, subtitles, and motion graphics.
+• Technical Skills: Adobe Premiere Pro, After Effects, DaVinci Resolve, CapCut, Adobe Audition.`;
+
+    let existingVideoJob = await ctx.db
+      .query("jobs")
+      .withIndex("by_keyword", (q) => q.eq("keyword", videoEditorKeyword))
+      .first();
+
+    const videoJobData: any = {
+      title: videoEditorTitle,
+      clientName: "Career141",
+      clientIndustry: "Creative & Digital Media",
+      location: "Colombo, Sri Lanka",
+      experienceMinYears: 1,
+      seniorityLevel: "mid_level",
+      requiredSkills: ["Premiere Pro", "After Effects", "DaVinci Resolve", "CapCut", "Video Editing", "Social Media Video", "Motion Graphics"],
+      recruitmentType: "job_posting",
+      jobDescription: videoEditorDesc,
+      keyword: videoEditorKeyword,
+      status: "active",
+      isConfidential: false,
+      primaryRecruiterId,
+      scoreWeightSkills: 35,
+      scoreWeightExperience: 15,
+      scoreWeightJobTitle: 30,
+      scoreWeightIndustry: 15,
+      scoreWeightLocation: 5,
+      minMatchScoreToShow: 60,
+      reverseMatchOnPublish: true,
+      agent3Enabled: true,
+      enableWhatsAppFollowUp: true,
+      enableEmailFollowUp: true,
+      maxFollowUpAttempts: 3,
+      maxFollowUpDays: 7,
+      agent3AfterDay7: "mark_unresponsive",
+      agent5Enabled: false,
+      agent5Trigger: "manual_only",
+      agent5CallScript: "default",
+      agent5NoAnswerAction: "notify_ta",
+      agent5HideCompany: false,
+      directorReviewEnabled: false,
+      clientReviewEnabled: false,
+      esaCheckEnabled: false,
+      headhuntingEnabled: false,
+      rejectionLoopAction: "restart_from_new_cvs",
+      slaNoNewCvsDays: 5,
+      slaTaReviewDays: 2,
+      slaAiCallDays: 1,
+      slaSecondShortlistDays: 2,
+      slaDirectorReviewDays: 3,
+      slaEsaDays: 3,
+      slaClientReviewDays: 5,
+      slaInterviewDays: 3,
+      slaOfferDays: 2,
+      customFollowUpQuestions: ["Portfolio Link / Showreel (Google Drive, YouTube, Vimeo, Behance)"],
+      followUpInitialTemplate: "Hi {candidate_name},\n\nThank you for applying for the {job_title} role at {company_name}!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply directly with your details.\n\nBest regards,\nTalent Acquisition Team",
+      followUpSampleTemplate: "Hi {candidate_name}, thanks for getting back to us. We just need your {missing_fields} to move forward. Please share them at your earliest convenience.",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    let videoJobId;
+    if (existingVideoJob) {
+      await ctx.db.patch(existingVideoJob._id, videoJobData);
+      videoJobId = existingVideoJob._id;
+    } else {
+      videoJobId = await ctx.db.insert("jobs", videoJobData);
+    }
+
+    // --- 2. Graphic Designer Job ---
+    const graphicDesignerTitle = "Graphic Designer";
+    const graphicDesignerKeyword = "GRAPHIC DESIGNER";
+    const graphicDesignerDesc = `Career141 is looking for a creative, visually driven and detail-oriented Graphic Designer to join our team and help shape the visual identity of our brand across digital, social and corporate platforms.
+
+Key Responsibilities:
+• Social Media Design: Design visually engaging content for Instagram, LinkedIn, Facebook, carousels, recruitment ads, story designs, and event creatives.
+• Recruitment & Employer Branding: Design creative campaigns, job vacancy graphics, and workplace insight visuals.
+• Events & Campaigns: Digital banners, stage-screen graphics, agendas, sponsor and partner creatives.
+• Marketing Collateral: Presentations, proposal decks, brochures, and brand assets.
+• Technical Skills: Adobe Photoshop, Illustrator, InDesign, Figma, Canva.`;
+
+    let existingGraphicJob = await ctx.db
+      .query("jobs")
+      .withIndex("by_keyword", (q) => q.eq("keyword", graphicDesignerKeyword))
+      .first();
+
+    const graphicJobData: any = {
+      title: graphicDesignerTitle,
+      clientName: "Career141",
+      clientIndustry: "Design & Branding",
+      location: "Colombo, Sri Lanka",
+      experienceMinYears: 1,
+      seniorityLevel: "mid_level",
+      requiredSkills: ["Photoshop", "Illustrator", "Figma", "Canva", "InDesign", "Graphic Design", "Social Media Design", "Branding"],
+      recruitmentType: "job_posting",
+      jobDescription: graphicDesignerDesc,
+      keyword: graphicDesignerKeyword,
+      status: "active",
+      isConfidential: false,
+      primaryRecruiterId,
+      scoreWeightSkills: 35,
+      scoreWeightExperience: 15,
+      scoreWeightJobTitle: 30,
+      scoreWeightIndustry: 15,
+      scoreWeightLocation: 5,
+      minMatchScoreToShow: 60,
+      reverseMatchOnPublish: true,
+      agent3Enabled: true,
+      enableWhatsAppFollowUp: true,
+      enableEmailFollowUp: true,
+      maxFollowUpAttempts: 3,
+      maxFollowUpDays: 7,
+      agent3AfterDay7: "mark_unresponsive",
+      agent5Enabled: false,
+      agent5Trigger: "manual_only",
+      agent5CallScript: "default",
+      agent5NoAnswerAction: "notify_ta",
+      agent5HideCompany: false,
+      directorReviewEnabled: false,
+      clientReviewEnabled: false,
+      esaCheckEnabled: false,
+      headhuntingEnabled: false,
+      rejectionLoopAction: "restart_from_new_cvs",
+      slaNoNewCvsDays: 5,
+      slaTaReviewDays: 2,
+      slaAiCallDays: 1,
+      slaSecondShortlistDays: 2,
+      slaDirectorReviewDays: 3,
+      slaEsaDays: 3,
+      slaClientReviewDays: 5,
+      slaInterviewDays: 3,
+      slaOfferDays: 2,
+      customFollowUpQuestions: ["Portfolio Link / Work Samples (Behance, Dribbble, Google Drive, Website)"],
+      followUpInitialTemplate: "Hi {candidate_name},\n\nThank you for applying for the {job_title} role at {company_name}!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply directly with your details.\n\nBest regards,\nTalent Acquisition Team",
+      followUpSampleTemplate: "Hi {candidate_name}, thanks for getting back to us. We just need your {missing_fields} to move forward. Please share them at your earliest convenience.",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    let graphicJobId;
+    if (existingGraphicJob) {
+      await ctx.db.patch(existingGraphicJob._id, graphicJobData);
+      graphicJobId = existingGraphicJob._id;
+    } else {
+      graphicJobId = await ctx.db.insert("jobs", graphicJobData);
+    }
+
+    return {
+      videoJobId,
+      graphicJobId,
+      videoEditorKeyword,
+      graphicDesignerKeyword,
+    };
+  },
+});
+
+
+
+
