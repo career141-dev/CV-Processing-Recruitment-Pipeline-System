@@ -311,12 +311,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
-      const bytes = new Uint8Array(fileBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64Data = btoa(binary);
+      const base64Data = Buffer.from(fileBuffer).toString("base64");
 
       const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
         fileName: fileName ?? "cv.pdf",
@@ -354,6 +349,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       }
 
       const ingestionResult = await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
+        jobId: resolvedJobId ? (resolvedJobId as any) : undefined,
         fileName: fileName ?? "cv.pdf",
         fileSizeBytes: fileBuffer.byteLength,
         fileType: mimeType || "application/pdf",
