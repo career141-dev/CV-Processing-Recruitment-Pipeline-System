@@ -77,22 +77,21 @@ INITIAL OUTREACH TEMPLATE:
 SAMPLE FOLLOW-UP TEMPLATE:
 "${(job.followUpSampleTemplate || 'Just checking in on the missing details. Please provide them at your earliest convenience.').substring(0, 300)}"
 
-Your job is to analyze the candidate's chat message and output a JSON object.
+Your job is to analyze the candidate's LATEST/CURRENT message and output a JSON object.
 Rules:
-1. Extract the missing numeric/text details if provided in the candidate's message.
-2. Determine if the candidate provided ALL remaining missing details in this message, PARTIAL details, an ETA (e.g., in an hour, tonight, tomorrow, next week), a question, or declined.
-3. If an ETA is promised, estimate 'candidateEtaMinutes' (numeric minutes from now until candidate promised to reply).
-4. CRITICAL RULE FOR nextActionMessage:
-   - Calculate which fields are STILL missing AFTER accounting for the details provided in THIS candidate message.
-   - If the candidate provided a field in THIS message (e.g., they gave Expected Salary), DO NOT ask for that field again!
-   - If ALL missing details are now satisfied, set intent to 'provided_all' and nextActionMessage to null.
-   - If 'provided_partial', ask ONLY for the REMAINING fields that are STILL missing.
-   - If 'interested_no_eta', explicitly ask them "by what time could you provide these details?".
-   - If 'provided_eta', write a polite acknowledgement confirming we will follow up after their promised time (e.g. "No problem! We'll follow up with you after tonight 😊"). Do NOT ask for the missing fields yet.
-   - If 'asked_question', answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
-   - If 'provided_all' or 'not_interested', set nextActionMessage to null.
-5. 'nextActionTimeHours': Set to candidateEtaMinutes/60 if ETA given. Set to 24 for the default 24-hour fallback nudge if 'provided_partial', 'asked_question', or 'interested_no_eta'. Set to null if 'provided_all' or 'not_interested'.
-6. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
+1. Extract missing numeric/text details from the CURRENT message if provided (currentSalary, expectedSalary, noticePeriodDays, noticePeriod, customAnswers).
+2. Intent Classification:
+   - 'provided_all': Candidate provided ALL remaining missing details in this message. Set nextActionMessage to null.
+   - 'provided_partial': Candidate provided some of the missing details in this message. Acknowledge what was received and ask ONLY for the remaining missing fields.
+   - 'promised_eta': Use this ONLY IF the candidate's CURRENT message explicitly specifies a time/duration (e.g. "in 10 minutes", "tonight", "tomorrow at 3 PM", "in 2 hours"). Estimate 'candidateEtaMinutes' and write a polite acknowledgement confirming we will follow up after that time (e.g. "No problem! We'll follow up with you after tonight 😊").
+   - 'interested_no_eta': Candidate expresses willingness or interest to send details (e.g. "Sure, I will send it", "I'm interested", "will share soon", "will do") WITHOUT specifying an exact time in their current message. Set candidateEtaMinutes: null, nextActionTimeHours: 24, and set nextActionMessage to: "Great! Could you please let us know by what time you will be able to share these details with us?". DO NOT copy or carry over any past ETA from conversation history!
+   - 'asked_question': Candidate asked a question (e.g. company, salary, location, tech stack). Answer their question logically using job context while pivoting back to ask ONLY for the remaining missing details.
+   - 'not_interested': Candidate declined or is not interested. Set nextActionMessage to null.
+3. 'nextActionTimeHours':
+   - If 'promised_eta': A pure decimal number representing hours (e.g. 0.033 for 2 minutes, 0.083 for 5 minutes, 0.167 for 10 minutes, 1.0 for 1 hour, 24.0 for 24 hours). NEVER output math formulas or division slashes like "2.0 / 60"; output only a single valid JSON decimal number.
+   - If 'interested_no_eta', 'provided_partial', or 'asked_question': Set to 24.
+   - If 'provided_all' or 'not_interested': Set to null.
+4. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
 
 Return ONLY a valid JSON object matching this schema. Do not add markdown formatting or backticks.
 Schema:
@@ -140,7 +139,13 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
       const responseText = completion?.choices[0]?.message?.content?.trim() || "";
       console.log(`[Inbound Extraction] Raw DeepSeek response: "${responseText}"`);
 
-      const cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+      let cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+      // Sanitize un-evaluated division expressions like ": 2.0 / 60"
+      cleanJson = cleanJson.replace(/:\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, (_, num, denom) => {
+        const val = parseFloat(num) / parseFloat(denom);
+        return `: ${val}`;
+      });
+
       const extracted = JSON.parse(cleanJson);
 
       // Check 72-hour ETA Ceiling Safeguard
@@ -231,8 +236,9 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
       const hasUpdates = Object.keys(updates).length > 0 || extracted.cvReceived === true;
       const isQuestion = extracted.intent === "asked_question" && typeof extracted.nextActionMessage === "string" && extracted.nextActionMessage.trim() !== "";
+      const isEta = (extracted.intent === "promised_eta" || extracted.intent === "provided_eta" || extracted.intent === "interested_no_eta") && typeof extracted.nextActionMessage === "string" && extracted.nextActionMessage.trim() !== "";
 
-      if (hasUpdates || isQuestion) {
+      if (hasUpdates || isQuestion || isEta) {
         if (hasUpdates) {
           console.log(`[Inbound Extraction] Extracted updates for candidate ${args.candidateId}:`, updates);
           await ctx.runMutation(api.candidates.candidates.updateCandidateDetails, {
@@ -287,7 +293,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (isCompleted) {
           replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. Your profile is now 100% complete and has been advanced to Second Shortlist!`;
-        } else if (extracted.intent === "provided_eta") {
+        } else if (extracted.intent === "promised_eta" || extracted.intent === "provided_eta") {
           replyMessage = extracted.nextActionMessage || `Got it! We'll follow up with you later.`;
           const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 6;
           await ctx.runMutation(internal.communications.followUpMutations.updateCandidateEta, {
@@ -296,6 +302,8 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             candidateEtaText: extracted.nextActionMessage || "later",
             waitingForCandidateEta: true,
           });
+        } else if (extracted.intent === "interested_no_eta") {
+          replyMessage = extracted.nextActionMessage || `Great! Could you please let us know by what time you could provide these details?`;
         } else if (isQuestion) {
           aiAnswer = extracted.nextActionMessage;
           replyMessage = extracted.nextActionMessage;
@@ -305,7 +313,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (replyMessage) {
           const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
-          if (extracted.intent !== "provided_eta") {
+          if (extracted.intent !== "provided_eta" && extracted.intent !== "promised_eta") {
             await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
               applicationId: activeApp._id,
               nextActionTimeHours: hours,

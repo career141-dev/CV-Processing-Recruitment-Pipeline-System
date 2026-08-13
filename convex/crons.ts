@@ -28,6 +28,15 @@ export const evaluateFollowUpStage = internalMutation({
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
       .take(200);
 
+    const taShortlistApps = await ctx.db.query("applications")
+      .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
+      .take(200);
+
+    const appsToEvaluate = [
+      ...followUpApps,
+      ...taShortlistApps.filter((a: any) => a.nextFollowUpScheduledAt !== undefined)
+    ];
+
     const now = Date.now();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
     const MAX_CALLS_PER_RUN = 20;
@@ -50,7 +59,7 @@ export const evaluateFollowUpStage = internalMutation({
 
     const jobCache = new Map<string, any>();
 
-    for (const app of followUpApps) {
+    for (const app of appsToEvaluate) {
       // 1. Skip if application is flagged for TA review (automated nudging paused)
       if (app.flaggedForTaReview === true) {
         console.log(`[Follow-Up Cron] Application ${app._id} is flagged for TA review (${app.taReviewReason}). Skipping automated nudge.`);
@@ -602,7 +611,7 @@ export const evaluateFollowUpStage = internalMutation({
 
 crons.interval(
   "evaluate-follow-up",
-  { minutes: 15 },
+  { minutes: 1 },
   internal.crons.evaluateFollowUpStage
 );
 
