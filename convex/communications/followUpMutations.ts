@@ -1,5 +1,7 @@
 import { internalMutation } from "../_generated/server";
 import { v } from "convex/values";
+import { adjustJobStageStat } from "../jobs/stats";
+import { syncCandidateOverallStatus } from "../candidates/candidates";
 
 export const scheduleDynamicFollowUp = internalMutation({
   args: {
@@ -29,12 +31,38 @@ export const resetFollowUpApp = internalMutation({
     applicationId: v.id("applications"),
   },
   handler: async (ctx, args) => {
+    const now = Date.now();
+    const app = await ctx.db.get(args.applicationId);
+    const fromStage = app?.currentStage || "unresponsive";
+
     await ctx.db.patch(args.applicationId, {
       currentStage: "follow_up",
+      followUpEnteredAt: now,
+      lastStageChangedAt: now,
       followUpAttemptCount: 0,
-      nextFollowUpScheduledAt: Date.now(),
+      nextFollowUpScheduledAt: undefined,
+      nextFollowUpMessage: undefined,
+      waitingForCandidateEta: undefined,
+      candidateEtaMs: undefined,
+      candidateEtaText: undefined,
+      flaggedForTaReview: false,
+      taReviewReason: undefined,
+      stageHistory: [
+        ...(app?.stageHistory ?? []),
+        {
+          stage: "follow_up",
+          enteredAt: new Date().toISOString(),
+          changedBy: "system",
+          note: "Reset to Follow-up stage with fresh 7-day window.",
+        },
+      ],
     });
-    console.log(`[Follow-Up] Reset application ${args.applicationId} for follow-up evaluation.`);
+
+    if (app) {
+      await adjustJobStageStat(ctx, app.jobId, fromStage, "follow_up");
+      await syncCandidateOverallStatus(ctx, app.candidateId);
+    }
+    console.log(`[Follow-Up] Reset application ${args.applicationId} for follow-up evaluation with fresh enteredAt.`);
   },
 });
 
