@@ -125,6 +125,22 @@ export const scheduleDynamicFollowUp = internalMutation({
   },
 });
 
+// Cancels any pending scheduled follow-up for an application.
+// Called immediately before sending an inbound reply to prevent the old
+// scheduled timestamp from firing and sending a duplicate message.
+export const clearPendingFollowUp = internalMutation({
+  args: {
+    applicationId: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      nextFollowUpScheduledAt: undefined,
+      nextFollowUpMessage: undefined,
+    });
+    console.log(`[Follow-Up] Cleared pending follow-up for application ${args.applicationId} (inbound reply about to be sent).`);
+  },
+});
+
 export const resetFollowUpApp = internalMutation({
   args: {
     applicationId: v.id("applications"),

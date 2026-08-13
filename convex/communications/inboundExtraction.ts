@@ -322,6 +322,14 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
         if (replyMessage) {
           const hours = typeof extracted.nextActionTimeHours === "number" && extracted.nextActionTimeHours > 0 ? extracted.nextActionTimeHours : 24;
+
+          // IMPORTANT: Cancel any previously-pending follow-up BEFORE scheduling the new one.
+          // Without this, the cron can still fire the old nextFollowUpScheduledAt timestamp
+          // (which may be only minutes away) and send a duplicate message.
+          await ctx.runMutation(internal.communications.followUpMutations.clearPendingFollowUp, {
+            applicationId: activeApp._id,
+          });
+
           if (extracted.intent !== "provided_eta" && extracted.intent !== "promised_eta") {
             await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
               applicationId: activeApp._id,
