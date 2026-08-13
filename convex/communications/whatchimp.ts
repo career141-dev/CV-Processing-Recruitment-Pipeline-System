@@ -461,31 +461,20 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           metaHeadline: body.referral?.headline || body.user_message?.referral?.headline,
         });
 
-        const apiToken = process.env.WHATCHIMP_API_TOKEN;
-        const phoneNumberId = process.env.WHATCHIMP_PHONE_NUMBER_ID;
-        
-        // Disabled globally per user request: External flows (WhatChimp/Meta) will handle all welcome messages.
-        // Career141 will only send the final acknowledgment after receiving the CV document.
-        /*
-        if (apiToken && phoneNumberId && !fullJob?.muteDefaultWhatsappReply) {
-          const replyMessage = `Thank you for your interest in the ${matchedJob.title} position.\n\nPlease upload your latest CV to continue your application.`;
-          const params = new URLSearchParams();
-          params.append("apiToken", apiToken);
-          params.append("phone_number_id", phoneNumberId.replace(/[^0-9]/g, ""));
-          params.append("phone_number", cleanFrom);
-          params.append("message", replyMessage);
+        const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
+          targetWhatsAppNumber: cleanTo 
+        });
+        const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
 
-          await fetch("https://app.whatchimp.com/api/v1/whatsapp/send", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body: params
-          }).then(r => r.text()).then(t => console.log("[WhatChimp Webhook] Sent auto-response:", t)).catch(console.error);
+        if (phoneNumberId && !fullJob?.muteDefaultWhatsappReply) {
+          const replyMessage = `Thank you for your interest in the ${matchedJob.title} position.\n\nPlease upload your latest CV to continue your application.`;
+          const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+          await sendMetaFreeText(phoneNumberId, cleanFrom, replyMessage, metaAccessToken)
+            .then(r => { if (!r.success) console.error("[WhatsApp Webhook] Keyword reply failed (flat path):", r.error); })
+            .catch(console.error);
         } else if (fullJob?.muteDefaultWhatsappReply) {
           console.log(`[WhatChimp Webhook] Skipped default reply for ${matchedKeyword} (flat path) because muteDefaultWhatsappReply is true`);
         }
-        */
       }
     }
   }
