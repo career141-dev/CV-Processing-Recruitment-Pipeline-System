@@ -1345,7 +1345,7 @@ export const runSafeBackfill = action({
     activeJobsCount: number;
   }> => {
     console.log("Starting safe dashboard stats backfill...");
-    const limit = 2000;
+    const limit = 200;
 
     // 1. Count Candidates
     let totalCandidates = 0;
