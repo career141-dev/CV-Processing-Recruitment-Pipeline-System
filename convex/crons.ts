@@ -216,6 +216,11 @@ export const evaluateFollowUpStage = internalMutation({
 
       // 2. Check if a dynamic message is scheduled and it's time to send
       if (app.nextFollowUpScheduledAt && now >= app.nextFollowUpScheduledAt) {
+        // ANTI-DUPLICATE LOCK: Clear nextFollowUpScheduledAt immediately so that
+        // any concurrent cron run sees undefined and skips this app.
+        // This is the first DB write in this block — it acts as a mutex.
+        await ctx.db.patch(app._id, { nextFollowUpScheduledAt: undefined });
+
         // If we were waiting for Candidate's promised ETA:
         if (app.waitingForCandidateEta === true) {
           await ctx.db.patch(app._id, {
@@ -229,7 +234,7 @@ export const evaluateFollowUpStage = internalMutation({
           const currentAttempts = app.followUpAttemptCount || 0;
           if (job.maxFollowUpAttempts && currentAttempts >= job.maxFollowUpAttempts) {
              console.log(`[Dynamic Follow-up] Max attempts reached for ${candidate.fullName}. Skipping message.`);
-             await ctx.db.patch(app._id, { nextFollowUpScheduledAt: undefined });
+             // nextFollowUpScheduledAt already cleared above
              continue; 
           }
 
