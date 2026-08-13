@@ -169,11 +169,41 @@ async function findCandidateByPhone(ctx: any, targetPhone: string) {
       .first();
   }
 
-  // 3. Dynamic tail-digits matching (e.g. last 9 digits to handle local 075... vs international 9475... without hardcoding)
+  // 3. Alternate format search (convert between Sri Lanka 94... and 0... or vice versa)
+  if (!candidate && cleanDigits.startsWith("94") && cleanDigits.length === 11) {
+    const localPhone = "0" + cleanDigits.slice(2);
+    candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", localPhone))
+      .first();
+
+    if (!candidate) {
+      candidate = await ctx.db
+        .query("candidates")
+        .withIndex("by_phone", (q: any) => q.eq("phone", localPhone))
+        .first();
+    }
+  } else if (!candidate && cleanDigits.startsWith("0") && cleanDigits.length === 10) {
+    const intlClean = "94" + cleanDigits.slice(1);
+    const intlPhone = "+" + intlClean;
+    candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", intlClean))
+      .first();
+
+    if (!candidate) {
+      candidate = await ctx.db
+        .query("candidates")
+        .withIndex("by_phone", (q: any) => q.eq("phone", intlPhone))
+        .first();
+    }
+  }
+
+  // 4. Bounded tail-digits matching (top 200 recent candidates only) to avoid mutation timeouts
   if (!candidate && cleanDigits.length >= 7) {
     const tailDigits = cleanDigits.slice(-9);
-    const candidates = await ctx.db.query("candidates").collect();
-    candidate = candidates.find((c: any) => {
+    const recentCandidates = await ctx.db.query("candidates").order("desc").take(200);
+    candidate = recentCandidates.find((c: any) => {
       if (c.phoneClean && c.phoneClean.length >= 7) {
         return c.phoneClean.endsWith(tailDigits);
       }
