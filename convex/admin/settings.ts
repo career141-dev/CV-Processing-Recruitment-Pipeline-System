@@ -1,4 +1,4 @@
-import { query, mutation, internalQuery } from "../_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "../lib/permissions";
 import { internal } from "../_generated/api";
@@ -63,10 +63,34 @@ export const updateChannelToggles = mutation({
       await ctx.scheduler.runAfter(0, internal.cvs.ingestion.resumePausedUploads, { channel: "whatsapp" });
     }
     // If emailIngestion changed from false to true, resume email
-    if (oldToggles.emailIngestion === false && args.toggles.emailIngestion === true) {
-      await ctx.scheduler.runAfter(0, internal.cvs.ingestion.resumePausedUploads, { channel: "email" });
-    }
-    
     return { success: true };
   }
 });
+
+export const setSystemTestSettings = internalMutation({
+  args: {
+    testModeEnabled: v.optional(v.boolean()),
+    testPhoneNumber: v.optional(v.string()),
+    testEmailAddress: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
+    if (configRow) {
+      await ctx.db.patch(configRow._id, {
+        ...(args.testModeEnabled !== undefined ? { testModeEnabled: args.testModeEnabled } : {}),
+        ...(args.testPhoneNumber !== undefined ? { testPhoneNumber: args.testPhoneNumber } : {}),
+        ...(args.testEmailAddress !== undefined ? { testEmailAddress: args.testEmailAddress } : {}),
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      await ctx.db.insert("appSettings", {
+        key: "system",
+        testModeEnabled: args.testModeEnabled ?? true,
+        testPhoneNumber: args.testPhoneNumber,
+        testEmailAddress: args.testEmailAddress,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  },
+});
+
