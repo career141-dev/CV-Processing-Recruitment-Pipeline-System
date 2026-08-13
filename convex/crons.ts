@@ -26,11 +26,13 @@ export const evaluateFollowUpStage = internalMutation({
 
     const followUpApps = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .take(200);
+      .order("desc")
+      .take(300);
 
     const taShortlistApps = await ctx.db.query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
-      .take(200);
+      .order("desc")
+      .take(500);
 
     const appsToEvaluate = [
       ...followUpApps,

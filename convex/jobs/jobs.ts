@@ -1086,3 +1086,17 @@ export const setMuteDefaultWhatsappReply = mutation({
     return { success: true, jobId: args.jobId, muteDefaultWhatsappReply: args.mute };
   },
 });
+
+export const setJobCustomQuestions = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    customFollowUpQuestions: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      customFollowUpQuestions: args.customFollowUpQuestions,
+    });
+    return { success: true, jobId: args.jobId, customFollowUpQuestions: args.customFollowUpQuestions };
+  },
+});
+
