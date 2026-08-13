@@ -1585,3 +1585,20 @@ export const purgeCandidateByPhone = mutation({
     };
   },
 });
+
+// Internal: Move an application to a different job ID (for data correction)
+export const moveApplicationToJob = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    targetJobId: v.id("jobs"),
+  },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) throw new Error("Application not found: " + args.applicationId);
+    await ctx.db.patch(args.applicationId, {
+      jobId: args.targetJobId,
+      currentStage: "new_cvs",
+    });
+    return { success: true, applicationId: args.applicationId, newJobId: args.targetJobId };
+  },
+});

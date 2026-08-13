@@ -336,9 +336,12 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         const upperText = text.toUpperCase();
         const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
         for (const job of activeJobs) {
+          // Only route to jobs where WhatsApp is an active (not paused) source
+          const pausedChannels: string[] = (job as any).pausedChannels || [];
+          if (pausedChannels.includes("whatsapp")) continue;
           if (job.keyword && upperText.includes(job.keyword.toUpperCase())) {
             resolvedJobId = job._id;
-            if (job.pausedChannels?.includes("whatsapp")) isPaused = true;
+            if ((job as any).pausedChannels?.includes("whatsapp")) isPaused = true;
             break;
           }
         }
@@ -423,6 +426,10 @@ export const processInboundTextWebhook = internalMutation({
     let matchedKeyword = "";
 
     for (const job of allJobs) {
+      // CRITICAL: Only route WhatsApp CVs to jobs that have WhatsApp as an ACTIVE (not paused) source
+      const pausedChannels: string[] = job.pausedChannels || [];
+      if (pausedChannels.includes("whatsapp")) continue;
+
       const kUpper = (job.keyword || "").toUpperCase();
       const tUpper = (job.title || "").toUpperCase();
       if (!kUpper && !tUpper) continue;
