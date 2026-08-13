@@ -69,7 +69,8 @@ export function getOpenAI(taskType: TaskType | string): OpenAI {
       .filter((k) => k.length > 10);
 
     if (keysFromEnv.length === 0) {
-      throw new Error("OPENROUTER_API_KEY is not set in environment variables");
+      console.warn("[getOpenAI] OPENROUTER_API_KEY is not set in environment variables, falling back to NVIDIA NIM API");
+      return getNvidiaOpenAI();
     }
 
     // Select key using round-robin index
@@ -345,9 +346,9 @@ export async function executeLLMWithNvidiaFallback(
   options: LLMCompletionOptions
 ): Promise<{ content: string; provider: "openrouter" | "nvidia"; model: string }> {
   if (IS_CV_EXTRACTION_TASK(taskType)) {
-    // CV Extraction uses DeepSeek V4 Flash via OpenRouter ONLY
     const candidateModels = [
       OPENROUTER_CV_EXTRACTION_MODEL,
+      NVIDIA_PRIMARY_MODEL,
     ];
 
     let lastError: any = null;

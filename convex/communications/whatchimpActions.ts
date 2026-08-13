@@ -3,6 +3,9 @@ import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { sendMetaFreeText } from "./metaDirectSender";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getS3Client } from "../storage/r2";
+import crypto from "crypto";
 
 export const handlePreApplicationChat = internalAction({
   args: {
@@ -101,12 +104,9 @@ export const processInboundMedia = internalAction({
       const fileBuffer = Buffer.from(arrayBuffer);
 
       // Instant native crypto SHA-256
-      const crypto = await import("crypto");
       const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
       // Upload directly to Cloudflare R2 via PutObjectCommand (Node buffer stream)
-      const { getS3Client } = await import("../storage/r2");
-      const { PutObjectCommand } = await import("@aws-sdk/client-s3");
       const s3 = getS3Client();
       const safeName = (fileName || "cv.pdf").replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const date = new Date();
