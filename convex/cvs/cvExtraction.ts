@@ -292,8 +292,10 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
 async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string> {
   try {
     ensureDOMMatrixPolyfill();
+    // Use the legacy build — required for Node.js environments.
+    // The non-legacy ESM build fails with 'hashOriginal.toHex is not a function'.
     // @ts-ignore
-    const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs").catch(() => import("pdfjs-dist/build/pdf.mjs"));
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(safeSliceBuffer(buffer)),
       useSystemFonts: true,
@@ -716,37 +718,25 @@ export async function extractText(
     }
 
     // Tesseract also failed (e.g. custom font-encoded PDFs that aren't scanned images).
-    // Last resort: send the PDF as base64 to the Vision LLM (Gemini) which can read it natively.
+    // Last resort: use the Vision OCR pipeline (NVIDIA + OpenRouter Gemini) which can read
+    // PDFs rendered as images. callNvidiaVisionOCR already handles multimodal content correctly.
     if (ctx) {
       try {
-        console.log("[extractText] Tesseract failed — attempting Vision LLM (Gemini) base64 PDF fallback...");
-        const base64Pdf = Buffer.from(buffer).toString("base64");
-        const { executeLLMWithNvidiaFallback } = await import("../lib/llm");
-        const visionResult = await executeLLMWithNvidiaFallback(ctx, "cv_vision_ocr", {
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "This is a CV/Resume PDF. Please extract ALL the text from it exactly as it appears — name, contact info, work experience, education, skills, etc. Return plain text only.",
-                },
-                {
-                  type: "image_url",
-                  image_url: { url: `data:application/pdf;base64,${base64Pdf}` },
-                },
-              ] as any,
-            },
-          ],
-          max_tokens: 4096,
-          cvUploadId,
-        });
-        if (visionResult && visionResult.content && visionResult.content.trim().length >= 20) {
-          console.log(`[extractText] Vision LLM base64 fallback succeeded (${visionResult.content.trim().length} chars).`);
-          return { text: visionResult.content, extractionModel: "vision-gemini-pdf" };
+        console.log("[extractText] Tesseract failed — attempting Vision OCR pipeline fallback...");
+        const { callNvidiaVisionOCR } = await import("../lib/llm");
+        // Extract page images from the PDF buffer for vision processing
+        const pageImages = await extractImagesFromPdfBuffer(buffer, 5);
+        if (pageImages && pageImages.length > 0) {
+          const visionText = await callNvidiaVisionOCR(ctx, pageImages, cvUploadId);
+          if (visionText && visionText.trim().length >= 20) {
+            console.log(`[extractText] Vision OCR pipeline fallback succeeded (${visionText.trim().length} chars).`);
+            return { text: visionText, extractionModel: "vision-nvidia-pdf" };
+          }
+        } else {
+          console.warn("[extractText] Could not render page images for Vision OCR fallback.");
         }
       } catch (vErr: any) {
-        console.warn("[extractText] Vision LLM base64 PDF fallback failed:", vErr?.message || vErr);
+        console.warn("[extractText] Vision OCR pipeline fallback failed:", vErr?.message || vErr);
       }
     }
 
