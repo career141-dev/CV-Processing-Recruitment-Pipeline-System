@@ -270,6 +270,20 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       return new Response("OK", { status: 200 });
     }
 
+    if (evalResult.action === "send_job_prompt") {
+      console.log(`[WhatChimp Webhook] No keyword and no session for +${cleanFrom}. Sending job prompt.`);
+      const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
+        targetWhatsAppNumber: cleanTo 
+      });
+      const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
+      const replyMessage = `Hello! Thank you for reaching out to Career141.\n\nWhich position are you interested in applying for? Please reply with the job title or keyword (e.g., Graphic Designer, Video Editor) or upload your CV as a PDF to apply!`;
+      const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+      await sendMetaFreeText(phoneNumberId, cleanFrom, replyMessage, metaAccessToken)
+        .then(r => { if (!r.success) console.error("[WhatsApp Webhook] Job prompt reply failed:", r.error); })
+        .catch(console.error);
+      return new Response("OK", { status: 200 });
+    }
+
     return new Response("OK", { status: 200 });
   }
 
@@ -472,7 +486,6 @@ export const processInboundTextWebhook = internalMutation({
           .query("communications")
           .withIndex("by_candidate_time", (q) => q.eq("candidateId", candidate._id))
           .order("desc")
-          .filter((q) => q.and(q.eq(q.field("direction"), "inbound"), q.eq(q.field("channel"), "whatsapp")))
           .first();
 
         if (!recentInbound || Number(recentInbound.sentAt) <= thirtySecAgo || recentInbound.body !== text) {
@@ -504,34 +517,21 @@ export const processInboundTextWebhook = internalMutation({
       }
     }
 
-    // 4. Pre-App Chat Session or Fallback Active Job
+    // 4. Pre-App Chat Session (if session exists for candidate)
     let session = await ctx.db
       .query("whatsappSessions")
       .withIndex("by_phone", (q) => q.eq("phone", cleanFrom))
       .first();
 
-    let targetJobId = session?.jobId;
-
-    if (!targetJobId && allJobs.length > 0) {
-      const defaultJob = allJobs[0];
-      targetJobId = defaultJob._id;
-
-      await ctx.db.insert("whatsappSessions", {
-        phone: cleanFrom,
-        jobId: defaultJob._id,
-        keyword: defaultJob.keyword || "DEFAULT",
-        lastInteractionAt: Date.now(),
-      });
-    }
-
-    if (targetJobId) {
-      const job = await ctx.db.get(targetJobId);
+    if (session) {
+      const job = await ctx.db.get(session.jobId);
       if (job && !job.muteDefaultWhatsappReply) {
         return { action: "dispatch_pre_app_chat", jobId: job._id };
       }
     }
 
-    return { action: "ignore" };
+    // IF NO KEYWORD AND NO EXISTING SESSION: Prompt candidate for job title
+    return { action: "send_job_prompt" };
   },
 });
 
