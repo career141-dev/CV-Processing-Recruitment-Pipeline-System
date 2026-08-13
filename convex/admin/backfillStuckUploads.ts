@@ -165,7 +165,7 @@ export const backfillStuckWhatsappUploads = mutation({
           stageHistory: [{
             stage: "new_cvs",
             enteredAt: new Date(now).toISOString(),
-            changedBy: "system_backfill",
+            changedBy: "system",
           }],
           candidateName: candidate.fullName || undefined,
           candidatePhone: candidate.phone || undefined,
