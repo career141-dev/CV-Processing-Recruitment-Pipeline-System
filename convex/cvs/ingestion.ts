@@ -100,68 +100,36 @@ export const insertCvRecord = internalMutation({
     fileSize: v.number(),
   },
   handler: async (ctx, args) => {
-    // SHA-256 duplicate check (exact file)
-    const existingFile = await ctx.db.query("cvUploads")
-      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
-      .first();
+    const SESSION_TTL_MS = 48 * 60 * 60 * 1000; // 48 Hours
 
-    if (existingFile) {
-      console.log(`[cvs/ingestion:insertCvRecord] Duplicate file detected: ${args.fileHash}. Skipping ingestion.`);
-      
-      const taUser = await ctx.db
-        .query("users")
-        .withIndex("by_phone", (q) => q.eq("phone", args.fromNumber))
-        .first();
-
-      const rawSenderDisplay = taUser ? taUser._id : args.fromNumber;
-
-      const session = await ctx.db
-        .query("whatsappSessions")
-        .withIndex("by_phone", (q) => q.eq("phone", args.originalSenderPhone))
-        .first();
-
-      let resolvedJobId = null;
-      if (session) {
-        resolvedJobId = session.jobId;
-        await ctx.db.delete(session._id);
-      } else {
-        const channel = await ctx.db
-          .query("jobChannels")
-          .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", args.toNumber))
-          .filter((q) => q.eq(q.field("isEnabled"), true))
-          .first();
-        if (channel) {
-          resolvedJobId = channel.jobId;
-        }
-      }
-
-      await ctx.db.insert("ingestionLog", {
-        jobId: resolvedJobId || undefined,
-        channelType: "whatsapp",
-        rawSender: rawSenderDisplay,
-        routingStatus: "duplicate_file",
-        cvFileId: existingFile._id,
-        receivedAt: Date.now(),
-        stage: "failed",
-      } as any);
-
-      return { success: false, reason: "duplicate_file", existingFileId: existingFile._id };
-    }
-
-    let jobId = null;
+    let jobId: any = null;
     let sourceLevel2 = "Common Number";
-    
-    // Check if there is an active session for the candidate phone
+    let metaSourceUrl: string | undefined;
+    let metaSourceId: string | undefined;
+    let metaHeadline: string | undefined;
+
+    // Check if there is an active WhatsApp session for the candidate phone
     const session = await ctx.db
       .query("whatsappSessions")
       .withIndex("by_phone", (q) => q.eq("phone", args.originalSenderPhone))
       .first();
 
     if (session) {
-      jobId = session.jobId;
-      sourceLevel2 = `Campaign — WhatsApp (${session.keyword})`;
-      await ctx.db.delete(session._id);
-    } else {
+      const isExpired = Date.now() - (session.lastInteractionAt || 0) > SESSION_TTL_MS;
+      if (isExpired) {
+        console.log(`[insertCvRecord] WhatsApp session for +${args.originalSenderPhone} is expired (>48h). Deleting session.`);
+        await ctx.db.delete(session._id);
+      } else {
+        jobId = session.jobId;
+        sourceLevel2 = `Campaign — WhatsApp (${session.keyword})`;
+        metaSourceUrl = session.metaSourceUrl;
+        metaSourceId = session.metaSourceId;
+        metaHeadline = session.metaHeadline;
+        await ctx.db.delete(session._id);
+      }
+    }
+
+    if (!jobId) {
       const channel = await ctx.db
         .query("jobChannels")
         .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", args.toNumber))
@@ -172,6 +140,70 @@ export const insertCvRecord = internalMutation({
         jobId = channel.jobId;
         sourceLevel2 = `Campaign — WhatsApp`;
       }
+    }
+
+    // SHA-256 duplicate check (exact file)
+    const existingFile = await ctx.db.query("cvUploads")
+      .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
+      .first();
+
+    if (existingFile) {
+      console.log(`[cvs/ingestion:insertCvRecord] Duplicate file detected: ${args.fileHash}. CandidateId: ${existingFile.candidateId}`);
+      
+      const taUser = await ctx.db
+        .query("users")
+        .withIndex("by_phone", (q) => q.eq("phone", args.fromNumber))
+        .first();
+
+      const rawSenderDisplay = taUser ? taUser._id : args.fromNumber;
+
+      let createdAppId: any = null;
+      if (jobId && existingFile.candidateId) {
+        const existingApp = await ctx.db
+          .query("applications")
+          .withIndex("by_candidateId", (q) => q.eq("candidateId", existingFile.candidateId!))
+          .filter((q) => q.eq(q.field("jobId"), jobId))
+          .first();
+
+        if (existingApp) {
+          console.log(`[insertCvRecord] Candidate ${existingFile.candidateId} already has application ${existingApp._id} for job ${jobId}. Patching lastCandidateReplyAt.`);
+          await ctx.db.patch(existingApp._id, {
+            lastCandidateReplyAt: Date.now(),
+          });
+          createdAppId = existingApp._id;
+        } else {
+          const now = Date.now();
+          createdAppId = await ctx.db.insert("applications", {
+            candidateId: existingFile.candidateId,
+            jobId: jobId,
+            currentStage: "new_cvs",
+            sourceChannel: "whatsapp",
+            createdAt: now,
+            isActive: true,
+            lastStageChangedAt: now,
+            loopIteration: 0,
+            stageHistory: [{
+              stage: "new_cvs",
+              enteredAt: new Date(now).toISOString(),
+              changedBy: "system",
+            }],
+          } as any);
+          console.log(`[insertCvRecord] Created new application ${createdAppId} for existing candidate ${existingFile.candidateId} under job ${jobId}`);
+        }
+      }
+
+      await ctx.db.insert("ingestionLog", {
+        jobId: jobId || undefined,
+        channelType: "whatsapp",
+        rawSender: rawSenderDisplay,
+        routingStatus: jobId ? "routed" : "duplicate_file",
+        cvFileId: existingFile._id,
+        candidateId: existingFile.candidateId,
+        receivedAt: Date.now(),
+        stage: jobId ? "queued" : "failed",
+      } as any);
+
+      return { success: true, reason: "duplicate_file_linked", existingFileId: existingFile._id, applicationId: createdAppId };
     }
 
     const taUser = await ctx.db
@@ -210,6 +242,10 @@ export const insertCvRecord = internalMutation({
       fileHash: args.fileHash,
       source: "whatsapp",
       campaignLabel: sourceLevel2,
+      metaSourceUrl,
+      metaSourceId,
+      metaHeadline,
+      assignToJob: jobId ? (jobId as string) : undefined,
       uploadedBy: taUser ? taUser._id : "system",
       status: "queued",
     });
@@ -220,7 +256,7 @@ export const insertCvRecord = internalMutation({
       jobId: jobId || undefined,
       channelType: "whatsapp",
       rawSender: rawSenderDisplay,
-      routingStatus: "routed",
+      routingStatus: jobId ? "routed" : "unrouted",
       cvFileId: cvUploadId,
       candidateId: candidate!._id,
       processingTimeMs: 0,
