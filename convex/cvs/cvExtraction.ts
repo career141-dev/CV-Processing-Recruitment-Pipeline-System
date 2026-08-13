@@ -931,7 +931,7 @@ export async function runCvExtraction(
   let t_write = 0;
 
   // Check if upload is still valid/running, abort if already marked failed or cancelled
-  const cvUpload = await ctx.runQuery(api.candidates.candidates.getCvUpload, { cvUploadId });
+  const cvUpload = await ctx.runQuery(internal.candidates.candidates.getCvUpload, { cvUploadId });
   if (!cvUpload || cvUpload.status === "failed" || cvUpload.status === "failed_retry" || cvUpload.status === "cancelled") {
     console.log(`[CvExtraction] Aborting extraction for upload ${cvUploadId} because status is: ${cvUpload?.status}`);
     return null;
@@ -982,7 +982,7 @@ export async function runCvExtraction(
     const fileHash = computeSha256(buffer);
 
     // Skip extraction if file is duplicate of an already extracted candidate (Agent 6 factor)
-    const existingCandidate = await ctx.runQuery(api.candidates.candidates.findCandidateByHash, { fileHash });
+    const existingCandidate = await ctx.runQuery(internal.candidates.candidates.findCandidateByHash, { fileHash });
     if (existingCandidate) {
       console.log(`[CvExtraction] Duplicate CV detected (hash: ${fileHash}). Candidate ID: ${existingCandidate._id}. Skipping extraction.`);
       
@@ -1532,7 +1532,7 @@ export const matchExtractedCandidateToActiveJobs = internalAction({
       });
       if (!candidate) return;
 
-      const cvUpload = args.cvUploadId ? await ctx.runQuery(api.candidates.candidates.getCvUpload, { cvUploadId: args.cvUploadId }) : null;
+      const cvUpload = args.cvUploadId ? await ctx.runQuery(internal.candidates.candidates.getCvUpload, { cvUploadId: args.cvUploadId }) : null;
 
       const eligibleJobs = activeJobs.filter((j: any) => !j.pausedChannels?.includes(args.sourceChannel));
       if (eligibleJobs.length === 0) return;
@@ -1633,7 +1633,7 @@ export const processUnextractedQueueCron = internalAction({
     console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs/min through AI LLM extraction pipeline...`);
 
     let count = 0;
-    const CONCURRENCY = 5;
+    const CONCURRENCY = 2;
     for (let i = 0; i < claimed.length; i += CONCURRENCY) {
       const chunk = claimed.slice(i, i + CONCURRENCY);
       await Promise.all(

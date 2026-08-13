@@ -20,8 +20,8 @@ export const healNextUnparsedCandidate = internalAction({
     console.log(`[Healer 24/7] Claimed record ${target.cvUploadId} (${target.fileName}) for single-attempt extraction sweep...`);
 
     try {
-      // Dispatch AI extraction asynchronously via scheduler to prevent worker timeouts
-      await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+      // Dispatch AI extraction asynchronously via scheduler with 3s pacing delay
+      await ctx.scheduler.runAfter(3000, api.cvs.cvExtraction.processCvExtraction, {
         cvUploadId: target.cvUploadId as any,
         storageId: target.storageId,
         s3Key: target.s3Key || undefined,

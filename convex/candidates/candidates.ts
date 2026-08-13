@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, action } from "../_generated/server";
+import { query, mutation, action, internalQuery } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
@@ -816,14 +816,14 @@ export const getCvUploadStatus = query({
   },
 });
 
-export const getCvUpload = query({
+export const getCvUpload = internalQuery({
   args: { cvUploadId: v.id("cvUploads") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.cvUploadId);
   },
 });
 
-export const findCandidateByHash = query({
+export const findCandidateByHash = internalQuery({
   args: { fileHash: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db

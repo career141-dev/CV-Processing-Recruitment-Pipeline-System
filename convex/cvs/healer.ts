@@ -39,7 +39,7 @@ export const claimNextUnparsedRecord = internalMutation({
     const unextractedUploads = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "uploaded"))
-      .take(20);
+      .take(5);
 
     for (const upload of unextractedUploads) {
       if (upload.isHealAttempted) continue;
@@ -86,12 +86,11 @@ export const claimNextUnparsedRecord = internalMutation({
       };
     }
 
-    // 2. Second priority: Scan candidates where ALL 5 fields are empty and isHealAttempted is not true
+    // 2. Second priority: Target un-attempted candidates directly using by_isHealAttempted index
     const candidatesSample = await ctx.db
       .query("candidates")
-      .withIndex("by_lastUpdatedAt")
-      .order("desc")
-      .take(50);
+      .withIndex("by_isHealAttempted", (q: any) => q.eq("isHealAttempted", false))
+      .take(10);
 
     for (const candidate of candidatesSample) {
       if (candidate.isHealAttempted) continue;
