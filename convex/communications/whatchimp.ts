@@ -77,40 +77,53 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         const cleanSender = cleanFromNumber;
         console.log(`[WhatChimp Webhook] Meta text message from +${cleanSender}: "${String(textBody).substring(0, 200)}" (type=${message.type}, has text.body=${!!message.text?.body})`);
 
-        const firstWord = textBody.trim().split(/\s+/)[0]?.toUpperCase() || "";
-        let isKeyword = false;
+        const upperText = textBody.trim().toUpperCase();
+        const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
+        let matchedJob: any = null;
+        let matchedKeyword = "";
 
-        if (firstWord) {
-          const job = await ctx.runQuery(api.jobs.jobs.getByKeyword, { keyword: firstWord });
-          if (job && job.status === "active") {
-            isKeyword = true;
-            console.log(`[WhatChimp Webhook] Received Meta keyword ${firstWord} from +${cleanSender} for job ${job.title}`);
-            
-            // Create/Update Session
-            await ctx.runMutation(api.communications.whatchimp.upsertSession, {
-              phone: cleanSender,
-              jobId: job._id,
-              keyword: firstWord,
-              metaSourceUrl: message.referral?.source_url,
-              metaSourceId: message.referral?.source_id,
-              metaHeadline: message.referral?.headline,
-            });
-
-            const apiToken = process.env.WHATCHIMP_API_TOKEN || "21708|pmdEwn35i9WBjs8qWyDuY3jQfNLk4JjS1hHevQJ77b25caab";
-            const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
-              targetWhatsAppNumber: toNumber 
-            });
-            const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
-
-            if (phoneNumberId && !job.muteDefaultWhatsappReply) {
-              const replyMessage = `Thank you for your interest in the ${job.title} position.\n\nPlease upload your latest CV to continue your application.`;
-              const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
-              await sendMetaFreeText(phoneNumberId, cleanSender, replyMessage, metaAccessToken)
-                .then(r => { if (!r.success) console.error("[WhatsApp Webhook] Keyword reply failed:", r.error); })
-                .catch(console.error);
-            } else if (job.muteDefaultWhatsappReply) {
-              console.log(`[WhatChimp Webhook] Skipped default reply for ${firstWord} because muteDefaultWhatsappReply is true`);
+        const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+        for (const job of activeJobs) {
+          if (job.keyword) {
+            const kUpper = job.keyword.toUpperCase();
+            if (strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper)) {
+              matchedJob = job;
+              matchedKeyword = job.keyword;
+              break;
             }
+          }
+        }
+
+        let isKeyword = false;
+        if (matchedJob && matchedJob.status === "active") {
+          isKeyword = true;
+          console.log(`[WhatChimp Webhook] Received Meta keyword "${matchedKeyword}" from +${cleanSender} for job ${matchedJob.title}`);
+          
+          // Create/Update Session
+          await ctx.runMutation(api.communications.whatchimp.upsertSession, {
+            phone: cleanSender,
+            jobId: matchedJob._id,
+            keyword: matchedKeyword,
+            metaSourceUrl: message.referral?.source_url,
+            metaSourceId: message.referral?.source_id,
+            metaHeadline: message.referral?.headline,
+          });
+
+          const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
+            targetWhatsAppNumber: toNumber 
+          });
+          const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
+
+          const fullJob = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: matchedJob._id });
+
+          if (phoneNumberId && !fullJob?.muteDefaultWhatsappReply) {
+            const replyMessage = `Thank you for your interest in the ${matchedJob.title} position.\n\nPlease upload your latest CV to continue your application.`;
+            const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+            await sendMetaFreeText(phoneNumberId, cleanSender, replyMessage, metaAccessToken)
+              .then(r => { if (!r.success) console.error("[WhatsApp Webhook] Keyword reply failed:", r.error); })
+              .catch(console.error);
+          } else if (fullJob?.muteDefaultWhatsappReply) {
+            console.log(`[WhatChimp Webhook] Skipped default reply for ${matchedKeyword} because muteDefaultWhatsappReply is true`);
           }
         }
 
@@ -224,14 +237,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Pre-check: if text starts with a known job keyword, it's a new applicant — skip follow-up check
+  // Pre-check: if text matches or contains a known job keyword, it's a new applicant — skip follow-up check
   let isNewKeywordMessage = false;
   if (!mediaUrl && text) {
-    const firstWordUpper = text.trim().split(/\s+/)[0]?.toUpperCase() || "";
-    if (firstWordUpper) {
-      const activeJobsCheck = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
-      isNewKeywordMessage = activeJobsCheck.some((j: any) => j.keyword && j.keyword.toUpperCase() === firstWordUpper);
-    }
+    const upperText = text.trim().toUpperCase();
+    const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
+    const activeJobsCheck = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+    isNewKeywordMessage = activeJobsCheck.some((j: any) => {
+      if (!j.keyword) return false;
+      const kUpper = j.keyword.toUpperCase();
+      return strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper);
+    });
   }
 
   // 1. First, check if this is an active Candidate Follow-Up Reply (ONLY if text is not empty)
@@ -411,17 +427,21 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   } else {
     // If text message only (e.g. initial keyword check)
     if (text) {
-      const upperText = text.toUpperCase();
+      const upperText = text.trim().toUpperCase();
+      const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
       const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
       
       let matchedJob = null;
       let matchedKeyword = "";
       
       for (const job of activeJobs) {
-        if (job.keyword && upperText.includes(job.keyword.toUpperCase())) {
-          matchedJob = job;
-          matchedKeyword = job.keyword;
-          break;
+        if (job.keyword) {
+          const kUpper = job.keyword.toUpperCase();
+          if (strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper)) {
+            matchedJob = job;
+            matchedKeyword = job.keyword;
+            break;
+          }
         }
       }
 
