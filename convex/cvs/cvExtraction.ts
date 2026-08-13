@@ -708,11 +708,46 @@ export async function extractText(
       return { text: pdfText, extractionModel: "deepseek-v4-flash" };
     }
 
-    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Sending scanned document to Tesseract OCR...`);
+    console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Sending to Tesseract OCR...`);
 
-    const tesseractText = await extractTextWithTesseract(buffer, fileType);
+    const tesseractText = await extractTextWithTesseract(buffer, fileType, ctx, cvUploadId);
     if (tesseractText && tesseractText.trim().length >= 20) {
       return { text: tesseractText, extractionModel: "ocr-tesseract" };
+    }
+
+    // Tesseract also failed (e.g. custom font-encoded PDFs that aren't scanned images).
+    // Last resort: send the PDF as base64 to the Vision LLM (Gemini) which can read it natively.
+    if (ctx) {
+      try {
+        console.log("[extractText] Tesseract failed — attempting Vision LLM (Gemini) base64 PDF fallback...");
+        const base64Pdf = Buffer.from(buffer).toString("base64");
+        const { executeLLMWithNvidiaFallback } = await import("../lib/llm");
+        const visionResult = await executeLLMWithNvidiaFallback(ctx, "cv_vision_ocr", {
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "This is a CV/Resume PDF. Please extract ALL the text from it exactly as it appears — name, contact info, work experience, education, skills, etc. Return plain text only.",
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:application/pdf;base64,${base64Pdf}` },
+                },
+              ] as any,
+            },
+          ],
+          max_tokens: 4096,
+          cvUploadId,
+        });
+        if (visionResult && visionResult.content && visionResult.content.trim().length >= 20) {
+          console.log(`[extractText] Vision LLM base64 fallback succeeded (${visionResult.content.trim().length} chars).`);
+          return { text: visionResult.content, extractionModel: "vision-gemini-pdf" };
+        }
+      } catch (vErr: any) {
+        console.warn("[extractText] Vision LLM base64 PDF fallback failed:", vErr?.message || vErr);
+      }
     }
 
     if (pdfText && pdfText.trim().length > 0) {
@@ -721,6 +756,7 @@ export async function extractText(
 
     throw new Error("Tesseract OCR extraction failed: Insufficient text extracted from scanned document.");
   }
+
 
   // 2. DOCX / DOC
   const magic = new Uint8Array(buffer.slice(0, 4));
