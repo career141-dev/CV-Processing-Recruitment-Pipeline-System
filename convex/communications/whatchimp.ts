@@ -310,8 +310,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const fileHash = Array.from(new Uint8Array(hashBuffer))
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
-
-      const base64Data = Buffer.from(fileBuffer).toString("base64");
+      const bytes = new Uint8Array(fileBuffer);
+      let binary = "";
+      const len = bytes.byteLength;
+      const chunkSize = 0x8000; // 32KB chunks
+      for (let i = 0; i < len; i += chunkSize) {
+        binary += String.fromCharCode.apply(
+          null,
+          bytes.subarray(i, Math.min(i + chunkSize, len)) as any
+        );
+      }
+      const base64Data = btoa(binary);
 
       const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
         fileName: fileName ?? "cv.pdf",
