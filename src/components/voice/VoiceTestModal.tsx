@@ -36,13 +36,10 @@ function getCleanSpokenFirstName(fullName?: string | null): string {
   return chosen.charAt(0).toUpperCase() + chosen.slice(1).toLowerCase();
 }
 
+// Fish Audio voice presets — use "default" for the system voice, or supply a
+// Fish Audio reference_id (voice model ID) from your Fish Audio dashboard.
 const VOICE_PRESETS = [
-  { id: "aura-asteria-en", name: "Asteria (Warm & Natural Recruiter)" },
-  { id: "aura-luna-en", name: "Luna (Calm & Professional)" },
-  { id: "aura-stella-en", name: "Stella (Polished Talent Partner)" },
-  { id: "aura-athena-en", name: "Athena (Articulate & Crisp)" },
-  { id: "aura-orion-en", name: "Orion (Confident Male Recruiter)" },
-  { id: "aura-arcas-en", name: "Arcas (Deep & Composed Male)" },
+  { id: "default", name: "Sarah — Default (Fish Audio S2.1 Pro)" },
 ];
 
 export function VoiceTestModal({
@@ -194,7 +191,7 @@ export function VoiceTestModal({
         }),
       });
 
-      if (!res.ok) throw new Error("Cartesia TTS request failed");
+      if (!res.ok) throw new Error("Fish Audio TTS request failed");
 
       const blob = await res.blob();
       const audioUrl = URL.createObjectURL(blob);
@@ -767,7 +764,7 @@ export function VoiceTestModal({
         <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Cartesia Sonic + Deepgram Nova-2 Engine</span>
+            <span>Fish Audio S2.1 Pro + Deepgram Fallback</span>
           </div>
 
           <div className="flex items-center gap-3">

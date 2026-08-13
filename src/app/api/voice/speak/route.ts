@@ -64,65 +64,70 @@ export async function POST(req: NextRequest) {
 
     const spokenTranscript = prepareTextForSpeech(text);
 
-    // 1. Try Cartesia TTS if CARTESIA_API_KEY is configured
-    const cartesiaApiKey = process.env.CARTESIA_API_KEY;
-    if (cartesiaApiKey) {
+    // 1. Fish Audio S2.1 Pro TTS (primary)
+    const fishAudioApiKey = process.env.FISH_AUDIO_API_KEY;
+    if (fishAudioApiKey) {
       try {
-        const cartesiaVoiceId =
-          voiceId && voiceId.length > 20 && !voiceId.startsWith("aura-")
-            ? voiceId
-            : "a0e99841-438c-4a64-b679-ae501e7d6091"; // Sonic English default voice
+        const fishBody: Record<string, unknown> = {
+          text: spokenTranscript,
+          format: "mp3",
+          mp3_bitrate: 128,
+          normalize: true,
+          latency: "normal",
+        };
 
-        const cartesiaRes = await fetch("https://api.cartesia.ai/tts/bytes", {
+        // If a Fish Audio reference_id (voice model ID) is supplied via voiceId, use it
+        if (voiceId && !voiceId.startsWith("aura-") && voiceId.length > 10) {
+          fishBody.reference_id = voiceId;
+        }
+
+        const fishRes = await fetch("https://api.fish.audio/v1/tts", {
           method: "POST",
           headers: {
-            "X-API-Key": cartesiaApiKey,
-            "Cartesia-Version": "2024-06-10",
+            Authorization: `Bearer ${fishAudioApiKey}`,
             "Content-Type": "application/json",
+            model: "s2.1-pro-free",
           },
-          body: JSON.stringify({
-            model_id: "sonic-english",
-            transcript: spokenTranscript,
-            voice: {
-              mode: "id",
-              id: cartesiaVoiceId,
-            },
-            output_format: {
-              container: "mp3",
-              bit_rate: 128000,
-              sample_rate: 44100,
-            },
-          }),
+          body: JSON.stringify(fishBody),
         });
 
-        if (cartesiaRes.ok) {
-          const audioArrayBuffer = await cartesiaRes.arrayBuffer();
+        if (fishRes.ok) {
+          const audioArrayBuffer = await fishRes.arrayBuffer();
+          console.log(
+            `[Fish Audio TTS] Success — model: s2.1-pro-free, bytes: ${audioArrayBuffer.byteLength}`
+          );
           return new NextResponse(audioArrayBuffer, {
             status: 200,
             headers: {
-              "Content-Type": "audio/mp3",
+              "Content-Type": "audio/mpeg",
               "Content-Length": audioArrayBuffer.byteLength.toString(),
+              "X-TTS-Provider": "fish-audio",
             },
           });
         } else {
-          const errText = await cartesiaRes.text();
-          console.warn("[Cartesia TTS] Error response, falling back to Deepgram:", cartesiaRes.status, errText);
+          const errText = await fishRes.text();
+          console.warn(
+            "[Fish Audio TTS] Error response, falling back to Deepgram:",
+            fishRes.status,
+            errText
+          );
         }
       } catch (err: any) {
-        console.warn("[Cartesia TTS] Exception, falling back to Deepgram:", err?.message);
+        console.warn("[Fish Audio TTS] Exception, falling back to Deepgram:", err?.message);
       }
     }
 
-    // 2. Deepgram Aura TTS Fallback
+    // 2. Deepgram Aura TTS — fallback
     const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
     if (!deepgramApiKey) {
       return NextResponse.json(
-        { error: "Neither CARTESIA_API_KEY nor DEEPGRAM_API_KEY is configured" },
+        { error: "No TTS provider configured. Set FISH_AUDIO_API_KEY or DEEPGRAM_API_KEY." },
         { status: 500 }
       );
     }
 
-    const selectedModel = voiceId && voiceId.startsWith("aura-") ? voiceId : "aura-asteria-en";
+    const selectedModel =
+      voiceId && voiceId.startsWith("aura-") ? voiceId : "aura-asteria-en";
     const url = `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(selectedModel)}`;
     const response = await fetch(url, {
       method: "POST",
@@ -130,28 +135,34 @@ export async function POST(req: NextRequest) {
         Authorization: `Token ${deepgramApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        text: spokenTranscript,
-      }),
+      body: JSON.stringify({ text: spokenTranscript }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
       console.error("[Deepgram TTS] API error:", response.status, errText);
-      return NextResponse.json({ error: `Deepgram TTS error: ${errText}` }, { status: response.status });
+      return NextResponse.json(
+        { error: `Deepgram TTS error: ${errText}` },
+        { status: response.status }
+      );
     }
 
     const audioArrayBuffer = await response.arrayBuffer();
+    console.log(`[Deepgram TTS] Fallback used — model: ${selectedModel}`);
 
     return new NextResponse(audioArrayBuffer, {
       status: 200,
       headers: {
         "Content-Type": "audio/mp3",
         "Content-Length": audioArrayBuffer.byteLength.toString(),
+        "X-TTS-Provider": "deepgram",
       },
     });
   } catch (error: any) {
     console.error("[Voice Speak] Exception:", error);
-    return NextResponse.json({ error: error.message || "Internal TTS synthesis error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Internal TTS synthesis error" },
+      { status: 500 }
+    );
   }
 }
