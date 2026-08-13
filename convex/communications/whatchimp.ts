@@ -244,9 +244,13 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
     const activeJobsCheck = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
     isNewKeywordMessage = activeJobsCheck.some((j: any) => {
-      if (!j.keyword) return false;
-      const kUpper = j.keyword.toUpperCase();
-      return strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper);
+      const kUpper = (j.keyword || "").toUpperCase();
+      const tUpper = (j.title || "").toUpperCase();
+      if (!kUpper && !tUpper) return false;
+      return (
+        (kUpper.length > 1 && (strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper))) ||
+        (tUpper.length > 2 && (strippedUpper === tUpper || upperText.includes(tUpper) || upperText.startsWith(tUpper)))
+      );
     });
   }
 
@@ -270,9 +274,28 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   // 2. Pre-Application Conversational AI (Only if NOT an active candidate follow-up reply)
   let isPreAppChat = false;
   if (!mediaUrl && !isNewKeywordMessage && !isFollowUpReply && text) {
-    const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, {
+    let session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, {
       phone: cleanFrom,
     });
+
+    // FALLBACK: If no explicit session exists yet for this sender, check active jobs to handle the pre-application question
+    if (!session) {
+      const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
+      if (activeJobs && activeJobs.length > 0) {
+        // Try fuzzy keyword matching first, or fallback to the primary active job
+        const upperText = text.toUpperCase();
+        const matched = activeJobs.find((j: any) => j.keyword && upperText.includes(j.keyword.toUpperCase())) || activeJobs[0];
+        
+        await ctx.runMutation(api.communications.whatchimp.upsertSession, {
+          phone: cleanFrom,
+          jobId: matched._id,
+          keyword: matched.keyword || "DEFAULT",
+        });
+        session = { _id: "" as any, phone: cleanFrom, jobId: matched._id, keyword: matched.keyword || "DEFAULT", createdAt: "" } as any;
+        console.log(`[WhatChimp Webhook] Created fallback session for +${cleanFrom} linked to job ${matched.title}`);
+      }
+    }
+
     if (session) {
       const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: session.jobId });
       if (job && !job.muteDefaultWhatsappReply) {
@@ -435,13 +458,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       let matchedKeyword = "";
       
       for (const job of activeJobs) {
-        if (job.keyword) {
-          const kUpper = job.keyword.toUpperCase();
-          if (strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper)) {
-            matchedJob = job;
-            matchedKeyword = job.keyword;
-            break;
-          }
+        const kUpper = (job.keyword || "").toUpperCase();
+        const tUpper = (job.title || "").toUpperCase();
+        if (!kUpper && !tUpper) continue;
+
+        if (
+          (kUpper.length > 1 && (strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper))) ||
+          (tUpper.length > 2 && (strippedUpper === tUpper || upperText.includes(tUpper) || upperText.startsWith(tUpper)))
+        ) {
+          matchedJob = job;
+          matchedKeyword = job.keyword || job.title;
+          break;
         }
       }
 
