@@ -333,10 +333,22 @@ export const createApplication = mutation({
     metaHeadline: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Fetch candidate and resolve survivor ID if ghost candidate was merged during deduplication
+    let targetCandidateId = args.candidateId;
+    let candidate = await ctx.db.get(targetCandidateId);
+    if (candidate && candidate.mergedInto) {
+      targetCandidateId = candidate.mergedInto;
+      candidate = await ctx.db.get(targetCandidateId);
+    }
+    if (!candidate) {
+      console.warn(`[createApplication] Candidate ${args.candidateId} no longer exists in database. Skipping application creation.`);
+      return null;
+    }
+
     // Check if application already exists for this candidate and job
     const existing = await ctx.db
       .query("applications")
-      .withIndex("by_candidateId", (q) => q.eq("candidateId", args.candidateId))
+      .withIndex("by_candidateId", (q) => q.eq("candidateId", targetCandidateId))
       .filter((q) => q.eq(q.field("jobId"), args.jobId))
       .first();
 
@@ -357,24 +369,21 @@ export const createApplication = mutation({
       }
 
       // ALWAYS sync the latest denormalized candidate data to the application
-      const candidate = await ctx.db.get(args.candidateId);
-      if (candidate) {
-        updates.candidateName = candidate.fullName || undefined;
-        updates.candidateEmail = candidate.email || undefined;
-        updates.candidatePhone = candidate.phone || undefined;
-        updates.candidateTitle = candidate.currentJobTitle || undefined;
-        updates.candidateExperience = candidate.totalExperienceYears || undefined;
-        updates.candidateCurrentSalary = candidate.currentSalary || undefined;
-        updates.candidateExpectedSalary = candidate.expectedSalary || undefined;
-        updates.candidateNoticePeriodDays = candidate.noticePeriodDays || undefined;
-      }
+      updates.candidateName = candidate.fullName || undefined;
+      updates.candidateEmail = candidate.email || undefined;
+      updates.candidatePhone = candidate.phone || undefined;
+      updates.candidateTitle = candidate.currentJobTitle || undefined;
+      updates.candidateExperience = candidate.totalExperienceYears || undefined;
+      updates.candidateCurrentSalary = candidate.currentSalary || undefined;
+      updates.candidateExpectedSalary = candidate.expectedSalary || undefined;
+      updates.candidateNoticePeriodDays = candidate.noticePeriodDays || undefined;
       
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existing._id, updates);
         
         if (updates.currentStage) {
           await adjustJobStageStat(ctx, args.jobId, existing.currentStage, updates.currentStage);
-          await syncCandidateOverallStatus(ctx, args.candidateId);
+          await syncCandidateOverallStatus(ctx, targetCandidateId);
           
           if (existing.sourceChannel === "whatsapp" && updates.currentStage === "matched_candidates") {
             await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
@@ -386,14 +395,14 @@ export const createApplication = mutation({
         
         if (updates.cvFileId && candidate) {
           await updateFollowUpFlags(ctx, existing._id, candidate);
-          await checkAndAdvanceFollowUp(ctx, args.candidateId);
+          await checkAndAdvanceFollowUp(ctx, targetCandidateId);
         }
       }
 
       // Trigger AI scoring if score is missing or when adding from database
       if (!existing.aiMatchScore && args.sourceChannel === "database") {
         await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
-          candidateId: args.candidateId,
+          candidateId: targetCandidateId,
           jobId: args.jobId,
         });
       }
@@ -404,11 +413,8 @@ export const createApplication = mutation({
     const now = Date.now();
     const initialStage = args.sourceChannel === "database" ? "matched_candidates" : "new_cvs";
     
-    // Fetch candidate to populate denormalized fields
-    const candidate = await ctx.db.get(args.candidateId);
-    
     const appId = await ctx.db.insert("applications", {
-      candidateId: args.candidateId,
+      candidateId: targetCandidateId,
       jobId: args.jobId,
       cvFileId: args.cvFileId,
       sourceChannel: args.sourceChannel,

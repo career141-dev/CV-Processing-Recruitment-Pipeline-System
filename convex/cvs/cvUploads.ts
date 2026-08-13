@@ -461,6 +461,36 @@ export const claimUploadedBatch = internalMutation({
   },
 });
 
+export const claimUploadedBatchPublic = mutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    const uploadedRecords = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "uploaded"))
+      .take(limit);
+
+    const claimed = [];
+    for (const record of uploadedRecords) {
+      if (!record.s3Key && !record.storageId) {
+        await ctx.db.patch(record._id, {
+          status: "failed",
+          errorMessage: "File URL not found (neither R2 nor Convex storage)",
+        });
+        continue;
+      }
+      await ctx.db.patch(record._id, {
+        status: "processing",
+        processingStartedAt: Date.now(),
+      });
+      claimed.push(record);
+    }
+    return claimed;
+  },
+});
+
 /**
  * Recovery tool: Guarantees ANY cvUploads record without a candidate profile
  * (failed, cancelled, failed_retry, or stuck processing) gets re-queued as 'uploaded'
@@ -503,6 +533,7 @@ export const requeueAllStuckUploads = internalMutation({
     const allStuck = [...failedList, ...cancelledList, ...failedRetryList, ...stuckProcessing]
       .filter((u) => {
         if ((u as any).isHealAttempted) return false;
+        if (u.status === "needs_review") return false;
         if (u.errorMessage?.includes("File URL not found")) return false;
         return Boolean(u.s3Key || u.storageId);
       })

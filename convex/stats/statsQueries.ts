@@ -5,7 +5,7 @@ import { v } from "convex/values";
 export const getCandidatesPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 2000;
+    const limit = args.limit ?? 200;
     const res = await ctx.db
       .query("candidates")
       .paginate({ numItems: limit, cursor: args.cursor });
@@ -20,7 +20,7 @@ export const getCandidatesPage = internalQuery({
 export const getCvUploadsPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 2000;
+    const limit = args.limit ?? 200;
     const res = await ctx.db
       .query("cvUploads")
       .paginate({ numItems: limit, cursor: args.cursor });
@@ -35,7 +35,7 @@ export const getCvUploadsPage = internalQuery({
 export const getApplicationsPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 2000;
+    const limit = args.limit ?? 200;
     const res = await ctx.db
       .query("applications")
       .paginate({ numItems: limit, cursor: args.cursor });
@@ -50,7 +50,7 @@ export const getApplicationsPage = internalQuery({
 export const getJobsPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 2000;
+    const limit = args.limit ?? 200;
     const res = await ctx.db
       .query("jobs")
       .paginate({ numItems: limit, cursor: args.cursor });

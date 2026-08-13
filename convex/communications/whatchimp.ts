@@ -4,6 +4,77 @@ import { v } from "convex/values";
 import { getOpenAI, getModelForTask } from "../lib/llm";
 import { sendMetaFreeText } from "./metaDirectSender";
 
+export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: any | null; matchedKeyword: string; isAmbiguous: boolean } {
+  const upperText = textBody.trim().toUpperCase();
+  const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
+
+  if (!strippedUpper) return { matchedJob: null, matchedKeyword: "", isAmbiguous: false };
+
+  interface CandidateMatch {
+    job: any;
+    matchedKeyword: string;
+    matchType: "exact" | "prefix" | "substring";
+    matchedLength: number;
+  }
+
+  const matches: CandidateMatch[] = [];
+
+  for (const job of jobs) {
+    const kUpper = (job.keyword || "").trim().toUpperCase();
+    const tUpper = (job.title || "").trim().toUpperCase();
+
+    // 1. Check Keyword
+    if (kUpper.length >= 2) {
+      if (strippedUpper === kUpper) {
+        matches.push({ job, matchedKeyword: job.keyword, matchType: "exact", matchedLength: kUpper.length });
+      } else if (upperText.startsWith(kUpper) || strippedUpper.startsWith(kUpper)) {
+        matches.push({ job, matchedKeyword: job.keyword, matchType: "prefix", matchedLength: kUpper.length });
+      } else if (upperText.includes(kUpper)) {
+        matches.push({ job, matchedKeyword: job.keyword, matchType: "substring", matchedLength: kUpper.length });
+      }
+    }
+
+    // 2. Check Title
+    if (tUpper.length >= 3) {
+      if (strippedUpper === tUpper) {
+        matches.push({ job, matchedKeyword: job.title, matchType: "exact", matchedLength: tUpper.length });
+      } else if (upperText.startsWith(tUpper) || strippedUpper.startsWith(tUpper)) {
+        matches.push({ job, matchedKeyword: job.title, matchType: "prefix", matchedLength: tUpper.length });
+      } else if (upperText.includes(tUpper)) {
+        matches.push({ job, matchedKeyword: job.title, matchType: "substring", matchedLength: tUpper.length });
+      }
+    }
+  }
+
+  if (matches.length === 0) {
+    return { matchedJob: null, matchedKeyword: "", isAmbiguous: false };
+  }
+
+  const matchTypeScore = { exact: 3, prefix: 2, substring: 1 };
+  matches.sort((a, b) => {
+    const typeDiff = matchTypeScore[b.matchType] - matchTypeScore[a.matchType];
+    if (typeDiff !== 0) return typeDiff;
+    return b.matchedLength - a.matchedLength;
+  });
+
+  const bestMatch = matches[0];
+
+  if (matches.length > 1) {
+    const secondMatch = matches[1];
+    if (
+      secondMatch.job._id !== bestMatch.job._id &&
+      matchTypeScore[secondMatch.matchType] === matchTypeScore[bestMatch.matchType] &&
+      secondMatch.matchedLength === bestMatch.matchedLength
+    ) {
+      console.warn(`[Job Matching] Ambiguous match detected for text "${textBody}": Job A="${bestMatch.job.title}" vs Job B="${secondMatch.job.title}". Flagging as ambiguous.`);
+      return { matchedJob: null, matchedKeyword: "", isAmbiguous: true };
+    }
+  }
+
+  return { matchedJob: bestMatch.job, matchedKeyword: bestMatch.matchedKeyword, isAmbiguous: false };
+}
+
+
 export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const webhookSecret = process.env.WHATCHIMP_WEBHOOK_SECRET;
   if (webhookSecret) {
@@ -77,22 +148,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         const cleanSender = cleanFromNumber;
         console.log(`[WhatChimp Webhook] Meta text message from +${cleanSender}: "${String(textBody).substring(0, 200)}" (type=${message.type}, has text.body=${!!message.text?.body})`);
 
-        const upperText = textBody.trim().toUpperCase();
-        const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
-        let matchedJob: any = null;
-        let matchedKeyword = "";
-
         const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
-        for (const job of activeJobs) {
-          if (job.keyword) {
-            const kUpper = job.keyword.toUpperCase();
-            if (strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper)) {
-              matchedJob = job;
-              matchedKeyword = job.keyword;
-              break;
-            }
-          }
-        }
+        const { matchedJob, matchedKeyword } = matchJobFromText(activeJobs, textBody);
+
 
         let isKeyword = false;
         if (matchedJob && matchedJob.status === "active") {
@@ -337,30 +395,7 @@ export const processInboundTextWebhook = internalMutation({
     const allJobs = [...activeJobs, ...pausedJobs];
 
     // 2. Check for Keyword / Title Match
-    const upperText = text.trim().toUpperCase();
-    const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
-
-    let matchedJob: any = null;
-    let matchedKeyword = "";
-
-    for (const job of allJobs) {
-      // CRITICAL: Only route WhatsApp CVs to jobs that have WhatsApp as an ACTIVE (not paused) source
-      const pausedChannels: string[] = job.pausedChannels || [];
-      if (pausedChannels.includes("whatsapp")) continue;
-
-      const kUpper = (job.keyword || "").toUpperCase();
-      const tUpper = (job.title || "").toUpperCase();
-      if (!kUpper && !tUpper) continue;
-
-      if (
-        (kUpper.length > 1 && (strippedUpper === kUpper || upperText.includes(kUpper) || upperText.startsWith(kUpper))) ||
-        (tUpper.length > 2 && (strippedUpper === tUpper || upperText.includes(tUpper) || upperText.startsWith(tUpper)))
-      ) {
-        matchedJob = job;
-        matchedKeyword = job.keyword || job.title;
-        break;
-      }
-    }
+    const { matchedJob, matchedKeyword } = matchJobFromText(allJobs, text);
 
     if (matchedJob) {
       const existingSession = await ctx.db

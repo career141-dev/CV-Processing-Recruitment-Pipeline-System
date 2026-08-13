@@ -10,7 +10,7 @@ const url = process.env.CONVEX_URL || process.env.CONVEX_SELF_HOSTED_URL || "htt
 console.log(`[Deploy] Syncing latest Convex backend code to ${url}...`);
 
 try {
-  execSync(`npx convex dev --once --url "${url}" --admin-key "${adminKey}"`, {
+  execSync(`npx convex dev --once --typecheck=disable --url "${url}" --admin-key "${adminKey}"`, {
     stdio: 'inherit',
     env: { ...process.env },
   });

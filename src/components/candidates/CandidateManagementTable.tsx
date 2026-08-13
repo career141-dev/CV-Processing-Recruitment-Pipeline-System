@@ -4,6 +4,7 @@ import { api } from "@/convex/_generated/api";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Trash2, Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useDebounce } from "use-debounce";
 
 const SOURCE_COLORS: Record<string, string> = {
   linkedin: "bg-[#0A66C2] text-white",
@@ -71,6 +72,7 @@ export function CandidateManagementTable({
   
   // Filter States
   const [nameSearch, setNameSearch] = React.useState('');
+  const [debouncedNameSearch] = useDebounce(nameSearch, 350);
   const [sourceFilter, setSourceFilter] = React.useState('all');
   const [statusFilter, setStatusFilter] = React.useState('all');
   const [dateFilter, setDateFilter] = React.useState('all');
@@ -82,7 +84,7 @@ export function CandidateManagementTable({
     status,
     loadMore,
   } = usePaginatedQuery(api.candidates.candidates.listCandidatesPaginated, {
-    searchQuery: nameSearch || undefined,
+    searchQuery: debouncedNameSearch || undefined,
     overallStatus: statusFilter || undefined,
     sourceChannel: sourceFilter || undefined,
   }, { initialNumItems: 10 });

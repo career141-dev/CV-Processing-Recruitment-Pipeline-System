@@ -76,19 +76,19 @@ export const getJobOutboundWhatsAppNumber = internalQuery({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
     if (!job) return null;
-    
+
     // 1. Prioritize explicit TA Outreach Number configured on the Job
     if (job.outreachWhatsAppNumber) {
       return job.outreachWhatsAppNumber;
     }
-    
+
     // 2. Fallback to inbound channel configuration for backward compatibility
     const channels = await ctx.db
       .query("jobChannels")
       .withIndex("by_job", (q: any) => q.eq("jobId", args.jobId))
       .filter((q: any) => q.eq(q.field("channelType"), "whatsapp"))
       .collect();
-      
+
     const activeChannel = channels.find((ch: any) => ch.isEnabled && ch.whatsappNumber);
     return activeChannel ? activeChannel.whatsappNumber : null;
   }
@@ -96,17 +96,17 @@ export const getJobOutboundWhatsAppNumber = internalQuery({
 
 async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<string> {
   const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
-  const isTestMode = 
-    process.env.WHATSAPP_TEST_MODE === "true" || 
-    process.env.OUTREACH_TEST_MODE === "true" || 
+  const isTestMode =
+    process.env.WHATSAPP_TEST_MODE === "true" ||
+    process.env.OUTREACH_TEST_MODE === "true" ||
     process.env.TEST_MODE === "true" ||
     systemSettings?.testModeEnabled === true;
-    
-  const testRecipient = 
-    process.env.WHATSAPP_TEST_RECIPIENT || 
-    process.env.TEST_PHONE_NUMBER || 
+
+  const testRecipient =
+    process.env.WHATSAPP_TEST_RECIPIENT ||
+    process.env.TEST_PHONE_NUMBER ||
     systemSettings?.testPhoneNumber;
-    
+
   const cleanNum = (p: string) => p.replace(/[^0-9]/g, "");
 
   if (isTestMode && testRecipient && cleanNum(senderPhone) === cleanNum(testRecipient)) {
@@ -263,15 +263,15 @@ export const sendWhatsApp = internalAction({
 
     // 2. Resolve destination phone number based on test mode
     const systemSettings = await ctx.runQuery(internal.admin.settings.getInternalSystemSettings);
-    const isTestMode = 
-      process.env.WHATSAPP_TEST_MODE === "true" || 
-      process.env.OUTREACH_TEST_MODE === "true" || 
+    const isTestMode =
+      process.env.WHATSAPP_TEST_MODE === "true" ||
+      process.env.OUTREACH_TEST_MODE === "true" ||
       process.env.TEST_MODE === "true" ||
       systemSettings?.testModeEnabled === true;
 
-    const testRecipient = 
-      process.env.WHATSAPP_TEST_RECIPIENT || 
-      process.env.TEST_PHONE_NUMBER || 
+    const testRecipient =
+      process.env.WHATSAPP_TEST_RECIPIENT ||
+      process.env.TEST_PHONE_NUMBER ||
       systemSettings?.testPhoneNumber;
 
     let targetPhone = candidate.phone;
@@ -568,24 +568,24 @@ export const processLocalWhatsappInbound = internalMutation({
     return {
       candidate: candidate
         ? {
-            _id: candidate._id,
-            fullName: candidate.fullName,
-            email: candidate.email,
-            phone: candidate.phone,
-            currentJobTitle: candidate.currentJobTitle,
-            skills: candidate.skills,
-            summary: candidate.summary,
-          }
+          _id: candidate._id,
+          fullName: candidate.fullName,
+          email: candidate.email,
+          phone: candidate.phone,
+          currentJobTitle: candidate.currentJobTitle,
+          skills: candidate.skills,
+          summary: candidate.summary,
+        }
         : null,
       applicationId: activeApp?._id || null,
       jobId: activeApp?.jobId || null,
       job: job
         ? {
-            _id: job._id,
-            title: job.title,
-            jobDescription: job.jobDescription,
-            keyword: job.keyword,
-          }
+          _id: job._id,
+          title: job.title,
+          jobDescription: job.jobDescription,
+          keyword: job.keyword,
+        }
         : null,
       history,
     };
