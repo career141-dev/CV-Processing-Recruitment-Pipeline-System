@@ -1,7 +1,106 @@
-import { internalMutation } from "../_generated/server";
+import { mutation, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { adjustJobStageStat } from "../jobs/stats";
 import { syncCandidateOverallStatus } from "../candidates/candidates";
+
+export const addCandidateToJobFollowUp = mutation({
+  args: {
+    candidateId: v.id("candidates"),
+    jobId: v.id("jobs"),
+  },
+  handler: async (ctx, args) => {
+    const candidate = await ctx.db.get(args.candidateId);
+    if (!candidate) throw new Error("Candidate not found");
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Job not found");
+
+    const now = Date.now();
+    let existingApp = await ctx.db
+      .query("applications")
+      .withIndex("by_candidate_job", (q) => q.eq("candidateId", args.candidateId).eq("jobId", args.jobId))
+      .first();
+
+    let applicationId;
+    if (existingApp) {
+      const fromStage = existingApp.currentStage;
+      await ctx.db.patch(existingApp._id, {
+        currentStage: "follow_up",
+        followUpEnteredAt: now,
+        lastStageChangedAt: now,
+        followUpAttemptCount: 0,
+        nextFollowUpScheduledAt: undefined,
+        nextFollowUpMessage: undefined,
+        waitingForCandidateEta: undefined,
+        candidateEtaMs: undefined,
+        candidateEtaText: undefined,
+        flaggedForTaReview: false,
+        taReviewReason: undefined,
+        isActive: true,
+        stageHistory: [
+          ...(existingApp.stageHistory ?? []),
+          {
+            stage: "follow_up",
+            enteredAt: new Date().toISOString(),
+            changedBy: "system",
+            note: "Re-activated in Follow-up stage for Graphic Designer.",
+          },
+        ],
+      });
+      await adjustJobStageStat(ctx, args.jobId, fromStage, "follow_up");
+      applicationId = existingApp._id;
+    } else {
+      applicationId = await ctx.db.insert("applications", {
+        candidateId: args.candidateId,
+        jobId: args.jobId,
+        currentStage: "follow_up",
+        followUpEnteredAt: now,
+        lastStageChangedAt: now,
+        followUpAttemptCount: 0,
+        isActive: true,
+        loopIteration: 1,
+        createdAt: now,
+        sourceChannel: "WhatsApp",
+        stageHistory: [
+          {
+            stage: "follow_up",
+            enteredAt: new Date().toISOString(),
+            changedBy: "system",
+            note: "Added to Graphic Designer job in follow-up stage.",
+          },
+        ],
+      });
+      await adjustJobStageStat(ctx, args.jobId, "new_cvs", "follow_up");
+    }
+
+    // Bind WhatsApp session to Graphic Designer job
+    const cleanPhone = candidate.phone ? candidate.phone.replace(/\D/g, "") : "";
+    if (cleanPhone) {
+      const existingSession = await ctx.db
+        .query("whatsappSessions")
+        .withIndex("by_phone", (q) => q.eq("phone", cleanPhone))
+        .first();
+      if (existingSession) {
+        await ctx.db.patch(existingSession._id, {
+          jobId: args.jobId,
+          keyword: job.keyword || "GRAPHIC DESIGNER",
+          lastInteractionAt: now,
+        });
+      } else {
+        await ctx.db.insert("whatsappSessions", {
+          phone: cleanPhone,
+          jobId: args.jobId,
+          keyword: job.keyword || "GRAPHIC DESIGNER",
+          lastInteractionAt: now,
+        });
+      }
+    }
+
+    await syncCandidateOverallStatus(ctx, args.candidateId);
+    console.log(`[Follow-Up] Candidate ${candidate.fullName} added to job ${job.title} in follow_up stage.`);
+    return { success: true, applicationId };
+  },
+});
+
 
 export const scheduleDynamicFollowUp = internalMutation({
   args: {
