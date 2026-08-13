@@ -1244,7 +1244,7 @@ export async function runCvExtraction(
 
       const { referees, ...safeExtractedWithoutReferees } = safeExtracted;
 
-      await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
+      const updateRes: any = await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
         rawText: cappedRawText,
         ...safeExtractedWithoutReferees,
@@ -1265,6 +1265,10 @@ export async function runCvExtraction(
         embedding,
         extractionModel: extractionModel || OPENROUTER_PRIMARY_MODEL,
       });
+
+      if (updateRes?.targetCandidateId) {
+        candidateId = updateRes.targetCandidateId;
+      }
 
       if (extracted.referees && extracted.referees.length > 0) {
         const validReferees = extracted.referees

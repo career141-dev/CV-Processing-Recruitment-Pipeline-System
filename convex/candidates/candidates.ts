@@ -515,6 +515,7 @@ export const updateCandidateFields = mutation({
       await syncCandidateSummaryToApplications(ctx, targetId);
       await syncCandidateOverallStatus(ctx, targetId);
     }
+    return { targetCandidateId: targetId };
   },
 });
 

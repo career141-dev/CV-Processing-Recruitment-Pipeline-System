@@ -297,102 +297,20 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       return new Response("OK", { status: 200 });
     }
 
-    console.log(`[WhatChimp Webhook] Inbound media URL detected: ${mediaUrl}`);
-    try {
-      const fileResponse = await fetch(mediaUrl);
-      if (!fileResponse.ok) {
-        throw new Error(`Failed to fetch file from WhatChimp media URL. Status: ${fileResponse.status}`);
-      }
-      const fileBlob = await fileResponse.blob();
-      const fileBuffer = await fileBlob.arrayBuffer();
+    console.log(`[WhatChimp Webhook] Inbound media detected from +${cleanFrom}: ${mediaUrl}. Dispatching to Node worker.`);
 
-      const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
-      const fileHash = Array.from(new Uint8Array(hashBuffer))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-      const bytes = new Uint8Array(fileBuffer);
-      let binary = "";
-      const len = bytes.byteLength;
-      const chunkSize = 0x8000; // 32KB chunks
-      for (let i = 0; i < len; i += chunkSize) {
-        binary += String.fromCharCode.apply(
-          null,
-          bytes.subarray(i, Math.min(i + chunkSize, len)) as any
-        );
-      }
-      const base64Data = btoa(binary);
+    // Asynchronously dispatch media download and R2 upload to high-memory Node.js runtime.
+    // Webhook responds with 200 OK in < 15ms so WhatsApp never times out.
+    await ctx.scheduler.runAfter(0, internal.communications.whatchimpActions.processInboundMedia, {
+      mediaUrl,
+      fileName: fileName ?? "cv.pdf",
+      mimeType: mimeType || "application/pdf",
+      cleanFrom,
+      cleanTo,
+      text: text || "",
+    });
 
-      const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
-        fileName: fileName ?? "cv.pdf",
-        contentType: mimeType || "application/pdf",
-        base64Data,
-      });
-
-      let resolvedJobId: string | null | undefined = null;
-      let isPaused = false;
-      let metaSourceUrl, metaSourceId, metaHeadline;
-
-      if (text) {
-        const upperText = text.toUpperCase();
-        const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
-        for (const job of activeJobs) {
-          // Only route to jobs where WhatsApp is an active (not paused) source
-          const pausedChannels: string[] = (job as any).pausedChannels || [];
-          if (pausedChannels.includes("whatsapp")) continue;
-          if (job.keyword && upperText.includes(job.keyword.toUpperCase())) {
-            resolvedJobId = job._id;
-            if ((job as any).pausedChannels?.includes("whatsapp")) isPaused = true;
-            break;
-          }
-        }
-      }
-
-      if (!resolvedJobId) {
-        const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, {
-          phone: cleanFrom,
-        });
-        if (session) {
-          resolvedJobId = session.jobId;
-          metaSourceUrl = session.metaSourceUrl;
-          metaSourceId = session.metaSourceId;
-          metaHeadline = session.metaHeadline;
-          console.log(`[WhatChimp Webhook] Resolved job ID ${resolvedJobId} from session for +${cleanFrom}`);
-        }
-      }
-
-      const ingestionResult = await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-        jobId: resolvedJobId ? (resolvedJobId as any) : undefined,
-        fileName: fileName ?? "cv.pdf",
-        fileSizeBytes: fileBuffer.byteLength,
-        fileType: mimeType || "application/pdf",
-        fileHash,
-        s3Key,
-        storageProvider: "r2",
-        sourceChannel: "whatsapp",
-        rawSender: cleanFrom,
-        metaSourceUrl,
-        metaSourceId,
-        metaHeadline,
-      });
-      console.log(`[WhatChimp Webhook] Ingested CV for candidate +${cleanFrom} (jobId: ${resolvedJobId}). Result:`, ingestionResult);
-
-      const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
-        targetWhatsAppNumber: cleanTo 
-      });
-      const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
-      if (phoneNumberId) {
-        let replyMessage = "Thank you! Your CV has been successfully received and is being processed by our system. We will contact you if there is a match.";
-        if (ingestionResult && (ingestionResult as any).reason === "duplicate_file") {
-           replyMessage = "We already have this exact CV on file for this position. We'll be in touch if your profile matches our requirements. Thank you!";
-        }
-        const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
-        await sendMetaFreeText(phoneNumberId, cleanFrom, replyMessage, metaAccessToken)
-          .then(r => { if (!r.success) console.error("[WhatsApp Webhook] CV ack reply failed:", r.error); })
-          .catch(console.error);
-      }
-    } catch (err: any) {
-      console.error("[WhatChimp Webhook] Inbound media processing error:", err.message);
-    }
+    return new Response("OK", { status: 200 });
   }
 
   return new Response("OK", { status: 200 });
@@ -463,6 +381,43 @@ export const processInboundTextWebhook = internalMutation({
           keyword: matchedKeyword,
           lastInteractionAt: Date.now(),
         });
+      }
+
+      // Check if candidate uploaded a CV without a job (e.g., CV sent first, keyword sent second)
+      const candidateByPhone = await ctx.db
+        .query("candidates")
+        .withIndex("by_phoneClean", (q) => q.eq("phoneClean", cleanFrom))
+        .first() || await ctx.db
+        .query("candidates")
+        .withIndex("by_phone", (q) => q.eq("phone", "+" + cleanFrom))
+        .first();
+
+      if (candidateByPhone) {
+        const apps = await ctx.db
+          .query("applications")
+          .withIndex("by_candidateId", (q) => q.eq("candidateId", candidateByPhone._id))
+          .collect();
+
+        const alreadyInJob = apps.some((a) => a.jobId === matchedJob._id);
+        if (!alreadyInJob) {
+          const now = Date.now();
+          await ctx.db.insert("applications", {
+            candidateId: candidateByPhone._id,
+            jobId: matchedJob._id,
+            currentStage: "new_cvs",
+            sourceChannel: "whatsapp",
+            createdAt: now,
+            isActive: true,
+            lastStageChangedAt: now,
+            loopIteration: 0,
+            stageHistory: [{
+              stage: "new_cvs",
+              enteredAt: new Date(now).toISOString(),
+              changedBy: "system",
+            }],
+          });
+          console.log(`[processInboundTextWebhook] Auto-linked candidate ${candidateByPhone.fullName} (+${cleanFrom}) to job ${matchedJob.title} in new_cvs!`);
+        }
       }
 
       return {
