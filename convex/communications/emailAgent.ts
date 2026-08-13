@@ -1076,8 +1076,12 @@ export const sendFollowUpEmail = internalAction({
                   },
                 },
               ],
-              internetMessageHeaders: [
-                { name: "Reply-To", value: replyTo },
+              replyTo: [
+                {
+                  emailAddress: {
+                    address: replyTo,
+                  },
+                },
               ],
             },
             saveToSentItems: "true",
