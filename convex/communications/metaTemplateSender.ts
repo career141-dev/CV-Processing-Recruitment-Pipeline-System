@@ -92,7 +92,8 @@ export const sendMetaTemplate = internalAction({
         .trim();
     };
 
-    const candidateName = sanitizeParam(candidate.fullName || "Candidate");
+    const cleanName = (candidate.fullName || "Candidate").replace(/\s*\([+0-9\s-]+\)\s*$/g, "").trim();
+    const candidateName = sanitizeParam(cleanName || "Candidate");
     const jobTitle = sanitizeParam(job?.title || "the role");
 
     if (args.templateType === "initial_outreach") {
@@ -118,10 +119,22 @@ export const sendMetaTemplate = internalAction({
 
       const missingFormatted = sanitizeParam(missingList.map((m) => `• ${m}`).join(" | ") || "• None (all submitted)");
 
-      // Requirements snippet (max 180 chars, no newlines)
-      let requirementsSnippet = sanitizeParam(job?.jobDescription || "Job details");
-      if (requirementsSnippet.length > 180) {
-        requirementsSnippet = requirementsSnippet.substring(0, 177) + "...";
+      // Clean, concise role requirements snippet (short & no awkward cutoffs)
+      let requirementsSnippet = "";
+      if (Array.isArray(job?.requiredSkills) && job.requiredSkills.length > 0) {
+        requirementsSnippet = `Key Skills: ${job.requiredSkills.slice(0, 4).join(", ")}`;
+      } else if (job?.jobDescription) {
+        const cleanDesc = sanitizeParam(job.jobDescription);
+        const firstSentenceMatch = cleanDesc.match(/^([^.!?]+[.!?])/);
+        if (firstSentenceMatch && firstSentenceMatch[1].length <= 140) {
+          requirementsSnippet = firstSentenceMatch[1].trim();
+        } else {
+          const trimmed = cleanDesc.slice(0, 130);
+          const lastSpace = trimmed.lastIndexOf(" ");
+          requirementsSnippet = lastSpace > 30 ? trimmed.slice(0, lastSpace) : trimmed;
+        }
+      } else {
+        requirementsSnippet = `Key requirements for the ${jobTitle} role.`;
       }
 
       parameters = [
@@ -143,57 +156,66 @@ export const sendMetaTemplate = internalAction({
       loggedBody = `Hi ${candidateName}, we're still looking forward to progressing your application for the *${jobTitle}* role at Career141.\n\nWe just need a few details from you to move things forward. Could you please reply to this message at your earliest convenience?\n\nWe'd love to keep you in the process! 😊`;
     }
 
-    // 4. Send request to Meta Cloud API with fallback to verified connected phone ID
-    const payload = {
-      messaging_product: "whatsapp",
-      to: cleanRecipientPhone,
-      type: "template",
-      template: {
-        name: templateName,
-        language: {
-          code: "en",
-        },
-        components: [
-          {
-            type: "body",
-            parameters: parameters,
-          },
-        ],
-      },
-    };
-
+    // 4. Send request to Meta Cloud API with fallback for language locale (en_US / en)
+    const languagesToTry = ["en_US", "en"];
     let sentSuccess = false;
     let errorMessage = "";
 
-    try {
-      console.log(`[Meta Template Sender] Dispatching template "${templateName}" to target phone +${cleanRecipientPhone} using phone_number_id ${phoneId}`);
-      const metaUrl = `https://graph.facebook.com/v19.0/${phoneId}/messages`;
-
-      const response = await fetch(metaUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${metaAccessToken}`,
+    for (const langCode of languagesToTry) {
+      const payload = {
+        messaging_product: "whatsapp",
+        to: cleanRecipientPhone,
+        type: "template",
+        template: {
+          name: templateName,
+          language: {
+            code: langCode,
+          },
+          components: [
+            {
+              type: "body",
+              parameters: parameters,
+            },
+          ],
         },
-        body: JSON.stringify(payload),
-      });
+      };
 
-      const responseText = await response.text();
-      if (response.ok) {
-        const responseData = JSON.parse(responseText);
-        if (responseData.messages && responseData.messages.length > 0) {
-          sentSuccess = true;
-          console.log(`[Meta Template Sender] Successfully sent template message. Meta Msg ID: ${responseData.messages[0].id}`);
+      try {
+        console.log(`[Meta Template Sender] Dispatching template "${templateName}" (${langCode}) to target phone +${cleanRecipientPhone} using phone_number_id ${phoneId}`);
+        const metaUrl = `https://graph.facebook.com/v19.0/${phoneId}/messages`;
+
+        const response = await fetch(metaUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${metaAccessToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const responseText = await response.text();
+        if (response.ok) {
+          const responseData = JSON.parse(responseText);
+          if (responseData.messages && responseData.messages.length > 0) {
+            sentSuccess = true;
+            console.log(`[Meta Template Sender] Successfully sent template message with language ${langCode}. Meta Msg ID: ${responseData.messages[0].id}`);
+            break;
+          } else {
+            errorMessage = `Response payload missing message ID: ${responseText}`;
+          }
         } else {
-          errorMessage = `Response payload missing message ID: ${responseText}`;
+          errorMessage = `HTTP ${response.status}: ${responseText}`;
+          console.error(`[Meta Template Sender] Meta API returned failure for lang ${langCode}: ${errorMessage}`);
+          // If error is not a translation/locale error (132001), break early
+          if (!responseText.includes("132001")) {
+            break;
+          }
         }
-      } else {
-        errorMessage = `HTTP ${response.status}: ${responseText}`;
-        console.error(`[Meta Template Sender] Meta API returned failure for phoneId ${phoneId}: ${errorMessage}`);
+      } catch (err: any) {
+        errorMessage = err.message || String(err);
+        console.error(`[Meta Template Sender] HTTP request exception for phoneId ${phoneId}: ${errorMessage}`);
+        break;
       }
-    } catch (err: any) {
-      errorMessage = err.message || String(err);
-      console.error(`[Meta Template Sender] HTTP request exception for phoneId ${phoneId}: ${errorMessage}`);
     }
 
     // 5. Record / Update the message in communications history

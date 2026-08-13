@@ -1580,3 +1580,30 @@ export const moveApplicationToJob = mutation({
     return { success: true, applicationId: args.applicationId, newJobId: args.targetJobId };
   },
 });
+
+export const updateApplicationStageDirect = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    stage: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) throw new Error("Application not found: " + args.applicationId);
+    const now = Date.now();
+    await ctx.db.patch(args.applicationId, {
+      currentStage: args.stage as any,
+      lastStageChangedAt: now,
+      followUpEnteredAt: args.stage === "follow_up" ? now : app.followUpEnteredAt,
+      stageHistory: [
+        ...(app.stageHistory || []),
+        {
+          stage: args.stage as any,
+          enteredAt: new Date(now).toISOString(),
+          changedBy: "system",
+        },
+      ],
+    });
+    await syncCandidateOverallStatus(ctx, app.candidateId);
+    return { success: true, applicationId: args.applicationId, newStage: args.stage };
+  },
+});

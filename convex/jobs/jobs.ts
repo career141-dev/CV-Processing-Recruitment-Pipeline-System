@@ -295,6 +295,7 @@ export const updateJobDetails = mutation({
     followUpEmailBodyTemplate: v.optional(v.string()),
     pausedChannels: v.optional(v.array(v.string())),
     outreachWhatsAppNumber: v.optional(v.string()),
+    customFollowUpQuestions: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter", "test_ta"]);
