@@ -72,6 +72,12 @@ export const setSystemTestSettings = internalMutation({
     testModeEnabled: v.optional(v.boolean()),
     testPhoneNumber: v.optional(v.string()),
     testEmailAddress: v.optional(v.string()),
+    channel_toggles: v.optional(v.object({
+      whatsappIngestion: v.boolean(),
+      emailIngestion: v.boolean(),
+      whatsappFollowUp: v.boolean(),
+      emailFollowUp: v.boolean(),
+    })),
   },
   handler: async (ctx, args) => {
     let configRow = await ctx.db.query("appSettings").withIndex("by_key", q => q.eq("key", "system")).first();
@@ -80,6 +86,7 @@ export const setSystemTestSettings = internalMutation({
         ...(args.testModeEnabled !== undefined ? { testModeEnabled: args.testModeEnabled } : {}),
         ...(args.testPhoneNumber !== undefined ? { testPhoneNumber: args.testPhoneNumber } : {}),
         ...(args.testEmailAddress !== undefined ? { testEmailAddress: args.testEmailAddress } : {}),
+        ...(args.channel_toggles !== undefined ? { channel_toggles: args.channel_toggles } : {}),
         updatedAt: new Date().toISOString(),
       });
     } else {
@@ -88,6 +95,7 @@ export const setSystemTestSettings = internalMutation({
         testModeEnabled: args.testModeEnabled ?? true,
         testPhoneNumber: args.testPhoneNumber,
         testEmailAddress: args.testEmailAddress,
+        channel_toggles: args.channel_toggles,
         updatedAt: new Date().toISOString(),
       });
     }
