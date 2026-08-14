@@ -813,37 +813,39 @@ function formatShortHistoryText(entry: any): string {
                     {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates matching filters found.'}
                   </div>
                 ) : (
-                  (currentSearchItems as any[]).map((c) => c && (
-                    <CandidateCard
-                      key={c._id}
-                      id={c._id}
-                      name={c.fullName || (c.email ? c.email.split("@")[0] : "Candidate Profile")}
-                      initials={getInitials(c.fullName || c.email || "Candidate")}
-                      sourceText={(c.sourceChannel || "Manual").toUpperCase()}
-                      sourceVariant={getSourceVariant(c.sourceChannel)}
-                      role={formatRole(c.currentTitle || c.currentJobTitle, c.currentEmployer)}
-                      location={c.location || "Unknown"}
-                      skills={formatSkills(c.skills)}
-                      score={c.score}
-                      matchReason={c.matchReason}
-                      breakdown={c.breakdown}
-                      isSelected={selectedCandidates.includes(c._id)}
-                      onToggle={() => toggleCandidate(c._id)}
-                      profileHref={`/dashboard/candidates/${c._id}`}
-                      imageUrl={(c as any).profileImageUrl}
-                      onDelete={() => setDeletingCandidateId(c._id)}
-                      onShowCv={() => setCvPreviewCandidate({
-                        id: c._id,
-                        name: c.fullName || (c.email ? c.email.split("@")[0] : "Candidate")
-                      })}
-                      onMessage={() => setMessageCandidate({
-                        id: c._id,
-                        name: c.fullName || "Unknown",
-                        initials: getInitials(c.fullName),
-                        role: formatRole(c.currentTitle, c.currentEmployer)
-                      })}
-                    />
-                  ))
+                  <div className="flex flex-col gap-3">
+                    {(currentSearchItems as any[]).map((c) => c && (
+                      <CandidateCard
+                        key={c._id}
+                        id={c._id}
+                        name={c.fullName || (c.email ? c.email.split("@")[0] : "Candidate Profile")}
+                        initials={getInitials(c.fullName || c.email || "Candidate")}
+                        sourceText={(c.sourceChannel || "Manual").toUpperCase()}
+                        sourceVariant={getSourceVariant(c.sourceChannel)}
+                        role={formatRole(c.currentTitle || c.currentJobTitle, c.currentEmployer)}
+                        location={c.location || "Unknown"}
+                        skills={formatSkills(c.skills)}
+                        score={c.score}
+                        matchReason={c.matchReason}
+                        breakdown={c.breakdown}
+                        isSelected={selectedCandidates.includes(c._id)}
+                        onToggle={() => toggleCandidate(c._id)}
+                        profileHref={`/dashboard/candidates/${c._id}`}
+                        imageUrl={(c as any).profileImageUrl}
+                        onDelete={() => setDeletingCandidateId(c._id)}
+                        onShowCv={() => setCvPreviewCandidate({
+                          id: c._id,
+                          name: c.fullName || (c.email ? c.email.split("@")[0] : "Candidate")
+                        })}
+                        onMessage={() => setMessageCandidate({
+                          id: c._id,
+                          name: c.fullName || "Unknown",
+                          initials: getInitials(c.fullName),
+                          role: formatRole(c.currentTitle, c.currentEmployer)
+                        })}
+                      />
+                    ))}
+                  </div>
                 )}
                 
                 {/* Search Pagination Controls */}
