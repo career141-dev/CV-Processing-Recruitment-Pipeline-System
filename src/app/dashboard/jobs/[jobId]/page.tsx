@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, DollarSign, ExternalLink, HelpCircle
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, MessageCircle, DollarSign, ExternalLink, HelpCircle
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -1979,6 +1979,42 @@ export default function JobDetailPage() {
   const triggerReverseMatch = useMutation(api.jobs.jobs.triggerReverseMatch);
   const updateTaPreferencesMutation = useMutation(api.jobs.jobs.updateTaPreferences);
   const publishJob = useMutation(api.jobs.jobs.publishJob);
+  const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
+
+  const handleToggleWhatsAppFollowUp = async () => {
+    if (!job) return;
+    const currentVal = job.enableWhatsAppFollowUp !== false;
+    const newVal = !currentVal;
+    const toastId = toast.loading(`${newVal ? "Enabling" : "Disabling"} WhatsApp follow-ups...`);
+    try {
+      await updateJobDetails({
+        jobId,
+        enableWhatsAppFollowUp: newVal,
+      });
+      toast.success(`WhatsApp follow-ups ${newVal ? "enabled" : "disabled"}!`, { id: toastId });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update follow-up settings", { id: toastId });
+      showError(e, { title: "Update Failed" });
+    }
+  };
+
+  const handleToggleEmailFollowUp = async () => {
+    if (!job) return;
+    const currentVal = job.enableEmailFollowUp !== false;
+    const newVal = !currentVal;
+    const toastId = toast.loading(`${newVal ? "Enabling" : "Disabling"} Email follow-ups...`);
+    try {
+      await updateJobDetails({
+        jobId,
+        enableEmailFollowUp: newVal,
+      });
+      toast.success(`Email follow-ups ${newVal ? "enabled" : "disabled"}!`, { id: toastId });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update follow-up settings", { id: toastId });
+      showError(e, { title: "Update Failed" });
+    }
+  };
+
   const [isScanning, setIsScanning] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
@@ -3146,6 +3182,35 @@ export default function JobDetailPage() {
                     </span>
                   );
                 })}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3.5 pt-3.5 border-t border-border/40">
+              <span className="text-[11px] uppercase tracking-wider font-bold text-text-secondary">Auto Follow-Ups:</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleToggleWhatsAppFollowUp}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
+                    job.enableWhatsAppFollowUp !== false
+                      ? 'bg-[#25D366]/10 border-[#25D366]/20 text-[#128C7E] hover:bg-[#25D366]/20'
+                      : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
+                  }`}
+                  title={job.enableWhatsAppFollowUp !== false ? "WhatsApp Follow-Up Active. Click to Disable." : "WhatsApp Follow-Up Disabled. Click to Enable."}
+                >
+                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>WhatsApp: {job.enableWhatsAppFollowUp !== false ? 'ON' : 'OFF'}</span>
+                </button>
+                <button
+                  onClick={handleToggleEmailFollowUp}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
+                    job.enableEmailFollowUp !== false
+                      ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 hover:bg-blue-500/20'
+                      : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
+                  }`}
+                  title={job.enableEmailFollowUp !== false ? "Email Follow-Up Active. Click to Disable." : "Email Follow-Up Disabled. Click to Enable."}
+                >
+                  <Mail className="w-3.5 h-3.5 shrink-0" />
+                  <span>Email: {job.enableEmailFollowUp !== false ? 'ON' : 'OFF'}</span>
+                </button>
               </div>
             </div>
           </div>
