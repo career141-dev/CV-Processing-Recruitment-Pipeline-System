@@ -58,7 +58,7 @@ services:
       timeout: 5s
       retries: 5
     # ── SCALE & STABILITY FIX: 6g limit ensures system never OOM crashes ──
-    mem_limit: 6g
+    mem_limit: 8g
     mem_reservation: 1.5g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
