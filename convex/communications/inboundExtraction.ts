@@ -88,6 +88,9 @@ SAMPLE FOLLOW-UP TEMPLATE:
 Your job is to analyze the candidate's LATEST/CURRENT message and output a JSON object.
 Rules:
 1. Extract missing numeric/text details from the CURRENT message if provided (currentSalary, expectedSalary, noticePeriodDays, noticePeriod, customAnswers).
+   - STUDENTS/INTERNS/UNEMPLOYED SALARY: If a candidate states they are currently a student, undergraduate, intern, or currently unemployed with no work experience, automatically set 'currentSalary' to 0 (do not leave it as null).
+   - NO NOTICE PERIOD: If a candidate states they do not have a notice period, are currently free, or can join immediately, set 'noticePeriodDays' to 0 and 'noticePeriod' to "0 Days".
+   - CUSTOM ANSWERS KEY MATCHING: For each extracted answer in 'customAnswers', the key MUST EXACTLY MATCH the custom question string listed under MISSING DETAILS BEFORE THIS MESSAGE (e.g. use the exact full question text as the key, do not simplify it to "Portfolio" or "Portfolio Link").
 2. Intent Classification:
    - 'provided_all': Candidate provided ALL remaining missing details in this message. Set nextActionMessage to null.
    - 'provided_partial': Candidate provided some of the missing details in this message. Acknowledge what was received and ask ONLY for the remaining missing fields.
@@ -188,7 +191,31 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
       
       let finalCustomAnswers = undefined;
       if (extracted.customAnswers && Object.keys(extracted.customAnswers).length > 0) {
-        finalCustomAnswers = { ...(activeApp.customFollowUpAnswers || {}), ...extracted.customAnswers };
+        const mappedCustomAnswers: Record<string, string> = {};
+        for (const [key, val] of Object.entries(extracted.customAnswers)) {
+          const valStr = String(val).trim();
+          if (!valStr) continue;
+          
+          // Fuzzy match against job's custom follow up questions
+          const matchedQuestion = customQuestions.find((q: string) => {
+            const qNorm = q.toLowerCase();
+            const keyNorm = key.toLowerCase();
+            return qNorm.includes(keyNorm) || keyNorm.includes(qNorm) || 
+                   (keyNorm.includes("portfolio") && qNorm.includes("portfolio")) ||
+                   (keyNorm.includes("samples") && qNorm.includes("samples"));
+          });
+          
+          if (matchedQuestion) {
+            mappedCustomAnswers[matchedQuestion] = valStr;
+          } else {
+            mappedCustomAnswers[key] = valStr;
+          }
+        }
+        
+        finalCustomAnswers = { 
+          ...(activeApp.customFollowUpAnswers || {}), 
+          ...mappedCustomAnswers 
+        };
         updates.customFollowUpAnswers = finalCustomAnswers;
       }
 
