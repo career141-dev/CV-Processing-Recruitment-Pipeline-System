@@ -10,9 +10,12 @@ export const getOverviewMetrics = query({
   args: {},
   handler: async (ctx) => {
     await requireFullAccess(ctx);
-    // 1. Calculate live Total CVs
-    const allUploads = await ctx.db.query("cvUploads").collect();
-    const totalCVs = allUploads.length;
+    // 1. Read total CV count from systemStats DB record (O(1) lookup)
+    const sysStat = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
+      .first();
+    const totalCVs = sysStat?.totalCvUploads ?? 0;
 
     // 2. Read only active jobs
     const activeJobs = await ctx.db.query("jobs")
@@ -34,16 +37,17 @@ export const getOverviewMetrics = query({
     const interviews = globalStageCounts["interview"] || 0;
     const placements = globalStageCounts["placed"] || 0;
 
-    // 5. Live Source distribution (Last 30 Days)
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    // 5. Source distribution from indexed dailyStats DB records (Last 30 Days)
+    const recentDailyStats = await ctx.db.query("dailyStats").order("desc").take(30);
     const sourceTotals: Record<string, number> = {};
     let totalFromSources = 0;
     
-    for (const upload of allUploads) {
-      if (upload._creationTime >= thirtyDaysAgo) {
-        const source = upload.source || "database";
-        sourceTotals[source] = (sourceTotals[source] || 0) + 1;
-        totalFromSources++;
+    for (const dayStat of recentDailyStats) {
+      const bySource = dayStat.cvsBySource || {};
+      for (const [source, count] of Object.entries(bySource)) {
+        const sourceName = source || "database";
+        sourceTotals[sourceName] = (sourceTotals[sourceName] || 0) + (count as number);
+        totalFromSources += (count as number);
       }
     }
 
