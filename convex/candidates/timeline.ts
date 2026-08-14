@@ -134,6 +134,9 @@ export const getTimeline = query({
     // Sort descending (newest first)
     events.sort((a, b) => b.timestamp - a.timestamp);
 
+    const job = await ctx.db.get(application.jobId);
+    const candidate = await ctx.db.get(application.candidateId);
+
     return {
       events,
       applicationInfo: {
@@ -145,6 +148,9 @@ export const getTimeline = query({
         followUpCurrentSalary: application.followUpCurrentSalary,
         followUpExpectedSalary: application.followUpExpectedSalary,
         followUpNoticePeriod: application.followUpNoticePeriod,
+        customFollowUpAnswers: application.customFollowUpAnswers,
+        jobCustomQuestions: job?.customFollowUpQuestions || (job as any)?.agent5CustomQuestions || [],
+        candidateCustomCallData: candidate?.customCallData,
       }
     };
   },

@@ -539,23 +539,46 @@ export const logManualCall = mutation({
     // For "Interested" or "No Answer" — update per-application flags first
     await updateFollowUpFlags(ctx, args.applicationId, candidate);
     
-    // Manually force flags if they were provided as strings
-    const manualFlags: Record<string, boolean> = {};
-    if (typeof args.currentSalary === 'string' && args.currentSalary.trim()) manualFlags.followUpCurrentSalary = true;
-    if (typeof args.expectedSalary === 'string' && args.expectedSalary.trim()) manualFlags.followUpExpectedSalary = true;
-    if (typeof args.noticePeriodDays === 'string' && args.noticePeriodDays.trim()) manualFlags.followUpNoticePeriod = true;
+    // Manually force flags if they were provided as strings, and save customFollowUpAnswers
+    const manualAppUpdates: Record<string, any> = {};
+    if (typeof args.currentSalary === 'string' && args.currentSalary.trim()) manualAppUpdates.followUpCurrentSalary = true;
+    if (typeof args.expectedSalary === 'string' && args.expectedSalary.trim()) manualAppUpdates.followUpExpectedSalary = true;
+    if (typeof args.noticePeriodDays === 'string' && args.noticePeriodDays.trim()) manualAppUpdates.followUpNoticePeriod = true;
     
-    if (Object.keys(manualFlags).length > 0) {
-      await ctx.db.patch(args.applicationId, manualFlags);
+    if (customCallFields.length > 0) {
+      const existingApp = await ctx.db.get(args.applicationId);
+      const prevAnswers = existingApp?.customFollowUpAnswers || {};
+      const mergedAnswers: Record<string, string> = { ...prevAnswers };
+      for (const field of customCallFields) {
+        if (field.key.trim() && field.value.trim()) {
+          mergedAnswers[field.key.trim()] = field.value.trim();
+        }
+      }
+      manualAppUpdates.customFollowUpAnswers = mergedAnswers;
+    }
+
+    if (Object.keys(manualAppUpdates).length > 0) {
+      await ctx.db.patch(args.applicationId, manualAppUpdates);
     }
 
     const updatedApp = await ctx.db.get(args.applicationId);
+    const job = updatedApp?.jobId ? await ctx.db.get(updatedApp.jobId) : null;
+    const customQuestions = job?.customFollowUpQuestions || [];
+    const appAnswers = updatedApp?.customFollowUpAnswers || {};
+    let customQuestionsComplete = true;
+    for (const q of customQuestions) {
+      if (!appAnswers[q]) {
+        customQuestionsComplete = false;
+        break;
+      }
+    }
 
     const allComplete =
       updatedApp?.followUpCvReceived === true &&
       updatedApp?.followUpCurrentSalary === true &&
       updatedApp?.followUpExpectedSalary === true &&
-      updatedApp?.followUpNoticePeriod === true;
+      updatedApp?.followUpNoticePeriod === true &&
+      customQuestionsComplete;
 
     if (args.outcome === "Interested" && allComplete) {
       // All 4 fields captured on the first TA call — skip Follow-up, go straight to 2nd Shortlist

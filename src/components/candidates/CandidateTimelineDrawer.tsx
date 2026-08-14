@@ -3,7 +3,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from '../../../convex/_generated/dataModel';
 import { format, differenceInDays } from 'date-fns';
-import { X, MessageSquare, ArrowRightLeft, UserPlus, Info, CheckCircle2, Clock, Mail, MessageCircle, AlertCircle, FileText, DollarSign, Calendar, CircleDashed } from 'lucide-react';
+import { X, MessageSquare, ArrowRightLeft, UserPlus, Info, CheckCircle2, Clock, Mail, MessageCircle, AlertCircle, FileText, DollarSign, Calendar, CircleDashed, ExternalLink, HelpCircle } from 'lucide-react';
 
 interface CandidateTimelineDrawerProps {
   applicationId: Id<"applications"> | null;
@@ -144,6 +144,65 @@ export function CandidateTimelineDrawer({ applicationId, onClose }: CandidateTim
                     isComplete={info?.followUpNoticePeriod} 
                   />
                 </div>
+
+                {/* Job Custom Questions */}
+                {info?.jobCustomQuestions && info.jobCustomQuestions.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-border/60">
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2.5 flex items-center gap-1">
+                      <HelpCircle className="w-3.5 h-3.5 text-primary" />
+                      Job Screening Questions
+                    </h4>
+                    <div className="flex flex-col gap-2">
+                      {info.jobCustomQuestions.map((q: string, idx: number) => {
+                        const ans = info.customFollowUpAnswers?.[q] || info.candidateCustomCallData?.[q];
+                        const isComplete = !!ans && String(ans).trim() !== '' && String(ans).trim() !== '—';
+                        const answerStr = isComplete ? String(ans).trim() : '';
+                        const isUrlAnswer = isComplete && (/^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(answerStr) || answerStr.includes('drive.google.com') || answerStr.includes('behance.net') || answerStr.includes('vimeo.com') || answerStr.includes('youtube.com') || answerStr.includes('github.com'));
+                        const linkTarget = isUrlAnswer ? (!/^https?:\/\//i.test(answerStr) ? `https://${answerStr}` : answerStr) : '';
+
+                        return (
+                          <div 
+                            key={idx} 
+                            className={`p-2.5 rounded-lg border flex items-center justify-between gap-2 text-xs transition-all ${
+                              isComplete ? 'bg-success/10 border-success/20 text-success' : 'bg-surface border-border text-text-secondary'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              {isComplete ? (
+                                <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4 text-orange-400 shrink-0" />
+                              )}
+                              <div className="flex flex-col overflow-hidden">
+                                <span className="font-semibold text-text-primary text-[11px] truncate" title={q}>
+                                  {q}
+                                </span>
+                                {isComplete ? (
+                                  <span className="text-[10px] text-text-secondary truncate max-w-[260px]" title={answerStr}>
+                                    {answerStr}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-orange-500 italic font-medium">Pending response</span>
+                                )}
+                              </div>
+                            </div>
+                            {isUrlAnswer && (
+                              <a
+                                href={linkTarget}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white transition-colors shrink-0 shadow-2xs cursor-pointer"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Open Link</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* SECTION 2: Sequence Graph */}

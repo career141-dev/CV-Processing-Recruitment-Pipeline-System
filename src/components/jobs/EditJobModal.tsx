@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { SkillsInput } from '@/components/ui/SkillsInput';
+import { HelpCircle, Plus, Trash2 } from 'lucide-react';
 
 interface EditJobModalProps {
   isOpen: boolean;
@@ -66,6 +67,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
 
   // Inline config values for each channel (populated from existing jobChannels or typed in)
   const [channelConfig, setChannelConfig] = useState<Record<string, string>>({});
+  const [newQuestionInput, setNewQuestionInput] = useState('');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -85,6 +87,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     followUpEmailBodyTemplate: '',
     pausedChannels: [] as string[],
     outreachWhatsAppNumber: '',
+    customFollowUpQuestions: [] as string[],
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -109,6 +112,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         followUpEmailBodyTemplate: job.followUpEmailBodyTemplate || '',
         pausedChannels: job.pausedChannels || [],
         outreachWhatsAppNumber: job.outreachWhatsAppNumber || '',
+        customFollowUpQuestions: job.customFollowUpQuestions || job.agent5CustomQuestions || [],
       });
     }
   }, [job, isOpen]);
@@ -146,6 +150,27 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     }));
   };
 
+  const handleAddQuestion = () => {
+    const q = newQuestionInput.trim();
+    if (!q) return;
+    if (formData.customFollowUpQuestions.includes(q)) {
+      toast.info("Question already in list");
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      customFollowUpQuestions: [...prev.customFollowUpQuestions, q]
+    }));
+    setNewQuestionInput('');
+  };
+
+  const handleRemoveQuestion = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      customFollowUpQuestions: prev.customFollowUpQuestions.filter((_, i) => i !== index)
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!job) return;
@@ -178,6 +203,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         followUpEmailSubjectTemplate: formData.followUpEmailSubjectTemplate || undefined,
         followUpEmailBodyTemplate: formData.followUpEmailBodyTemplate || undefined,
         outreachWhatsAppNumber: formData.outreachWhatsAppNumber || undefined,
+        customFollowUpQuestions: formData.customFollowUpQuestions,
       });
 
       // Save ALL channel states — creates new channels if toggled ON for the first time,
@@ -455,6 +481,64 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
                   />
                   <p className="text-[11px] text-text-secondary mt-1">Available tags: <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;candidate_name&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;job_title&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;missing_fields&#125;</code>, <code className="bg-surface-variant px-1 py-0.5 rounded text-[10px]">&#123;company_name&#125;</code></p>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Custom Follow-Up Questions (Screening / Portfolio Requirements) */}
+          <div className="flex flex-col gap-3 col-span-2 p-4 bg-surface border border-border rounded-xl mt-2 shadow-xs">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <HelpCircle className="w-4 h-4 text-primary" />
+                <p className="text-sm font-semibold text-text-primary">Custom Screening & Follow-up Questions</p>
+              </div>
+              <p className="text-xs text-text-secondary">
+                Add custom mandatory questions for this job (e.g. <em>"Portfolio Link / Showreel"</em>, <em>"GitHub Profile"</em>, <em>"Willing to relocate?"</em>). These questions will be tracked alongside salary & notice period in the Follow-up stage.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. Portfolio Link / Showreel (Google Drive, Vimeo, Behance)"
+                value={newQuestionInput}
+                onChange={(e) => setNewQuestionInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddQuestion();
+                  }
+                }}
+                className="flex-1 px-3 py-2 bg-surface-bright/50 border border-border rounded-lg text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
+              <button
+                type="button"
+                onClick={handleAddQuestion}
+                className="px-3.5 py-2 bg-primary text-on-primary hover:bg-primary/90 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Question</span>
+              </button>
+            </div>
+
+            {formData.customFollowUpQuestions.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                {formData.customFollowUpQuestions.map((q, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-2.5 bg-surface-bright/40 border border-border/80 rounded-lg text-xs"
+                  >
+                    <span className="font-medium text-text-primary flex-1">{q}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveQuestion(idx)}
+                      className="p-1 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded transition-colors ml-2 cursor-pointer"
+                      title="Remove Question"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>

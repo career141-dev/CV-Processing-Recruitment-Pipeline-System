@@ -1219,7 +1219,7 @@ export async function runCvExtraction(
 
       const { referees, ...safeExtractedWithoutReferees } = safeExtracted;
 
-      await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
+      const updateRes: any = await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
         rawText: cappedRawText,
         ...safeExtractedWithoutReferees,
@@ -1240,6 +1240,10 @@ export async function runCvExtraction(
         embedding,
         extractionModel: extractionModel || OPENROUTER_PRIMARY_MODEL,
       });
+
+      if (updateRes?.targetCandidateId) {
+        candidateId = updateRes.targetCandidateId;
+      }
 
       if (extracted.referees && extracted.referees.length > 0) {
         const validReferees = extracted.referees
@@ -1351,13 +1355,29 @@ export async function runCvExtraction(
 
     const shouldRetry = false; // Do not auto-retry 5-6 times on failure; single pass only
 
-    // Clean up the blank candidate stub since extraction failed
+    // NEVER delete the candidate stub. Preserve the candidate and application in New CVs so no applicant is lost!
     if (candidateId) {
-      console.log(`[CvExtraction] Extraction failed, cleaning up blank candidate: ${candidateId}`);
-      await ctx.runMutation(api.candidates.candidates.deleteCandidate, { 
+      const fallbackName = cvUpload?.fileName 
+        ? cvUpload.fileName.replace(/\.[^/.]+$/, "").replace(/[_\-]/g, " ") 
+        : "Applicant";
+        
+      await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
-        preserveUpload: true
+        fullName: fallbackName,
+        isParsed: false,
+        cvUploadId,
       });
+
+      const assignedJobId = cvUpload?.assignToJob;
+      if (assignedJobId) {
+        await ctx.runMutation(api.applications.applications.createApplication, {
+          candidateId,
+          jobId: assignedJobId as any,
+          cvFileId: cvUploadId,
+          sourceChannel: sourceChannel ?? "manual_upload",
+        });
+        console.log(`[CvExtraction] Preserved candidate ${candidateId} in job ${assignedJobId} (New CVs) despite extraction error: ${message}`);
+      }
     }
 
     if (shouldRetry) {

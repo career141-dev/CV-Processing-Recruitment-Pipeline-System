@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, DollarSign
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, DollarSign, ExternalLink, HelpCircle
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -24,8 +24,7 @@ import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
-  { id: "ta_shortlist", label: "TA Shortlisted" },
-  { id: "follow_up", label: "Follow-up" },
+  { id: "ta_shortlist", label: "TA Shortlisted & Follow-up" },
   { id: "second_shortlist", label: "2nd Shortlist" },
   { id: "director_shortlist", label: "Director Shortlist" },
   { id: "client_review", label: "Client Review" },
@@ -593,6 +592,7 @@ const LogManualCallCard = ({
   setNoticePeriod,
   customFields,
   setCustomFields,
+  jobCustomQuestions,
   cvFile,
   setCvFile,
   isSaving,
@@ -610,6 +610,7 @@ const LogManualCallCard = ({
   setNoticePeriod: (val: string) => void;
   customFields: { key: string; value: string }[];
   setCustomFields: (val: { key: string; value: string }[]) => void;
+  jobCustomQuestions?: string[];
   cvFile: File | null;
   setCvFile: (file: File | null) => void;
   isSaving: boolean;
@@ -768,6 +769,44 @@ const LogManualCallCard = ({
             </div>
           </div>
 
+          {/* Job Screening Questions */}
+          {jobCustomQuestions && jobCustomQuestions.length > 0 && (
+            <div className="pt-2">
+              <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5 mb-2">
+                <HelpCircle className="w-3.5 h-3.5 text-primary" />
+                <span>Job Screening Questions</span>
+              </label>
+              <div className="space-y-2">
+                {jobCustomQuestions.map((q: string, idx: number) => {
+                  const val = customFields.find(f => f.key === q)?.value || '';
+                  return (
+                    <div key={idx} className="bg-surface border border-border p-2.5 rounded-lg">
+                      <label className="block text-[11px] font-semibold text-text-primary mb-1">
+                        {q}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={q.toLowerCase().includes('portfolio') || q.toLowerCase().includes('link') ? "e.g. https://behance.net/username or Google Drive link" : "Enter answer..."}
+                        value={val}
+                        onChange={(e) => {
+                          const newFields = [...customFields];
+                          const existingIdx = newFields.findIndex(f => f.key === q);
+                          if (existingIdx >= 0) {
+                            newFields[existingIdx].value = e.target.value;
+                          } else {
+                            newFields.push({ key: q, value: e.target.value });
+                          }
+                          setCustomFields(newFields);
+                        }}
+                        className="w-full px-3 py-1.5 bg-surface border border-border rounded-lg text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Custom Additional Fields */}
           <div className="pt-2">
             <div className="flex items-center justify-between mb-2">
@@ -872,14 +911,26 @@ const LogManualCallCard = ({
   );
 };
 
-const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp }: any) => {
+const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp }: any) => {
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState('');
   const [currentSalary, setCurrentSalary] = useState(item.currentSalary !== '—' ? item.currentSalary : '');
   const [expectedSalary, setExpectedSalary] = useState(item.expectedSalary !== '—' ? item.expectedSalary : '');
   const [noticePeriod, setNoticePeriod] = useState(item.noticePeriod !== '—' ? item.noticePeriod : '');
-  const [customFields, setCustomFields] = useState<{key: string, value: string}[]>([]);
+  
+  const jobCustomQuestions: string[] = job?.customFollowUpQuestions || (job as any)?.agent5CustomQuestions || [];
+  const customAnswers = item.customFollowUpAnswers || item.candidate?.customCallData || {};
+
+  const [customFields, setCustomFields] = useState<{key: string, value: string}[]>(() => {
+    const fields: { key: string; value: string }[] = [];
+    for (const q of jobCustomQuestions) {
+      const val = customAnswers[q] || (item.candidate?.customCallData && item.candidate.customCallData[q]) || '';
+      fields.push({ key: q, value: val });
+    }
+    return fields;
+  });
+
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
@@ -925,7 +976,7 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
         expectedSalary: finalExpectedSalary,
         noticePeriodDays: typeof finalNoticePeriod === 'number' ? finalNoticePeriod : undefined,
         cvUploadId,
-        customFields: customFields.filter(f => f.key.trim() && f.value.trim()),
+        customCallFields: customFields.filter(f => f.key.trim() && f.value.trim()),
       });
 
       toast.success("Call log saved successfully!");
@@ -945,7 +996,37 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
   const hasCurrentSalary = item.followUpCurrentSalary === true || (item.candidate?.currentSalary !== undefined && item.candidate?.currentSalary !== null) || (item.currentSalary !== undefined && item.currentSalary !== '—' && item.currentSalary !== null);
   const hasExpectedSalary = item.followUpExpectedSalary === true || (item.candidate?.expectedSalary !== undefined && item.candidate?.expectedSalary !== null) || (item.expectedSalary !== undefined && item.expectedSalary !== '—' && item.expectedSalary !== null);
   const hasNoticePeriod = item.followUpNoticePeriod === true || (item.candidate?.noticePeriodDays !== undefined && item.candidate?.noticePeriodDays !== null) || (item.noticePeriod !== undefined && item.noticePeriod !== '—' && item.noticePeriod !== null);
-  const allComplete = item.followUpCvReceived && item.followUpCurrentSalary && item.followUpExpectedSalary && item.followUpNoticePeriod;
+  
+  let customQuestionsComplete = true;
+  for (const q of jobCustomQuestions) {
+    const a = customAnswers[q] || (item.candidate?.customCallData && item.candidate.customCallData[q]);
+    if (!a || String(a).trim() === '') {
+      customQuestionsComplete = false;
+      break;
+    }
+  }
+
+  const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod && customQuestionsComplete;
+
+  const isUrl = (str: string) => {
+    if (!str) return false;
+    const trimmed = str.trim();
+    return /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(trimmed) || 
+           trimmed.includes('drive.google.com') ||
+           trimmed.includes('behance.net') ||
+           trimmed.includes('dribbble.com') ||
+           trimmed.includes('vimeo.com') ||
+           trimmed.includes('youtube.com') ||
+           trimmed.includes('github.com');
+  };
+
+  const formatUrl = (str: string) => {
+    const trimmed = str.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+    return trimmed;
+  };
 
   const flagItem = (label: string, done: boolean, value?: any) => {
     const rawVal = value !== undefined && value !== null && value !== '—' && value !== '' ? String(value).trim() : '';
@@ -1007,6 +1088,7 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
             setNoticePeriod={setNoticePeriod}
             customFields={customFields}
             setCustomFields={setCustomFields}
+            jobCustomQuestions={jobCustomQuestions}
             cvFile={cvFile}
             setCvFile={setCvFile}
             isSaving={isSaving}
@@ -1084,6 +1166,82 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
               {flagItem('Current Salary', hasCurrentSalary, actualCurrentSalary)}
               {flagItem('Expected Salary', hasExpectedSalary, actualExpectedSalary)}
               {flagItem('Notice Period', hasNoticePeriod, rawNotice)}
+
+              {/* Dynamic Job Screening Questions & Answers */}
+              {jobCustomQuestions.length > 0 && (
+                <div className="pt-1 mt-1 border-t border-border/50 flex flex-col gap-1">
+                  {jobCustomQuestions.map((q: string, idx: number) => {
+                    const ans = customAnswers[q] || (customCallData && customCallData[q]);
+                    const hasAns = ans !== undefined && ans !== null && String(ans).trim() !== '' && String(ans).trim() !== '—';
+                    const answerStr = hasAns ? String(ans).trim() : '';
+                    const urlCheck = hasAns && isUrl(answerStr);
+                    const linkTarget = urlCheck ? formatUrl(answerStr) : '';
+
+                    if (urlCheck) {
+                      return (
+                        <div key={idx} className="group/flag relative flex items-center gap-1.5 text-[11px] py-0.5" title={`${q}: ${answerStr}`}>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                          <span className="text-green-700 dark:text-green-400 font-medium truncate max-w-[100px]" title={q}>
+                            {q}:
+                          </span>
+                          <a
+                            href={linkTarget}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/30 transition-colors shadow-2xs cursor-pointer"
+                            title={`Open Link: ${answerStr}`}
+                          >
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                            <span>Open Link</span>
+                          </a>
+                          {/* Hover Tooltip Card */}
+                          <div className="absolute left-0 bottom-full mb-1 hidden group-hover/flag:flex flex-col bg-gray-900 text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none border border-gray-700">
+                            <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider">{q}</span>
+                            <span className="font-semibold text-[12px] text-blue-300 underline">{answerStr}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (hasAns) {
+                      return (
+                        <div key={idx} className="group/flag relative flex items-center gap-1.5 text-[11px] cursor-help w-fit py-0.5" title={`${q}: ${answerStr}`}>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                          <span className="text-green-700 dark:text-green-400 font-medium truncate max-w-[100px]" title={q}>
+                            {q}
+                          </span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border max-w-[140px] truncate bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20">
+                            {answerStr}
+                          </span>
+                          {/* Hover Tooltip Card */}
+                          <div className="absolute left-0 bottom-full mb-1 hidden group-hover/flag:flex flex-col bg-gray-900 text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none border border-gray-700">
+                            <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider">{q}</span>
+                            <span className="font-semibold text-[12px] text-white">{answerStr}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={idx} className="group/flag relative flex items-center gap-1.5 text-[11px] cursor-help w-fit py-0.5" title={`${q}: Missing / Pending`}>
+                        <XCircle className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                        <span className="text-orange-600 font-medium truncate max-w-[110px]" title={q}>
+                          {q}
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-orange-500/10 text-orange-600 border-orange-500/20">
+                          Pending
+                        </span>
+                        {/* Hover Tooltip Card */}
+                        <div className="absolute left-0 bottom-full mb-1 hidden group-hover/flag:flex flex-col bg-gray-900 text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none border border-gray-700">
+                          <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider">{q}</span>
+                          <span className="font-semibold text-[12px] text-gray-400 italic">Missing / Pending</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -1191,7 +1349,7 @@ const FollowUpCandidateRow = ({ item, renderKanbanDropdown, api, convex, showErr
           </button>
 
           {/* Stage Change Dropdown */}
-          {renderKanbanDropdown(item.id, 'follow_up')}
+          {renderKanbanDropdown(item.id, item.currentStage || 'ta_shortlist')}
 
           {/* Clear Test Details Helper Button */}
           <button
@@ -2403,6 +2561,7 @@ export default function JobDetailPage() {
       followUpCurrentSalary: (app as any).followUpCurrentSalary,
       followUpExpectedSalary: (app as any).followUpExpectedSalary,
       followUpNoticePeriod: (app as any).followUpNoticePeriod,
+      customFollowUpAnswers: (app as any).customFollowUpAnswers,
       followUpState: (app as any).followUpState,
       feedback: 'Pending',
       salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
@@ -2427,37 +2586,40 @@ export default function JobDetailPage() {
     const currentItems = itemsToRender.slice(startIndex, startIndex + itemsPerPage);
 
     // Use MOVEABLE_STAGES for dropdown targets
-    const renderKanbanDropdown = (itemId: string, defaultStage: string, candidateId?: string) => (
-      <div className="flex justify-end items-center gap-2">
-        <select 
-          className="appearance-none bg-primary text-on-primary border border-transparent rounded-[6px] px-3 py-1.5 text-[12px] font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer shadow-sm text-center min-w-[120px]"
-          onChange={(e) => handleStageChange(itemId, e.target.value)}
-          value={defaultStage}
-        >
-          <option value="" disabled>Move To...</option>
-          {MOVEABLE_STAGES.map(s => (
-            <option key={s.id} value={s.id}>{s.label}</option>
-          ))}
-        </select>
-        {candidateId && (
-          <button
-            onClick={() => handleRescore(candidateId)}
-            disabled={isRescoring[candidateId]}
-            className="p-1.5 text-text-secondary hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
-            title="Rescore against updated requirements"
+    const renderKanbanDropdown = (itemId: string, defaultStage: string, candidateId?: string) => {
+      const normalizedStage = (defaultStage === 'follow_up' || defaultStage === 'matched_candidates') ? 'ta_shortlist' : defaultStage;
+      return (
+        <div className="flex justify-end items-center gap-2">
+          <select 
+            className="appearance-none bg-primary text-on-primary border border-transparent rounded-[6px] px-3 py-1.5 text-[12px] font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer shadow-sm text-center min-w-[120px]"
+            onChange={(e) => handleStageChange(itemId, e.target.value)}
+            value={normalizedStage}
           >
-            <RefreshCw className={`w-4 h-4 ${isRescoring[candidateId] ? 'animate-spin' : ''}`} />
+            <option value="" disabled>Move To...</option>
+            {MOVEABLE_STAGES.map(s => (
+              <option key={s.id} value={s.id}>{s.label}</option>
+            ))}
+          </select>
+          {candidateId && (
+            <button
+              onClick={() => handleRescore(candidateId)}
+              disabled={isRescoring[candidateId]}
+              className="p-1.5 text-text-secondary hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
+              title="Rescore against updated requirements"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRescoring[candidateId] ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+          <button
+            onClick={() => handleDeleteApplication(itemId)}
+            className="p-1.5 text-text-secondary hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+            title="Delete Candidate Application"
+          >
+            <Trash2 className="w-4 h-4" />
           </button>
-        )}
-        <button
-          onClick={() => handleDeleteApplication(itemId)}
-          className="p-1.5 text-text-secondary hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-          title="Delete Candidate Application"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-    );
+        </div>
+      );
+    };
 
     let tableContent = null;
     
@@ -2520,7 +2682,7 @@ export default function JobDetailPage() {
                       <th className="p-4">Candidate</th>
                       <th className="p-4">Type</th>
                       <th className="p-4">Outreach Status</th>
-                      <th className="p-4">Required Details (4 Flags)</th>
+                      <th className="p-4">Required Details</th>
                       <th className="p-4">Time Left</th>
                       <th className="p-4 text-right">Actions</th>
                     </tr>
@@ -2532,6 +2694,7 @@ export default function JobDetailPage() {
                       <FollowUpCandidateRow 
                         key={item.id} 
                         item={item} 
+                        job={job}
                         api={api}
                         convex={convex}
                         showError={showError}
