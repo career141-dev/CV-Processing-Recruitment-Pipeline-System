@@ -1,8 +1,9 @@
-import { httpAction, mutation, query, action, internalAction, internalMutation } from "../_generated/server";
+import { httpAction, mutation, query, action, internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { getOpenAI, getModelForTask } from "../lib/llm";
 import { sendMetaFreeText } from "./metaDirectSender";
+import { classifyMessage } from "./messageClassifier";
 
 export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: any | null; matchedKeyword: string; isAmbiguous: boolean } {
   const upperText = textBody.trim().toUpperCase();
@@ -345,30 +346,50 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Handle incoming CV document
+  // ── Classify and handle incoming media / text with URLs ────────────────────
   if (mediaUrl) {
-    const isNonDocumentMedia = String(fileName).toLowerCase().match(/\.(jpeg|jpg|png|webp|gif|mp4|mp3|ogg|wav)$/) != null || 
-                               (typeof body.user_message === 'object' && body.user_message !== null && ["image", "sticker", "video", "audio", "reaction"].includes(body.user_message.type));
-                               
-    if (isNonDocumentMedia) {
-      console.log(`[WhatChimp Webhook] Ignoring non-document media: ${fileName}`);
+    const classification = classifyMessage(text || "", mediaUrl, mimeType, fileName);
+    console.log(`[WhatChimp Webhook] Message classified as: ${classification.type} from +${cleanFrom}`);
+
+    if (classification.type === "cv_document") {
+      // Real CV (PDF/DOCX) — dispatch to Node worker for R2 upload + ingestion
+      console.log(`[WhatChimp Webhook] CV document from +${cleanFrom}. Dispatching to Node worker.`);
+      await ctx.scheduler.runAfter(0, internal.communications.whatchimpActions.processInboundMedia, {
+        mediaUrl,
+        fileName: fileName ?? "cv.pdf",
+        mimeType: mimeType || "application/pdf",
+        cleanFrom,
+        cleanTo,
+        text: text || "",
+      });
       return new Response("OK", { status: 200 });
     }
 
-    console.log(`[WhatChimp Webhook] Inbound media detected from +${cleanFrom}: ${mediaUrl}. Dispatching to Node worker.`);
-
-    // Asynchronously dispatch media download and R2 upload to high-memory Node.js runtime.
-    // Webhook responds with 200 OK in < 15ms so WhatsApp never times out.
-    await ctx.scheduler.runAfter(0, internal.communications.whatchimpActions.processInboundMedia, {
-      mediaUrl,
-      fileName: fileName ?? "cv.pdf",
-      mimeType: mimeType || "application/pdf",
-      cleanFrom,
-      cleanTo,
-      text: text || "",
-    });
-
+    // Non-CV media (image, sticker, audio, video) — ignore silently
+    // We only process document files. Other media types are not CVs.
+    console.log(`[WhatChimp Webhook] Ignoring non-CV media (${classification.type}): ${fileName}`);
     return new Response("OK", { status: 200 });
+  }
+
+  // ── Text message containing a URL (portfolio / YouTube / Drive) ──────────
+  if (text && !mediaUrl) {
+    const urlClassification = classifyMessage(text, undefined, undefined, undefined);
+    if (urlClassification.type === "portfolio_url" || urlClassification.type === "youtube_url" || urlClassification.type === "drive_url") {
+      const detectedUrl = urlClassification.detectedUrl!;
+      const label = urlClassification.type === "youtube_url" ? "video/work sample"
+        : urlClassification.type === "drive_url" ? "file link"
+        : "portfolio";
+      console.log(`[WhatChimp Webhook] ${label} URL detected from +${cleanFrom}: ${detectedUrl}`);
+      // Store in session and send targeted reply (handled by handlePreApplicationChat with context)
+      await ctx.scheduler.runAfter(0, internal.communications.whatchimp.handlePreApplicationChat, {
+        phone: cleanFrom,
+        textBody: text,
+        jobId: null as any,  // resolved inside handlePreApplicationChat from session
+        urlType: urlClassification.type,
+        detectedUrl,
+      });
+      return new Response("OK", { status: 200 });
+    }
   }
 
   return new Response("OK", { status: 200 });
@@ -600,6 +621,42 @@ export const deleteSession = mutation({
   },
 });
 
+/**
+ * Updates the chatbot conversation state on an active session.
+ * Called after a real CV is ingested, a portfolio URL is received,
+ * or an employment preference is detected.
+ */
+export const updateSessionState = mutation({
+  args: {
+    phone: v.string(),
+    cvReceived: v.optional(v.boolean()),
+    portfolioUrl: v.optional(v.string()),
+    employmentPreference: v.optional(v.string()),
+    lastBotReplyAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query("whatsappSessions")
+      .withIndex("by_phone", (q) => q.eq("phone", args.phone))
+      .first();
+    if (!session) return;
+
+    const patch: Record<string, any> = {};
+    if (args.cvReceived !== undefined) patch.cvReceived = args.cvReceived;
+    if (args.portfolioUrl) {
+      const existing = session.portfolioUrls || [];
+      if (!existing.includes(args.portfolioUrl)) {
+        patch.portfolioUrls = [...existing, args.portfolioUrl];
+      }
+    }
+    if (args.employmentPreference) patch.employmentPreference = args.employmentPreference;
+    if (args.lastBotReplyAt !== undefined) patch.lastBotReplyAt = args.lastBotReplyAt;
+    patch.lastInteractionAt = Date.now();
+
+    await ctx.db.patch(session._id, patch);
+  },
+});
+
 export const getConfiguredNumbers = action({
   args: {},
   handler: async (ctx) => {
@@ -653,64 +710,206 @@ export const handlePreApplicationChat = internalAction({
   args: {
     phone: v.string(),
     textBody: v.string(),
-    jobId: v.id("jobs"),
+    // jobId is optional here — we resolve from session if null
+    jobId: v.optional(v.id("jobs")),
+    // Set by the flat-payload URL handler when a portfolio/video link is detected
+    urlType: v.optional(v.string()),
+    detectedUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     try {
-      const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId: args.jobId });
+      // ── 1. Resolve job from session if not provided directly ───────────────
+      let jobId = args.jobId;
+      const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, { phone: args.phone });
+      if (!jobId && session) jobId = session.jobId;
+      if (!jobId) {
+        console.log(`[PreApp Chat] No job resolved for +${args.phone}. Skipping.`);
+        return;
+      }
+
+      const job = await ctx.runQuery(api.jobs.jobs.getJob, { jobId });
       if (!job) return;
 
-      const openai = getOpenAI("jd_matching"); // Use a fast chat model
+      // ── 2. Dedup guard — prevent double replies within 8 seconds ──────────
+      const lastReplyAt = session?.lastBotReplyAt ?? 0;
+      if (Date.now() - lastReplyAt < 8_000) {
+        console.log(`[PreApp Chat] Dedup guard: reply sent ${Date.now() - lastReplyAt}ms ago. Skipping duplicate for +${args.phone}.`);
+        return;
+      }
+
+      // ── 3. Build conversation state context ───────────────────────────────
+      const cvReceived = session?.cvReceived === true;
+      const portfolioUrls = session?.portfolioUrls || [];
+      const employmentPreference = session?.employmentPreference || null;
+
+      // Fetch last 5 inbound messages from this candidate for context
+      const candidate = await ctx.runQuery(internal.communications.whatchimp.getCandidateByPhone, { phone: args.phone });
+      let conversationHistory = "No previous messages.";
+      if (candidate) {
+        const recentMessages = await ctx.runQuery(internal.communications.whatchimp.getRecentMessages, {
+          candidateId: candidate._id,
+          limit: 5,
+        });
+        if (recentMessages.length > 0) {
+          conversationHistory = recentMessages
+            .map((m: any) => `${m.direction === "inbound" ? "Candidate" : "Bot"}: ${m.body}`)
+            .join("\n");
+        }
+      }
+
+      // ── 4. Handle portfolio / video URL with a targeted response ─────────
+      const resolvedUrlType = args.urlType || classifyMessage(args.textBody).type;
+      const resolvedDetectedUrl = args.detectedUrl || classifyMessage(args.textBody).detectedUrl;
+
+      if (resolvedDetectedUrl && (resolvedUrlType === "youtube_url" || resolvedUrlType === "portfolio_url" || resolvedUrlType === "drive_url")) {
+        // Store portfolio URL in session
+        await ctx.runMutation(api.communications.whatchimp.updateSessionState, {
+          phone: args.phone,
+          portfolioUrl: resolvedDetectedUrl,
+        });
+
+        let portfolioReply: string;
+        if (resolvedUrlType === "youtube_url") {
+          portfolioReply = cvReceived
+            ? `Thank you for sharing your work sample! 🎬 We've noted it against your application for the ${job.title} role.`
+            : `Thank you for sharing your work sample! 🎬 We've noted it. To complete your application for the ${job.title} role, please also send your CV as a PDF.`;
+        } else if (resolvedUrlType === "drive_url") {
+          portfolioReply = cvReceived
+            ? `Thank you for sharing your file link. We've noted it against your ${job.title} application.`
+            : `Thanks for the link! To complete your ${job.title} application, please also send your CV as a PDF.`;
+        } else {
+          portfolioReply = cvReceived
+            ? `Thank you for sharing your portfolio! 🎨 We've noted it against your ${job.title} application.`
+            : `Thank you for sharing your portfolio! 🎨 We've noted it. To complete your application, please also send your CV as a PDF.`;
+        }
+
+        await ctx.runMutation(api.communications.whatchimp.updateSessionState, { phone: args.phone, lastBotReplyAt: Date.now() });
+        await sendReply(ctx, args.phone, jobId, portfolioReply);
+        return;
+      }
+
+      // ── 5. Build context-aware system prompt ──────────────────────────────
+      const isFullTimeOnly = job.recruitmentType === "job_posting" || job.recruitmentType === "headhunting";
+
+      const cvStatus = cvReceived
+        ? "✅ CV has been RECEIVED and is being processed. Do NOT ask for it again."
+        : "❌ CV has NOT been received yet.";
+
+      const portfolioStatus = portfolioUrls.length > 0
+        ? `Portfolio/work samples shared: ${portfolioUrls.join(", ")}`
+        : "No portfolio shared yet.";
+
+      const prefContext = employmentPreference
+        ? `Candidate stated employment preference: ${employmentPreference}`
+        : "Employment preference: not stated.";
+
+      const systemPrompt = `You are a warm, human recruitment assistant for Career141 — NOT a robot.
+You are helping a candidate apply for the following role:
+
+JOB: ${job.title}
+COMPANY: ${job.clientName || "Career141 client"}
+LOCATION: ${job.location || "Not specified"}
+EMPLOYMENT TYPE: ${job.recruitmentType === "both" ? "Full-time or Freelance" : isFullTimeOnly ? "Full-time only" : "Freelance/Contract"}
+SALARY: ${job.salaryMin ? `${job.salaryMin}–${job.salaryMax} ${job.salaryCurrency || ""}` : "Not disclosed"}
+JOB DESCRIPTION: ${(job.jobDescription || "").substring(0, 500)}
+
+CANDIDATE STATE:
+${cvStatus}
+${portfolioStatus}
+${prefContext}
+
+RECENT CONVERSATION (oldest → newest):
+${conversationHistory}
+
+RULES — follow these strictly:
+1. ANSWER THE CANDIDATE'S ACTUAL QUESTION first. Use job details above. Do not ignore it.
+2. If the CV is already received (✅ above): NEVER ask for the CV again. Just continue the conversation naturally.
+3. If the candidate said they only do freelance AND the job is full-time only:
+   - Politely inform them that this specific role requires full-time commitment.
+   - Offer to keep their CV on file for future freelance opportunities.
+   - Do NOT keep pushing the CV for this job.
+4. NEVER claim to have reviewed, evaluated, or analyzed any attachment, video, or URL unless the CANDIDATE STATE above explicitly confirms it.
+5. Never send multiple responses. Write ONE reply only.
+6. If CV has NOT been received AND the conversation naturally warrants it, you MAY add ONE gentle line at the end asking them to share their CV as a PDF. Do not add it robotically to every message.
+7. Keep your reply under 3 sentences. Be warm, human and friendly — not a scripted bot.
+8. If the candidate asks if you are an AI: confirm it honestly, explain you're Career141's recruitment assistant, and ask if they have any questions about the role.`;
+
+      // ── 6. Call LLM ───────────────────────────────────────────────────────
+      const openai = getOpenAI("jd_matching");
       const model = getModelForTask("jd_matching");
-
-      const systemPrompt = `You are an intelligent recruitment assistant for Career141. 
-The candidate is interested in the "${job.title}" position. 
-Job Description: ${job.jobDescription.substring(0, 2000)}
-Salary: ${job.salaryMin ? job.salaryMin + " to " + job.salaryMax + " " + (job.salaryCurrency || "") : "Not specified"}
-Location: ${job.location || "Not specified"}
-
-The candidate has NOT uploaded their CV yet. They just asked a question.
-Answer their question politely and accurately based ONLY on the provided job details. Keep it very concise (1-2 short sentences max). Do not hallucinate details.
-ALWAYS end your message by reminding them to "Please upload your CV as a PDF to apply!"`;
 
       const completion = await openai.chat.completions.create({
         model,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: args.textBody }
+          { role: "user", content: args.textBody },
         ],
-        temperature: 0.5,
+        temperature: 0.4,
       });
 
       const replyMessage = completion.choices[0]?.message?.content?.trim();
       if (!replyMessage) return;
 
-      console.log(`[PreApp Chat] Replying to +${args.phone}: ${replyMessage.substring(0, 100)}...`);
-
-      const apiToken = process.env.WHATCHIMP_API_TOKEN;
-      
-      const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId: args.jobId });
-      let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
-      if (outboundNumber) {
-        const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
-          targetWhatsAppNumber: outboundNumber 
+      // ── 7. Store employment preference if detected ────────────────────────
+      if (args.textBody.match(/\bfreelance\b|\bproject[- ]based\b|\bcontract[- ]only\b/i)) {
+        await ctx.runMutation(api.communications.whatchimp.updateSessionState, {
+          phone: args.phone,
+          employmentPreference: "freelance",
         });
-        if (fetchedId) {
-          phoneNumberId = fetchedId;
-          console.log(`[PreApp Chat] Using dynamically resolved phone ID ${phoneNumberId} for job outreach number ${outboundNumber}`);
-        }
       }
-      
-      if (phoneNumberId) {
-        const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
-        await sendMetaFreeText(phoneNumberId, args.phone, replyMessage, metaAccessToken)
-          .then(r => { if (!r.success) console.error("[PreApp Chat] Meta send failed:", r.error); })
-          .catch(console.error);
-      }
+
+      // ── 8. Mark last bot reply time (dedup guard) ─────────────────────────
+      await ctx.runMutation(api.communications.whatchimp.updateSessionState, {
+        phone: args.phone,
+        lastBotReplyAt: Date.now(),
+      });
+
+      console.log(`[PreApp Chat] Replying to +${args.phone} (cvReceived=${cvReceived}): ${replyMessage.substring(0, 120)}...`);
+      await sendReply(ctx, args.phone, jobId, replyMessage);
+
     } catch (e: any) {
       console.error("[PreApp Chat] Error:", e);
     }
   }
+});
+
+/** Helper — resolves the correct Meta phone number ID and sends a free-text reply. */
+async function sendReply(ctx: any, phone: string, jobId: any, message: string) {
+  const outboundNumber = await ctx.runQuery(internal.communications.whatsappOutbound.getJobOutboundWhatsAppNumber, { jobId });
+  let phoneNumberId = process.env.META_PHONE_NUMBER_ID || "965783109962872";
+  if (outboundNumber) {
+    const fetchedId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, {
+      targetWhatsAppNumber: outboundNumber,
+    });
+    if (fetchedId) phoneNumberId = fetchedId;
+  }
+  const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
+  await sendMetaFreeText(phoneNumberId, phone, message, metaAccessToken)
+    .then((r: any) => { if (!r.success) console.error("[PreApp Chat] Meta send failed:", r.error); })
+    .catch(console.error);
+}
+
+/** Internal query helpers used by handlePreApplicationChat */
+export const getCandidateByPhone = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db.query("candidates")
+      .withIndex("by_phoneClean", (q) => q.eq("phoneClean", args.phone))
+      .first() ||
+      await ctx.db.query("candidates")
+        .withIndex("by_phone", (q) => q.eq("phone", "+" + args.phone))
+        .first();
+  },
+});
+
+export const getRecentMessages = internalQuery({
+  args: { candidateId: v.id("candidates"), limit: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db.query("communications")
+      .withIndex("by_candidate_time", (q) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .take(args.limit);
+  },
 });
 
 

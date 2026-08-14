@@ -51,6 +51,7 @@ import type * as communications_graphSubscriptionQueries from "../communications
 import type * as communications_graphSubscriptions from "../communications/graphSubscriptions.js";
 import type * as communications_inboundExtraction from "../communications/inboundExtraction.js";
 import type * as communications_inquiries from "../communications/inquiries.js";
+import type * as communications_messageClassifier from "../communications/messageClassifier.js";
 import type * as communications_metaDirectSender from "../communications/metaDirectSender.js";
 import type * as communications_metaTemplateSender from "../communications/metaTemplateSender.js";
 import type * as communications_whatchimp from "../communications/whatchimp.js";
@@ -159,6 +160,7 @@ declare const fullApi: ApiFromModules<{
   "communications/graphSubscriptions": typeof communications_graphSubscriptions;
   "communications/inboundExtraction": typeof communications_inboundExtraction;
   "communications/inquiries": typeof communications_inquiries;
+  "communications/messageClassifier": typeof communications_messageClassifier;
   "communications/metaDirectSender": typeof communications_metaDirectSender;
   "communications/metaTemplateSender": typeof communications_metaTemplateSender;
   "communications/whatchimp": typeof communications_whatchimp;
