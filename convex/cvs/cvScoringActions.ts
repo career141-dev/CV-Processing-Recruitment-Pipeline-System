@@ -78,8 +78,7 @@ export const saveMatchScore = internalMutation({
       await adjustJobStageStat(ctx, args.jobId, "new_cvs", "ta_shortlist");
       await syncCandidateOverallStatus(ctx, args.candidateId);
       
-      // Automated follow-up outreach disabled on TA shortlist move
-      // await initiateFollowUpOutreach(ctx, args.applicationId);
+      await initiateFollowUpOutreach(ctx, args.applicationId);
     }
   },
 });

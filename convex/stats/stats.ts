@@ -1281,8 +1281,10 @@ export const getTodayInboxActivity = query({
     localTime.setUTCHours(0, 0, 0, 0);
     const startOfToday = localTime.getTime() - currentOffset;
 
-    const recentUploads = await ctx.db.query('cvUploads').order('desc').take(500);
-    const todaysUploads = recentUploads.filter(u => u._creationTime >= startOfToday);
+    const todaysUploads = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_creation_time", (q) => q.gte("_creationTime", startOfToday))
+      .collect();
 
     const counts: Record<string, number> = { email: 0, email_campaign: 0, linkedin: 0, whatsapp: 0, database: 0 };
     let total = 0;

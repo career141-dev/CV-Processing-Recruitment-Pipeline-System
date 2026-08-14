@@ -7,7 +7,12 @@ import { classifyMessage } from "./messageClassifier";
 
 export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: any | null; matchedKeyword: string; isAmbiguous: boolean } {
   const upperText = textBody.trim().toUpperCase();
-  const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
+  const strippedUpper = upperText
+    .replace(/^(HI|HELLO|HEY)[!.,]?\s+/i, "")
+    .replace(/^I('D| WOULD)? LIKE TO APPLY (FOR|TO)\s+/i, "")
+    .replace(/^JOB CODE\s*:\s*/i, "")
+    .replace(/^APPLY\s+/i, "")
+    .trim();
 
   if (!strippedUpper) return { matchedJob: null, matchedKeyword: "", isAmbiguous: false };
 
@@ -62,7 +67,12 @@ export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: a
 
   if (matches.length > 1) {
     const secondMatch = matches[1];
+    const sameTitleOrKeyword =
+      bestMatch.job.title.toLowerCase() === secondMatch.job.title.toLowerCase() ||
+      (bestMatch.job.keyword && secondMatch.job.keyword && bestMatch.job.keyword.toLowerCase() === secondMatch.job.keyword.toLowerCase());
+
     if (
+      !sameTitleOrKeyword &&
       secondMatch.job._id !== bestMatch.job._id &&
       matchTypeScore[secondMatch.matchType] === matchTypeScore[bestMatch.matchType] &&
       secondMatch.matchedLength === bestMatch.matchedLength
@@ -133,8 +143,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       if (message.type === "document" || message.type === "image") {
         const originalSenderPhone = message.context?.from ?? message.from;
         const mediaItem = message.document ?? message.image;
+        const captionText = mediaItem.caption ?? message.document?.caption ?? message.image?.caption ?? null;
 
-        console.log(`[WhatChimp Webhook] Inbound media detected: ID=${mediaItem.id}, Type=${message.type}`);
+        console.log(`[WhatChimp Webhook] Inbound media detected: ID=${mediaItem.id}, Type=${message.type}, Caption="${captionText ?? ""}"`);
         await ctx.scheduler.runAfter(0, internal.cvs.ingestion.processInboundCV, {
           messageId: message.id,
           toNumber,
@@ -143,6 +154,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           mediaId: mediaItem.id,
           mimeType: mediaItem.mime_type,
           fileName: mediaItem.filename ?? null,
+          captionText,
         });
       } else if (message.type === "text") {
         const textBody = message.text?.body || message.body || message.text || "";
@@ -737,13 +749,12 @@ export const handlePreApplicationChat = internalAction({
         return;
       }
 
-      // ── 3. Build conversation state context ───────────────────────────────
-      const cvReceived = session?.cvReceived === true;
+      // Fetch candidate document for CV status & conversation history
+      const candidate = await ctx.runQuery(internal.communications.whatchimp.getCandidateByPhone, { phone: args.phone });
+      const cvReceived = session?.cvReceived === true || !!candidate?.cvUploadId;
       const portfolioUrls = session?.portfolioUrls || [];
       const employmentPreference = session?.employmentPreference || null;
 
-      // Fetch last 5 inbound messages from this candidate for context
-      const candidate = await ctx.runQuery(internal.communications.whatchimp.getCandidateByPhone, { phone: args.phone });
       let conversationHistory = "No previous messages.";
       if (candidate) {
         const recentMessages = await ctx.runQuery(internal.communications.whatchimp.getRecentMessages, {

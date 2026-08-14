@@ -12,6 +12,7 @@ export const processInboundCV = internalAction({
     mediaId: v.string(),
     mimeType: v.string(),
     fileName: v.union(v.string(), v.null()),
+    captionText: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     console.log(`[Meta Cloud API] Downloading media ${args.mediaId}...`);
@@ -77,6 +78,7 @@ export const processInboundCV = internalAction({
       storageProvider: "r2",
       fileHash,
       fileSize: fileBuffer.byteLength,
+      captionText: args.captionText ?? undefined,
     });
   },
 });
@@ -98,6 +100,7 @@ export const insertCvRecord = internalMutation({
     storageProvider: v.optional(v.string()),
     fileHash: v.string(),
     fileSize: v.number(),
+    captionText: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const SESSION_TTL_MS = 48 * 60 * 60 * 1000; // 48 Hours
@@ -109,11 +112,6 @@ export const insertCvRecord = internalMutation({
     let metaHeadline: string | undefined;
 
     // Normalise phone to digits-only before lookup.
-    // Meta Cloud API sends message.context.from with a leading "+" (e.g. "+94770123456")
-    // but sessions are always stored as digits-only (e.g. "94770123456").
-    // Without this normalisation the index lookup misses the session → jobId stays null
-    // → both Graphic Designer and Video Editor CVs fall through to the common-number
-    // fallback and get assigned to whichever job was stored first.
     const cleanOriginalSender = args.originalSenderPhone.replace(/[^0-9]/g, "");
 
     // Check if there is an active WhatsApp session for the candidate phone
@@ -133,9 +131,6 @@ export const insertCvRecord = internalMutation({
         metaSourceUrl = session.metaSourceUrl;
         metaSourceId = session.metaSourceId;
         metaHeadline = session.metaHeadline;
-        // Stamp cvReceived before deleting so if the session is re-created
-        // (e.g. candidate sends another message after the CV) the state is preserved
-        // via the updateSessionState mutation rather than being silently lost.
         await ctx.db.patch(session._id, {
           cvReceived: true,
           lastBotReplyAt: Date.now(),
@@ -145,15 +140,46 @@ export const insertCvRecord = internalMutation({
     }
 
     if (!jobId) {
-      const channel = await ctx.db
+      const cleanToNumber = args.toNumber.replace(/[^0-9]/g, "");
+      let channel = await ctx.db
         .query("jobChannels")
-        .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", args.toNumber))
+        .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", cleanToNumber))
         .filter((q) => q.eq(q.field("isEnabled"), true))
         .first();
+
+      if (!channel) {
+        channel = await ctx.db
+          .query("jobChannels")
+          .withIndex("by_whatsapp", (q) => q.eq("whatsappNumber", args.toNumber))
+          .filter((q) => q.eq(q.field("isEnabled"), true))
+          .first();
+      }
 
       if (channel) {
         jobId = channel.jobId;
         sourceLevel2 = `Campaign — WhatsApp`;
+      }
+    }
+
+    // Fallback: Infer job from fileName or captionText if session & campaign number lookup yield no jobId
+    if (!jobId) {
+      const textToSearch = `${args.fileName || ""} ${args.captionText || ""}`.trim();
+      if (textToSearch.length >= 3) {
+        const activeJobs = await ctx.db
+          .query("jobs")
+          .withIndex("by_status", (q) => q.eq("status", "active"))
+          .collect();
+        const upperText = textToSearch.toUpperCase();
+        for (const job of activeJobs) {
+          const kUpper = (job.keyword || "").trim().toUpperCase();
+          const tUpper = (job.title || "").trim().toUpperCase();
+          if ((kUpper.length >= 2 && upperText.includes(kUpper)) || (tUpper.length >= 3 && upperText.includes(tUpper))) {
+            jobId = job._id;
+            sourceLevel2 = `WhatsApp Inferred (${job.keyword || job.title})`;
+            console.log(`[insertCvRecord] Inferred jobId ${jobId} (${job.title}) from media fileName/caption: "${textToSearch}"`);
+            break;
+          }
+        }
       }
     }
 

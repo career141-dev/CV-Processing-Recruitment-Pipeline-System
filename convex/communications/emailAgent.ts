@@ -441,23 +441,77 @@ Respond ONLY with a valid JSON object in this exact format:
   },
 });
 
-// Schedule this action to run every 2 minutes for all active email channels
+// Internal query — returns all active per-job email channels that have an emailInbox configured
+export const getActiveEmailJobChannels = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const channels = await ctx.db
+      .query("jobChannels")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("isEnabled"), true),
+          q.neq(q.field("emailInbox"), undefined),
+        )
+      )
+      .collect();
+
+    // Keep only email-type channels that have a non-empty inbox address
+    return channels
+      .filter(
+        (ch) =>
+          ch.emailInbox &&
+          ch.emailInbox.trim().length > 0 &&
+          (ch.channelType === "email_campaign" || ch.channelType === "email")
+      )
+      .map((ch) => ({ jobId: ch.jobId, emailInbox: ch.emailInbox as string }));
+  },
+});
+
+// Polls all per-job dedicated email inboxes that are enabled in jobChannels.
+// The three system-level inboxes (linkedin@, cv@, job@) are handled by separate
+// cron entries in crons.ts and are NOT re-polled here to avoid double-processing.
 export const scheduleEmailPolling = internalAction({
   args: {},
   handler: async (ctx) => {
-    // We would need an api.jobChannels.getActiveEmailChannels query here
-    // For now, this is just the scaffolding as requested
-    console.log("[Email Mock] Polling active email channels...");
-    
-    /*
-    const activeChannels = await ctx.runQuery(api.jobChannels.getActiveEmailChannels);
-    for (const channel of activeChannels) {
-      await ctx.runAction(api.emailAgent.pollEmailInbox, {
-        inboxEmail: channel.emailInbox,
-        jobId: channel.jobId,
-      });
+    // System inboxes — these are already polled by dedicated cron entries in crons.ts.
+    // We skip them here to prevent double-processing.
+    const SYSTEM_INBOXES = new Set([
+      "linkedin@career141.com",
+      "cv@career141.com",
+      "job@career141.com",
+    ]);
+
+    const jobChannels = await ctx.runQuery(
+      internal.communications.emailAgent.getActiveEmailJobChannels,
+      {}
+    );
+
+    // De-duplicate inboxes (multiple jobs could share an inbox; poll each unique inbox once)
+    const seen = new Set<string>();
+    const toProcess: { jobId: any; emailInbox: string }[] = [];
+    for (const ch of jobChannels) {
+      const inboxKey = ch.emailInbox.toLowerCase().trim();
+      if (SYSTEM_INBOXES.has(inboxKey)) continue; // already handled by cron
+      if (seen.has(inboxKey)) continue;
+      seen.add(inboxKey);
+      toProcess.push(ch);
     }
-    */
+
+    if (toProcess.length === 0) {
+      return;
+    }
+
+    console.log(`[scheduleEmailPolling] Polling ${toProcess.length} per-job email inbox(es)...`);
+
+    // Stagger each inbox poll by 15 s to spread load
+    for (let i = 0; i < toProcess.length; i++) {
+      const { emailInbox, jobId } = toProcess[i];
+      await ctx.scheduler.runAfter(
+        i * 15_000,
+        api.communications.emailAgent.pollEmailInbox,
+        { inboxEmail: emailInbox, jobId }
+      );
+    }
   },
 });
 

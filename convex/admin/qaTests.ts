@@ -5,6 +5,7 @@ import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { adjustJobStageStat } from "../jobs/stats";
 import { classifyMessage } from "../communications/messageClassifier";
+import { updateFollowUpFlags, checkAndAdvanceFollowUp, initiateFollowUpOutreach } from "../pipeline/followUpHelper";
 
 // Helper to assert truthiness of conditions
 function assert(condition: any, message: string) {
@@ -1279,11 +1280,196 @@ export const testTriggerMetaTemplate = mutation({
     applicationId: v.id("applications"),
   },
   handler: async (ctx, args) => {
-    await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
-      applicationId: args.applicationId,
-      templateType: "initial_outreach",
-    });
     return { success: true, message: "Scheduled sendMetaTemplate" };
+  },
+});
+
+export const fixGihanDetails = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const recentCandidates = await ctx.db
+      .query("candidates")
+      .order("desc")
+      .take(200);
+
+    const candidate = recentCandidates.find(
+      (c) =>
+        (c.fullName && c.fullName.toLowerCase().includes("gihan")) ||
+        (c.phone && c.phone.includes("711200180")) ||
+        (c.phoneClean && c.phoneClean.includes("711200180"))
+    );
+
+    if (!candidate) {
+      return {
+        success: false,
+        reason: "Candidate Gihan Vimukthi not found in recent candidates",
+        recentNames: recentCandidates.slice(0, 10).map((c) => `${c.fullName} (${c.phone})`),
+      };
+    }
+
+    await ctx.db.patch(candidate._id, {
+      currentSalary: 100000,
+      expectedSalary: 150000,
+    });
+
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+      .collect();
+
+    const activeApp = apps.find((a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed") || apps[0];
+
+    if (activeApp) {
+      const job = await ctx.db.get(activeApp.jobId);
+      const customQuestions = job?.customFollowUpQuestions || [];
+      const customAnswers: Record<string, string> = { ...(activeApp.customFollowUpAnswers || {}) };
+
+      for (const q of customQuestions) {
+        const qNorm = q.toLowerCase();
+        if (qNorm.includes("portfolio") || qNorm.includes("samples") || qNorm.includes("behance") || qNorm.includes("dribbble") || qNorm.includes("website") || qNorm.includes("drive")) {
+          customAnswers[q] = "https://flic.kr/ps/3WP6gb";
+        }
+      }
+
+      await ctx.db.patch(activeApp._id, {
+        followUpCurrentSalary: true,
+        followUpExpectedSalary: true,
+        customFollowUpAnswers: customAnswers,
+      });
+
+      await updateFollowUpFlags(ctx, activeApp._id, candidate);
+      await checkAndAdvanceFollowUp(ctx, candidate._id);
+    }
+
+    return { success: true, candidateId: candidate._id, fullName: candidate.fullName };
+  },
+});
+
+export const addTestCandidateToFollowUp = mutation({
+  args: {
+    phone: v.optional(v.string()),
+    jobId: v.optional(v.id("jobs")),
+  },
+  handler: async (ctx, args) => {
+    const rawPhone = args.phone || "0753883167";
+    const cleanDigits = rawPhone.replace(/[^0-9]/g, "");
+    let formattedPhone = cleanDigits;
+    if (cleanDigits.startsWith("0")) {
+      formattedPhone = "+94" + cleanDigits.slice(1);
+    } else if (!cleanDigits.startsWith("94")) {
+      formattedPhone = "+94" + cleanDigits;
+    } else {
+      formattedPhone = "+" + cleanDigits;
+    }
+    const phoneClean = formattedPhone.replace(/[^0-9]/g, "");
+
+    let graphicJob = args.jobId ? await ctx.db.get(args.jobId) : null;
+    if (!graphicJob) {
+      const jobs = await ctx.db
+        .query("jobs")
+        .withIndex("by_status", (q) => q.eq("status", "active"))
+        .collect();
+
+      graphicJob = jobs.find(
+        (j) => j.keyword === "GRAPHIC DESIGNER" || j.title.toLowerCase() === "graphic designer"
+      ) || jobs.find(
+        (j) => j.title.toLowerCase().includes("graphic") || (j.keyword && j.keyword.toLowerCase().includes("graphic"))
+      ) || jobs[0];
+    }
+
+    if (!graphicJob) {
+      return { success: false, reason: "Graphic Designer job not found" };
+    }
+
+    let candidate = await ctx.db
+      .query("candidates")
+      .withIndex("by_phoneClean", (q: any) => q.eq("phoneClean", phoneClean))
+      .first() ||
+      await ctx.db.query("candidates")
+        .withIndex("by_phone", (q: any) => q.eq("phone", formattedPhone))
+        .first();
+
+    const now = Date.now();
+    if (!candidate) {
+      const candidateId = await ctx.db.insert("candidates", {
+        fullName: "Test Recruiter Candidate",
+        phone: formattedPhone,
+        phoneClean: phoneClean,
+        email: "test.candidate@career141.local",
+        firstSourceChannel: "whatsapp",
+        firstSeenAt: now,
+        status: "active",
+      });
+      candidate = await ctx.db.get(candidateId);
+    }
+
+    const existingApps = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate!._id))
+      .collect();
+
+    let app = existingApps.find((a) => a.jobId === graphicJob._id);
+
+    if (app) {
+      await ctx.db.patch(app._id, {
+        currentStage: "follow_up",
+        lastStageChangedAt: now,
+        followUpEnteredAt: now,
+        followUpAttemptCount: 0,
+        nextFollowUpScheduledAt: undefined,
+      });
+    } else {
+      const appId = await ctx.db.insert("applications", {
+        candidateId: candidate!._id,
+        jobId: graphicJob._id,
+        currentStage: "follow_up",
+        sourceChannel: "whatsapp",
+        createdAt: now,
+        isActive: true,
+        lastStageChangedAt: now,
+        followUpEnteredAt: now,
+        loopIteration: 0,
+        stageHistory: [
+          {
+            stage: "follow_up",
+            enteredAt: new Date(now).toISOString(),
+            changedBy: "system",
+            note: "Manually added for follow-up testing",
+          },
+        ],
+      } as any);
+      app = (await ctx.db.get(appId)) ?? undefined;
+    }
+
+    const commId = await initiateFollowUpOutreach(ctx, app!._id);
+
+    return {
+      success: true,
+      candidateId: candidate!._id,
+      applicationId: app!._id,
+      jobTitle: graphicJob.title,
+      phone: formattedPhone,
+      commId,
+    };
+  },
+});
+
+export const enableVideoEditorWhatsApp = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // 1. Activate primary Video Editor job m1701y7wb8sbrac9fpkh2gpz0d8ccjsv
+    await ctx.db.patch("m1701y7wb8sbrac9fpkh2gpz0d8ccjsv" as any, {
+      status: "active",
+      enableWhatsAppFollowUp: true,
+    });
+
+    // 2. Pause secondary duplicate Video Editor job m178vgc368k4f0ztth5wg15g9n8b3h37
+    await ctx.db.patch("m178vgc368k4f0ztth5wg15g9n8b3h37" as any, {
+      status: "on_hold",
+      enableWhatsAppFollowUp: false,
+    });
+
+    return { success: true };
   },
 });
 

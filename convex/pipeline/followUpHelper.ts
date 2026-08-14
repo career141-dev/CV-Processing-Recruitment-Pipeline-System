@@ -359,11 +359,20 @@ export async function initiateFollowUpOutreach(
     // === INITIAL OUTREACH FLOW (Day 0) ===
     // 1. WhatsApp Outreach
     if (isWhatsAppEnabled) {
-      // Schedule the actual WhatsApp delivery using Meta Approved Template
-      await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
-        applicationId: app._id,
-        templateType: "initial_outreach",
-      });
+      // Guard: only send WhatsApp if the candidate has a phone number.
+      // sendMetaTemplate will throw if phone is empty — guard here prevents a crash in the scheduler.
+      const candidatePhone = (candidate.phone || "").replace(/\D/g, "");
+      if (candidatePhone) {
+        // Schedule the actual WhatsApp delivery using Meta Approved Template
+        await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+          applicationId: app._id,
+          templateType: "initial_outreach",
+        });
+      } else {
+        console.warn(
+          `[Follow-up Outreach] Skipped WhatsApp for application ${applicationId}: candidate ${candidate.fullName ?? candidate._id} has no phone number. Email channel will still run.`
+        );
+      }
     }
 
     // 2. Email Outreach

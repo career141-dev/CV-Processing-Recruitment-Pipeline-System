@@ -20,6 +20,9 @@ export const handlePreApplicationChat = internalAction({
 
       let replyMessage = "";
 
+      const candidate = await ctx.runQuery(internal.communications.whatchimp.getCandidateByPhone, { phone: args.phone });
+      const hasCv = !!candidate?.cvUploadId;
+
       try {
         const { executeLLMWithNvidiaFallback } = await import("../lib/llm");
         const systemPrompt = `You are an intelligent recruitment assistant for Career141. 
@@ -28,9 +31,9 @@ Job Description: ${job.jobDescription ? job.jobDescription.substring(0, 2000) : 
 Salary: ${job.salaryMin ? job.salaryMin + " to " + job.salaryMax + " " + (job.salaryCurrency || "") : "Not specified"}
 Location: ${job.location || "Not specified"}
 
-The candidate has NOT uploaded their CV yet. They just asked: "${args.textBody}".
+${hasCv ? "The candidate HAS ALREADY uploaded their CV. Do NOT ask them for their CV." : "The candidate has NOT uploaded their CV yet."} They just asked: "${args.textBody}".
 Answer their question politely and accurately based ONLY on the provided job details. Keep it very concise (1-2 short sentences max). Do not hallucinate details.
-ALWAYS end your message by reminding them: "Please upload your CV as a PDF to apply!"`;
+${hasCv ? "" : 'ALWAYS end your message by reminding them: "Please upload your CV as a PDF to apply!"'}`;
 
         const llmResult = await executeLLMWithNvidiaFallback(ctx, "email_auto_reply", {
           messages: [
