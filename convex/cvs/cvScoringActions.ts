@@ -239,7 +239,7 @@ export const processCvScoring = action({
             messages: [
               {
                 role: "system",
-                content: `You are a recruiter. Return ONLY JSON: {"score": 0-100, "reason": "2-3 sentence professional recruiter assessment of fit."}`
+                content: `You are a recruiter. Write all evaluations strictly in English. Do NOT output Chinese or any other language. Return ONLY JSON: {"score": 0-100, "reason": "2-3 sentence professional recruiter assessment of fit in English."}`
               },
               {
                 role: "user",

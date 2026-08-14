@@ -1227,7 +1227,7 @@ export async function scoreWithLLM(
       messages: [
         {
           role: "system",
-          content: `You are a Senior Talent Acquisition (TA) Recruiter. Evaluate how well the candidate's CV aligns with the job requirements. Return ONLY a JSON object: {"score": number, "reason": "A 2-3 sentence professional TA evaluation explaining why this candidate is a match, highlighting key matching skills, relevant experience, and overall role fit."}`
+          content: `You are a Senior Talent Acquisition (TA) Recruiter. Evaluate how well the candidate's CV aligns with the job requirements. Write all evaluations strictly in English. Do NOT output Chinese or any other language. Return ONLY a JSON object: {"score": number, "reason": "A 2-3 sentence professional TA evaluation in English explaining why this candidate is a match, highlighting key matching skills, relevant experience, and overall role fit."}`
         },
         {
           role: "user",
@@ -1370,13 +1370,13 @@ export async function scoreBatchWithLLM(
     ...candidateSerializedList,
   ].filter(Boolean).join("\n");
 
-  const systemPrompt = `You are a Senior Talent Acquisition (TA) Recruiter. Evaluate how well EACH candidate in the candidate pool aligns with the job requirements. Return ONLY a JSON object mapping candidate IDs to evaluation result objects:
+  const systemPrompt = `You are a Senior Talent Acquisition (TA) Recruiter. Evaluate how well EACH candidate in the candidate pool aligns with the job requirements. Write all evaluations strictly in English. Do NOT output Chinese or any other language. Return ONLY a JSON object mapping candidate IDs to evaluation result objects:
 {
   "evaluations": [
     {
       "id": number,
       "score": number (0-100),
-      "reason": "1-2 sentence TA evaluation highlighting key matching skills, experience, and role fit."
+      "reason": "1-2 sentence TA evaluation in English highlighting key matching skills, experience, and role fit."
     }
   ]
 }`;
