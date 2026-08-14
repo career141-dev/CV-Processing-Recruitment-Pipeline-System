@@ -1501,6 +1501,8 @@ export default defineSchema({
     jobId: v.id("jobs"),
     keyword: v.string(),
     lastInteractionAt: v.number(),
+    lastBotReplyAt: v.optional(v.number()),
+    portfolioUrls: v.optional(v.array(v.string())),
     metaSourceUrl: v.optional(v.string()),
     metaSourceId: v.optional(v.string()),
     metaHeadline: v.optional(v.string()),

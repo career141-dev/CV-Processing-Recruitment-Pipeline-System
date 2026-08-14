@@ -11,20 +11,28 @@ export const getCandidate = internalQuery({
 });
 
 export const getCandidatesBatch = internalQuery({
-  args: { candidateIds: v.array(v.id("candidates")) },
+  args: { candidateIds: v.array(v.string()) },
   handler: async (ctx, args) => {
+    const validCandidateIds = args.candidateIds
+      .map((id) => ctx.db.normalizeId("candidates", id))
+      .filter((id): id is Id<"candidates"> => id !== null);
+
     const results = await Promise.all(
-      args.candidateIds.map((id) => ctx.db.get(id))
+      validCandidateIds.map((id) => ctx.db.get(id))
     );
     return results.filter((c): c is Doc<"candidates"> => c !== null);
   },
 });
 
 export const getCandidatesBatchPublic = query({
-  args: { candidateIds: v.array(v.id("candidates")) },
+  args: { candidateIds: v.array(v.string()) },
   handler: async (ctx, args) => {
+    const validCandidateIds = args.candidateIds
+      .map((id) => ctx.db.normalizeId("candidates", id))
+      .filter((id): id is Id<"candidates"> => id !== null);
+
     const results = await Promise.all(
-      args.candidateIds.map((id) => ctx.db.get(id))
+      validCandidateIds.map((id) => ctx.db.get(id))
     );
     return results.filter((c): c is Doc<"candidates"> => c !== null);
   },

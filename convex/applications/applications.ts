@@ -80,8 +80,14 @@ export const getByJobId = query({
 
     const applications = rawApps.filter(app => app.isActive !== false);
 
-    const enriched = (await Promise.all(applications.map(async (app) => {
-      const dbCandidate = await ctx.db.get(app.candidateId);
+    const uniqueCandidateIds = Array.from(new Set(applications.map((app) => app.candidateId)));
+    const candidateDocs = await Promise.all(uniqueCandidateIds.map((id) => ctx.db.get(id)));
+    const candidateMap = new Map(
+      candidateDocs.filter((c): c is NonNullable<typeof c> => c !== null).map((c) => [c._id, c])
+    );
+
+    const enriched = applications.map((app) => {
+      const dbCandidate = candidateMap.get(app.candidateId);
       
       const cvUploadId = dbCandidate?.cvUploadId || app.candidateCvUploadId;
 
@@ -114,7 +120,7 @@ export const getByJobId = query({
         candidate: candidateObj,
         cv: app.cvFileName ? { fileName: app.cvFileName } : (cvUploadId ? { storageId: cvUploadId } : null),
       };
-    }))).filter(Boolean);
+    }).filter(Boolean);
 
     return enriched;
 
@@ -181,69 +187,76 @@ export const getUnresponsiveForJob = query({
     const job = await ctx.db.get(actualJobId);
     const jobTitle = job?.title ?? "Unknown Job";
 
-    return await Promise.all(
-      applications.map(async (app) => {
-        // Use denormalized data first, fallback to scalar-only candidate fetch
-        let candidateName = app.candidateName;
-        let candidatePhone = app.candidatePhone;
-        let candidateEmail = app.candidateEmail;
-        let currentSalary = app.candidateCurrentSalary;
-        let expectedSalary = app.candidateExpectedSalary;
-        let noticePeriodDays = app.candidateNoticePeriodDays;
-        let cvUploadId = app.candidateCvUploadId;
-
-        if (!candidateName) {
-          const candidate = await ctx.db.get(app.candidateId);
-          if (candidate) {
-            candidateName = candidate.fullName;
-            candidatePhone = candidate.phone;
-            candidateEmail = candidate.email;
-            currentSalary = candidate.currentSalary;
-            expectedSalary = candidate.expectedSalary;
-            noticePeriodDays = candidate.noticePeriodDays;
-            cvUploadId = candidate.cvUploadId;
-          }
-        }
-
-        // Compute which fields are still missing
-        const missingFields: string[] = [];
-        const hasCV = app.followUpCvReceived === true ||
-          (app.followUpCvReceived === undefined && (!!cvUploadId || !!app.cvFileId));
-        const hasCurrentSalary = app.followUpCurrentSalary === true ||
-          (app.followUpCurrentSalary === undefined && currentSalary !== undefined);
-        const hasExpectedSalary = app.followUpExpectedSalary === true ||
-          (app.followUpExpectedSalary === undefined && expectedSalary !== undefined);
-        const hasNoticePeriod = app.followUpNoticePeriod === true ||
-          (app.followUpNoticePeriod === undefined && noticePeriodDays !== undefined);
-
-        if (!hasCV) missingFields.push("CV");
-        if (!hasCurrentSalary) missingFields.push("Current Salary");
-        if (!hasExpectedSalary) missingFields.push("Expected Salary");
-        if (!hasNoticePeriod) missingFields.push("Notice Period");
-
-        const daysUnresponsive = app.lastStageChangedAt
-          ? Math.floor((now - app.lastStageChangedAt) / (1000 * 60 * 60 * 24))
-          : 0;
-
-        return {
-          applicationId: app._id,
-          candidateId: app.candidateId,
-          candidateName: candidateName ?? "Unknown",
-          candidatePhone: candidatePhone ?? null,
-          candidateEmail: candidateEmail ?? null,
-          jobTitle,
-          missingFields,
-          daysUnresponsive,
-          lastStageChangedAt: app.lastStageChangedAt,
-          currentSalary,
-          expectedSalary,
-          noticePeriodDays,
-          hasCurrentSalary,
-          hasExpectedSalary,
-          hasNoticePeriod,
-        };
-      })
+    // Deduplicate candidate IDs for applications missing denormalized name
+    const missingCandidateIds = Array.from(
+      new Set(applications.filter((app) => !app.candidateName).map((app) => app.candidateId))
     );
+    const candidateDocs = await Promise.all(missingCandidateIds.map((id) => ctx.db.get(id)));
+    const candidateMap = new Map(
+      candidateDocs.filter((c): c is NonNullable<typeof c> => c !== null).map((c) => [c._id, c])
+    );
+
+    return applications.map((app) => {
+      // Use denormalized data first, fallback to cached candidate lookup
+      let candidateName = app.candidateName;
+      let candidatePhone = app.candidatePhone;
+      let candidateEmail = app.candidateEmail;
+      let currentSalary = app.candidateCurrentSalary;
+      let expectedSalary = app.candidateExpectedSalary;
+      let noticePeriodDays = app.candidateNoticePeriodDays;
+      let cvUploadId = app.candidateCvUploadId;
+
+      if (!candidateName) {
+        const candidate = candidateMap.get(app.candidateId);
+        if (candidate) {
+          candidateName = candidate.fullName;
+          candidatePhone = candidate.phone;
+          candidateEmail = candidate.email;
+          currentSalary = candidate.currentSalary;
+          expectedSalary = candidate.expectedSalary;
+          noticePeriodDays = candidate.noticePeriodDays;
+          cvUploadId = candidate.cvUploadId;
+        }
+      }
+
+      // Compute which fields are still missing
+      const missingFields: string[] = [];
+      const hasCV = app.followUpCvReceived === true ||
+        (app.followUpCvReceived === undefined && (!!cvUploadId || !!app.cvFileId));
+      const hasCurrentSalary = app.followUpCurrentSalary === true ||
+        (app.followUpCurrentSalary === undefined && currentSalary !== undefined);
+      const hasExpectedSalary = app.followUpExpectedSalary === true ||
+        (app.followUpExpectedSalary === undefined && expectedSalary !== undefined);
+      const hasNoticePeriod = app.followUpNoticePeriod === true ||
+        (app.followUpNoticePeriod === undefined && noticePeriodDays !== undefined);
+
+      if (!hasCV) missingFields.push("CV");
+      if (!hasCurrentSalary) missingFields.push("Current Salary");
+      if (!hasExpectedSalary) missingFields.push("Expected Salary");
+      if (!hasNoticePeriod) missingFields.push("Notice Period");
+
+      const daysUnresponsive = app.lastStageChangedAt
+        ? Math.floor((now - app.lastStageChangedAt) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      return {
+        applicationId: app._id,
+        candidateId: app.candidateId,
+        candidateName: candidateName ?? "Unknown",
+        candidatePhone: candidatePhone ?? null,
+        candidateEmail: candidateEmail ?? null,
+        jobTitle,
+        missingFields,
+        daysUnresponsive,
+        lastStageChangedAt: app.lastStageChangedAt,
+        currentSalary,
+        expectedSalary,
+        noticePeriodDays,
+        hasCurrentSalary,
+        hasExpectedSalary,
+        hasNoticePeriod,
+      };
+    });
   },
 });
 
