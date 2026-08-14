@@ -240,81 +240,185 @@ export async function initiateFollowUpOutreach(
     }
   }
 
-  // 1. WhatsApp Outreach
-  if (isWhatsAppEnabled) {
-    // Schedule the actual WhatsApp delivery using Meta Approved Template
-    await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
-      applicationId: app._id,
-      templateType: "initial_outreach",
-    });
-  }
+  const currentAttempts = app.followUpAttemptCount || 0;
+  const isNudge = currentAttempts > 0;
 
-  // 2. Email Outreach
-  if (isEmailEnabled) {
-    // Create Email communication record (pending — will be sent via Graph)
-    const emailCommId = await ctx.db.insert("communications", {
-      candidateId: app.candidateId,
-      jobId: app.jobId,
-      applicationId: app._id,
-      direction: "outbound",
-      channel: "email",
-      subject: emailSubject,
-      body: emailBody,
-      deliveryStatus: "pending",
-      sentAt: now,
-      stoppedSequence: false,
-      sequenceDay: 0,
-    });
-
-    // Schedule the actual Email delivery via Microsoft Graph
-    const recruiter = await ctx.db.get(job.primaryRecruiterId);
-    const taEmail = recruiter?.email;
-    const candidateEmail = candidate.email;
-
-    if (taEmail && candidateEmail) {
-      const htmlBody = buildStructuredEmailHtml({
-        candidateName: candidate.fullName || "there",
-        jobTitle: job.title,
-        missingHeader: `We're still waiting on the following to progress your application for ${job.title}:`,
-        remainingMissing: missingFields,
-        ctaText: "Please share these at your earliest convenience. Thank you!",
-      });
-      await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
-        communicationId: emailCommId,
-        candidateJobId: app._id as string,
-        taEmail,
-        toAddress: candidateEmail,
-        subject: `Action Required: Missing info for your ${job.title} application`,
-        bodyHtml: htmlBody,
-      });
+  if (isNudge) {
+    // === NUDGE REMINDER FLOW ===
+    let messageToSend = app.nextFollowUpMessage || job.followUpSampleTemplate;
+    if (!messageToSend) {
+      messageToSend = `Hi ${candidate.fullName || "Candidate"},\n\nThis is a friendly reminder that we still need the following details for your ${job.title} application:\n${formattedMissingFields}\n\nPlease share them at your earliest convenience. Thank you!`;
     } else {
-      console.warn(
-        `[Follow-up Outreach] Skipped email: taEmail=${taEmail ?? "missing"}, candidateEmail=${candidateEmail ?? "missing"}`
-      );
-      // Mark the email comm as failed if we can't send it
-      await ctx.db.patch(emailCommId, {
-        deliveryStatus: "failed",
-        errorMessage: !taEmail
-          ? "Recruiter has no email configured"
-          : "Candidate has no email address",
+      messageToSend = messageToSend
+        .replace(/{candidate_name}/g, candidate.fullName || "Candidate")
+        .replace(/{job_title}/g, job.title || "Job")
+        .replace(/{missing_fields}/g, formattedMissingFields)
+        .replace(/{company_name}/g, companyName);
+    }
+
+    // 1. WhatsApp Nudge
+    let whatsappCommId: any = undefined;
+    if (isWhatsAppEnabled) {
+      whatsappCommId = await ctx.db.insert("communications", {
+        candidateId: app.candidateId,
+        jobId: app.jobId,
+        applicationId: app._id,
+        direction: "outbound",
+        channel: "whatsapp",
+        subject: `Follow-up: Missing info for your ${job.title} application`,
+        body: messageToSend,
+        deliveryStatus: "pending",
+        sentAt: now,
+        stoppedSequence: false,
+        sequenceDay: app.followUpState?.lastContactDay || 0,
+      });
+
+      await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+        communicationId: whatsappCommId,
+        candidateId: app.candidateId,
+        jobId: app.jobId,
+        body: messageToSend,
       });
     }
+
+    // 2. Email Nudge
+    let emailCommId: any = undefined;
+    if (isEmailEnabled && candidate.email) {
+      let emailSubject = job.followUpEmailSubjectTemplate || `Action Required: Missing info for your ${job.title} application`;
+      emailSubject = emailSubject
+        .replace(/{candidate_name}/g, candidate.fullName || "Candidate")
+        .replace(/{job_title}/g, job.title || "Job");
+
+      let emailBody = job.followUpEmailBodyTemplate || messageToSend;
+      emailBody = emailBody
+        .replace(/{candidate_name}/g, candidate.fullName || "Candidate")
+        .replace(/{job_title}/g, job.title || "Job")
+        .replace(/{missing_fields}/g, formattedMissingFields)
+        .replace(/{company_name}/g, companyName);
+
+      const emailBodyHtml = buildStructuredEmailHtml({
+        candidateName: candidate.fullName || "there",
+        jobTitle: job.title,
+        prelude: `This is a friendly reminder that your application for ${job.title} is still missing a few details.`,
+        remainingMissing: missingFields,
+      });
+
+      emailCommId = await ctx.db.insert("communications", {
+        candidateId: app.candidateId,
+        jobId: app.jobId,
+        applicationId: app._id,
+        direction: "outbound",
+        channel: "email",
+        subject: emailSubject,
+        body: emailBody,
+        deliveryStatus: "pending",
+        sentAt: now,
+        stoppedSequence: false,
+        sequenceDay: app.followUpState?.lastContactDay || 0,
+      });
+
+      await ctx.scheduler.runAfter(0, internal.communications.emailAgent.sendFollowUpEmail, {
+        communicationId: emailCommId,
+        candidateEmail: candidate.email,
+        subject: emailSubject,
+        body: emailBody,
+        bodyHtml: emailBodyHtml,
+      });
+    }
+
+    // 3. Increment attempts and reschedule nudge for 24h later
+    await ctx.db.patch(app._id, {
+      nextFollowUpScheduledAt: now + NUDGE_RESCHEDULE_MS,
+      nextFollowUpMessage: undefined,
+      followUpAttemptCount: currentAttempts + 1,
+      followUpState: {
+        ...app.followUpState,
+        lastContactDay: currentAttempts === 1 ? 4 : 6, // Day 0 -> Day 4 -> Day 6
+      }
+    });
+
+    console.log(`[Follow-up Nudge] Manual reminder sent to ${candidate.fullName}. Rescheduled next nudge.`);
+    return whatsappCommId || emailCommId;
+
+  } else {
+    // === INITIAL OUTREACH FLOW (Day 0) ===
+    // 1. WhatsApp Outreach
+    if (isWhatsAppEnabled) {
+      // Schedule the actual WhatsApp delivery using Meta Approved Template
+      await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+        applicationId: app._id,
+        templateType: "initial_outreach",
+      });
+    }
+
+    // 2. Email Outreach
+    let emailCommId: any = undefined;
+    if (isEmailEnabled) {
+      // Create Email communication record (pending — will be sent via Graph)
+      emailCommId = await ctx.db.insert("communications", {
+        candidateId: app.candidateId,
+        jobId: app.jobId,
+        applicationId: app._id,
+        direction: "outbound",
+        channel: "email",
+        subject: emailSubject,
+        body: emailBody,
+        deliveryStatus: "pending",
+        sentAt: now,
+        stoppedSequence: false,
+        sequenceDay: 0,
+      });
+
+      // Schedule the actual Email delivery via Microsoft Graph
+      const recruiter = await ctx.db.get(job.primaryRecruiterId);
+      const taEmail = recruiter?.email;
+      const candidateEmail = candidate.email;
+
+      if (taEmail && candidateEmail) {
+        const htmlBody = buildStructuredEmailHtml({
+          candidateName: candidate.fullName || "there",
+          jobTitle: job.title,
+          missingHeader: `We're still waiting on the following to progress your application for ${job.title}:`,
+          remainingMissing: missingFields,
+          ctaText: "Please share these at your earliest convenience. Thank you!",
+        });
+        await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
+          communicationId: emailCommId,
+          candidateJobId: app._id as string,
+          taEmail,
+          toAddress: candidateEmail,
+          subject: `Action Required: Missing info for your ${job.title} application`,
+          bodyHtml: htmlBody,
+        });
+      } else {
+        console.warn(
+          `[Follow-up Outreach] Skipped email: taEmail=${taEmail ?? "missing"}, candidateEmail=${candidateEmail ?? "missing"}`
+        );
+        // Mark the email comm as failed if we can't send it
+        await ctx.db.patch(emailCommId, {
+          deliveryStatus: "failed",
+          errorMessage: !taEmail
+            ? "Recruiter has no email configured"
+            : "Candidate has no email address",
+        });
+      }
+    }
+
+    // 3. Persist state and schedule the next nudge 24 hours out
+    const followUpState = app.followUpState;
+    await ctx.db.patch(app._id, {
+      followUpEnteredAt: app.followUpEnteredAt ?? now,
+      nextFollowUpScheduledAt: now + NUDGE_RESCHEDULE_MS, // Schedule next sweep
+      followUpAttemptCount: 1, // Set attempt count to 1 (Day 0 outreach complete)
+      followUpState: {
+        lastContactDay: 0,
+        firstChannelUsed: followUpState?.firstChannelUsed ?? (isWhatsAppEnabled ? "whatsapp" : "email"),
+      },
+    });
+
+    console.log(`[Follow-up Outreach] Day 0 outreach completed/scheduled for application ${applicationId}. Next sweep in 24 hours.`);
+    return emailCommId;
   }
-
-  // 3. Persist state and schedule the next nudge 24 hours out
-  const followUpState = app.followUpState;
-  await ctx.db.patch(app._id, {
-    followUpEnteredAt: app.followUpEnteredAt ?? now,
-    nextFollowUpScheduledAt: now + NUDGE_RESCHEDULE_MS, // Schedule next sweep
-    followUpAttemptCount: 1, // Set attempt count to 1 (Day 0 outreach complete)
-    followUpState: {
-      lastContactDay: 0,
-      firstChannelUsed: followUpState?.firstChannelUsed ?? (isWhatsAppEnabled ? "whatsapp" : "email"),
-    },
-  });
-
-  console.log(`[Follow-up Outreach] Day 0 outreach completed/scheduled for application ${applicationId}. Next sweep in 24 hours.`);
-  return undefined;
 }
 
 /**

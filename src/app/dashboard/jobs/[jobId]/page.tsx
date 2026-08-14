@@ -1103,7 +1103,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   return (
     <tr className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
       <td className="p-4 align-top w-10">
-        {(item.followUpState?.lastContactDay ?? -1) === -1 ? (
+        {!allComplete ? (
           <input 
             type="checkbox" 
             checked={isSelected}
@@ -2588,52 +2588,68 @@ export default function JobDetailPage() {
     });
     
 
-    const itemsToRender = stageApps.map(app => ({
-      id: app._id,
-      candidateId: app.candidateId,
-      cvUploadId: (app as any).cvFileId || app.candidate?.cvUploadId,
-      name: app.candidate?.fullName || 'Unknown Candidate',
-      doNotContact: (app.candidate as any)?.doNotContact,
-      score: app.aiMatchScore || 'Pending',
-      scoreReason: (app as any).aiMatchExplanation || undefined,
-      status: app.taShortlistStatus || 'Pending',
-      // Raw values for tooltip display — pulled from candidate profile first (updated by logManualCall)
-      currentSalary: app.currentSalary !== undefined && app.currentSalary !== null ? String(app.currentSalary) : ((app.candidate as any)?.currentSalary ? String((app.candidate as any).currentSalary) : '—'),
-      expectedSalary: app.expectedSalary !== undefined && app.expectedSalary !== null ? String(app.expectedSalary) : ((app.candidate as any)?.expectedSalary ? String((app.candidate as any).expectedSalary) : '—'),
-      noticePeriod: app.noticePeriodDays !== undefined && app.noticePeriodDays !== null ? String(app.noticePeriodDays) : ((app.candidate as any)?.noticePeriodDays ? String((app.candidate as any).noticePeriodDays) : ((app as any).noticePeriod || '—')),
-      // Pass raw candidate object so FollowUpCandidateRow can read updated values directly
-      candidate: app.candidate,
-      // Also expose direct raw numbers for the tooltip
-      rawCurrentSalary: (app.candidate as any)?.currentSalary ?? app.currentSalary,
-      rawExpectedSalary: (app.candidate as any)?.expectedSalary ?? app.expectedSalary,
-      rawNoticePeriodDays: (app.candidate as any)?.noticePeriodDays ?? app.noticePeriodDays,
-      budgetFit: true,
-      fit: 'Good',
-      salaryFit: 'Good',
-      decision: 'Pending',
-      manualCallOutcome: app.manualCallOutcome,
-      aiCallStatus: app.aiCallStatus,
-      aiCallIvrResponse: (app as any).aiCallIvrResponse,
-      sourceChannel: app.sourceChannel,
-      currentStage: app.currentStage,
-      date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
-      // Use followUpEnteredAt for accurate 7-day clock; fall back to lastStageChangedAt
-      timeInStageRaw: (app as any).followUpEnteredAt
-        ? Date.now() - (app as any).followUpEnteredAt
-        : (app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0),
-      // Per-application completion flags (the source of truth for follow-up)
-      followUpCvReceived: (app as any).followUpCvReceived,
-      followUpCurrentSalary: (app as any).followUpCurrentSalary,
-      followUpExpectedSalary: (app as any).followUpExpectedSalary,
-      followUpNoticePeriod: (app as any).followUpNoticePeriod,
-      customFollowUpAnswers: (app as any).customFollowUpAnswers,
-      followUpState: (app as any).followUpState,
-      feedback: 'Pending',
-      salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
-      startDate: 'TBD',
-      role: job.title,
-      reason: app.taRejectionReason || 'Not a fit'
-    }));
+    const itemsToRender = stageApps.map(app => {
+      const candidateObj = app.candidate;
+      const hasCV = (app as any).followUpCvReceived === true || !!(app as any).cvFileId || !!candidateObj?.cvUploadId;
+      const hasCurrentSalary = (app as any).followUpCurrentSalary === true || (candidateObj?.currentSalary !== undefined && candidateObj?.currentSalary !== null) || (app.currentSalary !== undefined && app.currentSalary !== null);
+      const hasExpectedSalary = (app as any).followUpExpectedSalary === true || (candidateObj?.expectedSalary !== undefined && candidateObj?.expectedSalary !== null) || (app.expectedSalary !== undefined && app.expectedSalary !== null);
+      const hasNoticePeriod = (app as any).followUpNoticePeriod === true || (candidateObj?.noticePeriodDays !== undefined && candidateObj?.noticePeriodDays !== null) || (app.noticePeriodDays !== undefined && app.noticePeriodDays !== null);
+
+      const jobCustomQuestions = job?.customFollowUpQuestions || [];
+      const customAnswers = (app as any).customFollowUpAnswers || candidateObj?.customCallData || {};
+      let customQuestionsComplete = true;
+      for (const q of jobCustomQuestions) {
+        const a = customAnswers[q];
+        if (!a || String(a).trim() === '') {
+          customQuestionsComplete = false;
+          break;
+        }
+      }
+      const isComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod && customQuestionsComplete;
+
+      return {
+        id: app._id,
+        candidateId: app.candidateId,
+        cvUploadId: (app as any).cvFileId || app.candidate?.cvUploadId,
+        name: app.candidate?.fullName || 'Unknown Candidate',
+        doNotContact: (app.candidate as any)?.doNotContact,
+        score: app.aiMatchScore || 'Pending',
+        scoreReason: (app as any).aiMatchExplanation || undefined,
+        status: app.taShortlistStatus || 'Pending',
+        currentSalary: app.currentSalary !== undefined && app.currentSalary !== null ? String(app.currentSalary) : ((app.candidate as any)?.currentSalary ? String((app.candidate as any).currentSalary) : '—'),
+        expectedSalary: app.expectedSalary !== undefined && app.expectedSalary !== null ? String(app.expectedSalary) : ((app.candidate as any)?.expectedSalary ? String((app.candidate as any).expectedSalary) : '—'),
+        noticePeriod: app.noticePeriodDays !== undefined && app.noticePeriodDays !== null ? String(app.noticePeriodDays) : ((app.candidate as any)?.noticePeriodDays ? String((app.candidate as any).noticePeriodDays) : ((app as any).noticePeriod || '—')),
+        candidate: app.candidate,
+        rawCurrentSalary: (app.candidate as any)?.currentSalary ?? app.currentSalary,
+        rawExpectedSalary: (app.candidate as any)?.expectedSalary ?? app.expectedSalary,
+        rawNoticePeriodDays: (app.candidate as any)?.noticePeriodDays ?? app.noticePeriodDays,
+        budgetFit: true,
+        fit: 'Good',
+        salaryFit: 'Good',
+        decision: 'Pending',
+        manualCallOutcome: app.manualCallOutcome,
+        aiCallStatus: app.aiCallStatus,
+        aiCallIvrResponse: (app as any).aiCallIvrResponse,
+        sourceChannel: app.sourceChannel,
+        currentStage: app.currentStage,
+        date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
+        timeInStageRaw: (app as any).followUpEnteredAt
+          ? Date.now() - (app as any).followUpEnteredAt
+          : (app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0),
+        followUpCvReceived: (app as any).followUpCvReceived,
+        followUpCurrentSalary: (app as any).followUpCurrentSalary,
+        followUpExpectedSalary: (app as any).followUpExpectedSalary,
+        followUpNoticePeriod: (app as any).followUpNoticePeriod,
+        customFollowUpAnswers: (app as any).customFollowUpAnswers,
+        followUpState: (app as any).followUpState,
+        isComplete,
+        feedback: 'Pending',
+        salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
+        startDate: 'TBD',
+        role: job.title,
+        reason: app.taRejectionReason || 'Not a fit'
+      };
+    });
     
     itemsToRender.sort((a, b) => {
       if (sortOrder === 'score') {
@@ -2765,18 +2781,18 @@ export default function JobDetailPage() {
                         <input
                           type="checkbox"
                           checked={
-                            currentItems.filter(item => (item.followUpState?.lastContactDay ?? -1) === -1).length > 0 &&
-                            currentItems.filter(item => (item.followUpState?.lastContactDay ?? -1) === -1).every(item => selectedCandidates.includes(item.id))
+                            currentItems.filter(item => !item.isComplete).length > 0 &&
+                            currentItems.filter(item => !item.isComplete).every(item => selectedCandidates.includes(item.id))
                           }
                           onChange={(e) => {
                             if (e.target.checked) {
                               const pendingIds = currentItems
-                                .filter(item => (item.followUpState?.lastContactDay ?? -1) === -1)
+                                .filter(item => !item.isComplete)
                                 .map(item => item.id);
                               setSelectedCandidates(prev => Array.from(new Set([...prev, ...pendingIds])));
                             } else {
                               const pendingIds = currentItems
-                                .filter(item => (item.followUpState?.lastContactDay ?? -1) === -1)
+                                .filter(item => !item.isComplete)
                                 .map(item => item.id);
                               setSelectedCandidates(prev => prev.filter(id => !pendingIds.includes(id)));
                             }
