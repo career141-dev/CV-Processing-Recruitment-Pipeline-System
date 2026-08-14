@@ -135,7 +135,6 @@ export const insertCvRecord = internalMutation({
           cvReceived: true,
           lastBotReplyAt: Date.now(),
         });
-        await ctx.db.delete(session._id);
       }
     }
 

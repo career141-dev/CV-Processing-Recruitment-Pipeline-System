@@ -548,7 +548,29 @@ export const processInboundTextWebhook = internalMutation({
           }
         }
 
-        return { action: "ignore" };
+        // Ensure session exists and knows CV is received
+        let activeSession = await ctx.db
+          .query("whatsappSessions")
+          .withIndex("by_phone", (q) => q.eq("phone", cleanFrom))
+          .first();
+
+        if (activeSession) {
+          await ctx.db.patch(activeSession._id, {
+            jobId: activeApp.jobId,
+            cvReceived: true,
+            lastInteractionAt: Date.now(),
+          });
+        } else {
+          await ctx.db.insert("whatsappSessions", {
+            phone: cleanFrom,
+            jobId: activeApp.jobId,
+            keyword: "AUTO_ACTIVE",
+            cvReceived: true,
+            lastInteractionAt: Date.now(),
+          });
+        }
+
+        return { action: "dispatch_pre_app_chat", jobId: activeApp.jobId };
       }
     }
 
@@ -843,7 +865,8 @@ RULES — follow these strictly:
 5. Never send multiple responses. Write ONE reply only.
 6. If CV has NOT been received AND the conversation naturally warrants it, you MAY add ONE gentle line at the end asking them to share their CV as a PDF. Do not add it robotically to every message.
 7. Keep your reply under 3 sentences. Be warm, human and friendly — not a scripted bot.
-8. If the candidate asks if you are an AI: confirm it honestly, explain you're Career141's recruitment assistant, and ask if they have any questions about the role.`;
+8. If the candidate asks if you are an AI: confirm it honestly, explain you're Career141's recruitment assistant, and ask if they have any questions about the role.
+9. NEVER repeat generic "Thank you for reaching out to Career141" or "Which position are you interested in" greetings. Speak naturally as a helpful recruitment colleague.`;
 
       // ── 6. Call LLM ───────────────────────────────────────────────────────
       const openai = getOpenAI("jd_matching");
@@ -916,10 +939,11 @@ export const getCandidateByPhone = internalQuery({
 export const getRecentMessages = internalQuery({
   args: { candidateId: v.id("candidates"), limit: v.number() },
   handler: async (ctx, args) => {
-    return await ctx.db.query("communications")
+    const msgs = await ctx.db.query("communications")
       .withIndex("by_candidate_time", (q) => q.eq("candidateId", args.candidateId))
       .order("desc")
       .take(args.limit);
+    return msgs.reverse();
   },
 });
 
