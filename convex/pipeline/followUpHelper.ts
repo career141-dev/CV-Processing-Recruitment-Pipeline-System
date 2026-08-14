@@ -130,6 +130,11 @@ export async function initiateFollowUpOutreach(
   const job = await ctx.db.get(app.jobId);
   if (!job) return;
 
+  if (job.agent3Enabled === false) {
+    console.log(`[Follow-up Outreach] Follow-up sequence is disabled for job "${job.title}". Skipping initiation.`);
+    return;
+  }
+
   // Derive complete/missing status
   const hasCV =
     app.followUpCvReceived === true ||
@@ -213,73 +218,90 @@ export async function initiateFollowUpOutreach(
   }
 
   const now = Date.now();
+  const NUDGE_RESCHEDULE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-  // Create Email communication record (pending — will be sent via Graph)
-  const emailCommId = await ctx.db.insert("communications", {
-    candidateId: app.candidateId,
-    jobId: app.jobId,
-    applicationId: app._id,
-    direction: "outbound",
-    channel: "email",
-    subject: emailSubject,
-    body: emailBody,
-    deliveryStatus: "pending",
-    sentAt: now,
-    stoppedSequence: false,
-    sequenceDay: 0,
-  });
+  const isWhatsAppEnabled = job.enableWhatsAppFollowUp !== false;
+  const isEmailEnabled = job.enableEmailFollowUp !== false;
 
-  // Persist stage clock and mark day0Done
-  const followUpState = app.followUpState;
-  await ctx.db.patch(app._id, {
-    followUpEnteredAt: app.followUpEnteredAt ?? now,
-    followUpState: {
-      lastContactDay: 0,
-      firstChannelUsed: followUpState?.firstChannelUsed ?? "whatsapp",
-    },
-  });
+  if (!isWhatsAppEnabled && !isEmailEnabled) {
+    console.log(`[Follow-up Outreach] Both WhatsApp and Email follow-ups are disabled for job "${job.title}". Aborting outreach.`);
+    return;
+  }
 
-  // Schedule the actual WhatsApp delivery using Meta Approved Template
-  await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
-    applicationId: app._id,
-    templateType: "initial_outreach",
-  });
-
-  // Schedule the actual Email delivery via Microsoft Graph
-  const recruiter = await ctx.db.get(job.primaryRecruiterId);
-  const taEmail = recruiter?.email;
-  const candidateEmail = candidate.email;
-
-  if (taEmail && candidateEmail) {
-    const htmlBody = buildStructuredEmailHtml({
-      candidateName: candidate.fullName || "there",
-      jobTitle: job.title,
-      missingHeader: `We're still waiting on the following to progress your application for ${job.title}:`,
-      remainingMissing: missingFields,
-      ctaText: "Please share these at your earliest convenience. Thank you!",
-    });
-    await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
-      communicationId: emailCommId,
-      candidateJobId: app._id as string,
-      taEmail,
-      toAddress: candidateEmail,
-      subject: `Action Required: Missing info for your ${job.title} application`,
-      bodyHtml: htmlBody,
-    });
-  } else {
-    console.warn(
-      `[Follow-up Outreach] Skipped email: taEmail=${taEmail ?? "missing"}, candidateEmail=${candidateEmail ?? "missing"}`
-    );
-    // Mark the email comm as failed if we can't send it
-    await ctx.db.patch(emailCommId, {
-      deliveryStatus: "failed",
-      errorMessage: !taEmail
-        ? "Recruiter has no email configured"
-        : "Candidate has no email address",
+  // 1. WhatsApp Outreach
+  if (isWhatsAppEnabled) {
+    // Schedule the actual WhatsApp delivery using Meta Approved Template
+    await ctx.scheduler.runAfter(0, internal.communications.metaTemplateSender.sendMetaTemplate, {
+      applicationId: app._id,
+      templateType: "initial_outreach",
     });
   }
 
-  console.log(`[Follow-up Outreach] Day 0 WhatsApp & Email outreach scheduled for application ${applicationId} (Test Mode active: real candidates protected)`);
+  // 2. Email Outreach
+  if (isEmailEnabled) {
+    // Create Email communication record (pending — will be sent via Graph)
+    const emailCommId = await ctx.db.insert("communications", {
+      candidateId: app.candidateId,
+      jobId: app.jobId,
+      applicationId: app._id,
+      direction: "outbound",
+      channel: "email",
+      subject: emailSubject,
+      body: emailBody,
+      deliveryStatus: "pending",
+      sentAt: now,
+      stoppedSequence: false,
+      sequenceDay: 0,
+    });
+
+    // Schedule the actual Email delivery via Microsoft Graph
+    const recruiter = await ctx.db.get(job.primaryRecruiterId);
+    const taEmail = recruiter?.email;
+    const candidateEmail = candidate.email;
+
+    if (taEmail && candidateEmail) {
+      const htmlBody = buildStructuredEmailHtml({
+        candidateName: candidate.fullName || "there",
+        jobTitle: job.title,
+        missingHeader: `We're still waiting on the following to progress your application for ${job.title}:`,
+        remainingMissing: missingFields,
+        ctaText: "Please share these at your earliest convenience. Thank you!",
+      });
+      await ctx.scheduler.runAfter(0, internal.communications.graphEmail.sendGraphEmail, {
+        communicationId: emailCommId,
+        candidateJobId: app._id as string,
+        taEmail,
+        toAddress: candidateEmail,
+        subject: `Action Required: Missing info for your ${job.title} application`,
+        bodyHtml: htmlBody,
+      });
+    } else {
+      console.warn(
+        `[Follow-up Outreach] Skipped email: taEmail=${taEmail ?? "missing"}, candidateEmail=${candidateEmail ?? "missing"}`
+      );
+      // Mark the email comm as failed if we can't send it
+      await ctx.db.patch(emailCommId, {
+        deliveryStatus: "failed",
+        errorMessage: !taEmail
+          ? "Recruiter has no email configured"
+          : "Candidate has no email address",
+      });
+    }
+  }
+
+  // 3. Persist state and schedule the next nudge 24 hours out
+  const followUpState = app.followUpState;
+  await ctx.db.patch(app._id, {
+    followUpEnteredAt: app.followUpEnteredAt ?? now,
+    nextFollowUpScheduledAt: now + NUDGE_RESCHEDULE_MS, // Schedule next sweep
+    followUpAttemptCount: 1, // Set attempt count to 1 (Day 0 outreach complete)
+    followUpState: {
+      lastContactDay: 0,
+      firstChannelUsed: followUpState?.firstChannelUsed ?? (isWhatsAppEnabled ? "whatsapp" : "email"),
+    },
+  });
+
+  console.log(`[Follow-up Outreach] Day 0 outreach completed/scheduled for application ${applicationId}. Next sweep in 24 hours.`);
   return undefined;
 }
 
