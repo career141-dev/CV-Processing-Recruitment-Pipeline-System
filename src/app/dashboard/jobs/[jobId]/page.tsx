@@ -911,6 +911,26 @@ const LogManualCallCard = ({
   );
 };
 
+const isUrl = (str: string) => {
+  if (!str) return false;
+  const trimmed = str.trim();
+  return /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(trimmed) || 
+         trimmed.includes('drive.google.com') ||
+         trimmed.includes('behance.net') ||
+         trimmed.includes('dribbble.com') ||
+         trimmed.includes('vimeo.com') ||
+         trimmed.includes('youtube.com') ||
+         trimmed.includes('github.com');
+};
+
+const formatUrl = (str: string) => {
+  const trimmed = str.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+};
+
 const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp, isSelected, onSelectToggle }: any) => {
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
@@ -1007,26 +1027,6 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   }
 
   const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod && customQuestionsComplete;
-
-  const isUrl = (str: string) => {
-    if (!str) return false;
-    const trimmed = str.trim();
-    return /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(trimmed) || 
-           trimmed.includes('drive.google.com') ||
-           trimmed.includes('behance.net') ||
-           trimmed.includes('dribbble.com') ||
-           trimmed.includes('vimeo.com') ||
-           trimmed.includes('youtube.com') ||
-           trimmed.includes('github.com');
-  };
-
-  const formatUrl = (str: string) => {
-    const trimmed = str.trim();
-    if (!/^https?:\/\//i.test(trimmed)) {
-      return `https://${trimmed}`;
-    }
-    return trimmed;
-  };
 
   const flagItem = (label: string, done: boolean, value?: any) => {
     const rawVal = value !== undefined && value !== null && value !== '—' && value !== '' ? String(value).trim() : '';
@@ -2867,7 +2867,8 @@ export default function JobDetailPage() {
           </div>
         );
         break;
-      case '2nd Shortlist':
+      case '2nd Shortlist': {
+        const jobCustomQuestions = job?.customFollowUpQuestions || (job as any)?.agent5CustomQuestions || [];
         tableContent = (
           <>
             {/* Headhunt upload toolbar */}
@@ -2889,13 +2890,18 @@ export default function JobDetailPage() {
                   <th className="p-4">Current Salary</th>
                   <th className="p-4">Expected Salary</th>
                   <th className="p-4">Notice Period</th>
+                  {jobCustomQuestions.map((q: string, idx: number) => (
+                    <th key={idx} className="p-4 max-w-[200px] truncate" title={q}>
+                      {q}
+                    </th>
+                  ))}
                   <th className="p-4">Fit</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-[13px] text-text-primary divide-y divide-border">
                 {currentItems.length === 0 ? (
-                  <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No candidates in 2nd Shortlist.</td></tr>
+                  <tr><td colSpan={6 + jobCustomQuestions.length} className="p-8 text-center text-text-secondary">No candidates in 2nd Shortlist.</td></tr>
                 ) : currentItems.map((item: any) => (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
@@ -2904,6 +2910,28 @@ export default function JobDetailPage() {
                     <td className="p-4">{item.currentSalary}</td>
                     <td className="p-4">{item.expectedSalary}</td>
                     <td className="p-4">{item.noticePeriod}</td>
+                    {jobCustomQuestions.map((q: string, idx: number) => {
+                      const ans = item.customFollowUpAnswers?.[q] || item.candidate?.customCallData?.[q] || '—';
+                      const isAnsUrl = ans !== '—' && isUrl(ans);
+                      const linkTarget = isAnsUrl ? formatUrl(ans) : '';
+                      return (
+                        <td key={idx} className="p-4 max-w-[200px] truncate" title={ans}>
+                          {isAnsUrl ? (
+                            <a
+                              href={linkTarget}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                              <span>Open Link</span>
+                            </a>
+                          ) : (
+                            ans
+                          )}
+                        </td>
+                      );
+                    })}
                     <td className="p-4"><span className="text-green-500 font-medium">✅ {item.fit}</span></td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -2923,6 +2951,7 @@ export default function JobDetailPage() {
           </>
         );
         break;
+      }
       case 'Director Shortlist':
         tableContent = (
           <table className="w-full text-left border-collapse">

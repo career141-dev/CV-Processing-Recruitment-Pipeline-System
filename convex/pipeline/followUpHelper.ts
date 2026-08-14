@@ -21,13 +21,16 @@ export async function checkAndAdvanceFollowUp(
     .collect();
 
   for (const app of apps) {
-    const isFollowUp = app.currentStage === "follow_up";
+    const isFollowUp = app.currentStage === "follow_up" || app.currentStage === "ta_shortlist";
     const isAutoRejected = app.currentStage === "rejected" && app.taRejectionReason === "Did not complete requirements within 7-day window";
 
     if (!isFollowUp && !isAutoRejected) continue;
 
     const candidate = await ctx.db.get(candidateId);
     if (!candidate) continue;
+
+    const job = await ctx.db.get(app.jobId);
+    if (!job) continue;
 
     const hasCV = app.followUpCvReceived === true || !!candidate.cvUploadId || !!app.cvFileId || candidate.isParsed === true;
     const hasCurrent = candidate.currentSalary !== undefined && candidate.currentSalary !== null;
@@ -46,16 +49,28 @@ export async function checkAndAdvanceFollowUp(
       Object.assign(app, updates); // apply updates locally for the next check
     }
 
+    // Verify custom questions are completed
+    const customQuestions = job.customFollowUpQuestions || [];
+    const customAnswers = app.customFollowUpAnswers || {};
+    let customQuestionsComplete = true;
+    for (const q of customQuestions) {
+      if (!customAnswers[q]) {
+        customQuestionsComplete = false;
+        break;
+      }
+    }
+
     const allComplete =
       app.followUpCvReceived === true &&
       app.followUpCurrentSalary === true &&
       app.followUpExpectedSalary === true &&
-      app.followUpNoticePeriod === true;
+      app.followUpNoticePeriod === true &&
+      customQuestionsComplete;
 
     if (allComplete) {
       const note = isAutoRejected 
         ? "Candidate provided late response. Reopened to Second Shortlist."
-        : "Auto-advanced from Follow-up: all 4 data points completed.";
+        : "Auto-advanced from Follow-up: all requirements completed.";
 
       await ctx.db.patch(app._id, {
         currentStage: "second_shortlist",
