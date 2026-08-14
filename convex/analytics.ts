@@ -10,16 +10,19 @@ export const getOverviewMetrics = query({
   args: {},
   handler: async (ctx) => {
     await requireFullAccess(ctx);
-    // 1. Calculate live Total CVs
-    const allUploads = await ctx.db.query("cvUploads").collect();
-    const totalCVs = allUploads.length;
+    
+    // 1. Fetch cached Total CVs from global system stats singleton (O(1) lookup)
+    const sysStat = await ctx.db.query("systemStats")
+      .withIndex("by_singletonKey", (q: any) => q.eq("singletonKey", "global_stats"))
+      .first();
+    const totalCVs = sysStat?.totalCvUploads || 0;
 
     // 2. Read only active jobs
     const activeJobs = await ctx.db.query("jobs")
       .withIndex("by_status", q => q.eq("status", "active"))
       .collect();
 
-    // 3. Aggregate pipeline stage counts from per-job stageCounts (which are updated transactionally in real-time)
+    // 3. Aggregate pipeline stage counts from per-job stageCounts
     const globalStageCounts: Record<string, number> = {};
     for (const job of activeJobs) {
       const sc = job.stageCounts || {};
@@ -34,16 +37,20 @@ export const getOverviewMetrics = query({
     const interviews = globalStageCounts["interview"] || 0;
     const placements = globalStageCounts["placed"] || 0;
 
-    // 5. Live Source distribution (Last 30 Days)
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    // 5. Source distribution aggregated from last 30 daily stats records (O(1) database complexity)
+    const dailyStatsList = await ctx.db.query("dailyStats")
+      .order("desc")
+      .take(30);
+
     const sourceTotals: Record<string, number> = {};
     let totalFromSources = 0;
-    
-    for (const upload of allUploads) {
-      if (upload._creationTime >= thirtyDaysAgo) {
-        const source = upload.source || "database";
-        sourceTotals[source] = (sourceTotals[source] || 0) + 1;
-        totalFromSources++;
+
+    for (const day of dailyStatsList) {
+      const sourceMap = day.cvsBySource || {};
+      for (const [source, count] of Object.entries(sourceMap)) {
+        const countNum = count as number;
+        sourceTotals[source] = (sourceTotals[source] || 0) + countNum;
+        totalFromSources += countNum;
       }
     }
 
