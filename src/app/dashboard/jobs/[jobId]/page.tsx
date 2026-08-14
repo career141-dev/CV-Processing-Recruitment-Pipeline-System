@@ -8,7 +8,7 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, DollarSign, ExternalLink, HelpCircle
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, MessageCircle, DollarSign, ExternalLink, HelpCircle
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -911,7 +911,27 @@ const LogManualCallCard = ({
   );
 };
 
-const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp }: any) => {
+const isUrl = (str: string) => {
+  if (!str) return false;
+  const trimmed = str.trim();
+  return /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(trimmed) || 
+         trimmed.includes('drive.google.com') ||
+         trimmed.includes('behance.net') ||
+         trimmed.includes('dribbble.com') ||
+         trimmed.includes('vimeo.com') ||
+         trimmed.includes('youtube.com') ||
+         trimmed.includes('github.com');
+};
+
+const formatUrl = (str: string) => {
+  const trimmed = str.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+};
+
+const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp, isSelected, onSelectToggle }: any) => {
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState('');
@@ -1008,26 +1028,6 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
 
   const allComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod && customQuestionsComplete;
 
-  const isUrl = (str: string) => {
-    if (!str) return false;
-    const trimmed = str.trim();
-    return /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(trimmed) || 
-           trimmed.includes('drive.google.com') ||
-           trimmed.includes('behance.net') ||
-           trimmed.includes('dribbble.com') ||
-           trimmed.includes('vimeo.com') ||
-           trimmed.includes('youtube.com') ||
-           trimmed.includes('github.com');
-  };
-
-  const formatUrl = (str: string) => {
-    const trimmed = str.trim();
-    if (!/^https?:\/\//i.test(trimmed)) {
-      return `https://${trimmed}`;
-    }
-    return trimmed;
-  };
-
   const flagItem = (label: string, done: boolean, value?: any) => {
     const rawVal = value !== undefined && value !== null && value !== '—' && value !== '' ? String(value).trim() : '';
     let displayVal = rawVal;
@@ -1075,7 +1075,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   if (isLoggingCall) {
     return (
       <tr className="border-b border-border bg-surface-bright/30">
-        <td colSpan={6} className="p-4">
+        <td colSpan={7} className="p-4">
           <LogManualCallCard
             candidateName={item.name}
             outcome={outcome}
@@ -1102,6 +1102,16 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
 
   return (
     <tr className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
+      <td className="p-4 align-top w-10">
+        {!allComplete ? (
+          <input 
+            type="checkbox" 
+            checked={isSelected}
+            onChange={onSelectToggle}
+            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+          />
+        ) : null}
+      </td>
       <td className="p-4 font-medium align-top">
         <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
         {allComplete && (
@@ -1973,12 +1983,67 @@ export default function JobDetailPage() {
   const convex = useConvex();
   const triggerWhatsAppFollowUp = useMutation(api.pipeline.outreach.triggerWhatsAppFollowUp);
   const triggerEmailFollowUp = useMutation(api.pipeline.outreach.triggerEmailFollowUp);
+  const triggerBulkFollowUp = useMutation(api.pipeline.outreach.triggerBulkFollowUp);
+  const [selectedCandidates, setSelectedCandidates] = useState<Id<"applications">[]>([]);
+  const [isBulkSending, setIsBulkSending] = useState(false);
+
+  const handleBulkSendFollowUp = async () => {
+    if (selectedCandidates.length === 0) return;
+    setIsBulkSending(true);
+    const toastId = toast.loading(`Sending follow-ups to ${selectedCandidates.length} candidate(s)...`);
+    try {
+      await triggerBulkFollowUp({ applicationIds: selectedCandidates });
+      toast.success("Successfully triggered follow-up sequence for selected candidates!", { id: toastId });
+      setSelectedCandidates([]);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to trigger bulk follow-up", { id: toastId });
+      showError(e, { title: "Bulk Outreach Failed" });
+    } finally {
+      setIsBulkSending(false);
+    }
+  };
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   
   const triggerReverseMatch = useMutation(api.jobs.jobs.triggerReverseMatch);
   const updateTaPreferencesMutation = useMutation(api.jobs.jobs.updateTaPreferences);
   const publishJob = useMutation(api.jobs.jobs.publishJob);
+  const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
+
+  const handleToggleWhatsAppFollowUp = async () => {
+    if (!job) return;
+    const currentVal = job.enableWhatsAppFollowUp !== false;
+    const newVal = !currentVal;
+    const toastId = toast.loading(`${newVal ? "Enabling" : "Disabling"} WhatsApp follow-ups...`);
+    try {
+      await updateJobDetails({
+        jobId,
+        enableWhatsAppFollowUp: newVal,
+      });
+      toast.success(`WhatsApp follow-ups ${newVal ? "enabled" : "disabled"}!`, { id: toastId });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update follow-up settings", { id: toastId });
+      showError(e, { title: "Update Failed" });
+    }
+  };
+
+  const handleToggleEmailFollowUp = async () => {
+    if (!job) return;
+    const currentVal = job.enableEmailFollowUp !== false;
+    const newVal = !currentVal;
+    const toastId = toast.loading(`${newVal ? "Enabling" : "Disabling"} Email follow-ups...`);
+    try {
+      await updateJobDetails({
+        jobId,
+        enableEmailFollowUp: newVal,
+      });
+      toast.success(`Email follow-ups ${newVal ? "enabled" : "disabled"}!`, { id: toastId });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update follow-up settings", { id: toastId });
+      showError(e, { title: "Update Failed" });
+    }
+  };
+
   const [isScanning, setIsScanning] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
@@ -2523,52 +2588,68 @@ export default function JobDetailPage() {
     });
     
 
-    const itemsToRender = stageApps.map(app => ({
-      id: app._id,
-      candidateId: app.candidateId,
-      cvUploadId: (app as any).cvFileId || app.candidate?.cvUploadId,
-      name: app.candidate?.fullName || 'Unknown Candidate',
-      doNotContact: (app.candidate as any)?.doNotContact,
-      score: app.aiMatchScore || 'Pending',
-      scoreReason: (app as any).aiMatchExplanation || undefined,
-      status: app.taShortlistStatus || 'Pending',
-      // Raw values for tooltip display — pulled from candidate profile first (updated by logManualCall)
-      currentSalary: app.currentSalary !== undefined && app.currentSalary !== null ? String(app.currentSalary) : ((app.candidate as any)?.currentSalary ? String((app.candidate as any).currentSalary) : '—'),
-      expectedSalary: app.expectedSalary !== undefined && app.expectedSalary !== null ? String(app.expectedSalary) : ((app.candidate as any)?.expectedSalary ? String((app.candidate as any).expectedSalary) : '—'),
-      noticePeriod: app.noticePeriodDays !== undefined && app.noticePeriodDays !== null ? String(app.noticePeriodDays) : ((app.candidate as any)?.noticePeriodDays ? String((app.candidate as any).noticePeriodDays) : ((app as any).noticePeriod || '—')),
-      // Pass raw candidate object so FollowUpCandidateRow can read updated values directly
-      candidate: app.candidate,
-      // Also expose direct raw numbers for the tooltip
-      rawCurrentSalary: (app.candidate as any)?.currentSalary ?? app.currentSalary,
-      rawExpectedSalary: (app.candidate as any)?.expectedSalary ?? app.expectedSalary,
-      rawNoticePeriodDays: (app.candidate as any)?.noticePeriodDays ?? app.noticePeriodDays,
-      budgetFit: true,
-      fit: 'Good',
-      salaryFit: 'Good',
-      decision: 'Pending',
-      manualCallOutcome: app.manualCallOutcome,
-      aiCallStatus: app.aiCallStatus,
-      aiCallIvrResponse: (app as any).aiCallIvrResponse,
-      sourceChannel: app.sourceChannel,
-      currentStage: app.currentStage,
-      date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
-      // Use followUpEnteredAt for accurate 7-day clock; fall back to lastStageChangedAt
-      timeInStageRaw: (app as any).followUpEnteredAt
-        ? Date.now() - (app as any).followUpEnteredAt
-        : (app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0),
-      // Per-application completion flags (the source of truth for follow-up)
-      followUpCvReceived: (app as any).followUpCvReceived,
-      followUpCurrentSalary: (app as any).followUpCurrentSalary,
-      followUpExpectedSalary: (app as any).followUpExpectedSalary,
-      followUpNoticePeriod: (app as any).followUpNoticePeriod,
-      customFollowUpAnswers: (app as any).customFollowUpAnswers,
-      followUpState: (app as any).followUpState,
-      feedback: 'Pending',
-      salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
-      startDate: 'TBD',
-      role: job.title,
-      reason: app.taRejectionReason || 'Not a fit'
-    }));
+    const itemsToRender = stageApps.map(app => {
+      const candidateObj = app.candidate;
+      const hasCV = (app as any).followUpCvReceived === true || !!(app as any).cvFileId || !!candidateObj?.cvUploadId;
+      const hasCurrentSalary = (app as any).followUpCurrentSalary === true || (candidateObj?.currentSalary !== undefined && candidateObj?.currentSalary !== null) || (app.currentSalary !== undefined && app.currentSalary !== null);
+      const hasExpectedSalary = (app as any).followUpExpectedSalary === true || (candidateObj?.expectedSalary !== undefined && candidateObj?.expectedSalary !== null) || (app.expectedSalary !== undefined && app.expectedSalary !== null);
+      const hasNoticePeriod = (app as any).followUpNoticePeriod === true || (candidateObj?.noticePeriodDays !== undefined && candidateObj?.noticePeriodDays !== null) || (app.noticePeriodDays !== undefined && app.noticePeriodDays !== null);
+
+      const jobCustomQuestions = job?.customFollowUpQuestions || [];
+      const customAnswers = (app as any).customFollowUpAnswers || candidateObj?.customCallData || {};
+      let customQuestionsComplete = true;
+      for (const q of jobCustomQuestions) {
+        const a = customAnswers[q];
+        if (!a || String(a).trim() === '') {
+          customQuestionsComplete = false;
+          break;
+        }
+      }
+      const isComplete = hasCV && hasCurrentSalary && hasExpectedSalary && hasNoticePeriod && customQuestionsComplete;
+
+      return {
+        id: app._id,
+        candidateId: app.candidateId,
+        cvUploadId: (app as any).cvFileId || app.candidate?.cvUploadId,
+        name: app.candidate?.fullName || 'Unknown Candidate',
+        doNotContact: (app.candidate as any)?.doNotContact,
+        score: app.aiMatchScore || 'Pending',
+        scoreReason: (app as any).aiMatchExplanation || undefined,
+        status: app.taShortlistStatus || 'Pending',
+        currentSalary: app.currentSalary !== undefined && app.currentSalary !== null ? String(app.currentSalary) : ((app.candidate as any)?.currentSalary ? String((app.candidate as any).currentSalary) : '—'),
+        expectedSalary: app.expectedSalary !== undefined && app.expectedSalary !== null ? String(app.expectedSalary) : ((app.candidate as any)?.expectedSalary ? String((app.candidate as any).expectedSalary) : '—'),
+        noticePeriod: app.noticePeriodDays !== undefined && app.noticePeriodDays !== null ? String(app.noticePeriodDays) : ((app.candidate as any)?.noticePeriodDays ? String((app.candidate as any).noticePeriodDays) : ((app as any).noticePeriod || '—')),
+        candidate: app.candidate,
+        rawCurrentSalary: (app.candidate as any)?.currentSalary ?? app.currentSalary,
+        rawExpectedSalary: (app.candidate as any)?.expectedSalary ?? app.expectedSalary,
+        rawNoticePeriodDays: (app.candidate as any)?.noticePeriodDays ?? app.noticePeriodDays,
+        budgetFit: true,
+        fit: 'Good',
+        salaryFit: 'Good',
+        decision: 'Pending',
+        manualCallOutcome: app.manualCallOutcome,
+        aiCallStatus: app.aiCallStatus,
+        aiCallIvrResponse: (app as any).aiCallIvrResponse,
+        sourceChannel: app.sourceChannel,
+        currentStage: app.currentStage,
+        date: app.lastStageChangedAt ? formatDistanceToNow(app.lastStageChangedAt) + ' ago' : '—',
+        timeInStageRaw: (app as any).followUpEnteredAt
+          ? Date.now() - (app as any).followUpEnteredAt
+          : (app.lastStageChangedAt ? Date.now() - app.lastStageChangedAt : 0),
+        followUpCvReceived: (app as any).followUpCvReceived,
+        followUpCurrentSalary: (app as any).followUpCurrentSalary,
+        followUpExpectedSalary: (app as any).followUpExpectedSalary,
+        followUpNoticePeriod: (app as any).followUpNoticePeriod,
+        customFollowUpAnswers: (app as any).customFollowUpAnswers,
+        followUpState: (app as any).followUpState,
+        isComplete,
+        feedback: 'Pending',
+        salary: app.candidate?.expectedSalary ? '$' + app.candidate.expectedSalary : '—',
+        startDate: 'TBD',
+        role: job.title,
+        reason: app.taRejectionReason || 'Not a fit'
+      };
+    });
     
     itemsToRender.sort((a, b) => {
       if (sortOrder === 'score') {
@@ -2640,7 +2721,10 @@ export default function JobDetailPage() {
               <div className="p-3 border-b border-border bg-surface-bright flex flex-wrap justify-between items-center gap-2">
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setActiveFollowUpTab('active')}
+                    onClick={() => {
+                      setActiveFollowUpTab('active');
+                      setSelectedCandidates([]);
+                    }}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                       activeFollowUpTab === 'active'
                         ? 'bg-primary text-on-primary shadow-sm'
@@ -2656,7 +2740,10 @@ export default function JobDetailPage() {
                   </button>
 
                   <button
-                    onClick={() => setActiveFollowUpTab('unresponsive')}
+                    onClick={() => {
+                      setActiveFollowUpTab('unresponsive');
+                      setSelectedCandidates([]);
+                    }}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                       activeFollowUpTab === 'unresponsive'
                         ? 'bg-orange-600 text-white shadow-sm'
@@ -2672,6 +2759,17 @@ export default function JobDetailPage() {
                     </span>
                   </button>
                 </div>
+
+                {activeFollowUpTab === 'active' && selectedCandidates.length > 0 && (
+                  <button
+                    onClick={handleBulkSendFollowUp}
+                    disabled={isBulkSending}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send Follow-Up ({selectedCandidates.length})</span>
+                  </button>
+                )}
               </div>
 
               {/* Sub-Tab View Rendering */}
@@ -2679,6 +2777,29 @@ export default function JobDetailPage() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                      <th className="p-4 w-10">
+                        <input
+                          type="checkbox"
+                          checked={
+                            currentItems.filter(item => !item.isComplete).length > 0 &&
+                            currentItems.filter(item => !item.isComplete).every(item => selectedCandidates.includes(item.id))
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const pendingIds = currentItems
+                                .filter(item => !item.isComplete)
+                                .map(item => item.id);
+                              setSelectedCandidates(prev => Array.from(new Set([...prev, ...pendingIds])));
+                            } else {
+                              const pendingIds = currentItems
+                                .filter(item => !item.isComplete)
+                                .map(item => item.id);
+                              setSelectedCandidates(prev => prev.filter(id => !pendingIds.includes(id)));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                        />
+                      </th>
                       <th className="p-4">Candidate</th>
                       <th className="p-4">Type</th>
                       <th className="p-4">Outreach Status</th>
@@ -2689,7 +2810,7 @@ export default function JobDetailPage() {
                   </thead>
                   <tbody className="text-[13px] text-text-primary divide-y divide-border">
                     {currentItems.length === 0 ? (
-                      <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
+                      <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
                     ) : currentItems.map((item: any) => (
                       <FollowUpCandidateRow 
                         key={item.id} 
@@ -2702,6 +2823,14 @@ export default function JobDetailPage() {
                         renderKanbanDropdown={renderKanbanDropdown}
                         triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
                         triggerEmailFollowUp={triggerEmailFollowUp}
+                        isSelected={selectedCandidates.includes(item.id)}
+                        onSelectToggle={() => {
+                          setSelectedCandidates(prev => 
+                            prev.includes(item.id) 
+                              ? prev.filter(id => id !== item.id) 
+                              : [...prev, item.id]
+                          );
+                        }}
                       />
                     ))}
                   </tbody>
@@ -2738,7 +2867,8 @@ export default function JobDetailPage() {
           </div>
         );
         break;
-      case '2nd Shortlist':
+      case '2nd Shortlist': {
+        const jobCustomQuestions = job?.customFollowUpQuestions || (job as any)?.agent5CustomQuestions || [];
         tableContent = (
           <>
             {/* Headhunt upload toolbar */}
@@ -2760,13 +2890,18 @@ export default function JobDetailPage() {
                   <th className="p-4">Current Salary</th>
                   <th className="p-4">Expected Salary</th>
                   <th className="p-4">Notice Period</th>
+                  {jobCustomQuestions.map((q: string, idx: number) => (
+                    <th key={idx} className="p-4 max-w-[200px] truncate" title={q}>
+                      {q}
+                    </th>
+                  ))}
                   <th className="p-4">Fit</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-[13px] text-text-primary divide-y divide-border">
                 {currentItems.length === 0 ? (
-                  <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No candidates in 2nd Shortlist.</td></tr>
+                  <tr><td colSpan={6 + jobCustomQuestions.length} className="p-8 text-center text-text-secondary">No candidates in 2nd Shortlist.</td></tr>
                 ) : currentItems.map((item: any) => (
                   <tr key={item.id} className="hover:bg-surface-bright transition-colors group">
                     <td className="p-4 font-medium">
@@ -2775,6 +2910,28 @@ export default function JobDetailPage() {
                     <td className="p-4">{item.currentSalary}</td>
                     <td className="p-4">{item.expectedSalary}</td>
                     <td className="p-4">{item.noticePeriod}</td>
+                    {jobCustomQuestions.map((q: string, idx: number) => {
+                      const ans = item.customFollowUpAnswers?.[q] || item.candidate?.customCallData?.[q] || '—';
+                      const isAnsUrl = ans !== '—' && isUrl(ans);
+                      const linkTarget = isAnsUrl ? formatUrl(ans) : '';
+                      return (
+                        <td key={idx} className="p-4 max-w-[200px] truncate" title={ans}>
+                          {isAnsUrl ? (
+                            <a
+                              href={linkTarget}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                              <span>Open Link</span>
+                            </a>
+                          ) : (
+                            ans
+                          )}
+                        </td>
+                      );
+                    })}
                     <td className="p-4"><span className="text-green-500 font-medium">✅ {item.fit}</span></td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -2794,6 +2951,7 @@ export default function JobDetailPage() {
           </>
         );
         break;
+      }
       case 'Director Shortlist':
         tableContent = (
           <table className="w-full text-left border-collapse">
@@ -3146,6 +3304,35 @@ export default function JobDetailPage() {
                     </span>
                   );
                 })}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3.5 pt-3.5 border-t border-border/40">
+              <span className="text-[11px] uppercase tracking-wider font-bold text-text-secondary">Auto Follow-Ups:</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleToggleWhatsAppFollowUp}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
+                    job.enableWhatsAppFollowUp !== false
+                      ? 'bg-[#25D366]/10 border-[#25D366]/20 text-[#128C7E] hover:bg-[#25D366]/20'
+                      : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
+                  }`}
+                  title={job.enableWhatsAppFollowUp !== false ? "WhatsApp Follow-Up Active. Click to Disable." : "WhatsApp Follow-Up Disabled. Click to Enable."}
+                >
+                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>WhatsApp: {job.enableWhatsAppFollowUp !== false ? 'ON' : 'OFF'}</span>
+                </button>
+                <button
+                  onClick={handleToggleEmailFollowUp}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
+                    job.enableEmailFollowUp !== false
+                      ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 hover:bg-blue-500/20'
+                      : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
+                  }`}
+                  title={job.enableEmailFollowUp !== false ? "Email Follow-Up Active. Click to Disable." : "Email Follow-Up Disabled. Click to Enable."}
+                >
+                  <Mail className="w-3.5 h-3.5 shrink-0" />
+                  <span>Email: {job.enableEmailFollowUp !== false ? 'ON' : 'OFF'}</span>
+                </button>
               </div>
             </div>
           </div>

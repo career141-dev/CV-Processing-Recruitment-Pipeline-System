@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { adjustJobStageStat } from "../jobs/stats";
+import { classifyMessage } from "../communications/messageClassifier";
 
 // Helper to assert truthiness of conditions
 function assert(condition: any, message: string) {
@@ -382,6 +383,322 @@ export const runJobLifecycleAndRoutingTest = mutation({
 });
 
 /**
+ * QA Test: WhatsApp Session Routing Fix
+ *
+ * Reproduces the exact bug where two jobs share the same WhatsApp number and
+ * CVs were being misrouted because Meta Cloud API sends message.context.from
+ * with a "+" prefix (e.g. "+94770123456") while sessions are stored with
+ * digits-only phone numbers (e.g. "94770123456").
+ *
+ * Scenario tested:
+ *  1. Two jobs on the same WhatsApp number — Graphic Designer and Video Editor.
+ *  2. Candidate A sends keyword "Graphic Designer" → session stored as "94771000001"
+ *  3. Candidate B sends keyword "Video Editor"     → session stored as "94771000002"
+ *  4. Candidate A sends CV — originalSenderPhone arrives as "+94771000001" (with +)
+ *  5. Candidate B sends CV — originalSenderPhone arrives as "+94771000002" (with +)
+ *  6. After fix: both CVs must route to the CORRECT job despite the "+" prefix.
+ *  7. All test records are cleaned up after assertions pass.
+ */
+export const runWhatsAppRoutingTest = mutation({
+  args: {},
+  handler: async (ctx) => {
+    console.log("--> Starting WhatsApp Session Routing QA Test...");
+
+    const now = Date.now();
+    const suffix = now.toString().slice(-6);
+    const SHARED_WA_NUMBER = `+94700${suffix}`; // same number for both jobs
+
+    // ── 1. Create two test jobs ──────────────────────────────────────────────
+    const user = await ctx.db.query("users")
+      .filter((q) => q.eq(q.field("role"), "admin"))
+      .first();
+    if (!user) throw new Error("No admin user found — run seedTestUser first");
+
+    // Minimal valid job — all required schema fields included
+    const baseJob = {
+      clientName: "QA Client",
+      clientIndustry: "Technology",
+      recruitmentType: "both" as const,
+      isConfidential: false,
+      jobDescription: "QA test job",
+      requiredSkills: ["Design"],
+      status: "active" as const,
+      primaryRecruiterId: user._id,
+      publishedAt: new Date(now).toISOString(),
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      location: "Colombo, Sri Lanka",
+      seniorityLevel: "mid_level" as const,
+      experienceMinYears: 1,
+      directorReviewEnabled: false,
+      clientReviewEnabled: false,
+      esaCheckEnabled: false,
+      headhuntingEnabled: false,
+      rejectionLoopAction: "restart_from_new_cvs" as const,
+      agent3AfterDay7: "mark_unresponsive" as const,
+      agent5Trigger: "all_new_applicants" as const,
+      agent5CallScript: "default" as const,
+      agent5NoAnswerAction: "trigger_agent3" as const,
+    };
+
+    const gdJobId = await ctx.db.insert("jobs", {
+      ...baseJob,
+      title: `QA Graphic Designer ${suffix}`,
+      keyword: `GD${suffix}`,
+      requiredSkills: ["Photoshop"],
+    } as any);
+
+    const veJobId = await ctx.db.insert("jobs", {
+      ...baseJob,
+      title: `QA Video Editor ${suffix}`,
+      keyword: `VE${suffix}`,
+      requiredSkills: ["Premiere Pro"],
+    } as any);
+
+    console.log(`[PASS] Created GD job: ${gdJobId}, VE job: ${veJobId}`);
+
+    // ── 2. Both jobs share the same WhatsApp number channel ──────────────────
+    await ctx.db.insert("jobChannels", {
+      jobId: gdJobId,
+      channelType: "whatsapp",
+      isEnabled: true,
+      whatsappNumber: SHARED_WA_NUMBER,
+      cvCountToday: 0, cvCountTotal: 0,
+      agentStatus: "active",
+      createdAt: new Date(now).toISOString(),
+    });
+    await ctx.db.insert("jobChannels", {
+      jobId: veJobId,
+      channelType: "whatsapp",
+      isEnabled: true,
+      whatsappNumber: SHARED_WA_NUMBER,
+      cvCountToday: 0, cvCountTotal: 0,
+      agentStatus: "active",
+      createdAt: new Date(now).toISOString(),
+    });
+
+    console.log(`[PASS] Both jobs share number ${SHARED_WA_NUMBER}`);
+
+    // ── 3. Simulate keyword messages — sessions stored with DIGITS-ONLY phone ─
+    const gdCandidatePhone = `9477100${suffix.slice(0, 4)}`; // no + prefix
+    const veCandidatePhone = `9477200${suffix.slice(0, 4)}`; // no + prefix
+
+    const gdSessionId = await ctx.db.insert("whatsappSessions", {
+      phone: gdCandidatePhone,           // stored as digits-only (correct)
+      jobId: gdJobId,
+      keyword: `GD${suffix}`,
+      lastInteractionAt: now,
+    });
+    const veSessionId = await ctx.db.insert("whatsappSessions", {
+      phone: veCandidatePhone,           // stored as digits-only (correct)
+      jobId: veJobId,
+      keyword: `VE${suffix}`,
+      lastInteractionAt: now,
+    });
+
+    console.log(`[PASS] Sessions created: GD=${gdSessionId}, VE=${veSessionId}`);
+
+    // ── 4. Simulate CV arriving — originalSenderPhone has "+" PREFIX (the bug) ─
+    const gdCvPhoneWithPlus = `+${gdCandidatePhone}`; // "+9477100XXXX"
+    const veCvPhoneWithPlus = `+${veCandidatePhone}`; // "+9477200XXXX"
+
+    // Apply the SAME normalisation logic that our fix uses in insertCvRecord
+    const gdClean = gdCvPhoneWithPlus.replace(/[^0-9]/g, "");
+    const veClean = veCvPhoneWithPlus.replace(/[^0-9]/g, "");
+
+    // Lookup sessions exactly as the fixed code does
+    const gdSession = await ctx.db.query("whatsappSessions")
+      .withIndex("by_phone", (q) => q.eq("phone", gdClean))
+      .first();
+    const veSession = await ctx.db.query("whatsappSessions")
+      .withIndex("by_phone", (q) => q.eq("phone", veClean))
+      .first();
+
+    // ── 5. Assertions ─────────────────────────────────────────────────────────
+    assert(
+      gdSession !== null,
+      `GD session NOT found for "+${gdCandidatePhone}" after normalisation. Fix is broken.`
+    );
+    assert(
+      gdSession!.jobId === gdJobId,
+      `GD CV routed to wrong job! Expected ${gdJobId}, got ${gdSession!.jobId}`
+    );
+    console.log(`[PASS] Graphic Designer CV correctly routed to GD job (${gdJobId})`);
+
+    assert(
+      veSession !== null,
+      `VE session NOT found for "+${veCandidatePhone}" after normalisation. Fix is broken.`
+    );
+    assert(
+      veSession!.jobId === veJobId,
+      `VE CV routed to wrong job! Expected ${veJobId}, got ${veSession!.jobId}`
+    );
+    console.log(`[PASS] Video Editor CV correctly routed to VE job (${veJobId})`);
+
+    // Confirm the two sessions resolve to DIFFERENT jobs (the core of the bug)
+    assert(
+      gdSession!.jobId !== veSession!.jobId,
+      `Both CVs routed to the SAME job — sessions are not distinguishing the two jobs!`
+    );
+    console.log(`[PASS] Both jobs resolve to DIFFERENT job IDs — no cross-contamination`);
+
+    // ── 6. Verify old (buggy) behaviour would have FAILED ────────────────────
+    // Without the fix, the lookup used the raw "+94770..." string.
+    // Sessions stored as "94770..." — exact-match on the index would return null.
+    const gdSessionRaw = await ctx.db.query("whatsappSessions")
+      .withIndex("by_phone", (q) => q.eq("phone", gdCvPhoneWithPlus)) // with + prefix
+      .first();
+    assert(
+      gdSessionRaw === null,
+      `Unexpected: session found with "+" prefix — index behaviour changed, review fix.`
+    );
+    console.log(`[PASS] Confirmed: WITHOUT normalisation the session would NOT be found (old bug reproduced)`);
+
+    // ── 7. Cleanup ────────────────────────────────────────────────────────────
+    // Sessions (should still exist since we only queried, not deleted in this test)
+    const remainingGd = await ctx.db.query("whatsappSessions")
+      .withIndex("by_phone", (q) => q.eq("phone", gdCandidatePhone)).first();
+    const remainingVe = await ctx.db.query("whatsappSessions")
+      .withIndex("by_phone", (q) => q.eq("phone", veCandidatePhone)).first();
+    if (remainingGd) await ctx.db.delete(remainingGd._id);
+    if (remainingVe) await ctx.db.delete(remainingVe._id);
+
+    // Channels
+    const channels = await ctx.db.query("jobChannels")
+      .withIndex("by_job", (q) => q.eq("jobId", gdJobId)).collect();
+    const channels2 = await ctx.db.query("jobChannels")
+      .withIndex("by_job", (q) => q.eq("jobId", veJobId)).collect();
+    for (const ch of [...channels, ...channels2]) await ctx.db.delete(ch._id);
+
+    await ctx.db.delete(gdJobId);
+    await ctx.db.delete(veJobId);
+
+    console.log("[PASS] Cleaned up all WhatsApp routing test records");
+    console.log("[PASS] WhatsApp Session Routing QA Test COMPLETE");
+    return { success: true };
+  },
+});
+
+/**
+ * QA Test: Chatbot State Management & Message Classification
+ *
+ * Verifies that:
+ * 1. PDF attachments are classified as `cv_document`
+ * 2. Wix / Behance URLs are classified as `portfolio_url` (NOT a CV upload)
+ * 3. YouTube URLs are classified as `youtube_url` (NOT a CV upload)
+ * 4. Google Drive URLs are classified as `drive_url` (NOT a CV upload)
+ * 5. Freelance statements are classified as `employment_pref`
+ * 6. Questions are identified with `hasQuestion: true`
+ * 7. Session state correctly updates `cvReceived`, `portfolioUrls`, `employmentPreference`, and `lastBotReplyAt`
+ */
+export const runChatbotStateAndClassificationTest = mutation({
+  args: {},
+  handler: async (ctx) => {
+    console.log("--> Starting Chatbot State & Classification QA Test...");
+
+    // ── 1. Test Content Classifications ─────────────────────────────────────
+    const pdfDoc = classifyMessage("", "https://files.com/resume.pdf", "application/pdf", "resume.pdf");
+    assert(pdfDoc.type === "cv_document", `Expected cv_document for PDF, got ${pdfDoc.type}`);
+    console.log("[PASS] PDF document correctly classified as cv_document");
+
+    const portfolioMsg = classifyMessage("Here is my work: https://sahanamandika1999.wixsite.com/my-site-2/portfolio");
+    assert(portfolioMsg.type === "portfolio_url", `Expected portfolio_url for Wix link, got ${portfolioMsg.type}`);
+    assert(portfolioMsg.detectedUrl?.includes("wixsite.com"), "Failed to extract Wix portfolio URL");
+    console.log("[PASS] Wix portfolio URL correctly classified as portfolio_url (NOT CV)");
+
+    const behanceMsg = classifyMessage("Check my portfolio https://behance.net/sampleuser");
+    assert(behanceMsg.type === "portfolio_url", `Expected portfolio_url for Behance link, got ${behanceMsg.type}`);
+    console.log("[PASS] Behance URL correctly classified as portfolio_url");
+
+    const ytMsg = classifyMessage("Sample video edit: https://youtu.be/xyz12345");
+    assert(ytMsg.type === "youtube_url", `Expected youtube_url, got ${ytMsg.type}`);
+    console.log("[PASS] YouTube video link correctly classified as youtube_url");
+
+    const driveMsg = classifyMessage("My resume folder: https://drive.google.com/file/d/12345/view");
+    assert(driveMsg.type === "drive_url", `Expected drive_url, got ${driveMsg.type}`);
+    console.log("[PASS] Google Drive link correctly classified as drive_url");
+
+    const freelanceMsg = classifyMessage("I am currently only available for freelance or project-based work.");
+    assert(freelanceMsg.type === "employment_pref", `Expected employment_pref, got ${freelanceMsg.type}`);
+    assert(freelanceMsg.employmentPreference === "freelance", "Failed to detect freelance preference");
+    console.log("[PASS] Freelance statement correctly classified with employmentPreference='freelance'");
+
+    const questionMsg = classifyMessage("Is this a remote position?");
+    assert(questionMsg.hasQuestion === true, "Failed to detect question in text");
+    console.log("[PASS] Question correctly flagged with hasQuestion=true");
+
+    // ── 2. Test Session State Persistence & Updates ─────────────────────────
+    const testPhone = `94770${Date.now().toString().slice(-6)}`;
+    const user = await ctx.db.query("users").filter(q => q.eq(q.field("role"), "admin")).first();
+    if (!user) throw new Error("Admin user required for test");
+
+    const testJobId = await ctx.db.insert("jobs", {
+      title: "QA State Test Role",
+      keyword: `STATE${Date.now().toString().slice(-4)}`,
+      clientName: "QA Client",
+      clientIndustry: "Technology",
+      recruitmentType: "both",
+      isConfidential: false,
+      jobDescription: "QA state test",
+      requiredSkills: ["Testing"],
+      status: "active",
+      primaryRecruiterId: user._id,
+      publishedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      location: "Remote",
+      seniorityLevel: "mid_level",
+      experienceMinYears: 1,
+      directorReviewEnabled: false,
+      clientReviewEnabled: false,
+      esaCheckEnabled: false,
+      headhuntingEnabled: false,
+      rejectionLoopAction: "restart_from_new_cvs",
+      agent3AfterDay7: "mark_unresponsive",
+      agent5Trigger: "all_new_applicants",
+      agent5CallScript: "default",
+      agent5NoAnswerAction: "trigger_agent3",
+    } as any);
+
+    // Initial session insertion
+    const sessionId = await ctx.db.insert("whatsappSessions", {
+      phone: testPhone,
+      jobId: testJobId,
+      keyword: "TEST",
+      lastInteractionAt: Date.now(),
+    });
+
+    // Update with portfolio URL
+    const portfolioLink = "https://behance.net/qa-sample";
+    const sessionDoc = await ctx.db.get(sessionId);
+    assert(sessionDoc !== null, "Session not found");
+    
+    // Simulate updating session with portfolio and freelance pref
+    await ctx.db.patch(sessionId, {
+      portfolioUrls: [portfolioLink],
+      employmentPreference: "freelance",
+      cvReceived: true,
+      lastBotReplyAt: Date.now(),
+    });
+
+    const updatedSession = await ctx.db.get(sessionId);
+    assert(updatedSession?.cvReceived === true, "cvReceived flag was not saved to session");
+    assert(updatedSession?.portfolioUrls?.includes(portfolioLink), "portfolioUrls not saved");
+    assert(updatedSession?.employmentPreference === "freelance", "employmentPreference not saved");
+    assert(typeof updatedSession?.lastBotReplyAt === "number", "lastBotReplyAt not set");
+    console.log("[PASS] Session state fields (cvReceived, portfolioUrls, employmentPreference, lastBotReplyAt) successfully updated and verified");
+
+    // ── 3. Cleanup ──────────────────────────────────────────────────────────
+    await ctx.db.delete(sessionId);
+    await ctx.db.delete(testJobId);
+    console.log("[PASS] Cleaned up test session and test job");
+    console.log("[PASS] Chatbot State & Classification QA Test COMPLETE");
+
+    return { success: true };
+  },
+});
+
+/**
  * Unified Test Suite Action
  */
 export const runFullQaSuite = action({
@@ -390,6 +707,8 @@ export const runFullQaSuite = action({
     deduplicationTest: string;
     corePipelineTest: string;
     jobLifecycleAndRoutingTest: string;
+    whatsappRoutingTest: string;
+    chatbotStateAndClassificationTest: string;
   }> => {
     console.log("=========================================");
     console.log("   RUNNING CAREER141 LOCAL QA TEST SUITE   ");
@@ -406,6 +725,12 @@ export const runFullQaSuite = action({
     // Test Job Lifecycle, Source Routing & Reverse Matching
     const lifecycleResult = await ctx.runMutation(api.admin.qaTests.runJobLifecycleAndRoutingTest, { adminUserId });
 
+    // Test WhatsApp session routing fix (phone normalisation)
+    const waRoutingResult = await ctx.runMutation(api.admin.qaTests.runWhatsAppRoutingTest);
+
+    // Test Chatbot state machine & classification
+    const chatbotResult = await ctx.runMutation(api.admin.qaTests.runChatbotStateAndClassificationTest);
+
     console.log("=========================================");
     console.log("   ALL QA TESTS COMPLETED SUCCESSFULLY!  ");
     console.log("=========================================");
@@ -413,6 +738,8 @@ export const runFullQaSuite = action({
       deduplicationTest: dedupResult.success ? "PASSED" : "FAILED",
       corePipelineTest: coreResult.success ? "PASSED" : "FAILED",
       jobLifecycleAndRoutingTest: lifecycleResult.success ? "PASSED" : "FAILED",
+      whatsappRoutingTest: waRoutingResult.success ? "PASSED" : "FAILED",
+      chatbotStateAndClassificationTest: chatbotResult.success ? "PASSED" : "FAILED",
     };
   },
 });

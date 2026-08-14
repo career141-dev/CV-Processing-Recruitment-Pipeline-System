@@ -22,7 +22,7 @@ export const getOverviewMetrics = query({
       .withIndex("by_status", q => q.eq("status", "active"))
       .collect();
 
-    // 3. Aggregate pipeline stage counts from per-job stageCounts (which are updated transactionally in real-time)
+    // 3. Aggregate pipeline stage counts from per-job stageCounts
     const globalStageCounts: Record<string, number> = {};
     for (const job of activeJobs) {
       const sc = job.stageCounts || {};
@@ -37,17 +37,18 @@ export const getOverviewMetrics = query({
     const interviews = globalStageCounts["interview"] || 0;
     const placements = globalStageCounts["placed"] || 0;
 
-    // 5. Source distribution from indexed dailyStats DB records (Last 30 Days)
+    // 5. Source distribution aggregated from last 30 daily stats records
     const recentDailyStats = await ctx.db.query("dailyStats").order("desc").take(30);
     const sourceTotals: Record<string, number> = {};
     let totalFromSources = 0;
-    
+
     for (const dayStat of recentDailyStats) {
       const bySource = dayStat.cvsBySource || {};
       for (const [source, count] of Object.entries(bySource)) {
         const sourceName = source || "database";
-        sourceTotals[sourceName] = (sourceTotals[sourceName] || 0) + (count as number);
-        totalFromSources += (count as number);
+        const countNum = (count as number) || 0;
+        sourceTotals[sourceName] = (sourceTotals[sourceName] || 0) + countNum;
+        totalFromSources += countNum;
       }
     }
 

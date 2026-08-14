@@ -462,7 +462,16 @@ function formatShortHistoryText(entry: any): string {
                 ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => { setActiveTab('management'); setSelectedCandidates([]); }}
+            onClick={() => { 
+              setActiveTab('management'); 
+              setSelectedCandidates([]); 
+              setSearchQuery("");
+              setLocationQuery("");
+              setActiveFilters([]);
+              setHasSearched(false);
+              setSearchResults(null);
+              setSearchPage(1);
+            }}
           >
             Candidate Management
           </button>
@@ -472,7 +481,16 @@ function formatShortHistoryText(entry: any): string {
                 ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => { setActiveTab('search'); setSelectedCandidates([]); }}
+            onClick={() => { 
+              setActiveTab('search'); 
+              setSelectedCandidates([]); 
+              setSearchQuery("");
+              setLocationQuery("");
+              setActiveFilters([]);
+              setHasSearched(false);
+              setSearchResults(null);
+              setSearchPage(1);
+            }}
           >
             Candidate Search
           </button>
@@ -664,7 +682,7 @@ function formatShortHistoryText(entry: any): string {
 
             {/* 4.6 Search History Section */}
             {searchHistory.length > 0 && (
-              <div className="flex flex-col gap-2 bg-surface p-4 rounded-[10px] border border-solid border-border mb-2 shadow-sm">
+              <div className="flex flex-col gap-2 bg-surface p-4 rounded-[10px] border border-solid border-border mb-2 shadow-sm w-full self-stretch">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Recent Searches</span>
                   <button 
@@ -708,7 +726,7 @@ function formatShortHistoryText(entry: any): string {
             
             {/* 4.4 No candidates shown before search is triggered / Clean Prompt State */}
             {isPromptState ? (
-              <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-surface border border-dashed border-border rounded-xl">
+              <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-surface border border-dashed border-border rounded-xl w-full self-stretch">
                 <div className="flex items-center justify-center bg-[#EAF5EC] p-4 rounded-full text-[#1B5E20] mb-4">
                   <Sparkles className="w-8 h-8" />
                 </div>
@@ -813,42 +831,44 @@ function formatShortHistoryText(entry: any): string {
                     {hasSearched ? 'No matching candidates found. Try a different query.' : 'No candidates matching filters found.'}
                   </div>
                 ) : (
-                  (currentSearchItems as any[]).map((c) => c && (
-                    <CandidateCard
-                      key={c._id}
-                      id={c._id}
-                      name={c.fullName || (c.email ? c.email.split("@")[0] : "Candidate Profile")}
-                      initials={getInitials(c.fullName || c.email || "Candidate")}
-                      sourceText={(c.sourceChannel || "Manual").toUpperCase()}
-                      sourceVariant={getSourceVariant(c.sourceChannel)}
-                      role={formatRole(c.currentTitle || c.currentJobTitle, c.currentEmployer)}
-                      location={c.location || "Unknown"}
-                      skills={formatSkills(c.skills)}
-                      score={c.score}
-                      matchReason={c.matchReason}
-                      breakdown={c.breakdown}
-                      isSelected={selectedCandidates.includes(c._id)}
-                      onToggle={() => toggleCandidate(c._id)}
-                      profileHref={`/dashboard/candidates/${c._id}`}
-                      imageUrl={(c as any).profileImageUrl}
-                      onDelete={() => setDeletingCandidateId(c._id)}
-                      onShowCv={() => setCvPreviewCandidate({
-                        id: c._id,
-                        name: c.fullName || (c.email ? c.email.split("@")[0] : "Candidate")
-                      })}
-                      onMessage={() => setMessageCandidate({
-                        id: c._id,
-                        name: c.fullName || "Unknown",
-                        initials: getInitials(c.fullName),
-                        role: formatRole(c.currentTitle, c.currentEmployer)
-                      })}
-                    />
-                  ))
+                  <div className="flex flex-col gap-3 w-full self-stretch">
+                    {(currentSearchItems as any[]).map((c) => c && (
+                      <CandidateCard
+                        key={c._id}
+                        id={c._id}
+                        name={c.fullName || (c.email ? c.email.split("@")[0] : "Candidate Profile")}
+                        initials={getInitials(c.fullName || c.email || "Candidate")}
+                        sourceText={(c.sourceChannel || "Manual").toUpperCase()}
+                        sourceVariant={getSourceVariant(c.sourceChannel)}
+                        role={formatRole(c.currentTitle || c.currentJobTitle, c.currentEmployer)}
+                        location={c.location || "Unknown"}
+                        skills={formatSkills(c.skills)}
+                        score={c.score}
+                        matchReason={c.matchReason}
+                        breakdown={c.breakdown}
+                        isSelected={selectedCandidates.includes(c._id)}
+                        onToggle={() => toggleCandidate(c._id)}
+                        profileHref={`/dashboard/candidates/${c._id}`}
+                        imageUrl={(c as any).profileImageUrl}
+                        onDelete={() => setDeletingCandidateId(c._id)}
+                        onShowCv={() => setCvPreviewCandidate({
+                          id: c._id,
+                          name: c.fullName || (c.email ? c.email.split("@")[0] : "Candidate")
+                        })}
+                        onMessage={() => setMessageCandidate({
+                          id: c._id,
+                          name: c.fullName || "Unknown",
+                          initials: getInitials(c.fullName),
+                          role: formatRole(c.currentTitle, c.currentEmployer)
+                        })}
+                      />
+                    ))}
+                  </div>
                 )}
                 
                 {/* Search Pagination Controls */}
                 {candidatesToRender.length > 0 && (
-                  <div className="flex items-center justify-between mt-4 bg-surface p-3 rounded-lg border border-gray-200">
+                  <div className="flex items-center justify-between mt-4 bg-surface p-3 rounded-lg border border-gray-200 w-full self-stretch">
                     <span className="text-sm text-gray-500">
                       Page <span className="font-medium text-gray-900">{searchPage}</span> of <span className="font-medium text-gray-900">{totalSearchPages}</span>
                     </span>

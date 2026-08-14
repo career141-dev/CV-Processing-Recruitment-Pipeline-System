@@ -1501,11 +1501,21 @@ export default defineSchema({
     jobId: v.id("jobs"),
     keyword: v.string(),
     lastInteractionAt: v.number(),
-    lastBotReplyAt: v.optional(v.number()),
-    portfolioUrls: v.optional(v.array(v.string())),
     metaSourceUrl: v.optional(v.string()),
     metaSourceId: v.optional(v.string()),
     metaHeadline: v.optional(v.string()),
+    // ── Chatbot conversation state ────────────────────────────────────────────
+    // Set to true by whatchimpActions / insertCvRecord once a real PDF/DOCX is
+    // confirmed stored in R2 + cvUploads table. AI must never ask for CV again
+    // once this is true.
+    cvReceived: v.optional(v.boolean()),
+    // Portfolio / work-sample URLs the candidate shared (Behance, YouTube, etc.)
+    portfolioUrls: v.optional(v.array(v.string())),
+    // Detected employment preference ("freelance" | "fulltime" | "parttime")
+    employmentPreference: v.optional(v.string()),
+    // Timestamp of last outbound bot reply — used to prevent duplicate replies
+    // when the same message triggers multiple code paths.
+    lastBotReplyAt: v.optional(v.number()),
   }).index("by_phone", ["phone"]),
 
   systemStats: defineTable({

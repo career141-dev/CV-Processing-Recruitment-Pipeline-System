@@ -132,6 +132,8 @@ export default function CreateJobWizard() {
     },
     agent3TriggerStages: ['shortlisted'] as string[],
     enableFollowUps: false,
+    enableWhatsAppFollowUp: true,
+    enableEmailFollowUp: true,
     followUpInitialTemplate: `Hi {candidate_name},\n\nThank you for applying for the {job_title} role!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease let us know how soon you can provide this information.\n\nBest regards,\nTalent Acquisition Team`,
     followUpSampleTemplate: `Hi {candidate_name}, thanks for getting back to us.\n\nWe just need your {missing_fields} to move forward.\n\nPlease share them at your earliest convenience.`,
     enableEmailFollowUpTemplate: false,
@@ -602,6 +604,8 @@ export default function CreateJobWizard() {
         scoreWeightLocation: formData.scoreWeights.location,
         
         agent3Enabled: formData.enableFollowUps,
+        enableWhatsAppFollowUp: formData.enableWhatsAppFollowUp,
+        enableEmailFollowUp: formData.enableEmailFollowUp,
         followUpInitialTemplate: formData.followUpInitialTemplate,
         followUpSampleTemplate: formData.followUpSampleTemplate,
         enableEmailFollowUpTemplate: formData.enableEmailFollowUpTemplate,
@@ -1586,6 +1590,30 @@ export default function CreateJobWizard() {
                 <p className="text-xs text-text-secondary mb-4">
                   The AI will automatically handle up to {formData.maxFollowUpAttempts} follow-ups within {formData.maxFollowUpDays} days. It uses the initial template to start the conversation, and learns your tone from the sample template to draft contextual replies based on the candidate's answers.
                 </p>
+
+                <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-border">
+                  <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-lg shadow-2xs">
+                    <div>
+                      <p className="text-xs font-semibold text-text-primary">WhatsApp Follow-ups</p>
+                      <p className="text-[10px] text-text-secondary mt-0.5">Send automated outreach via WhatsApp Cloud API.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" className="sr-only peer" checked={formData.enableWhatsAppFollowUp} onChange={e => updateFormData('enableWhatsAppFollowUp', e.target.checked)} />
+                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-lg shadow-2xs">
+                    <div>
+                      <p className="text-xs font-semibold text-text-primary">Email Follow-ups</p>
+                      <p className="text-[10px] text-text-secondary mt-0.5">Send automated outreach via Microsoft Graph email.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" className="sr-only peer" checked={formData.enableEmailFollowUp} onChange={e => updateFormData('enableEmailFollowUp', e.target.checked)} />
+                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                </div>
 
                 {/* Custom Follow-up Questions */}
                 <div className="mb-6 pt-4 border-t border-border">

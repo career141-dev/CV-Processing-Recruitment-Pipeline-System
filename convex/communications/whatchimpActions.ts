@@ -149,6 +149,9 @@ export const processInboundMedia = internalAction({
           metaSourceId = session.metaSourceId;
           metaHeadline = session.metaHeadline;
           console.log(`[processInboundMedia] Resolved job ID ${resolvedJobId} from session for +${cleanFrom}`);
+          // Consume the session — prevents a stale session from re-routing a future
+          // CV from the same candidate to the wrong job if they later apply elsewhere.
+          await ctx.runMutation(api.communications.whatchimp.deleteSession, { phone: cleanFrom });
         }
       }
 
@@ -167,6 +170,15 @@ export const processInboundMedia = internalAction({
         metaHeadline,
       });
       console.log(`[processInboundMedia] Ingested CV for candidate +${cleanFrom} (jobId: ${resolvedJobId}). Result:`, ingestionResult);
+
+      // Mark CV as received in session state so the chatbot never asks again
+      if (ingestionResult && (ingestionResult as any).reason !== "duplicate_file") {
+        await ctx.runMutation(api.communications.whatchimp.updateSessionState, {
+          phone: cleanFrom,
+          cvReceived: true,
+          lastBotReplyAt: Date.now(),
+        });
+      }
 
       // WhatsApp reply confirmation
       const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 

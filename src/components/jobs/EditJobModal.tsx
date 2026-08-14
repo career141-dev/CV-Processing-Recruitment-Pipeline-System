@@ -88,6 +88,8 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     pausedChannels: [] as string[],
     outreachWhatsAppNumber: '',
     customFollowUpQuestions: [] as string[],
+    enableWhatsAppFollowUp: true,
+    enableEmailFollowUp: true,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -113,6 +115,8 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         pausedChannels: job.pausedChannels || [],
         outreachWhatsAppNumber: job.outreachWhatsAppNumber || '',
         customFollowUpQuestions: job.customFollowUpQuestions || job.agent5CustomQuestions || [],
+        enableWhatsAppFollowUp: job.enableWhatsAppFollowUp !== false,
+        enableEmailFollowUp: job.enableEmailFollowUp !== false,
       });
     }
   }, [job, isOpen]);
@@ -204,6 +208,8 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         followUpEmailBodyTemplate: formData.followUpEmailBodyTemplate || undefined,
         outreachWhatsAppNumber: formData.outreachWhatsAppNumber || undefined,
         customFollowUpQuestions: formData.customFollowUpQuestions,
+        enableWhatsAppFollowUp: formData.enableWhatsAppFollowUp,
+        enableEmailFollowUp: formData.enableEmailFollowUp,
       });
 
       // Save ALL channel states — creates new channels if toggled ON for the first time,
@@ -434,6 +440,41 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
               />
               <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
             </label>
+          </div>
+
+          {/* Automated Follow-Up Channel Toggles */}
+          <div className="grid grid-cols-2 gap-4 col-span-2 mt-2">
+            <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-lg shadow-2xs">
+              <div>
+                <p className="text-sm font-medium text-text-primary">WhatsApp Follow-ups</p>
+                <p className="text-xs text-text-secondary mt-0.5">Send automated outreach via WhatsApp Cloud API.</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer" 
+                  checked={formData.enableWhatsAppFollowUp} 
+                  onChange={e => setFormData(prev => ({ ...prev, enableWhatsAppFollowUp: e.target.checked }))} 
+                />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-lg shadow-2xs">
+              <div>
+                <p className="text-sm font-medium text-text-primary">Email Follow-ups</p>
+                <p className="text-xs text-text-secondary mt-0.5">Send automated outreach via Microsoft Graph email.</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer" 
+                  checked={formData.enableEmailFollowUp} 
+                  onChange={e => setFormData(prev => ({ ...prev, enableEmailFollowUp: e.target.checked }))} 
+                />
+                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
           </div>
 
           {/* Custom Email Follow-Up Template */}

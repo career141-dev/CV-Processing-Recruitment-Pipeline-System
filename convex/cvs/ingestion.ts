@@ -108,10 +108,18 @@ export const insertCvRecord = internalMutation({
     let metaSourceId: string | undefined;
     let metaHeadline: string | undefined;
 
+    // Normalise phone to digits-only before lookup.
+    // Meta Cloud API sends message.context.from with a leading "+" (e.g. "+94770123456")
+    // but sessions are always stored as digits-only (e.g. "94770123456").
+    // Without this normalisation the index lookup misses the session → jobId stays null
+    // → both Graphic Designer and Video Editor CVs fall through to the common-number
+    // fallback and get assigned to whichever job was stored first.
+    const cleanOriginalSender = args.originalSenderPhone.replace(/[^0-9]/g, "");
+
     // Check if there is an active WhatsApp session for the candidate phone
     const session = await ctx.db
       .query("whatsappSessions")
-      .withIndex("by_phone", (q) => q.eq("phone", args.originalSenderPhone))
+      .withIndex("by_phone", (q) => q.eq("phone", cleanOriginalSender))
       .first();
 
     if (session) {
@@ -125,6 +133,13 @@ export const insertCvRecord = internalMutation({
         metaSourceUrl = session.metaSourceUrl;
         metaSourceId = session.metaSourceId;
         metaHeadline = session.metaHeadline;
+        // Stamp cvReceived before deleting so if the session is re-created
+        // (e.g. candidate sends another message after the CV) the state is preserved
+        // via the updateSessionState mutation rather than being silently lost.
+        await ctx.db.patch(session._id, {
+          cvReceived: true,
+          lastBotReplyAt: Date.now(),
+        });
         await ctx.db.delete(session._id);
       }
     }

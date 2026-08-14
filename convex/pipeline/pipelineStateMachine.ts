@@ -175,7 +175,7 @@ export async function executeStageTransition(
   }
 
   // 7. Automated Sequence Triggers & Stops
-  if (targetStage === "follow_up") {
+  if (targetStage === "ta_shortlist" || targetStage === "follow_up") {
     await initiateFollowUpOutreach(ctx, applicationId);
   } else {
     await stopFollowUpSequenceForApp(ctx, applicationId);
