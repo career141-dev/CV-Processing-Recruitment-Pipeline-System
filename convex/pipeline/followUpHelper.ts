@@ -119,7 +119,8 @@ export async function updateFollowUpFlags(
  */
 export async function initiateFollowUpOutreach(
   ctx: any,
-  applicationId: Id<"applications">
+  applicationId: Id<"applications">,
+  options?: { isManual?: boolean }
 ): Promise<Id<"communications"> | undefined> {
   const app = await ctx.db.get(applicationId);
   if (!app) return;
@@ -130,7 +131,9 @@ export async function initiateFollowUpOutreach(
   const job = await ctx.db.get(app.jobId);
   if (!job) return;
 
-  if (job.agent3Enabled === false) {
+  const isManual = options?.isManual === true;
+
+  if (!isManual && job.agent3Enabled === false) {
     console.log(`[Follow-up Outreach] Follow-up sequence is disabled for job "${job.title}". Skipping initiation.`);
     return;
   }
@@ -220,12 +223,21 @@ export async function initiateFollowUpOutreach(
   const now = Date.now();
   const NUDGE_RESCHEDULE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-  const isWhatsAppEnabled = job.enableWhatsAppFollowUp !== false;
-  const isEmailEnabled = job.enableEmailFollowUp !== false;
+  let isWhatsAppEnabled = job.enableWhatsAppFollowUp !== false;
+  let isEmailEnabled = job.enableEmailFollowUp !== false;
 
-  if (!isWhatsAppEnabled && !isEmailEnabled) {
-    console.log(`[Follow-up Outreach] Both WhatsApp and Email follow-ups are disabled for job "${job.title}". Aborting outreach.`);
-    return;
+  if (isManual) {
+    // Override: if both are disabled, manual trigger sends on both channels.
+    if (!isWhatsAppEnabled && !isEmailEnabled) {
+      isWhatsAppEnabled = true;
+      isEmailEnabled = true;
+    }
+  } else {
+    // Automatic trigger check: abort if both are disabled
+    if (!isWhatsAppEnabled && !isEmailEnabled) {
+      console.log(`[Follow-up Outreach] Both WhatsApp and Email follow-ups are disabled for job "${job.title}". Aborting outreach.`);
+      return;
+    }
   }
 
   // 1. WhatsApp Outreach

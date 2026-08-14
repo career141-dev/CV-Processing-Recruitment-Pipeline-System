@@ -345,7 +345,7 @@ export const triggerWhatsAppFollowUp = mutation({
     applicationId: v.id("applications"),
   },
   handler: async (ctx, args) => {
-    const commId = await initiateFollowUpOutreach(ctx, args.applicationId);
+    const commId = await initiateFollowUpOutreach(ctx, args.applicationId, { isManual: true });
     return { success: true, communicationId: commId };
   },
 });
@@ -451,7 +451,7 @@ export const triggerBulkFollowUp = mutation({
   },
   handler: async (ctx, args) => {
     for (const appId of args.applicationIds) {
-      await initiateFollowUpOutreach(ctx, appId);
+      await initiateFollowUpOutreach(ctx, appId, { isManual: true });
     }
     return { success: true };
   },

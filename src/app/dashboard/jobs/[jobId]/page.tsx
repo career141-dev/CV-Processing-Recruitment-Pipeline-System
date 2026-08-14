@@ -911,7 +911,7 @@ const LogManualCallCard = ({
   );
 };
 
-const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp }: any) => {
+const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, showError, setTimelineAppId, triggerWhatsAppFollowUp, triggerEmailFollowUp, isSelected, onSelectToggle }: any) => {
   const { user } = useUser();
   const [isLoggingCall, setIsLoggingCall] = useState(false);
   const [outcome, setOutcome] = useState('');
@@ -1075,7 +1075,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   if (isLoggingCall) {
     return (
       <tr className="border-b border-border bg-surface-bright/30">
-        <td colSpan={6} className="p-4">
+        <td colSpan={7} className="p-4">
           <LogManualCallCard
             candidateName={item.name}
             outcome={outcome}
@@ -1102,6 +1102,16 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
 
   return (
     <tr className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
+      <td className="p-4 align-top w-10">
+        {(item.followUpState?.lastContactDay ?? -1) === -1 ? (
+          <input 
+            type="checkbox" 
+            checked={isSelected}
+            onChange={onSelectToggle}
+            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+          />
+        ) : null}
+      </td>
       <td className="p-4 font-medium align-top">
         <CandidateNameDisplay name={item.name} cvUploadId={item.cvUploadId} doNotContact={item.doNotContact} candidateId={item.candidateId} />
         {allComplete && (
@@ -1973,6 +1983,25 @@ export default function JobDetailPage() {
   const convex = useConvex();
   const triggerWhatsAppFollowUp = useMutation(api.pipeline.outreach.triggerWhatsAppFollowUp);
   const triggerEmailFollowUp = useMutation(api.pipeline.outreach.triggerEmailFollowUp);
+  const triggerBulkFollowUp = useMutation(api.pipeline.outreach.triggerBulkFollowUp);
+  const [selectedCandidates, setSelectedCandidates] = useState<Id<"applications">[]>([]);
+  const [isBulkSending, setIsBulkSending] = useState(false);
+
+  const handleBulkSendFollowUp = async () => {
+    if (selectedCandidates.length === 0) return;
+    setIsBulkSending(true);
+    const toastId = toast.loading(`Sending follow-ups to ${selectedCandidates.length} candidate(s)...`);
+    try {
+      await triggerBulkFollowUp({ applicationIds: selectedCandidates });
+      toast.success("Successfully triggered follow-up sequence for selected candidates!", { id: toastId });
+      setSelectedCandidates([]);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to trigger bulk follow-up", { id: toastId });
+      showError(e, { title: "Bulk Outreach Failed" });
+    } finally {
+      setIsBulkSending(false);
+    }
+  };
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   
@@ -2676,7 +2705,10 @@ export default function JobDetailPage() {
               <div className="p-3 border-b border-border bg-surface-bright flex flex-wrap justify-between items-center gap-2">
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setActiveFollowUpTab('active')}
+                    onClick={() => {
+                      setActiveFollowUpTab('active');
+                      setSelectedCandidates([]);
+                    }}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                       activeFollowUpTab === 'active'
                         ? 'bg-primary text-on-primary shadow-sm'
@@ -2692,7 +2724,10 @@ export default function JobDetailPage() {
                   </button>
 
                   <button
-                    onClick={() => setActiveFollowUpTab('unresponsive')}
+                    onClick={() => {
+                      setActiveFollowUpTab('unresponsive');
+                      setSelectedCandidates([]);
+                    }}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                       activeFollowUpTab === 'unresponsive'
                         ? 'bg-orange-600 text-white shadow-sm'
@@ -2708,6 +2743,17 @@ export default function JobDetailPage() {
                     </span>
                   </button>
                 </div>
+
+                {activeFollowUpTab === 'active' && selectedCandidates.length > 0 && (
+                  <button
+                    onClick={handleBulkSendFollowUp}
+                    disabled={isBulkSending}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send Follow-Up ({selectedCandidates.length})</span>
+                  </button>
+                )}
               </div>
 
               {/* Sub-Tab View Rendering */}
@@ -2715,6 +2761,29 @@ export default function JobDetailPage() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+                      <th className="p-4 w-10">
+                        <input
+                          type="checkbox"
+                          checked={
+                            currentItems.filter(item => (item.followUpState?.lastContactDay ?? -1) === -1).length > 0 &&
+                            currentItems.filter(item => (item.followUpState?.lastContactDay ?? -1) === -1).every(item => selectedCandidates.includes(item.id))
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const pendingIds = currentItems
+                                .filter(item => (item.followUpState?.lastContactDay ?? -1) === -1)
+                                .map(item => item.id);
+                              setSelectedCandidates(prev => Array.from(new Set([...prev, ...pendingIds])));
+                            } else {
+                              const pendingIds = currentItems
+                                .filter(item => (item.followUpState?.lastContactDay ?? -1) === -1)
+                                .map(item => item.id);
+                              setSelectedCandidates(prev => prev.filter(id => !pendingIds.includes(id)));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                        />
+                      </th>
                       <th className="p-4">Candidate</th>
                       <th className="p-4">Type</th>
                       <th className="p-4">Outreach Status</th>
@@ -2725,7 +2794,7 @@ export default function JobDetailPage() {
                   </thead>
                   <tbody className="text-[13px] text-text-primary divide-y divide-border">
                     {currentItems.length === 0 ? (
-                      <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
+                      <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
                     ) : currentItems.map((item: any) => (
                       <FollowUpCandidateRow 
                         key={item.id} 
@@ -2738,6 +2807,14 @@ export default function JobDetailPage() {
                         renderKanbanDropdown={renderKanbanDropdown}
                         triggerWhatsAppFollowUp={triggerWhatsAppFollowUp}
                         triggerEmailFollowUp={triggerEmailFollowUp}
+                        isSelected={selectedCandidates.includes(item.id)}
+                        onSelectToggle={() => {
+                          setSelectedCandidates(prev => 
+                            prev.includes(item.id) 
+                              ? prev.filter(id => id !== item.id) 
+                              : [...prev, item.id]
+                          );
+                        }}
                       />
                     ))}
                   </tbody>
