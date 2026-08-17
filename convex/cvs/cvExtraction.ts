@@ -1069,14 +1069,36 @@ export async function runCvExtraction(
     t_text = Date.now() - tTextStart;
 
     const cleanedText = cleanRawText(rawText);
-    const trimmed = cleanedText.trim();
+    let trimmed = cleanedText.trim();
+
     if (trimmed.length < 50) {
-      console.warn(`[CvExtraction] Extracted OCR text is too short (${trimmed.length} chars < 50 threshold). Flagging upload ${cvUploadId} for human review.`);
+      console.warn(`[CvExtraction] Initial text extraction returned short text (${trimmed.length} chars < 50). Attempting Tesseract OCR fallback...`);
+      try {
+        const tesseractText = await extractTextWithTesseract(buffer, fileType);
+        const cleanedTesseract = cleanRawText(tesseractText).trim();
+        if (cleanedTesseract.length >= 50) {
+          trimmed = cleanedTesseract;
+          console.log(`[CvExtraction] Tesseract OCR successfully extracted ${trimmed.length} chars.`);
+        }
+      } catch (tesseractErr: any) {
+        console.warn("[CvExtraction] Pre-check Tesseract OCR fallback failed:", tesseractErr?.message || tesseractErr);
+      }
+    }
+
+    if (trimmed.length < 50) {
+      console.warn(`[CvExtraction] Extracted text is too short (${trimmed.length} chars < 50 threshold). Flagging upload ${cvUploadId} for human review (needs_review).`);
       await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
         cvUploadId,
         status: "needs_review",
-        errorMessage: `Low-confidence OCR text (${trimmed.length} chars < 50 threshold). Flagged for manual TA human review.`,
+        errorMessage: `Low-confidence OCR text (${trimmed.length} chars < 50 threshold). Tesseract failed or produced thin text. Flagged for manual TA human review.`,
       });
+      if (args.logId) {
+        await ctx.runMutation(api.cvs.batches.updateLogStage, {
+          logId: args.logId,
+          stage: "needs_review",
+          errorMessage: "Low-confidence OCR text (< 50 chars). Flagged for TA review.",
+        });
+      }
       return null;
     }
     let cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
@@ -1401,22 +1423,25 @@ export async function runCvExtraction(
       });
       return null;
     }
+    const attempts = cvUpload?.extractionAttempts ?? 0;
+    const finalStatus = (isInsufficientBalance || isNotACV)
+      ? "processed"
+      : (attempts >= 1 ? "extraction_failed_permanent" : "failed");
+
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
-      status: (isInsufficientBalance || isNotACV)
-        ? "processed"
-        : ((args as any).isRetry ? "failed_retry" : "failed"),
+      status: finalStatus,
       errorMessage: isInsufficientBalance
         ? "Processed raw text only (LLM extraction skipped due to insufficient credits)"
         : isNotACV
           ? "Document rejected: Not recognized as a valid CV or Resume."
-          : message,
+          : (attempts >= 1 ? `Permanent extraction failure — limit reached (${attempts} attempt(s)): ${message}` : message),
     });
 
     if (args.logId) {
       await ctx.runMutation(api.cvs.batches.updateLogStage, {
         logId: args.logId,
-        stage: isInsufficientBalance ? "completed" : "failed",
+        stage: isInsufficientBalance ? "completed" : finalStatus,
         errorMessage: message
       });
     }

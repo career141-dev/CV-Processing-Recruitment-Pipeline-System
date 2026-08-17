@@ -521,6 +521,8 @@ export default defineSchema({
     batchId: v.optional(v.id("ingestionBatches")),
     isHealAttempted: v.optional(v.boolean()),
     processingStartedAt: v.optional(v.number()), // Timestamp when extraction action began; used by stuck-upload recovery
+    extractionAttempts: v.optional(v.number()), // Number of extraction attempts (max 1 retry)
+    lastAttemptAt: v.optional(v.number()), // Timestamp of last extraction attempt
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])

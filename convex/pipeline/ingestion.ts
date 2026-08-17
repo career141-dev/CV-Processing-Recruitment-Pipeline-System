@@ -51,34 +51,103 @@ export const processCvIngestion = mutation({
       .first();
 
     if (existingFile) {
-      if (args.jobId && existingFile.candidateId) {
-        const existingApp = await ctx.db.query("applications")
-          .withIndex("by_candidateId", (q) => q.eq("candidateId", existingFile.candidateId!))
-          .filter((q) => q.eq(q.field("jobId"), args.jobId))
-          .first();
+      if (existingFile.candidateId) {
+        let appId: any = null;
+        if (args.jobId) {
+          const existingApp = await ctx.db.query("applications")
+            .withIndex("by_candidateId", (q) => q.eq("candidateId", existingFile.candidateId!))
+            .filter((q) => q.eq(q.field("jobId"), args.jobId))
+            .first();
 
-        let appId = existingApp?._id;
-        if (!existingApp) {
-          const now = Date.now();
-          appId = await ctx.db.insert("applications", {
-            candidateId: existingFile.candidateId,
-            jobId: args.jobId,
-            currentStage: "new_cvs",
-            sourceChannel: args.sourceChannel,
-            createdAt: now,
-            isActive: true,
-            lastStageChangedAt: now,
-            loopIteration: 0,
-            stageHistory: [{
-              stage: "new_cvs",
-              enteredAt: new Date(now).toISOString(),
-              changedBy: "system",
-            }],
-          } as any);
+          appId = existingApp?._id;
+          if (!existingApp) {
+            const now = Date.now();
+            appId = await ctx.db.insert("applications", {
+              candidateId: existingFile.candidateId,
+              jobId: args.jobId,
+              currentStage: "new_cvs",
+              sourceChannel: args.sourceChannel,
+              createdAt: now,
+              isActive: true,
+              lastStageChangedAt: now,
+              loopIteration: 0,
+              stageHistory: [{
+                stage: "new_cvs",
+                enteredAt: new Date(now).toISOString(),
+                changedBy: "system",
+              }],
+            } as any);
+          }
+          console.log(`[processCvIngestion] Linked existing candidate ${existingFile.candidateId} to job ${args.jobId} (appId: ${appId})`);
         }
-
-        console.log(`[processCvIngestion] Linked existing candidate ${existingFile.candidateId} to job ${args.jobId} (appId: ${appId})`);
         return { success: true, reason: "linked_existing_candidate", applicationId: appId, existingCandidateId: existingFile.candidateId };
+      }
+
+      // Candidate record is missing (candidateId is undefined). Evaluate retry eligibility:
+      const currentStatus = existingFile.status;
+      const attempts = existingFile.extractionAttempts ?? 0;
+
+      if (currentStatus === "pending" || currentStatus === "processing") {
+        console.log(`[processCvIngestion] Upload ${existingFile._id} is already in-flight (status: ${currentStatus}). No-op.`);
+        return { success: false, reason: "in_flight", existingFileId: existingFile._id };
+      }
+
+      if (currentStatus === "needs_review") {
+        console.log(`[processCvIngestion] Upload ${existingFile._id} is flagged as needs_review. Skipping automatic retry.`);
+        return { success: false, reason: "needs_review", existingFileId: existingFile._id };
+      }
+
+      if (currentStatus === "failed" && attempts < 1) {
+        console.log(`[processCvIngestion] Re-triggering extraction for failed upload ${existingFile._id} (attempt ${attempts + 1})...`);
+        const now = Date.now();
+        await ctx.db.patch(existingFile._id, {
+          status: "pending",
+          extractionAttempts: attempts + 1,
+          lastAttemptAt: now,
+          assignToJob: args.jobId ?? existingFile.assignToJob,
+          storageId: args.storageId ?? existingFile.storageId,
+          s3Key: args.s3Key ?? existingFile.s3Key,
+          storageProvider: args.storageProvider ?? existingFile.storageProvider,
+          errorMessage: undefined,
+        });
+
+        const logId = await ctx.db.insert("ingestionLog", {
+          jobId: args.jobId,
+          channelType: args.sourceChannel as any,
+          rawSender: args.rawSender,
+          routingStatus: args.jobId ? "routed" : "unrouted",
+          cvFileId: existingFile._id,
+          metaCampaignId: args.metaCampaignId,
+          processingTimeMs: Date.now() - startTime,
+          receivedAt: startTime,
+          batchId: args.batchId,
+          stage: "queued",
+          candidateName: "Unknown — Re-triggering Extraction",
+        } as any);
+
+        const delayMs = args.extractionDelayMs || 0;
+        await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
+          storageId: args.storageId ?? existingFile.storageId,
+          s3Key: args.s3Key ?? existingFile.s3Key,
+          storageProvider: args.storageProvider ?? existingFile.storageProvider,
+          fileType: args.fileType ?? existingFile.fileType,
+          sourceChannel: args.sourceChannel,
+          uploadedBy: "system",
+          cvUploadId: existingFile._id,
+          batchId: args.batchId,
+          logId: logId,
+        });
+
+        return { success: true, cvUploadId: existingFile._id, retriggered: true };
+      }
+
+      // Max attempts reached (attempts >= 1) or soft-terminal status
+      if (currentStatus === "failed" && attempts >= 1) {
+        console.warn(`[processCvIngestion] Upload ${existingFile._id} has reached maximum extraction attempts (${attempts}). Transitioning to extraction_failed_permanent.`);
+        await ctx.db.patch(existingFile._id, {
+          status: "extraction_failed_permanent",
+          errorMessage: "Permanent extraction failure — attempt cap reached (1 retry max)",
+        });
       }
 
       await ctx.db.insert("ingestionLog", {
@@ -89,9 +158,10 @@ export const processCvIngestion = mutation({
         cvFileId: existingFile._id,
         receivedAt: startTime,
         batchId: args.batchId,
-        stage: "failed",
+        stage: "extraction_failed_permanent",
+        errorMessage: `Extraction attempt limit reached (${attempts} attempt(s)). Marked as soft-terminal.`,
       } as any);
-      return { success: false, reason: "duplicate_file", existingFileId: existingFile._id };
+      return { success: false, reason: "extraction_failed_permanent", existingFileId: existingFile._id };
     }
 
     // 4. Store file metadata in cvUploads

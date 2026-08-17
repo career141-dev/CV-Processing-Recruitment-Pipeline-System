@@ -64,7 +64,20 @@ export const checkDuplicateHash = mutation({
       .query("cvUploads")
       .withIndex("by_fileHash", (q) => q.eq("fileHash", args.fileHash))
       .first();
-    if (existingUpload !== null) return true;
+    
+    if (existingUpload !== null) {
+      // If candidate record was created, it's a true duplicate
+      if (existingUpload.candidateId) return true;
+
+      // If upload failed and has remaining attempts (< 1), it is retry-eligible -> not duplicate
+      const attempts = existingUpload.extractionAttempts ?? 0;
+      if (existingUpload.status === "failed" && attempts < 1) {
+        return false;
+      }
+      
+      // In-flight, needs_review, soft-terminal, or attempt cap reached -> treat as duplicate (block bulk import)
+      return true;
+    }
 
     const existingCandidate = await ctx.db
       .query("candidates")
