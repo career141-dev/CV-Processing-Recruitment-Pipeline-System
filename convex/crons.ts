@@ -31,7 +31,7 @@ export const evaluateFollowUpStage = internalMutation({
       .collect();
 
     const followUpJobs = activeJobs.filter(
-      (j) => j.enableWhatsAppFollowUp !== false || j.enableEmailFollowUp !== false
+      (j) => j.agent3Enabled === true && (j.enableWhatsAppFollowUp === true || j.enableEmailFollowUp === true)
     );
     const followUpJobIds = new Set(followUpJobs.map((j) => j._id));
 

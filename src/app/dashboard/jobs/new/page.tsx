@@ -132,8 +132,8 @@ export default function CreateJobWizard() {
     },
     agent3TriggerStages: ['shortlisted'] as string[],
     enableFollowUps: false,
-    enableWhatsAppFollowUp: true,
-    enableEmailFollowUp: true,
+    enableWhatsAppFollowUp: false,
+    enableEmailFollowUp: false,
     followUpInitialTemplate: `Hi {candidate_name},\n\nThank you for applying for the {job_title} role!\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease let us know how soon you can provide this information.\n\nBest regards,\nTalent Acquisition Team`,
     followUpSampleTemplate: `Hi {candidate_name}, thanks for getting back to us.\n\nWe just need your {missing_fields} to move forward.\n\nPlease share them at your earliest convenience.`,
     enableEmailFollowUpTemplate: false,
@@ -1577,7 +1577,20 @@ export default function CreateJobWizard() {
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
-              <input type="checkbox" className="sr-only peer" checked={formData.enableFollowUps} onChange={e => updateFormData('enableFollowUps', e.target.checked)} />
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={formData.enableFollowUps} 
+                onChange={e => {
+                  const val = e.target.checked;
+                  setFormData(prev => ({
+                    ...prev,
+                    enableFollowUps: val,
+                    enableWhatsAppFollowUp: val,
+                    enableEmailFollowUp: val,
+                  }));
+                }} 
+              />
               <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
             </label>
           </div>

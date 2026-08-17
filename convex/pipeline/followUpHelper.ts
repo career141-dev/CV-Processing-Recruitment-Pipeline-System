@@ -148,7 +148,7 @@ export async function initiateFollowUpOutreach(
 
   const isManual = options?.isManual === true;
 
-  if (!isManual && job.agent3Enabled === false) {
+  if (!isManual && (!job.agent3Enabled || (job.enableWhatsAppFollowUp !== true && job.enableEmailFollowUp !== true))) {
     console.log(`[Follow-up Outreach] Follow-up sequence is disabled for job "${job.title}". Skipping initiation.`);
     return;
   }

@@ -2012,13 +2012,14 @@ export default function JobDetailPage() {
 
   const handleToggleWhatsAppFollowUp = async () => {
     if (!job) return;
-    const currentVal = job.enableWhatsAppFollowUp !== false;
+    const currentVal = job.enableWhatsAppFollowUp === true;
     const newVal = !currentVal;
     const toastId = toast.loading(`${newVal ? "Enabling" : "Disabling"} WhatsApp follow-ups...`);
     try {
       await updateJobDetails({
         jobId,
         enableWhatsAppFollowUp: newVal,
+        agent3Enabled: newVal || job.enableEmailFollowUp === true,
       });
       toast.success(`WhatsApp follow-ups ${newVal ? "enabled" : "disabled"}!`, { id: toastId });
     } catch (e: any) {
@@ -2029,13 +2030,14 @@ export default function JobDetailPage() {
 
   const handleToggleEmailFollowUp = async () => {
     if (!job) return;
-    const currentVal = job.enableEmailFollowUp !== false;
+    const currentVal = job.enableEmailFollowUp === true;
     const newVal = !currentVal;
     const toastId = toast.loading(`${newVal ? "Enabling" : "Disabling"} Email follow-ups...`);
     try {
       await updateJobDetails({
         jobId,
         enableEmailFollowUp: newVal,
+        agent3Enabled: newVal || job.enableWhatsAppFollowUp === true,
       });
       toast.success(`Email follow-ups ${newVal ? "enabled" : "disabled"}!`, { id: toastId });
     } catch (e: any) {
@@ -3312,26 +3314,26 @@ export default function JobDetailPage() {
                 <button
                   onClick={handleToggleWhatsAppFollowUp}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
-                    job.enableWhatsAppFollowUp !== false
+                    job.enableWhatsAppFollowUp === true
                       ? 'bg-[#25D366]/10 border-[#25D366]/20 text-[#128C7E] hover:bg-[#25D366]/20'
                       : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
                   }`}
-                  title={job.enableWhatsAppFollowUp !== false ? "WhatsApp Follow-Up Active. Click to Disable." : "WhatsApp Follow-Up Disabled. Click to Enable."}
+                  title={job.enableWhatsAppFollowUp === true ? "WhatsApp Follow-Up Active. Click to Disable." : "WhatsApp Follow-Up Disabled. Click to Enable."}
                 >
                   <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>WhatsApp: {job.enableWhatsAppFollowUp !== false ? 'ON' : 'OFF'}</span>
+                  <span>WhatsApp: {job.enableWhatsAppFollowUp === true ? 'ON' : 'OFF'}</span>
                 </button>
                 <button
                   onClick={handleToggleEmailFollowUp}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
-                    job.enableEmailFollowUp !== false
+                    job.enableEmailFollowUp === true
                       ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 hover:bg-blue-500/20'
                       : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
                   }`}
-                  title={job.enableEmailFollowUp !== false ? "Email Follow-Up Active. Click to Disable." : "Email Follow-Up Disabled. Click to Enable."}
+                  title={job.enableEmailFollowUp === true ? "Email Follow-Up Active. Click to Disable." : "Email Follow-Up Disabled. Click to Enable."}
                 >
                   <Mail className="w-3.5 h-3.5 shrink-0" />
-                  <span>Email: {job.enableEmailFollowUp !== false ? 'ON' : 'OFF'}</span>
+                  <span>Email: {job.enableEmailFollowUp === true ? 'ON' : 'OFF'}</span>
                 </button>
               </div>
             </div>
