@@ -572,36 +572,55 @@ export const recoverCreditDepletedCVs = mutation({
     staggerMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 200;
+    const batchLimit = Math.min(args.limit ?? 30, 50);
     const staggerMs = args.staggerMs ?? 500; // 500ms fast parallel stagger by default
 
-    // 1. Fetch all cvUploads
-    const allUploads = await ctx.db.query("cvUploads").collect();
+    // 1. Fetch targeted statuses using indexed queries
+    const processedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processed"))
+      .order("desc")
+      .take(150);
 
-    // 2. Filter for uploads affected by credit depletion or unparsed states
-    const creditAffectedUploads = allUploads.filter((u) => {
-      const errMsg = (u.errorMessage || "").toLowerCase();
-      const isCreditError =
-        errMsg.includes("credit") ||
-        errMsg.includes("insufficient") ||
-        errMsg.includes("balance") ||
-        errMsg.includes("403") ||
-        errMsg.includes("quota");
+    const failedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed"))
+      .order("desc")
+      .take(50);
 
-      const isFailedState =
-        u.status === "failed" ||
-        u.status === "failed_retry" ||
-        u.status === "extraction_failed_permanent";
+    const failedRetryList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
+      .order("desc")
+      .take(50);
 
-      // Must have valid storage key/id to re-extract
-      const hasFile = Boolean(u.s3Key || u.storageId);
-      if (!hasFile) return false;
+    const permFailedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "extraction_failed_permanent"))
+      .order("desc")
+      .take(50);
 
-      // Exclude needs_review
-      if (u.status === "needs_review") return false;
-
-      return isCreditError || isFailedState;
-    }).slice(0, limit);
+    // 2. Filter for uploads affected by credit depletion or failed unparsed states
+    const creditAffectedUploads = [
+      ...processedList.filter((u) => {
+        const errMsg = (u.errorMessage || "").toLowerCase();
+        return (
+          errMsg.includes("credit") ||
+          errMsg.includes("insufficient") ||
+          errMsg.includes("balance") ||
+          errMsg.includes("403") ||
+          errMsg.includes("quota")
+        );
+      }),
+      ...failedList,
+      ...failedRetryList,
+      ...permFailedList,
+    ]
+      .filter((u) => {
+        if (u.status === "needs_review") return false;
+        return Boolean(u.s3Key || u.storageId);
+      })
+      .slice(0, batchLimit);
 
     let requeuedCount = 0;
     for (let i = 0; i < creditAffectedUploads.length; i++) {
@@ -615,13 +634,19 @@ export const recoverCreditDepletedCVs = mutation({
       });
 
       if (upload.candidateId) {
-        await ctx.db.patch(upload.candidateId, {
-          isParsed: false,
-        });
+        const candidateDoc = await ctx.db.get(upload.candidateId);
+        if (candidateDoc) {
+          await ctx.db.patch(upload.candidateId, {
+            isParsed: false,
+          });
+        }
       }
 
+      const validChannels = ["whatsapp", "meta_campaign", "email", "email_campaign", "linkedin", "workable", "manual_upload", "headhunting"];
+      const channelType = validChannels.includes(upload.source || "") ? (upload.source as any) : "manual_upload";
+
       const logId = await ctx.db.insert("ingestionLog", {
-        channelType: (upload.source as any) || "manual_upload",
+        channelType,
         routingStatus: upload.assignToJob ? "routed" : "unrouted",
         cvFileId: upload._id,
         candidateId: upload.candidateId,
