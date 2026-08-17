@@ -600,7 +600,19 @@ export const recoverCreditDepletedCVs = mutation({
       .order("desc")
       .take(50);
 
-    // 2. Filter for uploads affected by credit depletion or failed unparsed states
+    const processingList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .order("desc")
+      .take(100);
+
+    const threeMinsAgo = Date.now() - 3 * 60 * 1000;
+    const stuckProcessing = processingList.filter((u) => {
+      const startMs = (u as any).processingStartedAt ?? u._creationTime;
+      return startMs < threeMinsAgo;
+    });
+
+    // 2. Filter for uploads affected by credit depletion or failed/stuck states
     const creditAffectedUploads = [
       ...processedList.filter((u) => {
         const errMsg = (u.errorMessage || "").toLowerCase();
@@ -612,6 +624,7 @@ export const recoverCreditDepletedCVs = mutation({
           errMsg.includes("quota")
         );
       }),
+      ...stuckProcessing,
       ...failedList,
       ...failedRetryList,
       ...permFailedList,
