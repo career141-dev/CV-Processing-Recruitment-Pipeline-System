@@ -207,6 +207,7 @@ export const updateCandidateDetails = mutation({
     noticePeriodDays: v.optional(v.number()),
     noticePeriod: v.optional(v.string()),
     candidateQuestions: v.optional(v.string()),
+    summary: v.optional(v.string()),
     customFollowUpAnswers: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {

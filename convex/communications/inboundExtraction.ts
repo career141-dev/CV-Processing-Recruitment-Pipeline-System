@@ -76,7 +76,7 @@ You are interacting like a real human recruitment colleague — NOT a robotic fo
 
 JOB SPECIFICATION CONTEXT:
 - Job Title: ${job.title}
-- Company/Client: ${job.clientName || "Career141"}
+- Company/Client: ${job.isConfidential ? `Confidential Search (Do NOT reveal client name; explain politely that this is a confidential hiring process conducted by Career141 for a premier ${job.clientIndustry || "organization"})` : (job.clientName || "Career141")}
 - Location: ${job.location || "Colombo, Sri Lanka"}
 - Workplace Type: ${(job as any).workplaceType || "Hybrid"}
 - Job Description Summary: ${(job.jobDescription || "").substring(0, 400)}
@@ -99,7 +99,8 @@ SAMPLE FOLLOW-UP TEMPLATE:
 
 Your job is to analyze the candidate's LATEST/CURRENT message and output a JSON object.
 Rules:
-1. Extract missing numeric/text details from the CURRENT message if provided (currentSalary, expectedSalary, noticePeriodDays, noticePeriod, customAnswers).
+1. Extract missing numeric/text details from the CURRENT message if provided (currentSalary, expectedSalary, noticePeriodDays, noticePeriod, customAnswers, candidateSummary).
+   - CANDIDATE SUMMARY / BIO: If the candidate introduces themselves, describes their background, career history, skills summary, or experience in their message, extract a clean 1-3 sentence summary into 'candidateSummary'.
    - STUDENTS/INTERNS/UNEMPLOYED SALARY: If a candidate states they are currently a student, undergraduate, intern, or currently unemployed with no work experience, automatically set 'currentSalary' to 0 (do not leave it as null).
    - NO NOTICE PERIOD: If a candidate states they do not have a notice period, are currently free, or can join immediately, set 'noticePeriodDays' to 0 and 'noticePeriod' to "0 Days".
    - CUSTOM ANSWERS KEY MATCHING: For each extracted answer in 'customAnswers', the key MUST EXACTLY MATCH the custom question string listed under MISSING DETAILS BEFORE THIS MESSAGE (e.g. use the exact full question text as the key, do not simplify it to "Portfolio" or "Portfolio Link").
@@ -123,6 +124,7 @@ Schema:
   "expectedSalary": number | null,
   "noticePeriodDays": number | null,
   "noticePeriod": string | null,
+  "candidateSummary": string | null,
   "customAnswers": { [question: string]: string } | null,
   "intent": "provided_all" | "provided_partial" | "interested_no_eta" | "promised_eta" | "asked_question" | "not_interested",
   "candidateEtaMinutes": number | null,
@@ -199,6 +201,10 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
           if (extracted.noticePeriod.toLowerCase().includes("week")) numDays *= 7;
           updates.noticePeriodDays = numDays;
         }
+      }
+
+      if (typeof extracted.candidateSummary === "string" && extracted.candidateSummary.trim() !== "") {
+        updates.summary = extracted.candidateSummary.trim();
       }
       
       let finalCustomAnswers = undefined;

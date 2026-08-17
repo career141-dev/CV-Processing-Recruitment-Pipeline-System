@@ -522,6 +522,7 @@ export default defineSchema({
     batchId: v.optional(v.id("ingestionBatches")),
     isHealAttempted: v.optional(v.boolean()),
     processingStartedAt: v.optional(v.number()), // Timestamp when extraction action began; used by stuck-upload recovery
+    extractionAttempts: v.optional(v.number()), // Retry attempt counter for CV text extraction
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])

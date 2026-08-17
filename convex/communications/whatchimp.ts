@@ -837,7 +837,7 @@ export const handlePreApplicationChat = internalAction({
 You are helping a candidate apply for the following role:
 
 JOB: ${job.title}
-COMPANY: ${job.clientName || "Career141 client"}
+COMPANY: ${job.isConfidential ? `Confidential Search (do NOT reveal client name; explain politely that this is a confidential search by Career141 for a premier ${job.clientIndustry || "organization"})` : (job.clientName || "Career141 client")}
 LOCATION: ${job.location || "Not specified"}
 EMPLOYMENT TYPE: ${job.recruitmentType === "both" ? "Full-time or Freelance" : isFullTimeOnly ? "Full-time only" : "Freelance/Contract"}
 SALARY: ${job.salaryMin ? `${job.salaryMin}–${job.salaryMax} ${job.salaryCurrency || ""}` : "Not disclosed"}
