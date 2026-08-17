@@ -2291,12 +2291,12 @@ export default function JobDetailPage() {
   };
 
   const handleBulkRescore = async () => {
-    const pipelineApps = applications.filter(a => a.currentStage !== 'new_cvs' && a.currentStage !== 'rejected' && a.candidateId);
+    const pipelineApps = applications.filter(a => a.currentStage !== 'rejected' && a.candidateId);
     if (pipelineApps.length === 0) {
-      toast.info("No candidates in the active pipeline to rescore.");
+      toast.info("No active candidates found to rescore.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to rescore all ${pipelineApps.length} active pipeline candidates against the current job requirements? This may take a few moments.`)) return;
+    if (!window.confirm(`Are you sure you want to rescore all ${pipelineApps.length} active candidates against the current job requirements? This may take a few moments.`)) return;
 
     setIsBulkRescoring(true);
     const toastId = toast.loading(`Rescoring ${pipelineApps.length} candidates...`);
