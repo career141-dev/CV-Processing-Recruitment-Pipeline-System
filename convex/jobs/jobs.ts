@@ -70,6 +70,7 @@ export const createJob = mutation({
     followUpEmailSubjectTemplate: v.optional(v.string()),
     followUpEmailBodyTemplate: v.optional(v.string()),
     customFollowUpQuestions: v.optional(v.array(v.string())),
+    conversationTone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
@@ -298,6 +299,7 @@ export const updateJobDetails = mutation({
     customFollowUpQuestions: v.optional(v.array(v.string())),
     enableWhatsAppFollowUp: v.optional(v.boolean()),
     enableEmailFollowUp: v.optional(v.boolean()),
+    conversationTone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter", "test_ta"]);
@@ -530,6 +532,7 @@ export const updateJobAiConfig = mutation({
     customFollowUpQuestions: v.optional(v.array(v.string())),
     enableWhatsAppFollowUp: v.optional(v.boolean()),
     enableEmailFollowUp: v.optional(v.boolean()),
+    conversationTone: v.optional(v.string()),
     agent3InitialChannel: v.optional(v.string()),
     agent3InitialMessage: v.optional(v.string()),
     agent3Day2Channel: v.optional(v.string()),

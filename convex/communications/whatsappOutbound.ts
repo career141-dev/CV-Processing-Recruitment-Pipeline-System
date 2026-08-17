@@ -144,7 +144,7 @@ async function resolveTestModePhone(ctx: any, senderPhone: string): Promise<stri
   return senderPhone;
 }
 
-async function findCandidateByPhone(ctx: any, targetPhone: string) {
+export async function findCandidateByPhone(ctx: any, targetPhone: string) {
   const cleanDigits = targetPhone.replace(/\D/g, "");
   if (!cleanDigits) return null;
 
@@ -624,8 +624,8 @@ export const recordLocalWhatsappOutbound = internalMutation({
       .first();
 
     if (recentOutbound && Number(recentOutbound.sentAt) > thirtySecAgo && recentOutbound.body === args.body) {
-      console.log(`[recordLocalWhatsappOutbound] DEDUPLICATION: Returning existing outbound communication ${recentOutbound._id} to prevent duplicate reply.`);
-      return recentOutbound._id;
+      console.log(`[recordLocalWhatsappOutbound] DEDUPLICATION: Suppressing duplicate outbound communication for candidate ${args.candidateId}.`);
+      return null;
     }
 
     return await ctx.db.insert("communications", {

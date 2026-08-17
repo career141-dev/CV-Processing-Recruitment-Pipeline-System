@@ -290,6 +290,7 @@ export default defineSchema({
     customFollowUpQuestions: v.optional(v.array(v.string())),
     maxFollowUpDays: v.optional(v.number()),
     maxFollowUpAttempts: v.optional(v.number()),
+    conversationTone: v.optional(v.string()),
 
     agent3TriggerStages: v.optional(v.array(v.string())),
     agent3InitialChannel: v.optional(v.string()),
