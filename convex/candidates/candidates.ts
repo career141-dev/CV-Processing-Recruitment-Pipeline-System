@@ -1404,22 +1404,28 @@ export const bulkDeleteCandidates = mutation({
 export const getActiveFollowUpApplication = query({
   args: { candidateId: v.id("candidates") },
   handler: async (ctx, args) => {
-    const activeApp = await ctx.db
+    const apps = await ctx.db
       .query("applications")
       .withIndex("by_candidateId", (q: any) => q.eq("candidateId", args.candidateId))
-      .filter((q: any) =>
-        q.or(
-          q.eq(q.field("currentStage"), "follow_up"),
-          q.eq(q.field("currentStage"), "ta_shortlist"),
-          q.eq(q.field("currentStage"), "new_cvs"),
-          q.and(
-            q.eq(q.field("currentStage"), "rejected"),
-            q.eq(q.field("taRejectionReason"), "Did not complete requirements within 7-day window")
-          )
-        )
-      )
-      .first();
-    return activeApp;
+      .collect();
+
+    const validApps = [];
+    for (const app of apps) {
+      const job = await ctx.db.get(app.jobId);
+      if (job) {
+        validApps.push(app);
+      }
+    }
+
+    if (validApps.length === 0) return null;
+
+    validApps.sort((a, b) => {
+      if (a.currentStage === "follow_up" && b.currentStage !== "follow_up") return -1;
+      if (b.currentStage === "follow_up" && a.currentStage !== "follow_up") return 1;
+      return (b.lastStageChangedAt ?? b._creationTime) - (a.lastStageChangedAt ?? a._creationTime);
+    });
+
+    return validApps[0];
   },
 });
 

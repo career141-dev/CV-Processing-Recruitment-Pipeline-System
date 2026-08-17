@@ -252,12 +252,18 @@ export const sendMessage = mutation({
 
 // Get follow-up candidates
 export const getFollowUpCandidates = query({
-  args: {},
-  handler: async (ctx) => {
-    const apps = await ctx.db
+  args: {
+    jobId: v.optional(v.id("jobs")),
+  },
+  handler: async (ctx, args) => {
+    let apps = await ctx.db
       .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
       .collect();
+
+    if (args.jobId) {
+      apps = apps.filter((app) => app.jobId === args.jobId);
+    }
 
     return Promise.all(
       apps.map(async (app) => {

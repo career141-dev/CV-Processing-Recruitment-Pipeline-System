@@ -7,7 +7,12 @@ import { classifyMessage } from "./messageClassifier";
 
 export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: any | null; matchedKeyword: string; isAmbiguous: boolean } {
   const upperText = textBody.trim().toUpperCase();
-  const strippedUpper = upperText.replace(/^APPLY\s+/i, "").trim();
+  const strippedUpper = upperText
+    .replace(/^(HI|HELLO|HEY)[!.,]?\s+/i, "")
+    .replace(/^I('D| WOULD)? LIKE TO APPLY (FOR|TO)\s+/i, "")
+    .replace(/^JOB CODE\s*:\s*/i, "")
+    .replace(/^APPLY\s+/i, "")
+    .trim();
 
   if (!strippedUpper) return { matchedJob: null, matchedKeyword: "", isAmbiguous: false };
 
@@ -62,7 +67,12 @@ export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: a
 
   if (matches.length > 1) {
     const secondMatch = matches[1];
+    const sameTitleOrKeyword =
+      bestMatch.job.title.toLowerCase() === secondMatch.job.title.toLowerCase() ||
+      (bestMatch.job.keyword && secondMatch.job.keyword && bestMatch.job.keyword.toLowerCase() === secondMatch.job.keyword.toLowerCase());
+
     if (
+      !sameTitleOrKeyword &&
       secondMatch.job._id !== bestMatch.job._id &&
       matchTypeScore[secondMatch.matchType] === matchTypeScore[bestMatch.matchType] &&
       secondMatch.matchedLength === bestMatch.matchedLength
@@ -133,8 +143,9 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       if (message.type === "document" || message.type === "image") {
         const originalSenderPhone = message.context?.from ?? message.from;
         const mediaItem = message.document ?? message.image;
+        const captionText = mediaItem.caption ?? message.document?.caption ?? message.image?.caption ?? null;
 
-        console.log(`[WhatChimp Webhook] Inbound media detected: ID=${mediaItem.id}, Type=${message.type}`);
+        console.log(`[WhatChimp Webhook] Inbound media detected: ID=${mediaItem.id}, Type=${message.type}, Caption="${captionText ?? ""}"`);
         await ctx.scheduler.runAfter(0, internal.cvs.ingestion.processInboundCV, {
           messageId: message.id,
           toNumber,
@@ -143,6 +154,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           mediaId: mediaItem.id,
           mimeType: mediaItem.mime_type,
           fileName: mediaItem.filename ?? null,
+          captionText,
         });
       } else if (message.type === "text") {
         const textBody = message.text?.body || message.body || message.text || "";
@@ -536,7 +548,29 @@ export const processInboundTextWebhook = internalMutation({
           }
         }
 
-        return { action: "ignore" };
+        // Ensure session exists and knows CV is received
+        let activeSession = await ctx.db
+          .query("whatsappSessions")
+          .withIndex("by_phone", (q) => q.eq("phone", cleanFrom))
+          .first();
+
+        if (activeSession) {
+          await ctx.db.patch(activeSession._id, {
+            jobId: activeApp.jobId,
+            cvReceived: true,
+            lastInteractionAt: Date.now(),
+          });
+        } else {
+          await ctx.db.insert("whatsappSessions", {
+            phone: cleanFrom,
+            jobId: activeApp.jobId,
+            keyword: "AUTO_ACTIVE",
+            cvReceived: true,
+            lastInteractionAt: Date.now(),
+          });
+        }
+
+        return { action: "dispatch_pre_app_chat", jobId: activeApp.jobId };
       }
     }
 
@@ -737,13 +771,12 @@ export const handlePreApplicationChat = internalAction({
         return;
       }
 
-      // ── 3. Build conversation state context ───────────────────────────────
-      const cvReceived = session?.cvReceived === true;
+      // Fetch candidate document for CV status & conversation history
+      const candidate = await ctx.runQuery(internal.communications.whatchimp.getCandidateByPhone, { phone: args.phone });
+      const cvReceived = session?.cvReceived === true || !!candidate?.cvUploadId;
       const portfolioUrls = session?.portfolioUrls || [];
       const employmentPreference = session?.employmentPreference || null;
 
-      // Fetch last 5 inbound messages from this candidate for context
-      const candidate = await ctx.runQuery(internal.communications.whatchimp.getCandidateByPhone, { phone: args.phone });
       let conversationHistory = "No previous messages.";
       if (candidate) {
         const recentMessages = await ctx.runQuery(internal.communications.whatchimp.getRecentMessages, {
@@ -832,7 +865,8 @@ RULES — follow these strictly:
 5. Never send multiple responses. Write ONE reply only.
 6. If CV has NOT been received AND the conversation naturally warrants it, you MAY add ONE gentle line at the end asking them to share their CV as a PDF. Do not add it robotically to every message.
 7. Keep your reply under 3 sentences. Be warm, human and friendly — not a scripted bot.
-8. If the candidate asks if you are an AI: confirm it honestly, explain you're Career141's recruitment assistant, and ask if they have any questions about the role.`;
+8. If the candidate asks if you are an AI: confirm it honestly, explain you're Career141's recruitment assistant, and ask if they have any questions about the role.
+9. NEVER repeat generic "Thank you for reaching out to Career141" or "Which position are you interested in" greetings. Speak naturally as a helpful recruitment colleague.`;
 
       // ── 6. Call LLM ───────────────────────────────────────────────────────
       const openai = getOpenAI("jd_matching");
@@ -905,10 +939,11 @@ export const getCandidateByPhone = internalQuery({
 export const getRecentMessages = internalQuery({
   args: { candidateId: v.id("candidates"), limit: v.number() },
   handler: async (ctx, args) => {
-    return await ctx.db.query("communications")
+    const msgs = await ctx.db.query("communications")
       .withIndex("by_candidate_time", (q) => q.eq("candidateId", args.candidateId))
       .order("desc")
       .take(args.limit);
+    return msgs.reverse();
   },
 });
 

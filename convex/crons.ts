@@ -24,19 +24,31 @@ export const evaluateFollowUpStage = internalMutation({
     const emailFollowUpPaused = toggles?.emailFollowUp === false;
     const allFollowUpsPaused = whatsappFollowUpPaused && emailFollowUpPaused;
 
-    const followUpApps = await ctx.db.query("applications")
-      .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .order("desc")
-      .take(300);
+    // 1. Fetch active jobs that have follow-up enabled (Dynamic across all active jobs)
+    const activeJobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .collect();
 
-    const taShortlistApps = await ctx.db.query("applications")
+    const followUpJobs = activeJobs.filter(
+      (j) => j.enableWhatsAppFollowUp !== false || j.enableEmailFollowUp !== false
+    );
+    const followUpJobIds = new Set(followUpJobs.map((j) => j._id));
+
+    // 2. Fetch applications ONLY for active follow-up jobs
+    const followUpApps = await ctx.db
+      .query("applications")
+      .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
+      .collect();
+
+    const taShortlistApps = await ctx.db
+      .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
-      .order("desc")
-      .take(500);
+      .collect();
 
     const appsToEvaluate = [
-      ...followUpApps,
-      ...taShortlistApps.filter((a: any) => a.nextFollowUpScheduledAt !== undefined)
+      ...followUpApps.filter((a) => followUpJobIds.has(a.jobId)),
+      ...taShortlistApps.filter((a) => followUpJobIds.has(a.jobId)),
     ];
 
     const now = Date.now();
@@ -650,6 +662,15 @@ crons.interval(
   { minutes: 2 },
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "job@career141.com" }
+);
+
+// Poll per-job dedicated email inboxes (configured via job channel settings) every 5 minutes.
+// System inboxes (linkedin@, cv@, job@) are excluded from this run — they have their own cron entries above.
+crons.interval(
+  "poll-per-job-email-inboxes",
+  { minutes: 5 },
+  internal.communications.emailAgent.scheduleEmailPolling,
+  {}
 );
 
 export const checkSlaBreaches = internalMutation({
