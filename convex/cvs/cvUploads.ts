@@ -560,3 +560,98 @@ export const requeueAllStuckUploads = internalMutation({
     return { requeuedCount, remaining: allStuck.length };
   },
 });
+
+/**
+ * Recovery Tool: Scans all cvUploads for records whose extraction was skipped
+ * or failed due to insufficient API credits, resets their status, and re-triggers
+ * parallel LLM extraction using refilled credits.
+ */
+export const recoverCreditDepletedCVs = mutation({
+  args: {
+    limit: v.optional(v.number()),
+    staggerMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 200;
+    const staggerMs = args.staggerMs ?? 500; // 500ms fast parallel stagger by default
+
+    // 1. Fetch all cvUploads
+    const allUploads = await ctx.db.query("cvUploads").collect();
+
+    // 2. Filter for uploads affected by credit depletion or unparsed states
+    const creditAffectedUploads = allUploads.filter((u) => {
+      const errMsg = (u.errorMessage || "").toLowerCase();
+      const isCreditError =
+        errMsg.includes("credit") ||
+        errMsg.includes("insufficient") ||
+        errMsg.includes("balance") ||
+        errMsg.includes("403") ||
+        errMsg.includes("quota");
+
+      const isFailedState =
+        u.status === "failed" ||
+        u.status === "failed_retry" ||
+        u.status === "extraction_failed_permanent";
+
+      // Must have valid storage key/id to re-extract
+      const hasFile = Boolean(u.s3Key || u.storageId);
+      if (!hasFile) return false;
+
+      // Exclude needs_review
+      if (u.status === "needs_review") return false;
+
+      return isCreditError || isFailedState;
+    }).slice(0, limit);
+
+    let requeuedCount = 0;
+    for (let i = 0; i < creditAffectedUploads.length; i++) {
+      const upload = creditAffectedUploads[i];
+      const delayMs = i * staggerMs;
+
+      await ctx.db.patch(upload._id, {
+        status: "pending",
+        errorMessage: undefined,
+        extractionAttempts: 0,
+      });
+
+      if (upload.candidateId) {
+        await ctx.db.patch(upload.candidateId, {
+          isParsed: false,
+        });
+      }
+
+      const logId = await ctx.db.insert("ingestionLog", {
+        channelType: (upload.source as any) || "manual_upload",
+        routingStatus: upload.assignToJob ? "routed" : "unrouted",
+        cvFileId: upload._id,
+        candidateId: upload.candidateId,
+        receivedAt: Date.now(),
+        batchId: upload.batchId,
+        stage: "queued",
+        candidateName: upload.fileName,
+        rawSender: upload.uploadedBy,
+      } as any);
+
+      await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || (upload.s3Key ? "r2" : "convex"),
+        fileType: upload.fileType || "application/pdf",
+        sourceChannel: upload.source || "manual_upload",
+        uploadedBy: upload.uploadedBy || "system",
+        batchId: upload.batchId,
+        logId,
+      });
+
+      requeuedCount++;
+    }
+
+    return {
+      success: true,
+      totalMatched: creditAffectedUploads.length,
+      requeuedCount,
+      estimatedCompletionSec: Math.ceil((requeuedCount * staggerMs) / 1000) + 10,
+    };
+  },
+});
