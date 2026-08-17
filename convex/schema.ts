@@ -720,6 +720,7 @@ export default defineSchema({
     .index("by_linkedinUrl", ["linkedinUrl"])
     .index("by_overallStatus", ["overallStatus"])
     .index("by_lastUpdatedAt", ["lastUpdatedAt"])
+    .index("by_firstSeenAt", ["firstSeenAt"])
     .index("by_extractionModel", ["extractionModel"])
     .index("by_sourceChannel", ["sourceChannel"])
     .index("by_firstSourceChannel", ["firstSourceChannel"])

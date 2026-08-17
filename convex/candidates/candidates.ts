@@ -99,7 +99,7 @@ export const listCandidatesPaginated = query({
     } else if (sourceChannel) {
       q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel));
     } else {
-      q = ctx.db.query("candidates").withIndex("by_lastUpdatedAt").order("desc");
+      q = ctx.db.query("candidates").withIndex("by_firstSeenAt").order("desc");
     }
 
     if (sourceChannel && (args.searchQuery || overallStatus)) {
@@ -575,6 +575,8 @@ export const createCandidate = mutation({
     parsingConfidence: v.optional(v.any()),
     embedding: v.optional(v.array(v.float64())),
     extractionModel: v.optional(v.string()),
+    firstSeenAt: v.optional(v.number()),
+    lastUpdatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     // 4-Factor Deduplication (Agent 6)
@@ -647,6 +649,7 @@ export const createCandidate = mutation({
         phoneClean = args.phone.replace(/[^0-9]/g, "");
       }
 
+      const now = Date.now();
       // Filter out undefined values to prevent data loss on merge
       const definedUpdates = Object.fromEntries(
         Object.entries({
@@ -654,6 +657,8 @@ export const createCandidate = mutation({
           pastJobTitles,
           phoneClean,
           status: "new",
+          lastUpdatedAt: now,
+          firstSeenAt: candidateArgs.firstSeenAt ?? existingCandidateId ? undefined : now,
         }).filter(([_, v]) => v !== undefined)
       );
 
@@ -704,8 +709,11 @@ export const createCandidate = mutation({
       phoneClean = args.phone.replace(/[^0-9]/g, "");
     }
 
+    const now = Date.now();
     const newId = await ctx.db.insert("candidates", {
       ...candidateArgs,
+      firstSeenAt: candidateArgs.firstSeenAt ?? now,
+      lastUpdatedAt: now,
       pastJobTitles,
       phoneClean,
       status: "new",
@@ -1634,5 +1642,51 @@ export const updateApplicationStageDirect = mutation({
     });
     await syncCandidateOverallStatus(ctx, app.candidateId);
     return { success: true, applicationId: args.applicationId, newStage: args.stage };
+  },
+});
+
+export const backfillCandidateTimestamps = mutation({
+  args: { forceResetAll: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    const candidates = await ctx.db.query("candidates").collect();
+    let updatedCount = 0;
+    for (const c of candidates) {
+      const updates: any = {};
+      if (args.forceResetAll || c.firstSeenAt === undefined || c.firstSeenAt === null) {
+        updates.firstSeenAt = c._creationTime;
+      }
+      if (args.forceResetAll || c.lastUpdatedAt === undefined || c.lastUpdatedAt === null) {
+        updates.lastUpdatedAt = c._creationTime;
+      }
+      if (Object.keys(updates).length > 0) {
+        await ctx.db.patch(c._id, updates);
+        updatedCount++;
+      }
+    }
+    return { success: true, total: candidates.length, updatedCount };
+  },
+});
+
+export const unpinTopCandidates = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const candidates = await ctx.db.query("candidates").collect();
+    let unpinnedCount = 0;
+    const namesToUnpin = ["lasitha", "video editor", "mahnoor"];
+
+    for (const c of candidates) {
+      const fullNameLower = (c.fullName || "").toLowerCase();
+      const isTarget = namesToUnpin.some((name) => fullNameLower.includes(name));
+
+      if (isTarget) {
+        await ctx.db.patch(c._id, {
+          firstSeenAt: c._creationTime,
+          lastUpdatedAt: c._creationTime,
+        });
+        unpinnedCount++;
+      }
+    }
+
+    return { success: true, unpinnedCount };
   },
 });

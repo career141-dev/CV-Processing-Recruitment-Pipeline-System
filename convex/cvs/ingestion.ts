@@ -337,10 +337,12 @@ export const insertCvRecord = internalMutation({
       .first();
 
     if (!candidate) {
+      const now = Date.now();
       const candidateId = await ctx.db.insert("candidates", {
         phone: args.originalSenderPhone,
         firstSourceChannel: "whatsapp",
-        firstSeenAt: Date.now(),
+        firstSeenAt: now,
+        lastUpdatedAt: now,
         fullName: `WhatsApp Candidate (${args.originalSenderPhone.slice(-4)})`,
         email: "",
         status: "active",
