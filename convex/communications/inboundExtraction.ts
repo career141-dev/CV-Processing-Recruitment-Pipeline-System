@@ -60,10 +60,19 @@ export const extractDetailsFromText = internalAction({
       candidateId: args.candidateId,
     });
 
+    const toneMap: Record<string, string> = {
+      warm_friendly: "Warm, encouraging, conversational, and helpful with natural emojis. Speak like a friendly talent acquisition colleague.",
+      professional_formal: "Polite, clear, structured, corporate, and precise.",
+      casual_tech: "Direct, tech-savvy, conversational, concise, and peer-to-peer.",
+      direct_concise: "Short, prompt, to-the-point with minimal extra words.",
+    };
+    const selectedTone = toneMap[job.conversationTone || "warm_friendly"] || (job.conversationTone ? `Custom tone: ${job.conversationTone}` : toneMap.warm_friendly);
+
     const openai = getOpenAI("email_auto_reply");
     const model = getModelForTask("email_auto_reply");
 
-    const systemPrompt = `You are an AI recruitment assistant for Career141 managing candidate follow-ups.
+    const systemPrompt = `You are an AI Talent Acquisition / Engagement Specialist for Career141 managing candidate follow-ups.
+You are interacting like a real human recruitment colleague — NOT a robotic form.
 
 JOB SPECIFICATION CONTEXT:
 - Job Title: ${job.title}
@@ -72,13 +81,16 @@ JOB SPECIFICATION CONTEXT:
 - Workplace Type: ${(job as any).workplaceType || "Hybrid"}
 - Job Description Summary: ${(job.jobDescription || "").substring(0, 400)}
 
+CONVERSATION TONE TO USE:
+${selectedTone}
+
 Currently, before reading this message, these details are missing from candidate profile:
 MISSING DETAILS BEFORE THIS MESSAGE: ${missingFields.join(", ")}
 
 CONVERSATION HISTORY (most recent first):
 ${historyText || "No previous messages."}
 
-To understand the TA's tone, look at their templates:
+To understand the TA's communication style, reference their templates:
 INITIAL OUTREACH TEMPLATE:
 "${(job.followUpInitialTemplate || 'Hi, please provide your missing details.').substring(0, 300)}"
 
@@ -91,15 +103,15 @@ Rules:
    - STUDENTS/INTERNS/UNEMPLOYED SALARY: If a candidate states they are currently a student, undergraduate, intern, or currently unemployed with no work experience, automatically set 'currentSalary' to 0 (do not leave it as null).
    - NO NOTICE PERIOD: If a candidate states they do not have a notice period, are currently free, or can join immediately, set 'noticePeriodDays' to 0 and 'noticePeriod' to "0 Days".
    - CUSTOM ANSWERS KEY MATCHING: For each extracted answer in 'customAnswers', the key MUST EXACTLY MATCH the custom question string listed under MISSING DETAILS BEFORE THIS MESSAGE (e.g. use the exact full question text as the key, do not simplify it to "Portfolio" or "Portfolio Link").
-2. Intent Classification:
+2. Intent Classification & Writing nextActionMessage:
    - 'provided_all': Candidate provided ALL remaining missing details in this message. Set nextActionMessage to null.
-   - 'provided_partial': Candidate provided some of the missing details in this message. Acknowledge what was received and ask ONLY for the remaining missing fields.
-   - 'promised_eta': Use this ONLY IF the candidate's CURRENT message explicitly specifies a time/duration (e.g. "in 10 minutes", "tonight", "tomorrow at 3 PM", "in 2 hours"). Estimate 'candidateEtaMinutes' and write a polite acknowledgement confirming we will follow up after that time (e.g. "No problem! We'll follow up with after tonight 😊").
-   - 'interested_no_eta': Candidate expresses willingness or interest to send details (e.g. "Sure, I will send it", "I'm interested", "will share soon", "will do") WITHOUT specifying an exact time in their current message. Set candidateEtaMinutes: null, nextActionTimeHours: 24, and set nextActionMessage to: "Great! Could you please let us know by what time you will be able to share these details with us?". DO NOT copy or carry over any past ETA from conversation history!
-   - 'asked_question': Candidate asked a question (e.g. company, salary, location, tech stack). Answer their question logically using the JOB SPECIFICATION CONTEXT above while pivoting back to ask ONLY for the remaining missing details. YOU MUST ALWAYS PROVIDE A REPLY MESSAGE.
+   - 'provided_partial': Candidate provided some of the missing details in this message. Write a warm, human 'nextActionMessage' matching the CONVERSATION TONE that acknowledges what was received and naturally asks ONLY for the remaining missing fields. Do not use robotic bulleted email templates.
+   - 'promised_eta': Use this ONLY IF the candidate's CURRENT message explicitly specifies a time/duration (e.g. "in 10 minutes", "tonight", "tomorrow at 3 PM", "in 2 hours"). Estimate 'candidateEtaMinutes' and write a polite acknowledgement matching CONVERSATION TONE confirming we will follow up after that time (e.g. "No problem! We'll follow up after tonight 😊").
+   - 'interested_no_eta': Candidate expresses willingness or interest to send details (e.g. "Sure, I will send it", "I'm interested", "will share soon", "will do") WITHOUT specifying an exact time in their current message. Set candidateEtaMinutes: null, nextActionTimeHours: 24, and set nextActionMessage to a warm message asking by when they can share them. DO NOT copy or carry over any past ETA from conversation history!
+   - 'asked_question': Candidate asked a question (e.g. company, salary, location, tech stack). Answer their question logically using the JOB SPECIFICATION CONTEXT above in the CONVERSATION TONE while pivoting back to ask for the remaining missing details. YOU MUST ALWAYS PROVIDE A REPLY MESSAGE.
    - 'not_interested': Candidate declined or is not interested. Set nextActionMessage to null.
 3. 'nextActionTimeHours':
-   - If 'promised_eta': A pure decimal number representing hours (e.g. 0.033 for 2 minutes, 0.083 for 5 minutes, 0.167 for 10 minutes, 1.0 for 1 hour, 24.0 for 24 hours). NEVER output math formulas slashes like "2.0 / 60"; output only a single valid JSON decimal number.
+   - If 'promised_eta': A pure decimal number representing hours (e.g. 0.033 for 2 minutes, 0.083 for 5 minutes, 0.167 for 10 minutes, 1.0 for 1 hour, 24.0 for 24 hours). Output only a single valid JSON decimal number.
    - If 'interested_no_eta', 'provided_partial', or 'asked_question': Set to 24.
    - If 'provided_all' or 'not_interested': Set to null.
 4. 'detectedQuestion': If candidate asked any question/inquiry in their message, analyze and categorize it into category ('salary_compensation' | 'visa_sponsorship' | 'location_remote' | 'notice_start_date' | 'tech_stack' | 'client_details' | 'general_inquiry') and importanceLevel ('high' | 'medium' | 'low').
@@ -152,7 +164,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
 
       let cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
       // Sanitize un-evaluated division expressions like ": 2.0 / 60"
-      cleanJson = cleanJson.replace(/:\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, (_, num, denom) => {
+      cleanJson = cleanJson.replace(/:\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, (_: string, num: string, denom: string) => {
         const val = parseFloat(num) / parseFloat(denom);
         return `: ${val}`;
       });
@@ -287,27 +299,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         const updatedCandidate = await ctx.runQuery(api.candidates.candidates.getCandidate, { id: args.candidateId });
         const updatedApp = await ctx.runQuery(api.candidates.candidates.getActiveFollowUpApplication, { candidateId: args.candidateId });
 
-        const isNoticePeriodPresent = updatedApp?.followUpNoticePeriod || updatedCandidate?.noticePeriodDays !== undefined || (updatedCandidate?.noticePeriod !== undefined && updatedCandidate?.noticePeriod !== "");
-
-        // Determine if application is now complete or advanced
-        const isCompleted = !updatedApp || updatedApp.currentStage === "second_shortlist" || (
-          (updatedApp?.followUpCvReceived || updatedCandidate?.cvUploadId) &&
-          (updatedApp?.followUpCurrentSalary || updatedCandidate?.currentSalary !== undefined) &&
-          (updatedApp?.followUpExpectedSalary || updatedCandidate?.expectedSalary !== undefined) &&
-          isNoticePeriodPresent
-        );
-
-        let replyMessage: string | null = null;
-        let aiAnswer: string | null = null;
-
-        // Acknowledge the details that were successfully recorded in this reply
-        const recordedDetails: string[] = [];
-        if (typeof updates.currentSalary === "number") recordedDetails.push(`Current Salary: ${updates.currentSalary}`);
-        if (typeof updates.expectedSalary === "number") recordedDetails.push(`Expected Salary: ${updates.expectedSalary}`);
-        if (updates.noticePeriod) recordedDetails.push(`Notice Period: ${updates.noticePeriod}`);
-        else if (typeof updates.noticePeriodDays === "number") recordedDetails.push(`Notice Period: ${updates.noticePeriodDays} days`);
-
-        // Fields still missing after this reply (plain names, used in the rich HTML card)
+        // Fields still missing after this reply (plain names, used in prompt and reply messages)
         const appRecord = updatedApp || activeApp;
         const remainingMissing: string[] = [];
         if (!appRecord.followUpCvReceived && !updatedCandidate?.cvUploadId) remainingMissing.push("CV Document");
@@ -318,6 +310,19 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
           const ans = appRecord.customFollowUpAnswers || {};
           if (!ans[q]) remainingMissing.push(q);
         }
+
+        // Strictly verify that ALL fields AND all custom questions are provided before declaring 100% complete
+        const isCompleted = (updatedApp?.currentStage === "second_shortlist") || (remainingMissing.length === 0);
+
+        let replyMessage: string | null = null;
+        let aiAnswer: string | null = null;
+
+        // Acknowledge the details that were successfully recorded in this reply
+        const recordedDetails: string[] = [];
+        if (typeof updates.currentSalary === "number") recordedDetails.push(`Current Salary: ${updates.currentSalary}`);
+        if (typeof updates.expectedSalary === "number") recordedDetails.push(`Expected Salary: ${updates.expectedSalary}`);
+        if (updates.noticePeriod) recordedDetails.push(`Notice Period: ${updates.noticePeriod}`);
+        else if (typeof updates.noticePeriodDays === "number") recordedDetails.push(`Notice Period: ${updates.noticePeriodDays} days`);
 
         const preludeText =
           isCompleted
@@ -344,7 +349,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
           aiAnswer = extracted.nextActionMessage || `This role is a ${wpType} position based in ${job.location || "Colombo, Sri Lanka"}.`;
           replyMessage = extracted.nextActionMessage || `This role is a ${wpType} position based in ${job.location || "Colombo, Sri Lanka"}.\n\nTo progress your application, please share:\n${remainingMissing.map(m => `• ${m}`).join("\n")}`;
         } else if (remainingMissing.length > 0) {
-          replyMessage = `Hi ${updatedCandidate?.fullName || "there"},\n\n${preludeText}\n\nWe are still waiting on the following to progress your application:\n\n${remainingMissing.map(m => `• ${m}`).join("\n")}\n\nPlease share these at your earliest convenience. Thank you!`;
+          replyMessage = extracted.nextActionMessage || `Hi ${updatedCandidate?.fullName?.split(" ")[0] || "there"},\n\n${preludeText}\n\nWe are still waiting on your ${remainingMissing.join(", ")} to progress your application. Please share these at your convenience. Thank you!`;
         }
 
         if (replyMessage) {
@@ -357,7 +362,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             applicationId: activeApp._id,
           });
 
-          if (extracted.intent !== "provided_eta" && extracted.intent !== "promised_eta") {
+          if (!isCompleted && extracted.intent !== "provided_eta" && extracted.intent !== "promised_eta") {
             await ctx.runMutation(internal.communications.followUpMutations.scheduleDynamicFollowUp, {
               applicationId: activeApp._id,
               nextActionTimeHours: hours,
@@ -412,13 +417,17 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
               body: replyMessage,
             });
 
-            await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
-              communicationId: commId,
-              candidateId: args.candidateId,
-              jobId: activeApp.jobId,
-              body: replyMessage,
-            });
-            console.log(`[Inbound Extraction] Dispatched immediate post-update WHATSAPP response to candidate ${args.candidateId}`);
+            if (commId) {
+              await ctx.scheduler.runAfter(0, internal.communications.whatsappOutbound.sendWhatsApp, {
+                communicationId: commId,
+                candidateId: args.candidateId,
+                jobId: activeApp.jobId,
+                body: replyMessage,
+              });
+              console.log(`[Inbound Extraction] Dispatched immediate post-update WHATSAPP response to candidate ${args.candidateId}`);
+            } else {
+              console.log(`[Inbound Extraction] Outbound WhatsApp message suppressed by deduplication for candidate ${args.candidateId}`);
+            }
           }
         }
       } else {

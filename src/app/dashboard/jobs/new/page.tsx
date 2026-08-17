@@ -142,6 +142,7 @@ export default function CreateJobWizard() {
     maxFollowUpDays: 3,
     maxFollowUpAttempts: 3,
     customFollowUpQuestions: [] as string[],
+    conversationTone: 'warm_friendly' as 'warm_friendly' | 'professional_formal' | 'casual_tech' | 'direct_concise',
     unresponsiveDays: '7',
     followUpSchedule: {
       day2: true, day2Channel: 'Email',
@@ -614,6 +615,7 @@ export default function CreateJobWizard() {
         maxFollowUpDays: formData.maxFollowUpDays,
         maxFollowUpAttempts: formData.maxFollowUpAttempts,
         customFollowUpQuestions: formData.customFollowUpQuestions,
+        conversationTone: formData.conversationTone,
         agent3TriggerStages: formData.agent3TriggerStages,
         agent3AfterDay7: "mark_unresponsive",
         
@@ -1581,182 +1583,219 @@ export default function CreateJobWizard() {
           </div>
 
           {formData.enableFollowUps && (
-            <div className="space-y-4 pt-4 border-t border-border animate-in fade-in">
-              <div className="bg-surface-container-low p-4 rounded-xl border border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="w-4 h-4 text-primary-container" />
-                  <span className="text-sm font-bold text-text-primary">AI-Driven Dynamic Follow-Up</span>
-                </div>
-                <p className="text-xs text-text-secondary mb-4">
-                  The AI will automatically handle up to {formData.maxFollowUpAttempts} follow-ups within {formData.maxFollowUpDays} days. It uses the initial template to start the conversation, and learns your tone from the sample template to draft contextual replies based on the candidate's answers.
-                </p>
-
-                <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-border">
-                  <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-lg shadow-2xs">
-                    <div>
-                      <p className="text-xs font-semibold text-text-primary">WhatsApp Follow-ups</p>
-                      <p className="text-[10px] text-text-secondary mt-0.5">Send automated outreach via WhatsApp Cloud API.</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input type="checkbox" className="sr-only peer" checked={formData.enableWhatsAppFollowUp} onChange={e => updateFormData('enableWhatsAppFollowUp', e.target.checked)} />
-                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
-                    </label>
+            <div className="space-y-6 pt-4 border-t border-border animate-in fade-in">
+              <div className="bg-surface-container-low p-5 rounded-xl border border-border space-y-6">
+                
+                {/* 1. Channels */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4 text-primary-container" />
+                    <span className="text-sm font-bold text-text-primary">1. Outreach Channels</span>
                   </div>
-
-                  <div className="flex items-center justify-between p-3 bg-surface border border-border rounded-lg shadow-2xs">
-                    <div>
-                      <p className="text-xs font-semibold text-text-primary">Email Follow-ups</p>
-                      <p className="text-[10px] text-text-secondary mt-0.5">Send automated outreach via Microsoft Graph email.</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input type="checkbox" className="sr-only peer" checked={formData.enableEmailFollowUp} onChange={e => updateFormData('enableEmailFollowUp', e.target.checked)} />
-                      <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Custom Follow-up Questions */}
-                <div className="mb-6 pt-4 border-t border-border">
-                  <div className="mb-2">
-                    <label className="text-xs font-semibold text-text-primary block">Custom Follow-Up Questions (Optional)</label>
-                    <p className="text-[10px] text-text-secondary">The AI will automatically ask these questions and extract the candidate's answers. They will be included in the {'{missing_fields}'} list.</p>
-                  </div>
-                  
-                  <div className="space-y-2 max-w-md">
-                    {formData.customFollowUpQuestions.map((q, idx) => (
-                      <div key={idx} className="flex items-center justify-between bg-surface-container-low border border-border rounded-lg p-2">
-                        <span className="text-xs text-text-primary">{q}</span>
-                        <button 
-                          onClick={() => updateFormData('customFollowUpQuestions', formData.customFollowUpQuestions.filter((_, i) => i !== idx))}
-                          className="text-text-secondary hover:text-red-500 transition-colors p-1"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between p-3.5 bg-surface border border-border rounded-xl shadow-2xs">
+                      <div>
+                        <p className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-[#1B5E20]"></span>
+                          WhatsApp Follow-ups
+                        </p>
+                        <p className="text-[11px] text-text-secondary mt-0.5">Initial reach-out via Meta Cloud API & dynamic AI chat.</p>
                       </div>
-                    ))}
-                    
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        id="new-custom-question"
-                        className="flex-1 bg-surface border border-border rounded-lg p-2 text-xs text-text-primary outline-none focus:border-primary-container"
-                        placeholder="e.g. Do you have a valid UAE driver's license?"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            const val = e.currentTarget.value.trim();
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" className="sr-only peer" checked={formData.enableWhatsAppFollowUp} onChange={e => updateFormData('enableWhatsAppFollowUp', e.target.checked)} />
+                        <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#1B5E20]"></div>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3.5 bg-surface border border-border rounded-xl shadow-2xs">
+                      <div>
+                        <p className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                          Email Follow-ups
+                        </p>
+                        <p className="text-[11px] text-text-secondary mt-0.5">Automated outreach via Microsoft Graph email.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" className="sr-only peer" checked={formData.enableEmailFollowUp} onChange={e => updateFormData('enableEmailFollowUp', e.target.checked)} />
+                        <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Required Details & Custom Questions */}
+                <div className="pt-4 border-t border-border">
+                  <div className="mb-3">
+                    <span className="text-sm font-bold text-text-primary block">2. Required Candidate Information & Custom Questions</span>
+                    <p className="text-xs text-text-secondary mt-0.5">The system checks for standard application details and any job-specific custom questions you add below.</p>
+                  </div>
+
+                  {/* Standard Missing Fields */}
+                  <div className="mb-4">
+                    <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-2">Standard Requirements (Always Checked)</p>
+                    <div className="flex flex-wrap gap-2">
+                      {['CV Document', 'Current Salary', 'Expected Salary', 'Notice Period'].map((req, i) => (
+                        <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-lg text-xs font-medium text-text-primary">
+                          <span className="material-symbols-outlined text-[14px] text-green-600">check_circle</span>
+                          {req}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Custom Questions */}
+                  <div>
+                    <label className="text-xs font-semibold text-text-primary block mb-1">Job-Specific Custom Questions (Optional)</label>
+                    <p className="text-[11px] text-text-secondary mb-2.5">Add extra questions specific to this role (e.g. Portfolio Link, Driver's License, GitHub URL). These are automatically added to the missing details list.</p>
+
+                    <div className="space-y-2 max-w-xl">
+                      {formData.customFollowUpQuestions.map((q, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-surface border border-border rounded-lg px-3 py-2 shadow-2xs">
+                          <span className="text-xs font-medium text-text-primary">{q}</span>
+                          <button 
+                            type="button"
+                            onClick={() => updateFormData('customFollowUpQuestions', formData.customFollowUpQuestions.filter((_, i) => i !== idx))}
+                            className="text-text-secondary hover:text-red-500 transition-colors p-1"
+                            title="Remove Question"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">delete</span>
+                          </button>
+                        </div>
+                      ))}
+
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          id="new-custom-question"
+                          className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-xs text-text-primary outline-none focus:border-primary-container"
+                          placeholder="e.g. Portfolio Link / Showreel (Google Drive, YouTube, Behance)"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = e.currentTarget.value.trim();
+                              if (val && !formData.customFollowUpQuestions.includes(val)) {
+                                updateFormData('customFollowUpQuestions', [...formData.customFollowUpQuestions, val]);
+                                e.currentTarget.value = '';
+                              }
+                            }
+                          }}
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const input = document.getElementById('new-custom-question') as HTMLInputElement;
+                            const val = input?.value.trim();
                             if (val && !formData.customFollowUpQuestions.includes(val)) {
                               updateFormData('customFollowUpQuestions', [...formData.customFollowUpQuestions, val]);
-                              e.currentTarget.value = '';
+                              input.value = '';
                             }
-                          }
-                        }}
-                      />
-                      <button 
-                        onClick={() => {
-                          const input = document.getElementById('new-custom-question') as HTMLInputElement;
-                          const val = input.value.trim();
-                          if (val && !formData.customFollowUpQuestions.includes(val)) {
-                            updateFormData('customFollowUpQuestions', [...formData.customFollowUpQuestions, val]);
-                            input.value = '';
-                          }
-                        }}
-                        className="bg-surface-container border border-border hover:bg-surface-container-highest px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <div className="flex justify-between items-end mb-1">
-                      <div>
-                        <label className="text-xs font-semibold text-text-primary block flex items-center gap-2">
-                          Initial Outreach Template
-                          <div className="group relative">
-                            <span className="material-symbols-outlined text-[14px] text-text-secondary cursor-help">info</span>
-                            <div className="absolute left-0 bottom-full mb-2 w-64 p-2 bg-surface-container shadow-lg border border-border rounded-lg text-[10px] text-text-primary opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                              <span className="font-bold">Note:</span> {'{missing_fields}'} will automatically list 'CV', 'Current Salary', 'Expected Salary', 'Notice Period' and any Custom Questions below if the candidate has not provided them yet.
-                            </div>
-                          </div>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <p className="text-[10px] text-text-secondary">Sent immediately when candidate enters follow-up.</p>
-                        </div>
+                          }}
+                          className="bg-primary text-on-primary hover:bg-primary/90 px-4 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 flex items-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">add</span>
+                          Add Question
+                        </button>
                       </div>
-                      <select 
-                        className="text-[10px] bg-surface-container border border-border rounded px-2 py-1 outline-none cursor-pointer max-w-[150px] truncate"
-                        value=""
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === 'manage') {
-                            setIsTemplateModalOpen(true);
-                          } else {
-                            const t = templates?.find(temp => temp._id === val);
-                            if (t) updateFormData('followUpInitialTemplate', t.content);
-                          }
-                        }}
-                      >
-                        <option value="" disabled>Load Template...</option>
-                        {templates?.filter(t => t.type === 'initial_outreach').map(t => (
-                          <option key={t._id} value={t._id}>{t.name}</option>
-                        ))}
-                        <option disabled>──────────</option>
-                        <option value="manage">+ Manage Templates</option>
-                      </select>
                     </div>
-                    <SmartTemplateEditor 
-                      value={formData.followUpInitialTemplate}
-                      onChange={(val) => updateFormData('followUpInitialTemplate', val)}
-                      requiredVariables={['{missing_fields}']}
-                      rows={8}
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between items-end mb-1">
-                      <div>
-                        <label className="text-xs font-semibold text-text-primary block">Sample Follow-Up Template</label>
-                        <div className="flex items-center gap-2">
-                          <p className="text-[10px] text-text-secondary">The AI learns your tone from this.</p>
-                        </div>
-                      </div>
-                      <select 
-                        className="text-[10px] bg-surface-container border border-border rounded px-2 py-1 outline-none cursor-pointer max-w-[150px] truncate"
-                        value=""
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === 'manage') {
-                            setIsTemplateModalOpen(true);
-                          } else {
-                            const t = templates?.find(temp => temp._id === val);
-                            if (t) updateFormData('followUpSampleTemplate', t.content);
-                          }
-                        }}
-                      >
-                        <option value="" disabled>Load Template...</option>
-                        {templates?.filter(t => t.type === 'sample_follow_up').map(t => (
-                          <option key={t._id} value={t._id}>{t.name}</option>
-                        ))}
-                        <option disabled>──────────</option>
-                        <option value="manage">+ Manage Templates</option>
-                      </select>
-                    </div>
-                    <SmartTemplateEditor 
-                      value={formData.followUpSampleTemplate}
-                      onChange={(val) => updateFormData('followUpSampleTemplate', val)}
-                      rows={8}
-                    />
                   </div>
                 </div>
 
-                {/* Custom Email Follow-Up Template Section */}
-                <div className="border border-border rounded-lg p-4 bg-surface-container/50 space-y-4">
-                  <div className="flex items-center justify-between">
+                {/* 3. AI Conversation Tone */}
+                <div className="pt-4 border-t border-border">
+                  <div className="mb-3">
+                    <span className="text-sm font-bold text-text-primary block">3. AI Conversation Tone (Active WhatsApp Chat)</span>
+                    <p className="text-xs text-text-secondary mt-0.5">Select how the AI engages with the candidate once they reply on WhatsApp.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
+                    {[
+                      {
+                        id: 'warm_friendly',
+                        label: '🌟 Warm & Friendly',
+                        desc: 'Encouraging, conversational, uses friendly phrasing and emojis. Great for creative, sales, and general hiring.',
+                      },
+                      {
+                        id: 'professional_formal',
+                        label: '👔 Professional & Formal',
+                        desc: 'Polite, clear, structured, corporate, and precise. Ideal for executive, finance, and legal roles.',
+                      },
+                      {
+                        id: 'casual_tech',
+                        label: '💻 Casual & Tech-Savvy',
+                        desc: 'Direct, peer-to-peer, technical, concise. Ideal for developers and engineering roles.',
+                      },
+                      {
+                        id: 'direct_concise',
+                        label: '⚡ Direct & Concise',
+                        desc: 'Short, prompt, to-the-point with minimal extra words.',
+                      },
+                    ].map((tone) => {
+                      const isSelected = (formData.conversationTone || 'warm_friendly') === tone.id;
+                      return (
+                        <div
+                          key={tone.id}
+                          onClick={() => updateFormData('conversationTone', tone.id)}
+                          className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-primary-container bg-primary-container/10 ring-1 ring-primary-container'
+                              : 'border-border bg-surface hover:border-text-secondary/40'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-text-primary">{tone.label}</span>
+                            {isSelected && (
+                              <span className="material-symbols-outlined text-[16px] text-primary-container">check_circle</span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">{tone.desc}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. WhatsApp Initial Outreach Preview (Meta Business Approved) */}
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center justify-between mb-2">
                     <div>
-                      <h4 className="text-xs font-semibold text-text-primary">Enable Custom Email Follow-Up Template</h4>
-                      <p className="text-[11px] text-text-secondary">Customize the subject line and body template for automated follow-up emails sent for this job.</p>
+                      <span className="text-sm font-bold text-text-primary block">4. WhatsApp Initial Outreach Preview</span>
+                      <p className="text-xs text-text-secondary mt-0.5">This initial outreach is sent using the verified Meta Business Template.</p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-500/10 text-[#1B5E20] border border-green-500/20 rounded-full text-[10px] font-semibold">
+                      <span className="material-symbols-outlined text-[12px]">verified</span>
+                      Meta Approved
+                    </span>
+                  </div>
+
+                  <div className="bg-[#EFEAE2] dark:bg-[#111B21] p-4 rounded-xl border border-border max-w-xl shadow-inner">
+                    <div className="bg-surface p-3.5 rounded-lg shadow-sm border border-border/50 text-xs text-text-primary space-y-2">
+                      <p>Hi <span className="font-semibold text-primary-container">&#123;Candidate Name&#125;</span>,</p>
+                      <p>Thank you for your interest in the <span className="font-bold">*{formData.jobTitle || 'Job Title'}*</span> role.</p>
+                      <p className="text-[11px] text-text-secondary">
+                        Key Skills: {Array.isArray(formData.requiredSkills) ? formData.requiredSkills.slice(0, 4).join(', ') : (formData.requiredSkills || 'Required Skills')}
+                      </p>
+                      <p>To complete your application, we still require the following information:</p>
+                      <div className="p-2 bg-surface-container-low rounded border border-border/80 text-[11px] text-text-primary font-medium">
+                        • Current Salary | • Expected Salary | • Notice Period
+                        {formData.customFollowUpQuestions.length > 0 && (
+                          <span> | • {formData.customFollowUpQuestions.join(' | • ')}</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-text-secondary">Please reply directly to this chat with the requested details. Once we receive them, we'll continue with the next step of the recruitment process. Thank you!</p>
+                    </div>
+                    <p className="text-[10px] text-text-secondary mt-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px]">info</span>
+                      The missing details variable automatically updates per candidate and includes your custom questions above.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 5. Custom Email Follow-Up Template */}
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <span className="text-sm font-bold text-text-primary block">5. Email Outreach Template (Customizable)</span>
+                      <p className="text-xs text-text-secondary mt-0.5">Customize the email subject line and body sent to candidates.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input 
@@ -1770,12 +1809,12 @@ export default function CreateJobWizard() {
                   </div>
 
                   {formData.enableEmailFollowUpTemplate && (
-                    <div className="space-y-4 pt-2 border-t border-border/50">
+                    <div className="space-y-4 pt-2 animate-in fade-in max-w-2xl">
                       <div>
                         <label className="text-xs font-semibold text-text-primary block mb-1">Email Subject Line Template</label>
                         <input
                           type="text"
-                          className="w-full text-sm h-9 border border-border rounded-md px-3 bg-surface text-text-primary focus:outline-none focus:border-primary-container"
+                          className="w-full text-xs h-9 border border-border rounded-lg px-3 bg-surface text-text-primary focus:outline-none focus:border-primary-container"
                           value={formData.followUpEmailSubjectTemplate}
                           onChange={(e) => updateFormData('followUpEmailSubjectTemplate', e.target.value)}
                           placeholder="Action Required: Missing info for your {job_title} application"
@@ -1787,7 +1826,7 @@ export default function CreateJobWizard() {
                         <label className="text-xs font-semibold text-text-primary block mb-1">Email Body Template</label>
                         <textarea
                           rows={6}
-                          className="w-full text-sm border border-border rounded-md p-3 bg-surface text-text-primary focus:outline-none focus:border-primary-container font-mono"
+                          className="w-full text-xs border border-border rounded-lg p-3 bg-surface text-text-primary focus:outline-none focus:border-primary-container font-mono"
                           value={formData.followUpEmailBodyTemplate}
                           onChange={(e) => updateFormData('followUpEmailBodyTemplate', e.target.value)}
                           placeholder={`Hi {candidate_name},\n\nThank you for applying for the {job_title} role at {company_name}.\n\nTo progress your application, please provide the following details:\n{missing_fields}\n\nPlease reply at your earliest convenience.\n\nBest regards,\nTalent Acquisition Team`}
@@ -1798,13 +1837,14 @@ export default function CreateJobWizard() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 max-w-sm">
+                {/* 6. Limits */}
+                <div className="pt-4 border-t border-border grid grid-cols-2 gap-4 max-w-sm">
                   <div>
-                    <label className="text-xs font-semibold text-text-primary mb-1 block">Max Attempts</label>
+                    <label className="text-xs font-semibold text-text-primary mb-1 block">Max Follow-up Attempts</label>
                     <input 
                       type="number" 
                       min="1" max="5"
-                      className="w-full text-sm h-8 border border-border rounded-md px-2 bg-surface text-text-primary"
+                      className="w-full text-xs h-8 border border-border rounded-lg px-2 bg-surface text-text-primary"
                       value={formData.maxFollowUpAttempts}
                       onChange={(e) => updateFormData('maxFollowUpAttempts', parseInt(e.target.value) || 3)}
                     />
@@ -1814,7 +1854,7 @@ export default function CreateJobWizard() {
                     <input 
                       type="number" 
                       min="1" max="14"
-                      className="w-full text-sm h-8 border border-border rounded-md px-2 bg-surface text-text-primary"
+                      className="w-full text-xs h-8 border border-border rounded-lg px-2 bg-surface text-text-primary"
                       value={formData.maxFollowUpDays}
                       onChange={(e) => updateFormData('maxFollowUpDays', parseInt(e.target.value) || 3)}
                     />

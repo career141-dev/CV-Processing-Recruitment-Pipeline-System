@@ -710,6 +710,7 @@ export const runFullQaSuite = action({
     jobLifecycleAndRoutingTest: string;
     whatsappRoutingTest: string;
     chatbotStateAndClassificationTest: string;
+    chatbotFollowUpAndToneSuite: string;
   }> => {
     console.log("=========================================");
     console.log("   RUNNING CAREER141 LOCAL QA TEST SUITE   ");
@@ -732,6 +733,9 @@ export const runFullQaSuite = action({
     // Test Chatbot state machine & classification
     const chatbotResult = await ctx.runMutation(api.admin.qaTests.runChatbotStateAndClassificationTest);
 
+    // Test Chatbot Follow-up, Role Isolation & Tone Engine
+    const chatbotFollowUpToneResult = await ctx.runMutation(api.admin.qaTests.runChatbotFollowUpAndToneSuite);
+
     console.log("=========================================");
     console.log("   ALL QA TESTS COMPLETED SUCCESSFULLY!  ");
     console.log("=========================================");
@@ -741,6 +745,7 @@ export const runFullQaSuite = action({
       jobLifecycleAndRoutingTest: lifecycleResult.success ? "PASSED" : "FAILED",
       whatsappRoutingTest: waRoutingResult.success ? "PASSED" : "FAILED",
       chatbotStateAndClassificationTest: chatbotResult.success ? "PASSED" : "FAILED",
+      chatbotFollowUpAndToneSuite: chatbotFollowUpToneResult.success ? "PASSED" : "FAILED",
     };
   },
 });
@@ -1473,12 +1478,216 @@ export const enableVideoEditorWhatsApp = mutation({
   },
 });
 
+export const runChatbotFollowUpAndToneSuite = mutation({
+  args: {},
+  handler: async (ctx) => {
+    console.log("=================================================");
+    console.log("   RUNNING CHATBOT, FOLLOW-UP & TONE QA SUITE    ");
+    console.log("=================================================");
 
+    const user = await ctx.db.query("users").filter((q) => q.eq(q.field("role"), "admin")).first();
+    const adminUserId = user?._id || (await ctx.db.insert("users", {
+      fullName: "QA Admin Tester",
+      email: "qa.tester@career141.local",
+      role: "admin",
+      isActive: true,
+      isOnboarded: true,
+      tokenIdentifier: "qa-test-token",
+      createdAt: new Date().toISOString(),
+    } as any));
 
+    // ── Test Case 1: Role Keyword Isolation & Anti-Hijacking ─────────────────
+    const { matchJobFromText } = await import("../communications/whatchimp");
+    const mockJobs = [
+      { _id: "job_graphic" as any, title: "Graphic Designer", keyword: "GRAPH", status: "active" },
+      { _id: "job_techlead" as any, title: "Tech Lead – Backend", keyword: "TECHL", status: "active" },
+      { _id: "job_video" as any, title: "Video Editor", keyword: "VIDEO", status: "active" },
+    ];
 
+    // Exact matches
+    const exactMatch = matchJobFromText(mockJobs, "GRAPH");
+    assert(exactMatch.matchedJob?.title === "Graphic Designer", "Failed exact keyword match for Graphic Designer");
+    console.log("[PASS] TC1.1: Exact keyword 'GRAPH' correctly matched Graphic Designer");
 
+    const explicitApply = matchJobFromText(mockJobs, "APPLY TECHL");
+    assert(explicitApply.matchedJob?.title === "Tech Lead – Backend", "Failed explicit apply match for Tech Lead");
+    console.log("[PASS] TC1.2: Explicit 'APPLY TECHL' correctly matched Tech Lead – Backend");
 
+    // Anti-Hijacking checks: Conversational, typos, salary, notice, questions MUST NOT match
+    const typoSalary = matchJobFromText(mockJobs, "Expect salery will be 150000-175000");
+    assert(typoSalary.matchedJob === null, `Typo salary hijacked to ${typoSalary.matchedJob?.title}`);
+    console.log("[PASS] TC1.3: Salary with typo 'Expect salery will be 150000-175000' correctly rejected keyword match");
 
+    const noticeReply = matchJobFromText(mockJobs, "Notice period - one week");
+    assert(noticeReply.matchedJob === null, "Notice period reply falsely matched a job");
+    console.log("[PASS] TC1.4: 'Notice period - one week' correctly rejected keyword match");
 
+    const currentSal = matchJobFromText(mockJobs, "Current salary - 120000lkr");
+    assert(currentSal.matchedJob === null, "Current salary reply falsely matched a job");
+    console.log("[PASS] TC1.5: 'Current salary - 120000lkr' correctly rejected keyword match");
 
+    const candQuestion = matchJobFromText(mockJobs, "Could you please provide me with more details about the requirements and what is expected from my side?");
+    assert(candQuestion.matchedJob === null, "Candidate question falsely matched a job");
+    console.log("[PASS] TC1.6: Candidate question correctly rejected keyword match");
 
+    // ── Test Case 2: Custom Questions Completion & Stage Advancement ─────────
+    const testCandidateId = await ctx.db.insert("candidates", {
+      fullName: "QA Candidate Portfolio Test",
+      email: `qa.portfolio.${Date.now()}@example.com`,
+      phone: "+94771234999",
+      phoneClean: "94771234999",
+      overallStatus: "follow_up",
+      firstSeenAt: Date.now(),
+      currentSalary: 120000,
+      expectedSalary: 150000,
+      noticePeriodDays: 7,
+      cvUploadId: "mock_cv_upload" as any,
+    } as any);
+
+    const testJobWithCustomQId = await ctx.db.insert("jobs", {
+      title: "QA Graphic Designer Custom Q",
+      keyword: `QA_GD_${Date.now().toString().slice(-4)}`,
+      clientName: "QA Studio",
+      clientIndustry: "Creative",
+      recruitmentType: "both",
+      jobDescription: "Graphic design role requiring portfolio.",
+      requiredSkills: ["Photoshop", "Illustrator"],
+      customFollowUpQuestions: ["Portfolio Link / Work Samples (Behance, Dribbble)"],
+      conversationTone: "warm_friendly",
+      status: "active",
+      primaryRecruiterId: adminUserId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any);
+
+    const testAppId = await ctx.db.insert("applications", {
+      candidateId: testCandidateId,
+      jobId: testJobWithCustomQId,
+      currentStage: "follow_up",
+      isActive: true,
+      followUpCvReceived: true,
+      followUpCurrentSalary: true,
+      followUpExpectedSalary: true,
+      followUpNoticePeriod: true,
+      customFollowUpAnswers: {}, // Empty portfolio answer!
+      lastStageChangedAt: Date.now(),
+    } as any);
+
+    // Run checkAndAdvanceFollowUp — must NOT advance because Portfolio Link is empty
+    await checkAndAdvanceFollowUp(ctx, testCandidateId);
+    const appAfterCheck1 = await ctx.db.get(testAppId);
+    assert(appAfterCheck1?.currentStage === "follow_up", `Application premature advance to ${appAfterCheck1?.currentStage} without Portfolio Link!`);
+    console.log("[PASS] TC2.1: Application strictly remained in 'follow_up' because Portfolio Link was not provided");
+
+    // Now supply the custom answer
+    await ctx.db.patch(testAppId, {
+      customFollowUpAnswers: {
+        "Portfolio Link / Work Samples (Behance, Dribbble)": "https://behance.net/qatester",
+      },
+    });
+
+    // Run checkAndAdvanceFollowUp again — must advance to second_shortlist
+    await checkAndAdvanceFollowUp(ctx, testCandidateId);
+    const appAfterCheck2 = await ctx.db.get(testAppId);
+    assert(appAfterCheck2?.currentStage === "second_shortlist", `Application failed to advance to second_shortlist, got ${appAfterCheck2?.currentStage}`);
+    console.log("[PASS] TC2.2: Application successfully auto-advanced to 'second_shortlist' after Portfolio Link was provided");
+
+    // ── Test Case 3: Outbound Deduplication Lock ─────────────────────────────
+    const { recordLocalWhatsappOutbound } = await import("../communications/whatsappOutbound");
+    
+    // First outbound call -> Should succeed and return communication ID
+    const commId1 = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+      candidateId: testCandidateId,
+      applicationId: testAppId,
+      jobId: testJobWithCustomQId,
+      body: "Hi QA Candidate, thank you for your application.",
+    });
+    assert(commId1 !== null, "Initial outbound record failed to return commId");
+    console.log(`[PASS] TC3.1: Initial outbound message recorded with ID: ${commId1}`);
+
+    // Immediate duplicate call -> Must return null to suppress duplicate send
+    const commId2 = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+      candidateId: testCandidateId,
+      applicationId: testAppId,
+      jobId: testJobWithCustomQId,
+      body: "Hi QA Candidate, thank you for your application.",
+    });
+    assert(commId2 === null, `Duplicate outbound was NOT suppressed! Returned ${commId2}`);
+    console.log("[PASS] TC3.2: Duplicate identical outbound message within 30s was cleanly suppressed (returned null)");
+
+    // Different body -> Should succeed and return new communication ID
+    const commId3 = await ctx.runMutation(internal.communications.whatsappOutbound.recordLocalWhatsappOutbound, {
+      candidateId: testCandidateId,
+      applicationId: testAppId,
+      jobId: testJobWithCustomQId,
+      body: "Different outbound follow-up message.",
+    });
+    assert(commId3 !== null && commId3 !== commId1, "Non-duplicate message failed to record");
+    console.log(`[PASS] TC3.3: Distinct outbound message recorded with ID: ${commId3}`);
+
+    // ── Test Case 4: Phone Number Normalization ──────────────────────────────
+    const { findCandidateByPhone } = await import("../communications/whatsappOutbound");
+    const testPhoneNormCandId = await ctx.db.insert("candidates", {
+      fullName: "QA Candidate Phone Normalization",
+      email: `qa.phone.${Date.now()}@example.com`,
+      phone: "+94771644942",
+      phoneClean: "94771644942",
+      overallStatus: "new_cvs",
+      firstSeenAt: Date.now(),
+    } as any);
+
+    const matchIntl = await findCandidateByPhone(ctx, "+94771644942");
+    assert(matchIntl?._id === testPhoneNormCandId, "Failed to resolve candidate by +94 format");
+
+    const matchClean = await findCandidateByPhone(ctx, "94771644942");
+    assert(matchClean?._id === testPhoneNormCandId, "Failed to resolve candidate by 94 clean digits format");
+
+    const matchLocal = await findCandidateByPhone(ctx, "0771644942");
+    assert(matchLocal?._id === testPhoneNormCandId, "Failed to resolve candidate by 077 local format");
+    console.log("[PASS] TC4.1: Candidate successfully resolved across +94, clean 94, and local 077 phone formats");
+
+    // ── Test Case 5: AI Conversation Tone Engine Validation ──────────────────
+    const toneJobId = await ctx.db.insert("jobs", {
+      title: "QA Tone Test Job",
+      keyword: `TONE_${Date.now().toString().slice(-4)}`,
+      clientName: "QA Tone Corp",
+      clientIndustry: "Technology",
+      recruitmentType: "both",
+      jobDescription: "Tone testing job",
+      requiredSkills: ["AI"],
+      conversationTone: "casual_tech",
+      status: "active",
+      primaryRecruiterId: adminUserId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any);
+
+    const savedToneJob = await ctx.db.get(toneJobId);
+    assert(savedToneJob?.conversationTone === "casual_tech", `Failed to persist conversationTone, got ${savedToneJob?.conversationTone}`);
+    console.log("[PASS] TC5.1: conversationTone ('casual_tech') persisted and retrieved from jobs table");
+
+    // ── Cleanup ─────────────────────────────────────────────────────────────
+    await ctx.db.delete(testCandidateId);
+    await ctx.db.delete(testJobWithCustomQId);
+    await ctx.db.delete(testAppId);
+    await ctx.db.delete(testPhoneNormCandId);
+    await ctx.db.delete(toneJobId);
+    if (commId1) await ctx.db.delete(commId1);
+    if (commId3) await ctx.db.delete(commId3);
+
+    console.log("=================================================");
+    console.log("   ALL QA CHATBOT & FOLLOW-UP TESTS PASSED!      ");
+    console.log("=================================================");
+
+    return {
+      success: true,
+      testsPassed: [
+        "TC1: Role Keyword Isolation & Anti-Hijacking (6/6 checks)",
+        "TC2: Custom Questions Completion & Stage Advancement (2/2 checks)",
+        "TC3: Outbound Deduplication Lock (3/3 checks)",
+        "TC4: Phone Number Normalization Across Formats (3/3 checks)",
+        "TC5: AI Conversation Tone Persistence (1/1 check)",
+      ],
+    };
+  },
+});

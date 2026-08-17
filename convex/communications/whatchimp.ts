@@ -4,9 +4,11 @@ import { v } from "convex/values";
 import { getOpenAI, getModelForTask } from "../lib/llm";
 import { sendMetaFreeText } from "./metaDirectSender";
 import { classifyMessage } from "./messageClassifier";
+import { findCandidateByPhone } from "./whatsappOutbound";
 
 export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: any | null; matchedKeyword: string; isAmbiguous: boolean } {
-  const upperText = textBody.trim().toUpperCase();
+  const trimmed = textBody.trim();
+  const upperText = trimmed.toUpperCase();
   const strippedUpper = upperText
     .replace(/^(HI|HELLO|HEY)[!.,]?\s+/i, "")
     .replace(/^I('D| WOULD)? LIKE TO APPLY (FOR|TO)\s+/i, "")
@@ -15,6 +17,16 @@ export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: a
     .trim();
 
   if (!strippedUpper) return { matchedJob: null, matchedKeyword: "", isAmbiguous: false };
+
+  // Guard against detail replies, numbers, conversational questions, or multi-line messages
+  const isConversationalOrDetail =
+    trimmed.length > 50 ||
+    trimmed.includes("\n") ||
+    /\d{3,}/.test(trimmed) || // contains numbers like 120000, 150000, etc.
+    /\b(salary|salery|expected|expect|notice|period|portfolio|skills|showreel|drive|link|resume|cv|month|week|lkr|usd|k)\b/i.test(trimmed) ||
+    trimmed.includes("?");
+
+  const isExplicitApply = /^(APPLY\s+|JOB CODE\s*:\s*|I('D| WOULD)? LIKE TO APPLY)/i.test(trimmed);
 
   interface CandidateMatch {
     job: any;
@@ -33,9 +45,10 @@ export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: a
     if (kUpper.length >= 2) {
       if (strippedUpper === kUpper) {
         matches.push({ job, matchedKeyword: job.keyword, matchType: "exact", matchedLength: kUpper.length });
-      } else if (upperText.startsWith(kUpper) || strippedUpper.startsWith(kUpper)) {
+      } else if (isExplicitApply && (upperText.startsWith(kUpper) || strippedUpper.startsWith(kUpper))) {
         matches.push({ job, matchedKeyword: job.keyword, matchType: "prefix", matchedLength: kUpper.length });
-      } else if (upperText.includes(kUpper)) {
+      } else if (!isConversationalOrDetail && kUpper.length >= 4 && new RegExp(`\\b${kUpper}\\b`, "i").test(strippedUpper)) {
+        // Whole word match only for 4+ char keywords when not conversational/detail
         matches.push({ job, matchedKeyword: job.keyword, matchType: "substring", matchedLength: kUpper.length });
       }
     }
@@ -44,9 +57,10 @@ export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: a
     if (tUpper.length >= 3) {
       if (strippedUpper === tUpper) {
         matches.push({ job, matchedKeyword: job.title, matchType: "exact", matchedLength: tUpper.length });
-      } else if (upperText.startsWith(tUpper) || strippedUpper.startsWith(tUpper)) {
+      } else if (isExplicitApply && (upperText.startsWith(tUpper) || strippedUpper.startsWith(tUpper))) {
         matches.push({ job, matchedKeyword: job.title, matchType: "prefix", matchedLength: tUpper.length });
-      } else if (upperText.includes(tUpper)) {
+      } else if (!isConversationalOrDetail && tUpper.length >= 5 && new RegExp(`\\b${tUpper.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "i").test(strippedUpper)) {
+        // Whole title word match
         matches.push({ job, matchedKeyword: job.title, matchType: "substring", matchedLength: tUpper.length });
       }
     }
@@ -64,24 +78,6 @@ export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: a
   });
 
   const bestMatch = matches[0];
-
-  if (matches.length > 1) {
-    const secondMatch = matches[1];
-    const sameTitleOrKeyword =
-      bestMatch.job.title.toLowerCase() === secondMatch.job.title.toLowerCase() ||
-      (bestMatch.job.keyword && secondMatch.job.keyword && bestMatch.job.keyword.toLowerCase() === secondMatch.job.keyword.toLowerCase());
-
-    if (
-      !sameTitleOrKeyword &&
-      secondMatch.job._id !== bestMatch.job._id &&
-      matchTypeScore[secondMatch.matchType] === matchTypeScore[bestMatch.matchType] &&
-      secondMatch.matchedLength === bestMatch.matchedLength
-    ) {
-      console.warn(`[Job Matching] Ambiguous match detected for text "${textBody}": Job A="${bestMatch.job.title}" vs Job B="${secondMatch.job.title}". Flagging as ambiguous.`);
-      return { matchedJob: null, matchedKeyword: "", isAmbiguous: true };
-    }
-  }
-
   return { matchedJob: bestMatch.job, matchedKeyword: bestMatch.matchedKeyword, isAmbiguous: false };
 }
 
@@ -161,9 +157,20 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         const cleanSender = cleanFromNumber;
         console.log(`[WhatChimp Webhook] Meta text message from +${cleanSender}: "${String(textBody).substring(0, 200)}" (type=${message.type}, has text.body=${!!message.text?.body})`);
 
+        // 1. Check if sender has active application first (follow-up reply / missing details)
+        const checkResult = await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
+          senderPhone: cleanSender,
+          textBody,
+        });
+
+        if (checkResult?.isFollowUpReply) {
+          console.log(`[WhatChimp Webhook] Recorded follow-up reply from candidate +${cleanSender}`);
+          continue;
+        }
+
+        // 2. Check for Keyword / Title Match
         const activeJobs = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo);
         const { matchedJob, matchedKeyword } = matchJobFromText(activeJobs, textBody);
-
 
         let isKeyword = false;
         if (matchedJob && matchedJob.status === "active") {
@@ -199,21 +206,14 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
         }
 
         if (!isKeyword) {
-          const checkResult = await ctx.runMutation(internal.communications.whatsappOutbound.checkAndRecordFollowUpReply, {
-            senderPhone: cleanSender,
-            textBody,
-          });
-
-          if (!checkResult?.isFollowUpReply) {
-             const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, { phone: cleanSender });
-             if (session) {
-                console.log(`[WhatChimp Webhook] Pre-application chat detected for +${cleanSender}. Dispatching LLM handler.`);
-                await ctx.scheduler.runAfter(0, internal.communications.whatchimp.handlePreApplicationChat, {
-                  phone: cleanSender,
-                  textBody,
-                  jobId: session.jobId,
-                });
-             }
+          const session = await ctx.runQuery(api.communications.whatchimp.getSessionByPhone, { phone: cleanSender });
+          if (session) {
+            console.log(`[WhatChimp Webhook] Pre-application chat detected for +${cleanSender}. Dispatching LLM handler.`);
+            await ctx.scheduler.runAfter(0, internal.communications.whatchimp.handlePreApplicationChat, {
+              phone: cleanSender,
+              textBody,
+              jobId: session.jobId,
+            });
           }
         }
       }
@@ -341,13 +341,20 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       return new Response("OK", { status: 200 });
     }
 
+    if (evalResult.action === "follow_up_handled") {
+      console.log(`[WhatChimp Webhook] Follow-up reply processed for candidate +${cleanFrom}`);
+      return new Response("OK", { status: 200 });
+    }
+
     if (evalResult.action === "send_job_prompt") {
-      console.log(`[WhatChimp Webhook] No keyword and no session for +${cleanFrom}. Sending job prompt.`);
+      console.log(`[WhatChimp Webhook] No keyword and no session for +${cleanFrom}. Sending context-aware prompt.`);
       const fetchedPhoneId = await ctx.runQuery(internal.communications.whatsappOutbound.getMetaPhoneNumberId, { 
         targetWhatsAppNumber: cleanTo 
       });
       const phoneNumberId = fetchedPhoneId || process.env.META_PHONE_NUMBER_ID || "965783109962872";
-      const replyMessage = `Hello! Thank you for reaching out to Career141.\n\nWhich position are you interested in applying for? Please reply with the job title or keyword (e.g., Graphic Designer, Video Editor) or upload your CV as a PDF to apply!`;
+      const replyMessage = evalResult.hasCv
+        ? `Hello! Thank you for reaching out to Career141.\n\nWe have your CV on file. Could you please let us know how we can assist you with your application?`
+        : `Hello! Thank you for reaching out to Career141.\n\nWhich position are you interested in applying for? Please reply with the job title or keyword (e.g., Graphic Designer, Video Editor) or upload your CV as a PDF to apply!`;
       const metaAccessToken = process.env.META_ACCESS_TOKEN || "";
       await sendMetaFreeText(phoneNumberId, cleanFrom, replyMessage, metaAccessToken)
         .then(r => { if (!r.success) console.error("[WhatsApp Webhook] Job prompt reply failed:", r.error); })
@@ -378,30 +385,8 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     }
 
     // Non-CV media (image, sticker, audio, video) — ignore silently
-    // We only process document files. Other media types are not CVs.
     console.log(`[WhatChimp Webhook] Ignoring non-CV media (${classification.type}): ${fileName}`);
     return new Response("OK", { status: 200 });
-  }
-
-  // ── Text message containing a URL (portfolio / YouTube / Drive) ──────────
-  if (text && !mediaUrl) {
-    const urlClassification = classifyMessage(text, undefined, undefined, undefined);
-    if (urlClassification.type === "portfolio_url" || urlClassification.type === "youtube_url" || urlClassification.type === "drive_url") {
-      const detectedUrl = urlClassification.detectedUrl!;
-      const label = urlClassification.type === "youtube_url" ? "video/work sample"
-        : urlClassification.type === "drive_url" ? "file link"
-        : "portfolio";
-      console.log(`[WhatChimp Webhook] ${label} URL detected from +${cleanFrom}: ${detectedUrl}`);
-      // Store in session and send targeted reply (handled by handlePreApplicationChat with context)
-      await ctx.scheduler.runAfter(0, internal.communications.whatchimp.handlePreApplicationChat, {
-        phone: cleanFrom,
-        textBody: text,
-        jobId: null as any,  // resolved inside handlePreApplicationChat from session
-        urlType: urlClassification.type,
-        detectedUrl,
-      });
-      return new Response("OK", { status: 200 });
-    }
   }
 
   return new Response("OK", { status: 200 });
@@ -416,102 +401,17 @@ export const processInboundTextWebhook = internalMutation({
   handler: async (ctx, args) => {
     const { cleanFrom, cleanTo, text } = args;
 
-    // 1. Fetch active & paused jobs directly from DB
-    const activeJobs = await ctx.db
-      .query("jobs")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
-      .collect();
-    const pausedJobs = await ctx.db
-      .query("jobs")
-      .withIndex("by_status", (q) => q.eq("status", "on_hold"))
-      .collect();
-    const allJobs = [...activeJobs, ...pausedJobs];
-
-    // 2. Check for Keyword / Title Match
-    const { matchedJob, matchedKeyword } = matchJobFromText(allJobs, text);
-
-    if (matchedJob) {
-      const existingSession = await ctx.db
-        .query("whatsappSessions")
-        .withIndex("by_phone", (q) => q.eq("phone", cleanFrom))
-        .first();
-
-      if (existingSession) {
-        await ctx.db.patch(existingSession._id, {
-          jobId: matchedJob._id,
-          keyword: matchedKeyword,
-          lastInteractionAt: Date.now(),
-        });
-      } else {
-        await ctx.db.insert("whatsappSessions", {
-          phone: cleanFrom,
-          jobId: matchedJob._id,
-          keyword: matchedKeyword,
-          lastInteractionAt: Date.now(),
-        });
-      }
-
-      // Check if candidate uploaded a CV without a job (e.g., CV sent first, keyword sent second)
-      const candidateByPhone = await ctx.db
-        .query("candidates")
-        .withIndex("by_phoneClean", (q) => q.eq("phoneClean", cleanFrom))
-        .first() || await ctx.db
-        .query("candidates")
-        .withIndex("by_phone", (q) => q.eq("phone", "+" + cleanFrom))
-        .first();
-
-      if (candidateByPhone) {
-        const apps = await ctx.db
-          .query("applications")
-          .withIndex("by_candidateId", (q) => q.eq("candidateId", candidateByPhone._id))
-          .collect();
-
-        const alreadyInJob = apps.some((a) => a.jobId === matchedJob._id);
-        if (!alreadyInJob) {
-          const now = Date.now();
-          await ctx.db.insert("applications", {
-            candidateId: candidateByPhone._id,
-            jobId: matchedJob._id,
-            currentStage: "new_cvs",
-            sourceChannel: "whatsapp",
-            createdAt: now,
-            isActive: true,
-            lastStageChangedAt: now,
-            loopIteration: 0,
-            stageHistory: [{
-              stage: "new_cvs",
-              enteredAt: new Date(now).toISOString(),
-              changedBy: "system",
-            }],
-          });
-          console.log(`[processInboundTextWebhook] Auto-linked candidate ${candidateByPhone.fullName} (+${cleanFrom}) to job ${matchedJob.title} in new_cvs!`);
-        }
-      }
-
-      return {
-        action: "send_keyword_reply",
-        jobTitle: matchedJob.title as string,
-        muteDefaultReply: matchedJob.muteDefaultWhatsappReply === true,
-      };
-    }
-
-    // 3. Check for Active Candidate Follow-Up Reply
-    const candidate = await ctx.db
-      .query("candidates")
-      .withIndex("by_phoneClean", (q) => q.eq("phoneClean", cleanFrom))
-      .first() || await ctx.db
-      .query("candidates")
-      .withIndex("by_phone", (q) => q.eq("phone", "+" + cleanFrom))
-      .first();
+    // 1. Check for Active Candidate Follow-Up Reply using normalized phone lookup
+    const candidate = await findCandidateByPhone(ctx, cleanFrom);
 
     if (candidate) {
       const apps = await ctx.db
         .query("applications")
-        .withIndex("by_candidateId", (q) => q.eq("candidateId", candidate._id))
+        .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
         .collect();
 
       const activeApp = apps.find(
-        (a) => a.currentStage !== "rejected" && a.currentStage !== "placed"
+        (a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed"
       );
 
       if (activeApp) {
@@ -519,8 +419,9 @@ export const processInboundTextWebhook = internalMutation({
         const thirtySecAgo = Date.now() - 30 * 1000;
         const recentInbound = await ctx.db
           .query("communications")
-          .withIndex("by_candidate_time", (q) => q.eq("candidateId", candidate._id))
+          .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", candidate._id))
           .order("desc")
+          .filter((q: any) => q.and(q.eq(q.field("direction"), "inbound"), q.eq(q.field("channel"), "whatsapp")))
           .first();
 
         if (!recentInbound || Number(recentInbound.sentAt) <= thirtySecAgo || recentInbound.body !== text) {
@@ -540,6 +441,24 @@ export const processInboundTextWebhook = internalMutation({
             lastCandidateReplyAt: Date.now(),
           });
 
+          // Check if message contains URLs (e.g. portfolio, drive, youtube)
+          const urlClassification = classifyMessage(text);
+          if (urlClassification.detectedUrl) {
+            const existingSession = await ctx.db
+              .query("whatsappSessions")
+              .withIndex("by_phone", (q: any) => q.eq("phone", cleanFrom))
+              .first();
+            if (existingSession) {
+              const existingUrls = existingSession.portfolioUrls || [];
+              if (!existingUrls.includes(urlClassification.detectedUrl)) {
+                await ctx.db.patch(existingSession._id, {
+                  portfolioUrls: [...existingUrls, urlClassification.detectedUrl],
+                  lastInteractionAt: Date.now(),
+                });
+              }
+            }
+          }
+
           if (text.trim().length > 2) {
             await ctx.scheduler.runAfter(0, internal.communications.inboundExtraction.extractDetailsFromText, {
               candidateId: candidate._id,
@@ -551,7 +470,7 @@ export const processInboundTextWebhook = internalMutation({
         // Ensure session exists and knows CV is received
         let activeSession = await ctx.db
           .query("whatsappSessions")
-          .withIndex("by_phone", (q) => q.eq("phone", cleanFrom))
+          .withIndex("by_phone", (q: any) => q.eq("phone", cleanFrom))
           .first();
 
         if (activeSession) {
@@ -570,14 +489,83 @@ export const processInboundTextWebhook = internalMutation({
           });
         }
 
-        return { action: "dispatch_pre_app_chat", jobId: activeApp.jobId };
+        return { action: "follow_up_handled", jobId: activeApp.jobId };
       }
     }
 
-    // 4. Pre-App Chat Session (if session exists for candidate)
+    // 2. Fetch active & paused jobs directly from DB for Keyword / Title Match
+    const activeJobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_status", (q: any) => q.eq("status", "active"))
+      .collect();
+    const pausedJobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_status", (q: any) => q.eq("status", "on_hold"))
+      .collect();
+    const allJobs = [...activeJobs, ...pausedJobs];
+
+    const { matchedJob, matchedKeyword } = matchJobFromText(allJobs, text);
+
+    if (matchedJob) {
+      const existingSession = await ctx.db
+        .query("whatsappSessions")
+        .withIndex("by_phone", (q: any) => q.eq("phone", cleanFrom))
+        .first();
+
+      if (existingSession) {
+        await ctx.db.patch(existingSession._id, {
+          jobId: matchedJob._id,
+          keyword: matchedKeyword,
+          lastInteractionAt: Date.now(),
+        });
+      } else {
+        await ctx.db.insert("whatsappSessions", {
+          phone: cleanFrom,
+          jobId: matchedJob._id,
+          keyword: matchedKeyword,
+          lastInteractionAt: Date.now(),
+        });
+      }
+
+      if (candidate) {
+        const apps = await ctx.db
+          .query("applications")
+          .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+          .collect();
+
+        const alreadyInJob = apps.some((a: any) => a.jobId === matchedJob._id);
+        if (!alreadyInJob) {
+          const now = Date.now();
+          await ctx.db.insert("applications", {
+            candidateId: candidate._id,
+            jobId: matchedJob._id,
+            currentStage: "new_cvs",
+            sourceChannel: "whatsapp",
+            createdAt: now,
+            isActive: true,
+            lastStageChangedAt: now,
+            loopIteration: 0,
+            stageHistory: [{
+              stage: "new_cvs",
+              enteredAt: new Date(now).toISOString(),
+              changedBy: "system",
+            }],
+          });
+          console.log(`[processInboundTextWebhook] Auto-linked candidate ${candidate.fullName} (+${cleanFrom}) to job ${matchedJob.title} in new_cvs!`);
+        }
+      }
+
+      return {
+        action: "send_keyword_reply",
+        jobTitle: matchedJob.title as string,
+        muteDefaultReply: matchedJob.muteDefaultWhatsappReply === true,
+      };
+    }
+
+    // 3. Pre-App Chat Session (if session exists for candidate)
     let session = await ctx.db
       .query("whatsappSessions")
-      .withIndex("by_phone", (q) => q.eq("phone", cleanFrom))
+      .withIndex("by_phone", (q: any) => q.eq("phone", cleanFrom))
       .first();
 
     if (session) {
@@ -587,8 +575,9 @@ export const processInboundTextWebhook = internalMutation({
       }
     }
 
-    // IF NO KEYWORD AND NO EXISTING SESSION: Prompt candidate for job title
-    return { action: "send_job_prompt" };
+    // 4. Fallback: Prompt candidate for job title (with CV awareness)
+    const hasCv = !!(candidate?.cvUploadId || session?.cvReceived);
+    return { action: "send_job_prompt", hasCv };
   },
 });
 
@@ -836,7 +825,15 @@ export const handlePreApplicationChat = internalAction({
         ? `Candidate stated employment preference: ${employmentPreference}`
         : "Employment preference: not stated.";
 
-      const systemPrompt = `You are a warm, human recruitment assistant for Career141 — NOT a robot.
+      const toneMap: Record<string, string> = {
+        warm_friendly: "Warm, encouraging, conversational, and helpful with natural emojis. Speak like a friendly talent acquisition colleague.",
+        professional_formal: "Polite, clear, structured, corporate, and precise.",
+        casual_tech: "Direct, tech-savvy, conversational, concise, and peer-to-peer.",
+        direct_concise: "Short, prompt, to-the-point with minimal extra words.",
+      };
+      const selectedTone = toneMap[job.conversationTone || "warm_friendly"] || (job.conversationTone ? `Custom tone: ${job.conversationTone}` : toneMap.warm_friendly);
+
+      const systemPrompt = `You are a warm, human Talent Acquisition colleague for Career141 — NOT a robotic script.
 You are helping a candidate apply for the following role:
 
 JOB: ${job.title}
@@ -845,6 +842,9 @@ LOCATION: ${job.location || "Not specified"}
 EMPLOYMENT TYPE: ${job.recruitmentType === "both" ? "Full-time or Freelance" : isFullTimeOnly ? "Full-time only" : "Freelance/Contract"}
 SALARY: ${job.salaryMin ? `${job.salaryMin}–${job.salaryMax} ${job.salaryCurrency || ""}` : "Not disclosed"}
 JOB DESCRIPTION: ${(job.jobDescription || "").substring(0, 500)}
+
+CONVERSATION TONE TO USE:
+${selectedTone}
 
 CANDIDATE STATE:
 ${cvStatus}
@@ -927,12 +927,7 @@ async function sendReply(ctx: any, phone: string, jobId: any, message: string) {
 export const getCandidateByPhone = internalQuery({
   args: { phone: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db.query("candidates")
-      .withIndex("by_phoneClean", (q) => q.eq("phoneClean", args.phone))
-      .first() ||
-      await ctx.db.query("candidates")
-        .withIndex("by_phone", (q) => q.eq("phone", "+" + args.phone))
-        .first();
+    return await findCandidateByPhone(ctx, args.phone);
   },
 });
 

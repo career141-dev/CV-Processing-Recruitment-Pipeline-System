@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { SkillsInput } from '@/components/ui/SkillsInput';
-import { HelpCircle, Plus, Trash2 } from 'lucide-react';
+import { HelpCircle, Plus, Trash2, Sparkles } from 'lucide-react';
 
 interface EditJobModalProps {
   isOpen: boolean;
@@ -88,6 +88,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
     pausedChannels: [] as string[],
     outreachWhatsAppNumber: '',
     customFollowUpQuestions: [] as string[],
+    conversationTone: 'warm_friendly' as string,
     enableWhatsAppFollowUp: true,
     enableEmailFollowUp: true,
   });
@@ -115,6 +116,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         pausedChannels: job.pausedChannels || [],
         outreachWhatsAppNumber: job.outreachWhatsAppNumber || '',
         customFollowUpQuestions: job.customFollowUpQuestions || job.agent5CustomQuestions || [],
+        conversationTone: (job as any).conversationTone || 'warm_friendly',
         enableWhatsAppFollowUp: job.enableWhatsAppFollowUp !== false,
         enableEmailFollowUp: job.enableEmailFollowUp !== false,
       });
@@ -208,6 +210,7 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
         followUpEmailBodyTemplate: formData.followUpEmailBodyTemplate || undefined,
         outreachWhatsAppNumber: formData.outreachWhatsAppNumber || undefined,
         customFollowUpQuestions: formData.customFollowUpQuestions,
+        conversationTone: formData.conversationTone,
         enableWhatsAppFollowUp: formData.enableWhatsAppFollowUp,
         enableEmailFollowUp: formData.enableEmailFollowUp,
       });
@@ -582,6 +585,49 @@ export function EditJobModal({ isOpen, onClose, job, onSuccess }: EditJobModalPr
                 ))}
               </div>
             )}
+          </div>
+
+          {/* AI Conversation Tone (WhatsApp Chat) */}
+          <div className="flex flex-col gap-3 col-span-2 p-4 bg-surface border border-border rounded-xl mt-2 shadow-xs">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <p className="text-sm font-semibold text-text-primary">AI Conversation Tone (Active WhatsApp Chat)</p>
+              </div>
+              <p className="text-xs text-text-secondary">
+                Select how the AI engages with candidates once they reply on WhatsApp to request missing details and answer candidate questions.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              {[
+                { id: 'warm_friendly', label: '🌟 Warm & Friendly', desc: 'Encouraging, conversational with friendly emojis.' },
+                { id: 'professional_formal', label: '👔 Professional & Formal', desc: 'Polite, structured, corporate, and precise.' },
+                { id: 'casual_tech', label: '💻 Casual & Tech-Savvy', desc: 'Direct, peer-to-peer, technical, and concise.' },
+                { id: 'direct_concise', label: '⚡ Direct & Concise', desc: 'Short, prompt, to-the-point with minimal words.' },
+              ].map((tone) => {
+                const isSelected = (formData.conversationTone || 'warm_friendly') === tone.id;
+                return (
+                  <div
+                    key={tone.id}
+                    onClick={() => setFormData(prev => ({ ...prev, conversationTone: tone.id }))}
+                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                        : 'border-border bg-surface hover:border-text-secondary/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-xs font-bold text-text-primary">{tone.label}</span>
+                      {isSelected && (
+                        <span className="material-symbols-outlined text-[15px] text-primary">check_circle</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-text-secondary">{tone.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Active Ingestion Sources */}
