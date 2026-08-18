@@ -91,18 +91,23 @@ export default function Sidebar() {
     >
       <div className={`flex items-center py-4 border-b border-solid border-slate-200 dark:border-slate-800/80 w-full ${!isExpanded ? 'justify-center' : 'justify-between px-3'}`}>
         {isExpanded ? (
-          <Link href="/dashboard" className="flex items-center cursor-pointer ml-2">
-            <span className="flex flex-col shrink-0 items-center bg-emerald-600 dark:bg-emerald-400 text-left py-[5px] px-[11px] mr-3 rounded-md shadow-sm">
-              <span className="text-white dark:text-slate-950 text-sm font-extrabold">R</span>
-            </span>
-            <span className="text-slate-800 dark:text-emerald-400 text-base font-extrabold tracking-wide">
-              Career141
-            </span>
+          <Link href="/dashboard" className="flex items-center cursor-pointer ml-1">
+            <img
+              src="/Artboard 4@2x 5.png"
+              alt="Career141"
+              className="h-9 w-auto max-w-[170px] object-contain dark:brightness-110 filter drop-shadow-sm"
+            />
           </Link>
         ) : (
-          <div className="flex flex-col shrink-0 items-center bg-emerald-600 dark:bg-emerald-400 text-left py-[5px] px-[11px] rounded-md shadow-sm">
-            <span className="text-white dark:text-slate-950 text-sm font-extrabold">R</span>
-          </div>
+          <Link href="/dashboard" className="flex items-center justify-center cursor-pointer">
+            <div className="w-9 h-9 overflow-hidden rounded-md flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 p-0.5 shadow-sm">
+              <img
+                src="/Artboard 4@2x 5.png"
+                alt="Career141"
+                className="h-7 w-auto object-cover object-left dark:brightness-110"
+              />
+            </div>
+          </Link>
         )}
         
         {isExpanded && (
@@ -321,14 +326,17 @@ function CandidatesDropdown({
 
       {/* Inline Submenu (when sidebar is expanded) */}
       {isExpanded && isOpen && (
-        <div className="pl-9 pr-2 space-y-1 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="pl-8 pr-2 space-y-1 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
           <Link href="/dashboard/candidates" className={subItemClass('/dashboard/candidates')}>
+            <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-600 dark:text-emerald-400">manage_accounts</span>
             Candidate Management
           </Link>
           <Link href="/dashboard/candidates/search" className={subItemClass('/dashboard/candidates/search')}>
+            <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-600 dark:text-emerald-400">person_search</span>
             Candidate Search
           </Link>
           <Link href="/dashboard/cv-scanner" className={subItemClass('/dashboard/cv-scanner')}>
+            <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-600 dark:text-emerald-400">document_scanner</span>
             CV Scan
           </Link>
         </div>
@@ -336,7 +344,7 @@ function CandidatesDropdown({
 
       {/* Floating Hover Flyout Menu (when sidebar is collapsed) */}
       {!isExpanded && isHovered && (
-        <div className="absolute left-[70px] top-0 z-50 bg-slate-900 dark:bg-slate-800 text-white rounded-xl shadow-2xl p-2 border border-slate-700/60 w-52 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute left-[70px] top-0 z-50 bg-slate-900 dark:bg-slate-800 text-white rounded-xl shadow-2xl p-2 border border-slate-700/60 w-56 animate-in fade-in zoom-in-95 duration-150">
           <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-400 px-2 py-1 border-b border-slate-800 dark:border-slate-700/60 mb-1 flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-emerald-400" />
             Candidates
@@ -344,20 +352,23 @@ function CandidatesDropdown({
           <div className="space-y-1">
             <Link
               href="/dashboard/candidates"
-              className="block px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
+              className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
+              <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-400">manage_accounts</span>
               Candidate Management
             </Link>
             <Link
               href="/dashboard/candidates/search"
-              className="block px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
+              className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
+              <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-400">person_search</span>
               Candidate Search
             </Link>
             <Link
               href="/dashboard/cv-scanner"
-              className="block px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
+              className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
+              <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-400">document_scanner</span>
               CV Scan
             </Link>
           </div>
