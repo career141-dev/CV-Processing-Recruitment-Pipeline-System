@@ -5,7 +5,25 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from './ThemeToggle';
 import { useRole } from '@/hooks/useRole';
-import { Pin, PinOff, ChevronDown, ChevronRight, Users } from 'lucide-react';
+import { 
+  Pin, 
+  PinOff, 
+  ChevronDown, 
+  ChevronRight, 
+  Users, 
+  LayoutDashboard, 
+  Briefcase, 
+  Megaphone, 
+  BarChart3, 
+  HelpCircle, 
+  Activity, 
+  Settings, 
+  BookOpen, 
+  LogOut,
+  UserCheck,
+  Search,
+  ScanLine
+} from 'lucide-react';
 
 export default function Sidebar() {
   const { user } = useUser();
@@ -57,12 +75,28 @@ export default function Sidebar() {
         : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100'
     }`;
 
-  const iconClass = (path: string) =>
-    `material-symbols-outlined text-[18px] shrink-0 transition-all ${
-      !isExpanded ? 'mx-auto' : 'ml-3 mr-2'
+  const renderIcon = (path: string) => {
+    const active = isActive(path);
+    const cls = `w-[18px] h-[18px] shrink-0 transition-all ${
+      !isExpanded ? 'mx-auto' : 'ml-3 mr-2.5'
     } ${
-      isActive(path) ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400 dark:text-slate-500'
+      active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
     }`;
+
+    switch (path) {
+      case '/dashboard': return <LayoutDashboard className={cls} />;
+      case '/dashboard/jobs': return <Briefcase className={cls} />;
+      case '/dashboard/candidates': return <Users className={cls} />;
+      case '/dashboard/outreach': return <Megaphone className={cls} />;
+      case '/dashboard/analytics': return <BarChart3 className={cls} />;
+      case '/dashboard/inquiries': return <HelpCircle className={cls} />;
+      case '/dashboard/ingestion-monitor': return <Activity className={cls} />;
+      case '/dashboard/settings': return <Settings className={cls} />;
+      case '/help': return <BookOpen className={cls} />;
+      case '/logout': return <LogOut className={cls} />;
+      default: return <LayoutDashboard className={cls} />;
+    }
+  };
 
   const labelClass = `text-[13px] whitespace-nowrap transition-all duration-300 overflow-hidden ${
     !isExpanded ? 'opacity-0 w-0 pointer-events-none' : 'opacity-100 w-auto'
@@ -148,13 +182,13 @@ export default function Sidebar() {
       <div className="flex flex-col w-full px-3 flex-1">
         {/* ── Always visible ────────────────────────── */}
         <Link href="/dashboard" className={linkClass('/dashboard')}>
-          <span className={iconClass('/dashboard')}>dashboard</span>
+          {renderIcon('/dashboard')}
           <span className={labelClass}>Dashboard</span>
           {renderTooltip("Dashboard")}
         </Link>
 
         <Link href="/dashboard/jobs" className={linkClass('/dashboard/jobs')}>
-          <span className={iconClass('/dashboard/jobs')}>work</span>
+          {renderIcon('/dashboard/jobs')}
           <span className={labelClass}>Jobs</span>
           {renderTooltip("Jobs")}
         </Link>
@@ -165,7 +199,7 @@ export default function Sidebar() {
             pathname={pathname}
             isExpanded={isExpanded}
             linkClass={linkClass}
-            iconClass={iconClass}
+            renderIcon={renderIcon}
             labelClass={labelClass}
             renderTooltip={renderTooltip}
           />
@@ -174,7 +208,7 @@ export default function Sidebar() {
         {/* ── Outreach, Analytics & Inquiries ──────────────────────── */}
         {canAccessOutreach && (
           <Link href="/dashboard/outreach" className={linkClass('/dashboard/outreach')}>
-            <span className={iconClass('/dashboard/outreach')}>campaign</span>
+            {renderIcon('/dashboard/outreach')}
             <span className={labelClass}>Outreach</span>
             {renderTooltip("Outreach")}
           </Link>
@@ -182,7 +216,7 @@ export default function Sidebar() {
 
         {canViewAnalytics && (
           <Link href="/dashboard/analytics" className={linkClass('/dashboard/analytics')}>
-            <span className={iconClass('/dashboard/analytics')}>analytics</span>
+            {renderIcon('/dashboard/analytics')}
             <span className={labelClass}>Analytics</span>
             {renderTooltip("Analytics")}
           </Link>
@@ -190,7 +224,7 @@ export default function Sidebar() {
 
         {canViewInquiries && (
           <Link href="/dashboard/inquiries" className={linkClass('/dashboard/inquiries')}>
-            <span className={iconClass('/dashboard/inquiries')}>help_outline</span>
+            {renderIcon('/dashboard/inquiries')}
             <span className={labelClass}>Candidate Inquiries</span>
             {renderTooltip("Candidate Inquiries")}
           </Link>
@@ -207,7 +241,7 @@ export default function Sidebar() {
             </div>
 
             <Link href="/dashboard/ingestion-monitor" className={linkClass('/dashboard/ingestion-monitor')}>
-              <span className={iconClass('/dashboard/ingestion-monitor')}>monitor_heart</span>
+              {renderIcon('/dashboard/ingestion-monitor')}
               <span className={labelClass}>Ingestion Monitor</span>
               {renderTooltip("Ingestion Monitor")}
             </Link>
@@ -219,7 +253,7 @@ export default function Sidebar() {
         {/* Settings: Admin only */}
         {canManageSettings && (
           <Link href="/dashboard/settings" className={linkClass('/dashboard/settings')}>
-            <span className={iconClass('/dashboard/settings')}>settings</span>
+            {renderIcon('/dashboard/settings')}
             <span className={labelClass}>Settings</span>
             {renderTooltip("Settings")}
           </Link>
@@ -233,12 +267,12 @@ export default function Sidebar() {
 
         {/* ── Always visible ────────────────────────── */}
         <div onClick={() => toast.info("Help docs coming soon")} className="flex items-center py-2 mb-1 rounded-lg w-full cursor-pointer text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100 transition-colors group relative">
-          <span className={iconClass('/help')}>help</span>
+          {renderIcon('/help')}
           <span className={labelClass}>Help &amp; Docs</span>
           {renderTooltip("Help & Docs")}
         </div>
         <div className="flex items-center py-2 rounded-lg w-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer group relative" onClick={() => alert('Sign out clicked')}>
-          <span className={iconClass('/logout')}>logout</span>
+          {renderIcon('/logout')}
           <span className={labelClass}>Log out</span>
           {renderTooltip("Log out")}
         </div>
@@ -251,7 +285,7 @@ interface CandidatesDropdownProps {
   pathname: string;
   isExpanded: boolean;
   linkClass: (path: string) => string;
-  iconClass: (path: string) => string;
+  renderIcon: (path: string) => React.ReactNode;
   labelClass: string;
   renderTooltip: (label: string) => React.ReactNode;
 }
@@ -260,7 +294,7 @@ function CandidatesDropdown({
   pathname,
   isExpanded,
   linkClass,
-  iconClass,
+  renderIcon,
   labelClass,
   renderTooltip,
 }: CandidatesDropdownProps) {
@@ -310,9 +344,7 @@ function CandidatesDropdown({
             : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100'
         }`}
       >
-        <span className={iconClass(isCandidateRoute ? pathname : '/dashboard/candidates')}>
-          group
-        </span>
+        {renderIcon('/dashboard/candidates')}
         <span className={labelClass}>Candidates</span>
 
         {isExpanded && (
@@ -328,15 +360,15 @@ function CandidatesDropdown({
       {isExpanded && isOpen && (
         <div className="pl-8 pr-2 space-y-1 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
           <Link href="/dashboard/candidates" className={subItemClass('/dashboard/candidates')}>
-            <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-600 dark:text-emerald-400">manage_accounts</span>
+            <UserCheck className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             Candidate Management
           </Link>
           <Link href="/dashboard/candidates/search" className={subItemClass('/dashboard/candidates/search')}>
-            <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-600 dark:text-emerald-400">person_search</span>
+            <Search className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             Candidate Search
           </Link>
           <Link href="/dashboard/cv-scanner" className={subItemClass('/dashboard/cv-scanner')}>
-            <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-600 dark:text-emerald-400">document_scanner</span>
+            <ScanLine className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             CV Scan
           </Link>
         </div>
@@ -354,21 +386,21 @@ function CandidatesDropdown({
               href="/dashboard/candidates"
               className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-400">manage_accounts</span>
+              <UserCheck className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
               Candidate Management
             </Link>
             <Link
               href="/dashboard/candidates/search"
               className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-400">person_search</span>
+              <Search className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
               Candidate Search
             </Link>
             <Link
               href="/dashboard/cv-scanner"
               className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px] mr-2 text-emerald-400">document_scanner</span>
+              <ScanLine className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
               CV Scan
             </Link>
           </div>
