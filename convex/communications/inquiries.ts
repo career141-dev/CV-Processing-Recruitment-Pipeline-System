@@ -303,9 +303,12 @@ export const dismissInquiry = mutation({
  * Cleanup Mutation: Purge invalid raw HTML inquiries created by naive email URL query string matching.
  */
 export const purgeInvalidHtmlInquiries = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const inquiries = await ctx.db.query("candidateInquiries").collect();
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.batchSize || 30;
+    const inquiries = await ctx.db.query("candidateInquiries").take(limit);
     let deletedCount = 0;
     for (const inq of inquiries) {
       const qText = (inq.questionText || "").trim();
@@ -323,7 +326,12 @@ export const purgeInvalidHtmlInquiries = mutation({
         deletedCount++;
       }
     }
-    return { success: true, totalEvaluated: inquiries.length, deletedCount };
+    return {
+      success: true,
+      evaluated: inquiries.length,
+      deletedCount,
+      hasMore: inquiries.length >= limit,
+    };
   },
 });
 
