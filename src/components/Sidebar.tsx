@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from './ThemeToggle';
 import { useRole } from '@/hooks/useRole';
-import { Pin, PinOff } from 'lucide-react';
+import { Pin, PinOff, ChevronDown, ChevronRight, Users } from 'lucide-react';
 
 export default function Sidebar() {
   const { user } = useUser();
@@ -145,21 +145,16 @@ export default function Sidebar() {
           {renderTooltip("Jobs")}
         </Link>
 
-        {/* ── Candidates Search: Full-access & Test TA ────── */}
+        {/* ── Candidates Dropdown (Consolidated Candidate Management, Search & CV Scanner) ────── */}
         {canSearchCandidates && (
-          <>
-            <Link href="/dashboard/candidates" className={linkClass('/dashboard/candidates')}>
-              <span className={iconClass('/dashboard/candidates')}>person_search</span>
-              <span className={labelClass}>Candidates Search</span>
-              {renderTooltip("Candidates Search")}
-            </Link>
-
-            <Link href="/dashboard/cv-scanner" className={linkClass('/dashboard/cv-scanner')}>
-              <span className={iconClass('/dashboard/cv-scanner')}>document_scanner</span>
-              <span className={labelClass}>CV Scanner</span>
-              {renderTooltip("CV Scanner")}
-            </Link>
-          </>
+          <CandidatesDropdown
+            pathname={pathname}
+            isExpanded={isExpanded}
+            linkClass={linkClass}
+            iconClass={iconClass}
+            labelClass={labelClass}
+            renderTooltip={renderTooltip}
+          />
         )}
 
         {/* ── Full-access only ──────────────────────── */}
@@ -233,6 +228,131 @@ export default function Sidebar() {
           {renderTooltip("Log out")}
         </div>
       </div>
+    </div>
+  );
+}
+
+interface CandidatesDropdownProps {
+  pathname: string;
+  isExpanded: boolean;
+  linkClass: (path: string) => string;
+  iconClass: (path: string) => string;
+  labelClass: string;
+  renderTooltip: (label: string) => React.ReactNode;
+}
+
+function CandidatesDropdown({
+  pathname,
+  isExpanded,
+  linkClass,
+  iconClass,
+  labelClass,
+  renderTooltip,
+}: CandidatesDropdownProps) {
+  const isCandidateRoute =
+    pathname.startsWith('/dashboard/candidates') || pathname.startsWith('/dashboard/cv-scanner');
+
+  const [isOpen, setIsOpen] = React.useState<boolean>(isCandidateRoute);
+  const [isHovered, setIsHovered] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (isCandidateRoute) {
+      setIsOpen(true);
+    }
+  }, [pathname, isCandidateRoute]);
+
+  const subItemClass = (path: string) => {
+    let isActiveItem = false;
+    if (path === '/dashboard/candidates') {
+      isActiveItem = pathname === '/dashboard/candidates';
+    } else if (path === '/dashboard/candidates/search') {
+      isActiveItem = pathname.startsWith('/dashboard/candidates/search');
+    } else if (path === '/dashboard/cv-scanner') {
+      isActiveItem = pathname.startsWith('/dashboard/cv-scanner');
+    }
+
+    return `flex items-center py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
+      isActiveItem
+        ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 font-bold border-l-2 border-emerald-600 dark:border-emerald-400'
+        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+    }`;
+  };
+
+  return (
+    <div
+      className="w-full relative group"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Parent Button */}
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        className={`flex items-center py-2 mb-1 rounded-lg w-full cursor-pointer transition-all group relative ${
+          !isExpanded ? 'justify-center px-0' : 'px-3'
+        } ${
+          isCandidateRoute
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-4 border-emerald-600 dark:border-emerald-400 font-bold text-emerald-800 dark:text-emerald-300 shadow-sm'
+            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-slate-100'
+        }`}
+      >
+        <span className={iconClass(isCandidateRoute ? pathname : '/dashboard/candidates')}>
+          group
+        </span>
+        <span className={labelClass}>Candidates</span>
+
+        {isExpanded && (
+          <span className="ml-auto text-slate-400 dark:text-slate-500">
+            {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </span>
+        )}
+
+        {renderTooltip('Candidates')}
+      </div>
+
+      {/* Inline Submenu (when sidebar is expanded) */}
+      {isExpanded && isOpen && (
+        <div className="pl-9 pr-2 space-y-1 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
+          <Link href="/dashboard/candidates" className={subItemClass('/dashboard/candidates')}>
+            Candidate Management
+          </Link>
+          <Link href="/dashboard/candidates/search" className={subItemClass('/dashboard/candidates/search')}>
+            Candidate Search
+          </Link>
+          <Link href="/dashboard/cv-scanner" className={subItemClass('/dashboard/cv-scanner')}>
+            CV Scan
+          </Link>
+        </div>
+      )}
+
+      {/* Floating Hover Flyout Menu (when sidebar is collapsed) */}
+      {!isExpanded && isHovered && (
+        <div className="absolute left-[70px] top-0 z-50 bg-slate-900 dark:bg-slate-800 text-white rounded-xl shadow-2xl p-2 border border-slate-700/60 w-52 animate-in fade-in zoom-in-95 duration-150">
+          <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-400 px-2 py-1 border-b border-slate-800 dark:border-slate-700/60 mb-1 flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5 text-emerald-400" />
+            Candidates
+          </div>
+          <div className="space-y-1">
+            <Link
+              href="/dashboard/candidates"
+              className="block px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
+            >
+              Candidate Management
+            </Link>
+            <Link
+              href="/dashboard/candidates/search"
+              className="block px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
+            >
+              Candidate Search
+            </Link>
+            <Link
+              href="/dashboard/cv-scanner"
+              className="block px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
+            >
+              CV Scan
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
