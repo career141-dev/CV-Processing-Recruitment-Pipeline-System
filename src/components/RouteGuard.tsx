@@ -16,15 +16,17 @@ const ROUTE_PERMISSIONS: Record<string, (role: string | null) => boolean> = {
   "/dashboard/candidates": (role) =>
     ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
   "/dashboard/outreach": (role) =>
-    ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
   "/dashboard/analytics": (role) =>
-    ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
+  "/dashboard/inquiries": (role) =>
+    ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
   "/dashboard/ingestion-monitor": (role) =>
     ["admin", "ta_manager"].includes(role ?? ""),
   "/dashboard/token-monitor": (role) =>
     ["admin", "ta_manager"].includes(role ?? ""),
   "/dashboard/settings": (role) =>
-    ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    ["admin"].includes(role ?? ""),
 };
 
 /** Returns true if the given pathname is accessible for the given role. */

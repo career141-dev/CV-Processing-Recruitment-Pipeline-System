@@ -26,7 +26,10 @@ export function useRole() {
     canSearchCandidates: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
     canCreateJob: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
     canManageUsers: role === "admin",
-    canViewAnalytics: ["admin", "ta_manager", "senior_ta"].includes(role ?? ""),
+    canViewAnalytics: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
+    canAccessOutreach: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
+    canViewInquiries: ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
+    canManageSettings: role === "admin",
   };
 }
 

@@ -35,23 +35,18 @@ export const syncCurrentUser = mutation({
       .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
       .unique();
 
-    const isAdminEmail = 
+    const isSuperAdminEmail = 
       args.email.toLowerCase().includes("sanjeev") ||
-      args.email.toLowerCase().includes("bytecreator") ||
-      args.email.toLowerCase().endsWith("@career141.com");
+      args.email.toLowerCase().includes("bytecreator");
 
     if (existing) {
-      // Update login time and name/email if changed
+      // Update login time and name/email if changed — DO NOT overwrite existing user role!
       const patchData: any = {
         email: args.email,
         avatarUrl: args.avatarUrl,
         lastLoginAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      if (isAdminEmail) {
-        patchData.role = "admin";
-        patchData.isOnboarded = true;
-      }
       if (!existing.fullName || existing.fullName === "Unknown User" || args.name !== "Unknown User") {
         patchData.fullName = fullName;
       }
@@ -59,9 +54,9 @@ export const syncCurrentUser = mutation({
       return existing._id;
     }
 
-    // First login — assign the invited role if it exists, otherwise default to viewer or admin for team leads
-    const roleToAssign = isAdminEmail ? "admin" : (args.invitedRole || "viewer");
-    const isOnboarded = isAdminEmail || !!args.invitedRole;
+    // First login — assign the invited role if it exists, otherwise default to admin for super-admins or viewer
+    const roleToAssign = isSuperAdminEmail ? "admin" : (args.invitedRole || "viewer");
+    const isOnboarded = isSuperAdminEmail || !!args.invitedRole;
 
     return await ctx.db.insert("users", {
       tokenIdentifier: identity.tokenIdentifier,

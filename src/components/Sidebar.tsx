@@ -12,7 +12,16 @@ export default function Sidebar() {
   const userName = user?.fullName || user?.firstName || 'User';
   const imageUrl = user?.imageUrl || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 24 24' fill='%231b5e20'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm0 14c-2.03 0-3.8-.85-5.05-2.2.03-1.68 3.37-2.6 5.05-2.6s5.02.92 5.05 2.6C15.8 19.15 14.03 20 12 20z'/%3E%3C/svg%3E";
   const pathname = usePathname();
-  const { isAdmin, isTAManager, hasFullAccess, canSearchCandidates } = useRole();
+  const { 
+    isAdmin, 
+    isTAManager, 
+    hasFullAccess, 
+    canSearchCandidates, 
+    canAccessOutreach, 
+    canViewAnalytics, 
+    canViewInquiries, 
+    canManageSettings 
+  } = useRole();
   const showAdminSettings = isAdmin || isTAManager;
 
   const [isPinned, setIsPinned] = React.useState(false);
@@ -157,28 +166,29 @@ export default function Sidebar() {
           />
         )}
 
-        {/* ── Full-access only ──────────────────────── */}
-        {hasFullAccess && (
-          <>
-            <Link href="/dashboard/outreach" className={linkClass('/dashboard/outreach')}>
-              <span className={iconClass('/dashboard/outreach')}>campaign</span>
-              <span className={labelClass}>Outreach</span>
-              {renderTooltip("Outreach")}
-            </Link>
+        {/* ── Outreach, Analytics & Inquiries ──────────────────────── */}
+        {canAccessOutreach && (
+          <Link href="/dashboard/outreach" className={linkClass('/dashboard/outreach')}>
+            <span className={iconClass('/dashboard/outreach')}>campaign</span>
+            <span className={labelClass}>Outreach</span>
+            {renderTooltip("Outreach")}
+          </Link>
+        )}
 
-            <Link href="/dashboard/analytics" className={linkClass('/dashboard/analytics')}>
-              <span className={iconClass('/dashboard/analytics')}>analytics</span>
-              <span className={labelClass}>Analytics</span>
-              {renderTooltip("Analytics")}
-            </Link>
+        {canViewAnalytics && (
+          <Link href="/dashboard/analytics" className={linkClass('/dashboard/analytics')}>
+            <span className={iconClass('/dashboard/analytics')}>analytics</span>
+            <span className={labelClass}>Analytics</span>
+            {renderTooltip("Analytics")}
+          </Link>
+        )}
 
-            {/* ── Candidate Inquiries: Full-access & Test TA ────── */}
-            <Link href="/dashboard/inquiries" className={linkClass('/dashboard/inquiries')}>
-              <span className={iconClass('/dashboard/inquiries')}>help_outline</span>
-              <span className={labelClass}>Candidate Inquiries</span>
-              {renderTooltip("Candidate Inquiries")}
-            </Link>
-          </>
+        {canViewInquiries && (
+          <Link href="/dashboard/inquiries" className={linkClass('/dashboard/inquiries')}>
+            <span className={iconClass('/dashboard/inquiries')}>help_outline</span>
+            <span className={labelClass}>Candidate Inquiries</span>
+            {renderTooltip("Candidate Inquiries")}
+          </Link>
         )}
 
         {/* ── Admin section ─────────────────────────── */}
@@ -199,10 +209,10 @@ export default function Sidebar() {
           </>
         )}
 
-        <div className={hasFullAccess ? "" : "mt-auto"}></div>
+        <div className={hasFullAccess || canAccessOutreach ? "" : "mt-auto"}></div>
 
-        {/* Settings: full-access only */}
-        {hasFullAccess && (
+        {/* Settings: Admin only */}
+        {canManageSettings && (
           <Link href="/dashboard/settings" className={linkClass('/dashboard/settings')}>
             <span className={iconClass('/dashboard/settings')}>settings</span>
             <span className={labelClass}>Settings</span>
