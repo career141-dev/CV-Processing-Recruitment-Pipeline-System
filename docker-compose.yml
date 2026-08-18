@@ -51,6 +51,16 @@ services:
       - S3_STORAGE_MODULES_BUCKET
       - S3_STORAGE_SEARCH_BUCKET
       - S3_STORAGE_SNAPSHOT_IMPORTS_BUCKET
+      # Convex Node actions place outbound calls. Missing/unknown engine values
+      # remain disabled; test mode defaults on inside the dispatcher.
+      - VOICE_ENGINE=${VOICE_ENGINE:-disabled}
+      - LIVEKIT_URL
+      - LIVEKIT_API_KEY
+      - LIVEKIT_API_SECRET
+      - LIVEKIT_SIP_OUTBOUND_TRUNK_ID
+      - VOICE_AGENT_SHARED_SECRET
+      - CALL_TEST_MODE=${CALL_TEST_MODE:-true}
+      - CALL_TEST_RECIPIENT
     healthcheck:
       test: curl -f http://localhost:3210/version
       interval: 5s
@@ -109,9 +119,11 @@ services:
         max-file: "5"
 
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.13.4
     restart: unless-stopped
     command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}"
     ports:
       - "7880:7880"
       - "7881:7881"

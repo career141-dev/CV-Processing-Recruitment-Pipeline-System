@@ -613,13 +613,11 @@ export const evaluateFollowUpStage = internalMutation({
           attempts: 1,
         });
 
-        await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerFollowUpCall, {
-          applicationId: app._id,
-          candidateId: app.candidateId,
-          jobId: app.jobId,
+        await ctx.scheduler.runAfter(0, internal.integrations.livekitSip.dispatchManualVoiceCall, {
+          aiCallId: newAiCallId,
+          kind: "follow_up",
           attemptNumber: 1,
           lastContactChannel: "WhatsApp",
-          aiCallId: newAiCallId,
         });
 
         console.log(`[Follow-up Day ${targetDay}] AI Follow-up call queued for ${candidate.fullName ?? "unknown"}`);
@@ -632,6 +630,12 @@ crons.interval(
   "evaluate-follow-up",
   { minutes: 1 },
   internal.crons.evaluateFollowUpStage
+);
+
+crons.interval(
+  "fail-stale-voice-sessions",
+  { minutes: 5 },
+  internal.aiCalls.voiceCalls.failStaleVoiceCallSessions,
 );
 
 crons.daily(

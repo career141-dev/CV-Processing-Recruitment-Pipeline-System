@@ -1,4 +1,7 @@
-# LiveKit Server Configuration (Self-Hosted for Career141)
+# Legacy/local LiveKit server configuration.
+#
+# Production uses infra/livekit.yaml via docker-compose.prod.yml. Credentials
+# must be supplied with LIVEKIT_KEYS; never add API secrets to this file.
 port: 7880
 bind_addresses:
   - ""
@@ -11,6 +14,3 @@ rtc:
 
 logging:
   level: info
-
-keys:
-  career141_livekit_key: career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2

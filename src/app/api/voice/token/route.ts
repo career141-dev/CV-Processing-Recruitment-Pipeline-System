@@ -1,45 +1,147 @@
-import { NextRequest, NextResponse } from "next/server";
-import { AccessToken } from "livekit-server-sdk";
+import { randomUUID } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
+import { fetchMutation, fetchQuery } from "convex/nextjs";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { api } from "../../../../../convex/_generated/api";
+import { Id } from "../../../../../convex/_generated/dataModel";
 
-export async function POST(req: NextRequest) {
+const requestSchema = z
+  .object({
+    candidateId: z.string().min(1).max(128),
+    jobId: z.string().min(1).max(128),
+    applicationId: z.string().min(1).max(128),
+    customScript: z.string().trim().max(1200).optional(),
+  })
+  .strict();
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Voice service is not configured: ${name} is required`);
+  }
+  return value;
+}
+
+function validateLiveKitUrl(
+  value: string,
+  name: string,
+  allowedProtocols: ReadonlySet<string>,
+): string {
+  const parsed = new URL(value);
+  if (!allowedProtocols.has(parsed.protocol)) {
+    throw new Error(`${name} uses an unsupported protocol`);
+  }
+  return value;
+}
+
+function truncate(value: string | undefined, maximumLength: number): string {
+  return (value || "").trim().slice(0, maximumLength);
+}
+
+export async function POST(request: NextRequest) {
+  let reservation: { sessionId: string; token: string } | null = null;
   try {
-    // 1. Recruiter Authentication Guard
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized recruiter access" }, { status: 401 });
+    const authResult = await auth();
+    if (!authResult.userId) {
+      return NextResponse.json(
+        { error: "Unauthorized recruiter access" },
+        { status: 401 },
+      );
     }
 
-    const body = await req.json();
-    const candidateName = body.participantName || body.candidateName || "Candidate";
-    const candidateId = body.candidateId || "simulation";
-    const mode = body.mode || "simulation";
+    const parsedRequest = requestSchema.safeParse(await request.json());
+    if (!parsedRequest.success) {
+      return NextResponse.json(
+        { error: "A valid candidate application and job are required" },
+        { status: 400 },
+      );
+    }
 
-    // 2. Deterministic Room Isolation with unique UUID
-    const roomName = `simulation-${candidateId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const convexToken = await authResult.getToken({ template: "convex" });
+    if (!convexToken) {
+      return NextResponse.json(
+        { error: "Unable to verify recruiter permissions" },
+        { status: 401 },
+      );
+    }
 
-    const apiKey = process.env.LIVEKIT_API_KEY || "career141_livekit_key";
-    const apiSecret = process.env.LIVEKIT_API_SECRET || "career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2";
-    const livekitUrl =
-      process.env.NEXT_PUBLIC_LIVEKIT_URL ||
-      process.env.LIVEKIT_URL ||
-      (process.env.NODE_ENV === "production" ? "wss://voice.career141.com" : "ws://127.0.0.1:7880");
+    const { candidateId, jobId, applicationId, customScript } =
+      parsedRequest.data;
+    const context = await fetchQuery(
+      api.aiCalls.voiceCalls.getVoiceSimulationContext,
+      {
+        candidateId: candidateId as Id<"candidates">,
+        jobId: jobId as Id<"jobs">,
+        applicationId: applicationId as Id<"applications">,
+      },
+      { token: convexToken },
+    );
 
-    // 3. Create token with short 10-minute TTL and restricted room grant
-    const at = new AccessToken(apiKey, apiSecret, {
-      identity: `recruiter-${userId.substring(0, 10)}-${Date.now()}`,
-      name: candidateName,
-      ttl: "10m", // 10 minutes short token lifetime
-      metadata: JSON.stringify({
-        candidateId,
-        candidateName,
-        jobTitle: body.jobTitle || "Position Application",
-        mode,
-        createdAt: Date.now(),
-      }),
+    const apiKey = requiredEnvironment("LIVEKIT_API_KEY");
+    const apiSecret = requiredEnvironment("LIVEKIT_API_SECRET");
+    const publicUrl = validateLiveKitUrl(
+      requiredEnvironment("NEXT_PUBLIC_LIVEKIT_URL"),
+      "NEXT_PUBLIC_LIVEKIT_URL",
+      new Set(["ws:", "wss:"]),
+    );
+    const serverUrl = validateLiveKitUrl(
+      process.env.LIVEKIT_INTERNAL_URL?.trim() || publicUrl,
+      "LIVEKIT_INTERNAL_URL",
+      new Set(["ws:", "wss:", "http:", "https:"]),
+    );
+
+    const sessionId = randomUUID();
+    await fetchMutation(
+      api.aiCalls.voiceCalls.reserveVoiceSimulationSession,
+      {
+        sessionId,
+        candidateId: candidateId as Id<"candidates">,
+        applicationId: applicationId as Id<"applications">,
+        jobId: jobId as Id<"jobs">,
+      },
+      { token: convexToken },
+    );
+    reservation = { sessionId, token: convexToken };
+    const roomName = `simulation-${sessionId}`;
+    const metadata = JSON.stringify({
+      schemaVersion: 1,
+      sessionId,
+      mode: "simulation",
+      candidateId,
+      candidateName: truncate(context.candidateName, 160) || "Candidate",
+      applicationId,
+      jobId,
+      jobTitle: truncate(context.jobTitle, 240) || "Position",
+      jobDescription: truncate(context.jobDescription, 2000),
+      customQuestions: context.customQuestions
+        .map((question) => truncate(question, 300))
+        .filter(Boolean)
+        .slice(0, 8),
+      customScript: truncate(customScript, 1200),
+      recruiterUserId: authResult.userId,
+      createdAt: Date.now(),
     });
 
-    at.addGrant({
+    const roomService = new RoomServiceClient(serverUrl, apiKey, apiSecret, {
+      requestTimeout: 5,
+    });
+    await roomService.createRoom({
+      name: roomName,
+      emptyTimeout: 60,
+      departureTimeout: 30,
+      maxParticipants: 3,
+      metadata,
+    });
+
+    const accessToken = new AccessToken(apiKey, apiSecret, {
+      identity: `simulator-${authResult.userId.slice(0, 10)}-${sessionId.slice(0, 8)}`,
+      name: "Recruiter voice simulator",
+      ttl: "10m",
+      metadata: JSON.stringify({ mode: "simulation", sessionId }),
+    });
+    accessToken.addGrant({
       room: roomName,
       roomJoin: true,
       canPublish: true,
@@ -47,19 +149,28 @@ export async function POST(req: NextRequest) {
       canPublishData: true,
     });
 
-    const token = await at.toJwt();
-
-    return NextResponse.json({
-      token,
-      url: livekitUrl,
-      roomName,
-    });
-  } catch (error: any) {
-    console.error("[LiveKit Token] Error creating token:", error);
     return NextResponse.json(
-      { error: error?.message || "Failed to create LiveKit token" },
-      { status: 500 }
+      {
+        token: await accessToken.toJwt(),
+        url: publicUrl,
+        roomName,
+        sessionId,
+        mode: "simulation",
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    if (reservation) {
+      await fetchMutation(
+        api.aiCalls.voiceCalls.releaseVoiceSimulationReservation,
+        { sessionId: reservation.sessionId },
+        { token: reservation.token },
+      ).catch(() => undefined);
+    }
+    console.error("[Voice Token] Failed to create simulation session", error);
+    return NextResponse.json(
+      { error: "Unable to create the voice simulation session" },
+      { status: 500 },
     );
   }
 }
-

@@ -5,9 +5,18 @@ on:
     branches:
       - main
 
+# Serialize production changes and deploy the exact reviewed commit that
+# triggered the run. A later push must not overtake an earlier approved run.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Configure required reviewers on the GitHub "production" environment.
+    # This preserves push-to-main deployment while adding the mandatory gate.
+    environment: production
     steps:
       # ── Step 1: Checkout code ──────────────────────────────────────────
       - name: Checkout Code
@@ -36,15 +45,18 @@ jobs:
             set -e
             cd ~/career141
             git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-            git reset --hard
-            git pull origin main
+            git fetch --depth=1 origin "${{ github.sha }}"
+            git reset --hard "${{ github.sha }}"
             echo "Starting Convex Database..."
-            docker compose --env-file .env.production -f docker-compose.yml up -d
+            # Voice services are owned by docker-compose.prod.yml. Starting
+            # named services here prevents the legacy base LiveKit service from
+            # being launched with its local-only configuration.
+            docker compose --env-file .env.production -f docker-compose.yml up -d backend dashboard qdrant
             sleep 5
 
       # ── Step 4: Deploy Convex functions & schema to production ─────────
       - name: Deploy Convex Database
-        run: npx convex deploy --url https://api.career141.com --admin-key "${{ secrets.CONVEX_ADMIN_KEY || 'convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b' }}"
+        run: npx convex deploy --url https://api.career141.com --admin-key "${{ secrets.CONVEX_ADMIN_KEY }}"
 
       # ── Step 5: VPS — Pre-start cleanup + Deploy ───────────────────────
       - name: Deploy to VPS via SSH
@@ -72,8 +84,11 @@ jobs:
             DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
             echo "      Disk usage: ${DISK_USAGE}%"
             if [ "$DISK_USAGE" -gt 85 ]; then
-              echo "      WARNING: Disk above 85%! Performing DEEP Docker Clean..."
-              docker system prune -a --volumes -f || true
+              echo "      WARNING: Disk above 85%! Pruning unused images/build cache only..."
+              # Never prune volumes automatically: a stopped Redis/Qdrant
+              # container must not turn a disk warning into data loss.
+              docker image prune -f || true
+              docker builder prune -f --keep-storage 5GB || true
             fi
 
             # ── Check available memory ────────────────────────────────────
@@ -84,23 +99,97 @@ jobs:
             # ── Pull latest code ──────────────────────────────────────────
             echo "[4/5] Pulling latest code..."
             git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-            git reset --hard
-            git pull origin main
+            git fetch --depth=1 origin "${{ github.sha }}"
+            git reset --hard "${{ github.sha }}"
+
+            # Fail closed before building or replacing any production service.
+            # Values are checked for presence only and are never printed.
+            echo "Validating required production secrets..."
+            for REQUIRED_KEY in VOICE_ENGINE LIVEKIT_API_KEY LIVEKIT_API_SECRET NEXT_PUBLIC_LIVEKIT_URL REDIS_PASSWORD DEEPGRAM_API_KEY INWORLD_API_KEY OPENROUTER_API_KEY VOICE_AGENT_EVENTS_URL VOICE_AGENT_SHARED_SECRET; do
+              if ! grep -Eq "^${REQUIRED_KEY}=.+" .env.production; then
+                echo "ERROR: ${REQUIRED_KEY} is missing from .env.production"
+                exit 1
+              fi
+            done
+
+            VOICE_AGENT_SECRET_VALUE="$(sed -n 's/^VOICE_AGENT_SHARED_SECRET=//p' .env.production | tail -n 1 | tr -d '\r')"
+            if [ "${#VOICE_AGENT_SECRET_VALUE}" -lt 32 ]; then
+              echo "ERROR: VOICE_AGENT_SHARED_SECRET must contain at least 32 characters"
+              exit 1
+            fi
+
+            VOICE_ENGINE_VALUE="$(sed -n 's/^VOICE_ENGINE=//p' .env.production | tail -n 1 | tr -d '\r')"
+            if [ "${VOICE_ENGINE_VALUE}" = "livekit" ]; then
+              for REQUIRED_KEY in LIVEKIT_URL LIVEKIT_SIP_OUTBOUND_TRUNK_ID CALL_TEST_MODE; do
+                if ! grep -Eq "^${REQUIRED_KEY}=.+" .env.production; then
+                  echo "ERROR: ${REQUIRED_KEY} is required when VOICE_ENGINE=livekit"
+                  exit 1
+                fi
+              done
+
+              CALL_TEST_MODE_VALUE="$(sed -n 's/^CALL_TEST_MODE=//p' .env.production | tail -n 1 | tr -d '\r')"
+              if [ "${CALL_TEST_MODE_VALUE}" != "true" ] && [ "${CALL_TEST_MODE_VALUE}" != "false" ]; then
+                echo "ERROR: CALL_TEST_MODE must be exactly true or false"
+                exit 1
+              fi
+              if [ "${CALL_TEST_MODE_VALUE}" = "true" ] && ! grep -Eq '^CALL_TEST_RECIPIENT=\+[1-9][0-9]{7,14}$' .env.production; then
+                echo "ERROR: test mode requires a canonical E.164 CALL_TEST_RECIPIENT"
+                exit 1
+              fi
+            elif [ "${VOICE_ENGINE_VALUE}" != "disabled" ]; then
+              echo "ERROR: VOICE_ENGINE must be disabled or livekit"
+              exit 1
+            fi
+
+            echo "Validating production Compose configuration..."
+            docker compose --env-file .env.production -f docker-compose.prod.yml config --quiet
 
             # ── Build and recreate containers (Zero-Downtime) ───────────────
             echo "[5/5] Building and starting containers with Zero-Downtime..."
             
             # Ensure the self-hosted Convex database is running!
             echo "Starting Convex Database (if not already running)..."
-            docker compose --env-file .env.production -f docker-compose.yml up -d
+            docker compose --env-file .env.production -f docker-compose.yml up -d backend dashboard qdrant
             
             # Build new release at normal speed (old container is still alive and serving traffic)
             echo "Building new release (old container still serving live traffic)..."
-            docker compose --env-file .env.production -f docker-compose.prod.yml build
+            docker compose --env-file .env.production -f docker-compose.prod.yml build web voice-agent
             
             # Instant 1-second atomic container swap once build completes
             echo "Swapping container (old container running until this exact line)..."
             docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-deps --force-recreate web
+
+            # Pull pinned voice infrastructure images, then converge the whole
+            # voice stack. Compose recreates only services whose image/config
+            # changed, avoiding unnecessary call disruption.
+            echo "Pulling and starting production voice services..."
+            docker compose --env-file .env.production -f docker-compose.prod.yml pull redis livekit sip
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d redis livekit sip voice-agent
+
+            # Check actual readiness, not merely whether container processes
+            # exist. The SIP and agent health ports are bound to loopback only.
+            echo "Waiting for voice services to become ready..."
+            VOICE_READY=0
+            for ATTEMPT in $(seq 1 36); do
+              REDIS_HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' career141-voice-redis 2>/dev/null || true)
+              LIVEKIT_HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' career141-livekit 2>/dev/null || true)
+              SIP_HTTP=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/ || true)
+              AGENT_HTTP=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18081/ || true)
+
+              echo "Voice readiness ${ATTEMPT}/36: redis=${REDIS_HEALTH} livekit=${LIVEKIT_HEALTH} sip=${SIP_HTTP:-000} agent=${AGENT_HTTP:-000}"
+              if [ "${REDIS_HEALTH}" = "healthy" ] && [ "${LIVEKIT_HEALTH}" = "healthy" ] && [ "${SIP_HTTP}" = "200" ] && [ "${AGENT_HTTP}" = "200" ]; then
+                VOICE_READY=1
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "${VOICE_READY}" -ne 1 ]; then
+              echo "ERROR: production voice stack did not become ready"
+              docker compose --env-file .env.production -f docker-compose.prod.yml ps
+              docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=100 redis livekit sip voice-agent
+              exit 1
+            fi
 
             echo "======================================"
             echo "  DEPLOYMENT COMPLETE"
@@ -111,18 +200,39 @@ jobs:
         run: |
           echo "Waiting 30s for containers to initialize..."
           sleep 30
-          echo "Checking production health..."
+          echo "Checking web production health..."
+          WEB_HEALTHY=0
           for i in {1..10}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://career141.com || echo "000")
             echo "  Attempt $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ] || [ "$STATUS" = "302" ]; then
-              echo "✅ Production is healthy!"
-              exit 0
+              WEB_HEALTHY=1
+              break
             fi
             sleep 10
           done
-          echo "⚠️ Production health check timed out — please verify manually."
-          exit 0
+          if [ "$WEB_HEALTHY" -ne 1 ]; then
+            echo "ERROR: web production health check timed out"
+            exit 1
+          fi
+
+          echo "Checking public LiveKit TLS/Caddy/upstream readiness..."
+          VOICE_HEALTHY=0
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://voice.career141.com/ready || echo "000")
+            echo "  Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              VOICE_HEALTHY=1
+              break
+            fi
+            sleep 10
+          done
+          if [ "$VOICE_HEALTHY" -ne 1 ]; then
+            echo "ERROR: voice TLS/Caddy/LiveKit readiness check timed out"
+            exit 1
+          fi
+
+          echo "✅ Web and voice production endpoints are healthy"
 
       # ── Step 7: Run safe stats backfill on production ──────────────────
       # This safely recalculates dashboard counters page-by-page
@@ -132,7 +242,7 @@ jobs:
           echo "Running safe stats backfill on production..."
           npx convex run stats/stats:runSafeBackfill \
             --url https://api.career141.com \
-            --admin-key "${{ secrets.CONVEX_ADMIN_KEY || 'convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b' }}" || true
+            --admin-key "${{ secrets.CONVEX_ADMIN_KEY }}" || true
           echo "✅ Stats backfill complete"
 
       # ── Step 8: Sync Candidate Vectors to Qdrant on Production ───────────
@@ -141,5 +251,5 @@ jobs:
           echo "Syncing candidate vectors to production Qdrant..."
           npx convex run admin/qdrantBackfill:syncAllCandidateVectorsToQdrant \
             --url https://api.career141.com \
-            --admin-key "${{ secrets.CONVEX_ADMIN_KEY || 'convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b' }}" || true
+            --admin-key "${{ secrets.CONVEX_ADMIN_KEY }}" || true
           echo "✅ Production Qdrant vector sync complete"

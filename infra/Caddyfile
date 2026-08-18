@@ -1,13 +1,16 @@
-{
-	admin off
-}
-
 {$DOMAIN_NAME:voice.career141.com} {
-	# Terminate TLS and reverse proxy HTTPS/WSS browser traffic to LiveKit
-	reverse_proxy livekit:7880 {
-		header_up Host {host}
-		header_up X-Real-IP {remote_host}
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Forwarded-Proto {scheme}
+	# The production web service already relies on host-level Caddy. LiveKit's
+	# signaling port is therefore bound to loopback and is never public directly.
+	# Rewriting /ready to LiveKit's health endpoint verifies TLS, Caddy, and the
+	# upstream server in one request.
+	@ready path /ready
+	handle @ready {
+		rewrite * /
+		reverse_proxy 127.0.0.1:7880
+	}
+
+	# Caddy supports WebSocket upgrades automatically.
+	handle {
+		reverse_proxy 127.0.0.1:7880
 	}
 }

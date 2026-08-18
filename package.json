@@ -14,7 +14,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx tsx --test convex/cvs/__tests__/cvScoring.test.ts"
+    "test": "tsx --test convex/cvs/__tests__/cvScoring.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1091.0",
@@ -62,6 +62,7 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.4",
     "tailwindcss": "^4",
+    "tsx": "4.23.12",
     "typescript": "^5"
   }
 }

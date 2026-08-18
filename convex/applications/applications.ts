@@ -6,6 +6,7 @@ import { checkAndAdvanceFollowUp, updateFollowUpFlags, initiateFollowUpOutreach 
 import { syncCandidateOverallStatus } from "../candidates/candidates";
 import { adjustJobStageStat } from "../jobs/stats";
 import { adjustGlobalStat } from "../stats/statsHelper";
+import { assertNoPendingVoiceCall } from "../aiCalls/voiceCallGuards";
 export const getApplicationsByCandidateId = query({
   args: { candidateId: v.id("candidates") },
   handler: async (ctx, args) => {
@@ -23,38 +24,43 @@ export const triggerManualAiCall = mutation({
     jobId: v.id("jobs"),
   },
   handler: async (ctx, args) => {
-    // 1. Create AI call record
+    const user = await requireUser(ctx);
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) throw new Error("Application not found");
+    if (
+      String(app.candidateId) !== String(args.candidateId) ||
+      String(app.jobId) !== String(args.jobId)
+    ) {
+      throw new Error("Application does not belong to the candidate and job");
+    }
+    if (app.isActive === false) throw new Error("Application is not active");
+    await requireJobAssignment(ctx, app.jobId, ["primary_recruiter", "supporting_recruiter"]);
+
+    const candidate = await ctx.db.get(app.candidateId);
+    if (!candidate) throw new Error("Candidate not found");
+    if (candidate.doNotContact) throw new Error("Candidate is marked do-not-contact");
+    await assertNoPendingVoiceCall(ctx, app._id);
+
+    const now = Date.now();
     const callId = await ctx.db.insert("aiCalls", {
-      candidateId: args.candidateId,
-      applicationId: args.applicationId,
-      jobId: args.jobId,
+      candidateId: app.candidateId,
+      applicationId: app._id,
+      jobId: app.jobId,
+      triggeredBy: user._id,
       triggerType: "manual_ta_trigger",
-      callStatus: "in_progress",
+      callStatus: "scheduled",
       callScriptUsed: "initial_screening",
       companyHidden: false,
-      calledAt: Date.now(),
+      calledAt: now,
       followUpTriggered: false,
       attempts: 1,
-      firstAttemptAt: Date.now(),
+      firstAttemptAt: now,
       attemptNumber: 1
     });
 
-    // 2. Schedule ElevenLabs call
-    await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
-      applicationId: args.applicationId,
-      candidateId: args.candidateId,
-      jobId: args.jobId,
-    });
-
-    // 3. Log event
-    await ctx.db.insert("pipelineEvents", {
-      applicationId: args.applicationId,
-      candidateId: args.candidateId,
-      jobId: args.jobId,
-      eventType: "ai_call_triggered",
-      actorType: "user",
-      createdAt: Date.now(),
-      notes: "Manual AI call triggered"
+    await ctx.scheduler.runAfter(0, internal.integrations.livekitSip.dispatchManualVoiceCall, {
+      aiCallId: callId,
+      kind: "intake",
     });
 
     return callId;
@@ -681,8 +687,14 @@ export const triggerAiCall = mutation({
     const user = await requireUser(ctx);
     const app = await ctx.db.get(args.applicationId);
     if (!app) throw new Error("Application not found");
+    if (app.isActive === false) throw new Error("Application is not active");
 
     await requireJobAssignment(ctx, app.jobId, ["primary_recruiter", "supporting_recruiter"]);
+
+    const candidate = await ctx.db.get(app.candidateId);
+    if (!candidate) throw new Error("Candidate not found");
+    if (candidate.doNotContact) throw new Error("Candidate is marked do-not-contact");
+    await assertNoPendingVoiceCall(ctx, app._id);
 
     // Insert aiCalls record
     const callId = await ctx.db.insert("aiCalls", {
@@ -700,30 +712,9 @@ export const triggerAiCall = mutation({
       followUpTriggered: false,
     });
 
-    // Update application aiCallStatus
-    await ctx.db.patch(args.applicationId, {
-      aiCallStatus: "scheduled",
+    await ctx.scheduler.runAfter(0, internal.integrations.livekitSip.dispatchManualVoiceCall, {
       aiCallId: callId,
-    });
-
-    // Schedule ElevenLabs trigger
-    await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
-      applicationId: args.applicationId,
-      candidateId: app.candidateId,
-      jobId: app.jobId,
-    });
-
-    await ctx.db.insert("pipelineEvents", {
-      applicationId: args.applicationId,
-      candidateId: app.candidateId,
-      jobId: app.jobId,
-      eventType: "ai_call_triggered",
-      fromStage: app.currentStage,
-      toStage: app.currentStage,
-      actorType: "user",
-      actorId: user._id,
-      notes: "AI call manually triggered",
-      createdAt: Date.now(),
+      kind: "intake",
     });
 
     return callId;
@@ -1129,9 +1120,6 @@ export const resetAllUnresponsiveForJob = internalMutation({
     return { resetCount: apps.length };
   },
 });
-
-
-
 
 
 

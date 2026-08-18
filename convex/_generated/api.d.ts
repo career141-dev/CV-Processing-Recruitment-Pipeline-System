@@ -75,6 +75,7 @@ import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
+import type * as integrations_livekitSip from "../integrations/livekitSip.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
 import type * as integrations_zipMutations from "../integrations/zipMutations.js";
@@ -187,6 +188,7 @@ declare const fullApi: ApiFromModules<{
   health: typeof health;
   http: typeof http;
   "integrations/elevenlabs": typeof integrations_elevenlabs;
+  "integrations/livekitSip": typeof integrations_livekitSip;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
   "integrations/zipMutations": typeof integrations_zipMutations;
