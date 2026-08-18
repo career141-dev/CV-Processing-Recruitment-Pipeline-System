@@ -135,6 +135,25 @@ export const createInquiry = internalMutation({
     status: v.optional(v.union(v.literal("unresolved"), v.literal("answered_by_ai"), v.literal("resolved_by_ta"))),
   },
   handler: async (ctx, args) => {
+    const qText = (args.questionText || "").trim();
+    const isHtmlPayload =
+      qText.startsWith("<html") ||
+      qText.startsWith("<!DOCTYPE") ||
+      qText.includes("<head>") ||
+      qText.includes("data-email-preheader") ||
+      qText.includes("mercado-container") ||
+      qText.includes("<div") ||
+      qText.includes("<table") ||
+      qText.includes("Linkedin@career141.com") ||
+      qText.includes("linkedin@career141.com") ||
+      qText.includes("Your job has a new applicant") ||
+      qText.includes("Your new applicant meets your job targeting criteria");
+
+    if (isHtmlPayload) {
+      console.log(`[Inquiries] Rejecting raw HTML payload inquiry insertion`);
+      return null;
+    }
+
     // Deduplication check: bounded lookup on candidateId index (take 20)
     const existing = await ctx.db
       .query("candidateInquiries")
