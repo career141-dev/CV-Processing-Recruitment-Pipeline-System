@@ -7,6 +7,7 @@ import type { ActionCtx } from "../_generated/server";
 export type TaskType = 
   | "cv_structuring" 
   | "cv_criteria_match"
+  | "criteria_expansion"
   | "cv_scoring" 
   | "reverse_matching" 
   | "search_ranking" 

@@ -29,6 +29,7 @@ export const createScan = mutation({
       userId: user._id,
       title: args.title || `CV Scan (${args.files.length} CVs)`,
       criteria: args.criteria,
+      expansionStatus: "pending",
       status: "pending",
       totalFiles: args.files.length,
       processedFiles: 0,
@@ -293,5 +294,78 @@ export const cleanupExpiredCvScans = mutation({
     }
 
     return { deletedScansCount: deletedCount };
+  },
+});
+
+export const updateScanExpandedCriteria = internalMutation({
+  args: {
+    scanId: v.id("cvScans"),
+    expandedCriteria: v.array(
+      v.object({
+        original: v.string(),
+        definition: v.string(),
+        equivalentTitles: v.array(v.string()),
+        relatedSignals: v.array(v.string()),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.scanId, {
+      expandedCriteria: args.expandedCriteria,
+      expansionStatus: "completed",
+    });
+  },
+});
+
+export const updateScanExpansionStatus = internalMutation({
+  args: {
+    scanId: v.id("cvScans"),
+    expansionStatus: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.scanId, {
+      expansionStatus: args.expansionStatus,
+      ...(args.expansionStatus === "failed" ? { status: "failed" } : {}),
+    });
+  },
+});
+
+export const getCachedExpansion = internalMutation({
+  args: {
+    normalizedCriterion: v.string(),
+    promptVersion: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const cached = await ctx.db
+      .query("criteriaExpansionCache")
+      .withIndex("by_normalizedCriterion", (q) =>
+        q.eq("normalizedCriterion", args.normalizedCriterion)
+      )
+      .first();
+
+    if (cached && cached.promptVersion === args.promptVersion) {
+      return cached.expansion;
+    }
+    return null;
+  },
+});
+
+export const saveCachedExpansion = internalMutation({
+  args: {
+    normalizedCriterion: v.string(),
+    expansion: v.object({
+      definition: v.string(),
+      equivalentTitles: v.array(v.string()),
+      relatedSignals: v.array(v.string()),
+    }),
+    promptVersion: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("criteriaExpansionCache", {
+      normalizedCriterion: args.normalizedCriterion,
+      expansion: args.expansion,
+      promptVersion: args.promptVersion,
+      createdAt: Date.now(),
+    });
   },
 });

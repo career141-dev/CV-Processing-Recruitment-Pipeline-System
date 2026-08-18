@@ -1618,6 +1618,19 @@ export default defineSchema({
     userId: v.id("users"),
     title: v.string(),
     criteria: v.array(v.string()),
+    expandedCriteria: v.optional(
+      v.array(
+        v.object({
+          original: v.string(),
+          definition: v.string(),
+          equivalentTitles: v.array(v.string()),
+          relatedSignals: v.array(v.string()),
+        })
+      )
+    ),
+    expansionStatus: v.optional(
+      v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"))
+    ),
     status: v.union(v.literal("pending"), v.literal("processing"), v.literal("completed"), v.literal("failed")),
     totalFiles: v.number(),
     processedFiles: v.number(),
@@ -1628,6 +1641,18 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"])
     .index("by_status", ["status"]),
+
+  criteriaExpansionCache: defineTable({
+    normalizedCriterion: v.string(),
+    expansion: v.object({
+      definition: v.string(),
+      equivalentTitles: v.array(v.string()),
+      relatedSignals: v.array(v.string()),
+    }),
+    promptVersion: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_normalizedCriterion", ["normalizedCriterion"]),
 
   cvScanResults: defineTable({
     scanId: v.id("cvScans"),

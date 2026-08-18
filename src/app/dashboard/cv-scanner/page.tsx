@@ -46,6 +46,7 @@ export default function CvScannerPage() {
   const generateConvexUploadUrl = useMutation(api.cvs.cvUploads.generateUploadUrl);
   const generateR2UploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const createScan = useMutation(api.cvScanner.scanMutations.createScan);
+  const expandCriteriaViaNim = useAction(api.cvScanner.scanActions.expandCriteriaViaNim);
   const triggerScanBatch = useAction(api.cvScanner.scanActions.triggerScanBatch);
   const promoteCandidateToDb = useMutation(api.cvScanner.scanMutations.promoteCandidateToDb);
 
@@ -202,7 +203,7 @@ export default function CvScannerPage() {
         uploadedFilesInfo.push(...chunkResults);
       }
 
-      toast.loading("Initializing DeepSeek scanning job...", { id: toastId });
+      toast.loading("Analyzing criteria & expanding job titles (NVIDIA NIM)...", { id: toastId });
 
       const { scanId } = await createScan({
         title: scanTitle.trim() || `Scan: ${criteriaList[0]} (${files.length} CVs)`,
@@ -211,6 +212,19 @@ export default function CvScannerPage() {
       });
 
       setActiveScanId(scanId);
+
+      // Stage 1: Criteria Expansion via NVIDIA NIM Llama 3.1 70B Instruct
+      try {
+        await expandCriteriaViaNim({ scanId });
+      } catch (expansionErr: any) {
+        console.error("Criteria expansion failed:", expansionErr);
+        toast.error(`Criteria expansion failed — scan halted: ${expansionErr.message || String(expansionErr)}`, { id: toastId });
+        setIsUploading(false);
+        return;
+      }
+
+      // Stage 2: Batch CV Evaluation via DeepSeek v4 Flash
+      toast.loading("Scanning CVs with DeepSeek v4 Flash...", { id: toastId });
       await triggerScanBatch({ scanId });
 
       toast.success("Scan started! Results will populate in real time.", { id: toastId });
@@ -488,6 +502,41 @@ export default function CvScannerPage() {
                   <span>Non-Matches: <strong>{processedCount - scanSession.matchedFiles}</strong></span>
                 </div>
               </div>
+
+              {/* NVIDIA NIM Criteria Interpretation (Collapsible Panel) */}
+              {scanSession.expandedCriteria && scanSession.expandedCriteria.length > 0 && (
+                <div className="mb-6 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-xs">
+                  <div className="flex items-center justify-between font-bold text-slate-900 dark:text-slate-100 mb-2">
+                    <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                      <Sparkles className="w-4 h-4" />
+                      NVIDIA NIM Criteria Interpretation (Llama 3.1 70B Instruct)
+                    </span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Expanded 1x per scan</span>
+                  </div>
+                  <div className="space-y-3">
+                    {scanSession.expandedCriteria.map((ec: any, idx: number) => (
+                      <div key={idx} className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">
+                          Criterion {idx + 1}: &quot;{ec.original}&quot;
+                        </span>
+                        <p className="text-slate-600 dark:text-slate-400 mb-2 italic">
+                          &quot;{ec.definition}&quot;
+                        </p>
+                        {ec.equivalentTitles && ec.equivalentTitles.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1 mt-1">
+                            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 mr-1">Equivalent Titles:</span>
+                            {ec.equivalentTitles.map((t: string, tIdx: number) => (
+                              <span key={tIdx} className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded text-[10px] border border-slate-200 dark:border-slate-700">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Filter Tabs */}
               <div className="flex items-center justify-between mb-4">

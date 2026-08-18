@@ -5,7 +5,10 @@ import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { extractText } from "../cvs/cvExtraction";
-import { executeLLMWithNvidiaFallback } from "../lib/llm";
+import { executeLLMWithNvidiaFallback, getNvidiaOpenAI, logLLMUsage } from "../lib/llm";
+
+const PROMPT_VERSION = "v1.0";
+const EXPANSION_MODEL = "meta/llama-3.1-70b-instruct";
 
 export const evaluateCvForCriteria = action({
   args: {
@@ -60,14 +63,28 @@ export const evaluateCvForCriteria = action({
       }
 
       // 4. Formulate DeepSeek evaluation prompt using taskType 'cv_criteria_match'
+      const expandedCriteria = scan.expandedCriteria || [];
+      const expandedContext = expandedCriteria.length > 0
+        ? expandedCriteria
+            .map(
+              (ec: any, i: number) =>
+                `CRITERION ${i + 1}: "${ec.original}"
+  - Semantic Meaning: ${ec.definition}
+  - Equivalent Job Titles / Role Variations: ${ec.equivalentTitles.join(", ")}
+  - Related Skills & Signals: ${ec.relatedSignals.join(", ")}`
+            )
+            .join("\n\n")
+        : scan.criteria.map((c: string, i: number) => `${i + 1}. ${c}`).join("\n");
+
       const systemPrompt = `You are an expert HR recruiter and candidate screening assistant.
-Evaluate the candidate's CV text against the requested criteria list.
+Evaluate the candidate's CV text against the requested criteria list and their expanded semantic meanings.
 
 CRITICAL INSTRUCTIONS:
 1. Candidate Identity: Extract candidate name, email, phone, current title if present in text.
-2. Criterion Scoring: For EVERY criterion in the input list, assign a match score from 0 to 100 representing confidence that the candidate satisfies that specific criterion.
-3. Evidence Quotes: Provide 1 to 3 exact, verbatim sentences or phrases copied from the CV text that support your evaluation.
-4. Reasoning: Write a 1-2 sentence executive summary of the evaluation.
+2. Criterion Scoring: Assign a match score from 0 to 100 for EACH criterion. A candidate matches if their actual experience aligns with the criteria's substance, even if their CV uses different terminology than the criteria or the equivalent titles listed. The equivalent titles are examples to guide your judgment, not an exhaustive list or a required literal match.
+3. Order of JSON Fields: Return "reasoning" FIRST, then "criterionScores", then "evidenceQuotes".
+4. Evidence Quotes: Provide 1 to 3 exact, verbatim sentences or phrases copied from the CV text that support your evaluation.
+5. Reasoning: Write a 1-2 sentence executive summary of the evaluation.
 
 Respond ONLY with valid JSON matching this schema:
 {
@@ -84,8 +101,8 @@ Respond ONLY with valid JSON matching this schema:
   ]
 }`;
 
-      const userPrompt = `TARGET CRITERIA:
-${scan.criteria.map((c: string, i: number) => `${i + 1}. ${c}`).join("\n")}
+      const userPrompt = `TARGET CRITERIA & EXPANDED SEMANTIC CONTEXT:
+${expandedContext}
 
 CANDIDATE CV TEXT:
 ${rawText.slice(0, 15000)}`;
@@ -236,5 +253,153 @@ export const getScanResultDownloadUrl = action({
       fileName: result.fileName,
       candidateName: result.candidateName,
     };
+  },
+});
+
+export const expandCriteriaViaNim = action({
+  args: {
+    scanId: v.id("cvScans"),
+  },
+  handler: async (ctx, args) => {
+    const scan = await ctx.runQuery(api.cvScanner.scanMutations.getScanSession, { scanId: args.scanId });
+    if (!scan) {
+      throw new Error(`Scan session ${args.scanId} not found`);
+    }
+
+    if (!scan.criteria || scan.criteria.length === 0) {
+      await ctx.runMutation(internal.cvScanner.scanMutations.updateScanExpandedCriteria, {
+        scanId: args.scanId,
+        expandedCriteria: [],
+      });
+      return;
+    }
+
+    const expandedResults: Array<{
+      original: string;
+      definition: string;
+      equivalentTitles: string[];
+      relatedSignals: string[];
+    }> = [];
+
+    const nvidiaOpenAI = getNvidiaOpenAI();
+
+    try {
+      for (const criterion of scan.criteria) {
+        const normalized = criterion.trim().toLowerCase();
+
+        // 1. Check cache first
+        const cached: any = await ctx.runMutation(internal.cvScanner.scanMutations.getCachedExpansion, {
+          normalizedCriterion: normalized,
+          promptVersion: PROMPT_VERSION,
+        });
+
+        if (cached) {
+          console.log(`[expandCriteriaViaNim] Cache HIT for criterion "${criterion}"`);
+          expandedResults.push({
+            original: criterion,
+            definition: cached.definition,
+            equivalentTitles: cached.equivalentTitles || [],
+            relatedSignals: cached.relatedSignals || [],
+          });
+          continue;
+        }
+
+        console.log(`[expandCriteriaViaNim] Cache MISS for criterion "${criterion}". Invoking NVIDIA NIM (${EXPANSION_MODEL})...`);
+
+        // 2. Invoke NVIDIA NIM Llama 3.1 70B Instruct for expansion
+        const prompt = `You are an expert HR recruitment taxonomist.
+Expand the following candidate search criterion into a rich, comprehensive semantic definition, equivalent job titles, and related experience signals.
+
+Target Criterion: "${criterion}"
+
+CRITICAL INSTRUCTIONS:
+1. Return ONLY a valid JSON object matching the exact schema below.
+2. Do NOT wrap output in markdown \`\`\`json code blocks. Do NOT include preambles or explanations.
+
+Expected JSON format:
+{
+  "definition": "A clear, 1-2 sentence description of what experience, responsibilities, or background this criterion represents",
+  "equivalentTitles": ["List 5-8 common equivalent job titles or role variations that satisfy this criterion"],
+  "relatedSignals": ["List 4-6 key skills, tools, duties, or achievements that signal this criterion"]
+}`;
+
+        const response = await nvidiaOpenAI.chat.completions.create({
+          model: EXPANSION_MODEL,
+          messages: [
+            { role: "system", content: "You are a precise HR data taxonomist. Output strictly valid JSON." },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 1024,
+          response_format: { type: "json_object" },
+        });
+
+        if (response.usage) {
+          await logLLMUsage(
+            ctx,
+            "criteria_expansion",
+            EXPANSION_MODEL,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            true,
+            undefined,
+            undefined,
+            "nvidia"
+          );
+        }
+
+        const rawContent = response.choices[0]?.message?.content?.trim() || "";
+        const cleanContent = rawContent.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+
+        const parsed = JSON.parse(cleanContent);
+        const expansion = {
+          definition: parsed.definition || criterion,
+          equivalentTitles: Array.isArray(parsed.equivalentTitles) ? parsed.equivalentTitles : [],
+          relatedSignals: Array.isArray(parsed.relatedSignals) ? parsed.relatedSignals : [],
+        };
+
+        // 3. Cache the expansion result
+        await ctx.runMutation(internal.cvScanner.scanMutations.saveCachedExpansion, {
+          normalizedCriterion: normalized,
+          expansion,
+          promptVersion: PROMPT_VERSION,
+        });
+
+        expandedResults.push({
+          original: criterion,
+          ...expansion,
+        });
+      }
+
+      // 4. Update cvScans record with expanded criteria
+      await ctx.runMutation(internal.cvScanner.scanMutations.updateScanExpandedCriteria, {
+        scanId: args.scanId,
+        expandedCriteria: expandedResults,
+      });
+
+      console.log(`[expandCriteriaViaNim] Successfully expanded ${expandedResults.length} criteria for scan ${args.scanId}`);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err);
+      console.error(`[expandCriteriaViaNim] Expansion failed for scan ${args.scanId}: ${errorMsg}`);
+
+      await logLLMUsage(
+        ctx,
+        "criteria_expansion",
+        EXPANSION_MODEL,
+        0,
+        0,
+        false,
+        `Criteria Expansion Failed: ${errorMsg}`,
+        undefined,
+        "nvidia"
+      );
+
+      await ctx.runMutation(internal.cvScanner.scanMutations.updateScanExpansionStatus, {
+        scanId: args.scanId,
+        expansionStatus: "failed",
+      });
+
+      throw new Error(`Criteria expansion failed: ${errorMsg}`);
+    }
   },
 });

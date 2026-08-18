@@ -59,6 +59,7 @@ import type * as communications_whatchimpActions from "../communications/whatchi
 import type * as communications_whatsappAgent from "../communications/whatsappAgent.js";
 import type * as communications_whatsappOutbound from "../communications/whatsappOutbound.js";
 import type * as crons from "../crons.js";
+import type * as cvScanner_expandCriteria from "../cvScanner/expandCriteria.js";
 import type * as cvScanner_scanActions from "../cvScanner/scanActions.js";
 import type * as cvScanner_scanMutations from "../cvScanner/scanMutations.js";
 import type * as cvs_batches from "../cvs/batches.js";
@@ -170,6 +171,7 @@ declare const fullApi: ApiFromModules<{
   "communications/whatsappAgent": typeof communications_whatsappAgent;
   "communications/whatsappOutbound": typeof communications_whatsappOutbound;
   crons: typeof crons;
+  "cvScanner/expandCriteria": typeof cvScanner_expandCriteria;
   "cvScanner/scanActions": typeof cvScanner_scanActions;
   "cvScanner/scanMutations": typeof cvScanner_scanMutations;
   "cvs/batches": typeof cvs_batches;
