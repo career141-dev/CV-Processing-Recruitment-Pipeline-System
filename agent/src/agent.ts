@@ -52,19 +52,23 @@ Rules for voice speech:
 - Be warm, encouraging, and respectful.
 - If the candidate interrupts, immediately acknowledge what they said.`;
 
-    const vad = await silero.VAD.load();
+    const vad = await silero.VAD.load({
+      minSilenceDuration: 0.3, // 300ms snappy silence detection (eliminates 900ms dead pause!)
+      minSpeechDuration: 0.1,  // 100ms instant speech detection
+    });
 
     const stt = new deepgram.STT({
       apiKey: process.env.DEEPGRAM_API_KEY,
       model: "nova-2-general",
       language: "en",
+      endpointing: 300,
     });
 
     const llm = new openai.LLM({
-      baseURL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
-      apiKey: process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY,
-      model: "deepseek/deepseek-chat",
-      temperature: 0.3,
+      baseURL: process.env.OPENAI_API_KEY ? "https://api.openai.com/v1" : (process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"),
+      apiKey: process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY,
+      model: process.env.OPENAI_API_KEY ? "gpt-4o-mini" : "deepseek/deepseek-chat",
+      temperature: 0.2,
     });
 
     const tts = process.env.CARTESIA_API_KEY
