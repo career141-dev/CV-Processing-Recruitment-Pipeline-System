@@ -127,7 +127,7 @@ export default function Sidebar() {
         {isExpanded ? (
           <Link href="/dashboard" className="flex items-center cursor-pointer ml-1">
             <img
-              src="/Artboard 4@2x 5.png"
+              src="/logo.png"
               alt="Career141"
               className="h-9 w-auto max-w-[170px] object-contain dark:brightness-110 filter drop-shadow-sm"
             />
@@ -136,7 +136,7 @@ export default function Sidebar() {
           <Link href="/dashboard" className="flex items-center justify-center cursor-pointer">
             <div className="w-9 h-9 overflow-hidden rounded-md flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 p-0.5 shadow-sm">
               <img
-                src="/Artboard 4@2x 5.png"
+                src="/logo.png"
                 alt="Career141"
                 className="h-7 w-auto object-cover object-left dark:brightness-110"
               />
