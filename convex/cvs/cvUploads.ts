@@ -560,3 +560,136 @@ export const requeueAllStuckUploads = internalMutation({
     return { requeuedCount, remaining: allStuck.length };
   },
 });
+
+/**
+ * Recovery Tool: Scans all cvUploads for records whose extraction was skipped
+ * or failed due to insufficient API credits, resets their status, and re-triggers
+ * parallel LLM extraction using refilled credits.
+ */
+export const recoverCreditDepletedCVs = mutation({
+  args: {
+    limit: v.optional(v.number()),
+    staggerMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchLimit = Math.min(args.limit ?? 30, 50);
+    const staggerMs = args.staggerMs ?? 500; // 500ms fast parallel stagger by default
+
+    // 1. Fetch targeted statuses using indexed queries
+    const processedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processed"))
+      .order("desc")
+      .take(150);
+
+    const failedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed"))
+      .order("desc")
+      .take(50);
+
+    const failedRetryList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
+      .order("desc")
+      .take(50);
+
+    const permFailedList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "extraction_failed_permanent"))
+      .order("desc")
+      .take(50);
+
+    const processingList = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .order("desc")
+      .take(100);
+
+    const threeMinsAgo = Date.now() - 3 * 60 * 1000;
+    const stuckProcessing = processingList.filter((u) => {
+      const startMs = (u as any).processingStartedAt ?? u._creationTime;
+      return startMs < threeMinsAgo;
+    });
+
+    // 2. Filter for uploads affected by credit depletion or failed/stuck states
+    const creditAffectedUploads = [
+      ...processedList.filter((u) => {
+        const errMsg = (u.errorMessage || "").toLowerCase();
+        return (
+          errMsg.includes("credit") ||
+          errMsg.includes("insufficient") ||
+          errMsg.includes("balance") ||
+          errMsg.includes("403") ||
+          errMsg.includes("quota")
+        );
+      }),
+      ...stuckProcessing,
+      ...failedList,
+      ...failedRetryList,
+      ...permFailedList,
+    ]
+      .filter((u) => {
+        if (u.status === "needs_review") return false;
+        return Boolean(u.s3Key || u.storageId);
+      })
+      .slice(0, batchLimit);
+
+    let requeuedCount = 0;
+    for (let i = 0; i < creditAffectedUploads.length; i++) {
+      const upload = creditAffectedUploads[i];
+      const delayMs = i * staggerMs;
+
+      await ctx.db.patch(upload._id, {
+        status: "pending",
+        errorMessage: undefined,
+        extractionAttempts: 0,
+      });
+
+      if (upload.candidateId) {
+        const candidateDoc = await ctx.db.get(upload.candidateId);
+        if (candidateDoc) {
+          await ctx.db.patch(upload.candidateId, {
+            isParsed: false,
+          });
+        }
+      }
+
+      const validChannels = ["whatsapp", "meta_campaign", "email", "email_campaign", "linkedin", "workable", "manual_upload", "headhunting"];
+      const channelType = validChannels.includes(upload.source || "") ? (upload.source as any) : "manual_upload";
+
+      const logId = await ctx.db.insert("ingestionLog", {
+        channelType,
+        routingStatus: upload.assignToJob ? "routed" : "unrouted",
+        cvFileId: upload._id,
+        candidateId: upload.candidateId,
+        receivedAt: Date.now(),
+        batchId: upload.batchId,
+        stage: "queued",
+        candidateName: upload.fileName,
+        rawSender: upload.uploadedBy,
+      } as any);
+
+      await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || (upload.s3Key ? "r2" : "convex"),
+        fileType: upload.fileType || "application/pdf",
+        sourceChannel: upload.source || "manual_upload",
+        uploadedBy: upload.uploadedBy || "system",
+        batchId: upload.batchId,
+        logId,
+      });
+
+      requeuedCount++;
+    }
+
+    return {
+      success: true,
+      totalMatched: creditAffectedUploads.length,
+      requeuedCount,
+      estimatedCompletionSec: Math.ceil((requeuedCount * staggerMs) / 1000) + 10,
+    };
+  },
+});

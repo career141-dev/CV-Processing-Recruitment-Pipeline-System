@@ -197,53 +197,131 @@ export const insertCvRecord = internalMutation({
 
       const rawSenderDisplay = taUser ? taUser._id : args.fromNumber;
 
-      let createdAppId: any = null;
-      if (jobId && existingFile.candidateId) {
-        const existingApp = await ctx.db
-          .query("applications")
-          .withIndex("by_candidateId", (q) => q.eq("candidateId", existingFile.candidateId!))
-          .filter((q) => q.eq(q.field("jobId"), jobId))
-          .first();
+      if (existingFile.candidateId) {
+        let createdAppId: any = null;
+        if (jobId) {
+          const existingApp = await ctx.db
+            .query("applications")
+            .withIndex("by_candidateId", (q) => q.eq("candidateId", existingFile.candidateId!))
+            .filter((q) => q.eq(q.field("jobId"), jobId))
+            .first();
 
-        if (existingApp) {
-          console.log(`[insertCvRecord] Candidate ${existingFile.candidateId} already has application ${existingApp._id} for job ${jobId}. Patching lastCandidateReplyAt.`);
-          await ctx.db.patch(existingApp._id, {
-            lastCandidateReplyAt: Date.now(),
-          });
-          createdAppId = existingApp._id;
-        } else {
-          const now = Date.now();
-          createdAppId = await ctx.db.insert("applications", {
-            candidateId: existingFile.candidateId,
-            jobId: jobId,
-            currentStage: "new_cvs",
-            sourceChannel: "whatsapp",
-            createdAt: now,
-            isActive: true,
-            lastStageChangedAt: now,
-            loopIteration: 0,
-            stageHistory: [{
-              stage: "new_cvs",
-              enteredAt: new Date(now).toISOString(),
-              changedBy: "system",
-            }],
-          } as any);
-          console.log(`[insertCvRecord] Created new application ${createdAppId} for existing candidate ${existingFile.candidateId} under job ${jobId}`);
+          if (existingApp) {
+            console.log(`[insertCvRecord] Candidate ${existingFile.candidateId} already has application ${existingApp._id} for job ${jobId}. Patching lastCandidateReplyAt.`);
+            await ctx.db.patch(existingApp._id, {
+              lastCandidateReplyAt: Date.now(),
+            });
+            createdAppId = existingApp._id;
+          } else {
+            const now = Date.now();
+            createdAppId = await ctx.db.insert("applications", {
+              candidateId: existingFile.candidateId,
+              jobId: jobId,
+              currentStage: "new_cvs",
+              sourceChannel: "whatsapp",
+              createdAt: now,
+              isActive: true,
+              lastStageChangedAt: now,
+              loopIteration: 0,
+              stageHistory: [{
+                stage: "new_cvs",
+                enteredAt: new Date(now).toISOString(),
+                changedBy: "system",
+              }],
+            } as any);
+            console.log(`[insertCvRecord] Created new application ${createdAppId} for existing candidate ${existingFile.candidateId} under job ${jobId}`);
+          }
         }
+
+        await ctx.db.insert("ingestionLog", {
+          jobId: jobId || undefined,
+          channelType: "whatsapp",
+          rawSender: rawSenderDisplay,
+          routingStatus: jobId ? "routed" : "duplicate_file",
+          cvFileId: existingFile._id,
+          candidateId: existingFile.candidateId,
+          receivedAt: Date.now(),
+          stage: jobId ? "queued" : "failed",
+        } as any);
+
+        return { success: true, reason: "duplicate_file_linked", existingFileId: existingFile._id, applicationId: createdAppId };
+      }
+
+      // Candidate record is missing. Evaluate retry eligibility:
+      const currentStatus = existingFile.status;
+      const attempts = existingFile.extractionAttempts ?? 0;
+
+      if (currentStatus === "pending" || currentStatus === "processing") {
+        console.log(`[insertCvRecord] WhatsApp upload ${existingFile._id} is already in-flight (status: ${currentStatus}). No-op.`);
+        return { success: false, reason: "in_flight", existingFileId: existingFile._id };
+      }
+
+      if (currentStatus === "needs_review") {
+        console.log(`[insertCvRecord] WhatsApp upload ${existingFile._id} is flagged as needs_review. Skipping automatic retry.`);
+        return { success: false, reason: "needs_review", existingFileId: existingFile._id };
+      }
+
+      if (currentStatus === "failed" && attempts < 1) {
+        console.log(`[insertCvRecord] Re-triggering WhatsApp extraction for failed upload ${existingFile._id} (attempt ${attempts + 1})...`);
+        const now = Date.now();
+        await ctx.db.patch(existingFile._id, {
+          status: "pending",
+          extractionAttempts: attempts + 1,
+          lastAttemptAt: now,
+          s3Key: args.s3Key ?? existingFile.s3Key,
+          storageId: args.storageId ?? existingFile.storageId,
+          storageProvider: args.storageProvider ?? existingFile.storageProvider,
+          assignToJob: jobId ? (jobId as string) : existingFile.assignToJob,
+          errorMessage: undefined,
+        });
+
+        const logId = await ctx.db.insert("ingestionLog", {
+          jobId: jobId || undefined,
+          channelType: "whatsapp",
+          rawSender: rawSenderDisplay,
+          routingStatus: jobId ? "routed" : "unrouted",
+          cvFileId: existingFile._id,
+          receivedAt: now,
+          stage: "queued",
+          candidateName: "Unknown — Re-triggering Extraction",
+        } as any);
+
+        await ctx.scheduler.runAfter(0, api.cvs.cvExtraction.processCvExtraction, {
+          cvUploadId: existingFile._id,
+          storageId: args.storageId ?? existingFile.storageId,
+          s3Key: args.s3Key ?? existingFile.s3Key,
+          storageProvider: args.storageProvider ?? existingFile.storageProvider,
+          fileType: "application/pdf",
+          uploadedBy: taUser ? taUser._id : "system",
+          sourceChannel: "whatsapp",
+          skipLLM: false,
+          logId: logId,
+        });
+
+        return { success: true, reason: "retriggered", existingFileId: existingFile._id };
+      }
+
+      // Max attempts reached (attempts >= 1)
+      if (currentStatus === "failed" && attempts >= 1) {
+        console.warn(`[insertCvRecord] WhatsApp upload ${existingFile._id} reached max attempts (${attempts}). Transitioning to extraction_failed_permanent.`);
+        await ctx.db.patch(existingFile._id, {
+          status: "extraction_failed_permanent",
+          errorMessage: "Permanent extraction failure — attempt cap reached (1 retry max)",
+        });
       }
 
       await ctx.db.insert("ingestionLog", {
         jobId: jobId || undefined,
         channelType: "whatsapp",
         rawSender: rawSenderDisplay,
-        routingStatus: jobId ? "routed" : "duplicate_file",
+        routingStatus: "duplicate_file",
         cvFileId: existingFile._id,
-        candidateId: existingFile.candidateId,
         receivedAt: Date.now(),
-        stage: jobId ? "queued" : "failed",
+        stage: "extraction_failed_permanent",
+        errorMessage: `Extraction attempt limit reached (${attempts} attempt(s)). Marked as soft-terminal.`,
       } as any);
 
-      return { success: true, reason: "duplicate_file_linked", existingFileId: existingFile._id, applicationId: createdAppId };
+      return { success: false, reason: "extraction_failed_permanent", existingFileId: existingFile._id };
     }
 
     const taUser = await ctx.db
@@ -259,10 +337,12 @@ export const insertCvRecord = internalMutation({
       .first();
 
     if (!candidate) {
+      const now = Date.now();
       const candidateId = await ctx.db.insert("candidates", {
         phone: args.originalSenderPhone,
         firstSourceChannel: "whatsapp",
-        firstSeenAt: Date.now(),
+        firstSeenAt: now,
+        lastUpdatedAt: now,
         fullName: `WhatsApp Candidate (${args.originalSenderPhone.slice(-4)})`,
         email: "",
         status: "active",

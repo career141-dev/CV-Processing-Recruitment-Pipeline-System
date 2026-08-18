@@ -522,7 +522,8 @@ export default defineSchema({
     batchId: v.optional(v.id("ingestionBatches")),
     isHealAttempted: v.optional(v.boolean()),
     processingStartedAt: v.optional(v.number()), // Timestamp when extraction action began; used by stuck-upload recovery
-    extractionAttempts: v.optional(v.number()), // Retry attempt counter for CV text extraction
+    extractionAttempts: v.optional(v.number()), // Number of extraction attempts (max 1 retry)
+    lastAttemptAt: v.optional(v.number()), // Timestamp of last extraction attempt
   })
     .index("by_uploadedBy", ["uploadedBy"])
     .index("by_status", ["status"])
@@ -720,6 +721,7 @@ export default defineSchema({
     .index("by_linkedinUrl", ["linkedinUrl"])
     .index("by_overallStatus", ["overallStatus"])
     .index("by_lastUpdatedAt", ["lastUpdatedAt"])
+    .index("by_firstSeenAt", ["firstSeenAt"])
     .index("by_extractionModel", ["extractionModel"])
     .index("by_sourceChannel", ["sourceChannel"])
     .index("by_firstSourceChannel", ["firstSourceChannel"])
@@ -1611,4 +1613,73 @@ export default defineSchema({
     createdAt: v.string(),
   }).index("by_phone", ["phone"]),
 
+  // ■■ QUICK CV SCANS (Ad-Hoc Keyword & Criteria Scanning) ■■■■■■■■■■■■■■■■■■■
+  cvScans: defineTable({
+    userId: v.id("users"),
+    title: v.string(),
+    criteria: v.array(v.string()),
+    expandedCriteria: v.optional(
+      v.array(
+        v.object({
+          original: v.string(),
+          definition: v.string(),
+          equivalentTitles: v.array(v.string()),
+          relatedSignals: v.array(v.string()),
+        })
+      )
+    ),
+    expansionStatus: v.optional(
+      v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"))
+    ),
+    status: v.union(v.literal("pending"), v.literal("processing"), v.literal("completed"), v.literal("failed")),
+    totalFiles: v.number(),
+    processedFiles: v.number(),
+    matchedFiles: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(), // Unix timestamp (ms), default 7 days retention
+  })
+    .index("by_userId", ["userId"])
+    .index("by_expiresAt", ["expiresAt"])
+    .index("by_status", ["status"]),
+
+  criteriaExpansionCache: defineTable({
+    normalizedCriterion: v.string(),
+    expansion: v.object({
+      definition: v.string(),
+      equivalentTitles: v.array(v.string()),
+      relatedSignals: v.array(v.string()),
+    }),
+    promptVersion: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_normalizedCriterion", ["normalizedCriterion"]),
+
+  cvScanResults: defineTable({
+    scanId: v.id("cvScans"),
+    fileStorageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()),
+    fileName: v.string(),
+    fileSize: v.number(),
+    fileType: v.string(),
+    candidateName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    currentTitle: v.optional(v.string()),
+    matchScore: v.number(), // 0 to 100
+    isMatch: v.boolean(),   // matchScore >= 60
+    matchedCriteria: v.array(v.string()),
+    criterionScores: v.array(v.object({ criterion: v.string(), score: v.number() })),
+    evidenceQuotes: v.array(v.object({ quote: v.string(), isVerifiedQuote: v.boolean() })),
+    reasoning: v.string(),
+    status: v.union(v.literal("pending"), v.literal("processing"), v.literal("completed"), v.literal("failed")),
+    extractionAttempts: v.number(), // Single-retry soft-terminal tracking
+    error: v.optional(v.string()),
+    processedAt: v.optional(v.number()),
+    promotedCandidateId: v.optional(v.id("candidates")),
+  })
+    .index("by_scanId", ["scanId"])
+    .index("by_scanId_matchScore", ["scanId", "matchScore"])
+    .index("by_status", ["status"]),
+
 });
+

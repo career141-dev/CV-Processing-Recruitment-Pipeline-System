@@ -10,12 +10,12 @@ export const getOverviewMetrics = query({
   args: {},
   handler: async (ctx) => {
     await requireFullAccess(ctx);
-    
-    // 1. Fetch cached Total CVs from global system stats singleton (O(1) lookup)
-    const sysStat = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", (q: any) => q.eq("singletonKey", "global_stats"))
+    // 1. Read total CV count from systemStats DB record (O(1) lookup)
+    const sysStat = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
       .first();
-    const totalCVs = sysStat?.totalCvUploads || 0;
+    const totalCVs = sysStat?.totalCvUploads ?? 0;
 
     // 2. Read only active jobs
     const activeJobs = await ctx.db.query("jobs")
@@ -37,19 +37,17 @@ export const getOverviewMetrics = query({
     const interviews = globalStageCounts["interview"] || 0;
     const placements = globalStageCounts["placed"] || 0;
 
-    // 5. Source distribution aggregated from last 30 daily stats records (O(1) database complexity)
-    const dailyStatsList = await ctx.db.query("dailyStats")
-      .order("desc")
-      .take(30);
-
+    // 5. Source distribution aggregated from last 30 daily stats records
+    const recentDailyStats = await ctx.db.query("dailyStats").order("desc").take(30);
     const sourceTotals: Record<string, number> = {};
     let totalFromSources = 0;
 
-    for (const day of dailyStatsList) {
-      const sourceMap = day.cvsBySource || {};
-      for (const [source, count] of Object.entries(sourceMap)) {
-        const countNum = count as number;
-        sourceTotals[source] = (sourceTotals[source] || 0) + countNum;
+    for (const dayStat of recentDailyStats) {
+      const bySource = dayStat.cvsBySource || {};
+      for (const [source, count] of Object.entries(bySource)) {
+        const sourceName = source || "database";
+        const countNum = (count as number) || 0;
+        sourceTotals[sourceName] = (sourceTotals[sourceName] || 0) + countNum;
         totalFromSources += countNum;
       }
     }

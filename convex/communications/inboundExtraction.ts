@@ -155,6 +155,10 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         if (completion) break;
       } catch (llmErr: any) {
         console.warn(`[Inbound Extraction] Attempt ${attempts} LLM error: ${llmErr.message}`);
+        if (llmErr?.message?.includes("Key limit exceeded") || llmErr?.message?.includes("403")) {
+          console.error(`[Inbound Extraction ALERT] OpenRouter API Key spending limit reached on OpenRouter Dashboard!`);
+          break;
+        }
         if (attempts >= 3) throw llmErr;
         await new Promise(r => setTimeout(r, 1000));
       }

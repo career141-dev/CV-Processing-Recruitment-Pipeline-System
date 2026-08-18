@@ -6,6 +6,8 @@ import type { ActionCtx } from "../_generated/server";
 
 export type TaskType = 
   | "cv_structuring" 
+  | "cv_criteria_match"
+  | "criteria_expansion"
   | "cv_scoring" 
   | "reverse_matching" 
   | "search_ranking" 
@@ -19,6 +21,7 @@ export type TaskType =
 export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
   return (
     taskType === "cv_structuring" ||
+    taskType === "cv_criteria_match" ||
     taskType === "cv_scoring" ||
     taskType === "reverse_matching" ||
     taskType === "email_routing" ||

@@ -2149,7 +2149,54 @@ export default function JobDetailPage() {
   };
 
   const [sortOrder, setSortOrder] = useState<'score' | 'time'>('score');
+  const [timeFilter, setTimeFilter] = useState<'all' | '24h' | '3d' | '7d' | 'custom'>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Close filter popup on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+        setIsFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const isWithinTimeFilter = (timestamp: number) => {
+    if (sortOrder === 'score') return true; // Date filter disabled when sorted by score
+    if (timeFilter === 'all') return true;
+
+    const now = Date.now();
+    if (timeFilter === '24h') {
+      return timestamp >= now - 24 * 60 * 60 * 1000;
+    }
+    if (timeFilter === '3d') {
+      return timestamp >= now - 3 * 24 * 60 * 60 * 1000;
+    }
+    if (timeFilter === '7d') {
+      return timestamp >= now - 7 * 24 * 60 * 60 * 1000;
+    }
+    if (timeFilter === 'custom') {
+      if (!customStartDate && !customEndDate) return true;
+      let valid = true;
+      if (customStartDate) {
+        const startMs = new Date(`${customStartDate}T00:00:00`).getTime();
+        if (!isNaN(startMs)) valid = valid && timestamp >= startMs;
+      }
+      if (customEndDate) {
+        const endMs = new Date(`${customEndDate}T23:59:59.999`).getTime();
+        if (!isNaN(endMs)) valid = valid && timestamp <= endMs;
+      }
+      return valid;
+    }
+    return true;
+  };
+
   const copyPublicLink = () => {
     toast.info("Public apply URL feature not enabled yet.");
   };
@@ -2169,10 +2216,9 @@ export default function JobDetailPage() {
 
   const newCvsRaw = applications.filter(app => app.currentStage === "new_cvs");
   const newCvs = newCvsRaw.filter(app => {
-    if (activeSourceFilter === 'All Sources') return true;
-    if (activeSourceFilter === 'LinkedIn') return app.sourceChannel === 'linkedin';
-    if (activeSourceFilter === 'WhatsApp') return app.sourceChannel === 'whatsapp';
-    return true;
+    if (activeSourceFilter === 'LinkedIn' && app.sourceChannel !== 'linkedin') return false;
+    if (activeSourceFilter === 'WhatsApp' && app.sourceChannel !== 'whatsapp') return false;
+    return isWithinTimeFilter(app._creationTime);
   });
   
   newCvs.sort((a, b) => {
@@ -2247,12 +2293,12 @@ export default function JobDetailPage() {
   };
 
   const handleBulkRescore = async () => {
-    const pipelineApps = applications.filter(a => a.currentStage !== 'new_cvs' && a.currentStage !== 'rejected' && a.candidateId);
+    const pipelineApps = applications.filter(a => a.currentStage !== 'rejected' && a.candidateId);
     if (pipelineApps.length === 0) {
-      toast.info("No candidates in the active pipeline to rescore.");
+      toast.info("No active candidates found to rescore.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to rescore all ${pipelineApps.length} active pipeline candidates against the current job requirements? This may take a few moments.`)) return;
+    if (!window.confirm(`Are you sure you want to rescore all ${pipelineApps.length} active candidates against the current job requirements? This may take a few moments.`)) return;
 
     setIsBulkRescoring(true);
     const toastId = toast.loading(`Rescoring ${pipelineApps.length} candidates...`);
@@ -2584,9 +2630,9 @@ export default function JobDetailPage() {
       }
       if (!stageMatch) return false;
       
-      if (activeSourceFilter === 'LinkedIn') return app.sourceChannel === 'linkedin';
-      if (activeSourceFilter === 'WhatsApp') return app.sourceChannel === 'whatsapp';
-      return true;
+      if (activeSourceFilter === 'LinkedIn' && app.sourceChannel !== 'linkedin') return false;
+      if (activeSourceFilter === 'WhatsApp' && app.sourceChannel !== 'whatsapp') return false;
+      return isWithinTimeFilter(app._creationTime);
     });
     
 
@@ -3216,9 +3262,117 @@ export default function JobDetailPage() {
             >
               <ArrowUpDown className="w-4 h-4" /> Sort: {sortOrder === 'score' ? 'Score' : 'Time'}
             </button>
-            <button className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1">
-              <Filter className="w-4 h-4" /> Filter
-            </button>
+            <div className="relative" ref={filterRef}>
+              <button 
+                disabled={sortOrder === 'score'}
+                onClick={() => setIsFilterOpen(prev => !prev)}
+                title={sortOrder === 'score' ? "Date filtering is available when sorted by Time" : "Filter candidates by date range"}
+                className={`border border-border px-3 py-1.5 rounded-[8px] text-[13px] transition-colors flex items-center gap-1.5 ${
+                  sortOrder === 'score'
+                    ? 'text-text-disabled opacity-50 cursor-not-allowed bg-surface'
+                    : timeFilter !== 'all'
+                    ? 'bg-primary/10 text-primary border-primary font-medium'
+                    : 'text-text-secondary hover:bg-surface-container'
+                }`}
+              >
+                <Filter className="w-4 h-4" />
+                <span>
+                  {timeFilter === 'all' && 'Filter'}
+                  {timeFilter === '24h' && 'Filter: 24h'}
+                  {timeFilter === '3d' && 'Filter: 3d'}
+                  {timeFilter === '7d' && 'Filter: 7d'}
+                  {timeFilter === 'custom' && 'Filter: Custom'}
+                </span>
+                {timeFilter !== 'all' && (
+                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse ml-0.5" />
+                )}
+              </button>
+
+              {isFilterOpen && sortOrder === 'time' && (
+                <div className="absolute right-0 mt-2 w-72 bg-surface border border-border rounded-xl shadow-xl z-50 p-4 font-body">
+                  <div className="flex items-center justify-between pb-2 mb-3 border-b border-border">
+                    <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Date Range Filter</span>
+                    {timeFilter !== 'all' && (
+                      <button
+                        onClick={() => {
+                          setTimeFilter('all');
+                          setCustomStartDate('');
+                          setCustomEndDate('');
+                          setIsFilterOpen(false);
+                        }}
+                        className="text-xs text-primary hover:underline font-medium"
+                      >
+                        Reset All
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    {[
+                      { id: 'all', label: 'All Time' },
+                      { id: '24h', label: 'Last 24 Hours' },
+                      { id: '3d', label: 'Last 3 Days' },
+                      { id: '7d', label: 'Last 7 Days' },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => {
+                          setTimeFilter(opt.id as any);
+                          if (opt.id !== 'custom') setIsFilterOpen(false);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-left ${
+                          timeFilter === opt.id
+                            ? 'bg-primary text-primary-contrast'
+                            : 'bg-surface-container hover:bg-surface-container-high text-text-secondary'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="pt-3 border-t border-border">
+                    <div className="text-xs font-medium text-text-secondary mb-2 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-primary" /> Custom Calendar Range
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-[11px] text-text-muted block mb-1">From Date</label>
+                        <input
+                          type="date"
+                          value={customStartDate}
+                          onChange={e => {
+                            setCustomStartDate(e.target.value);
+                            setTimeFilter('custom');
+                          }}
+                          className="w-full text-xs bg-surface-container border border-border rounded-lg px-2.5 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-text-muted block mb-1">To Date</label>
+                        <input
+                          type="date"
+                          value={customEndDate}
+                          onChange={e => {
+                            setCustomEndDate(e.target.value);
+                            setTimeFilter('custom');
+                          }}
+                          className="w-full text-xs bg-surface-container border border-border rounded-lg px-2.5 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                        />
+                      </div>
+                      {timeFilter === 'custom' && (
+                        <button
+                          onClick={() => setIsFilterOpen(false)}
+                          className="w-full mt-2 bg-primary text-primary-contrast rounded-lg py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                        >
+                          Apply Custom Range
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <button 
               disabled
               title="Bulk AI Call feature is disabled for now"
