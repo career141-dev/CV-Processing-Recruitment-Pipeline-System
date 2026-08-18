@@ -147,11 +147,19 @@ export default function Sidebar() {
 
         {/* ── Candidates Search: Full-access & Test TA ────── */}
         {canSearchCandidates && (
-          <Link href="/dashboard/candidates" className={linkClass('/dashboard/candidates')}>
-            <span className={iconClass('/dashboard/candidates')}>person_search</span>
-            <span className={labelClass}>Candidates Search</span>
-            {renderTooltip("Candidates Search")}
-          </Link>
+          <>
+            <Link href="/dashboard/candidates" className={linkClass('/dashboard/candidates')}>
+              <span className={iconClass('/dashboard/candidates')}>person_search</span>
+              <span className={labelClass}>Candidates Search</span>
+              {renderTooltip("Candidates Search")}
+            </Link>
+
+            <Link href="/dashboard/cv-scanner" className={linkClass('/dashboard/cv-scanner')}>
+              <span className={iconClass('/dashboard/cv-scanner')}>document_scanner</span>
+              <span className={labelClass}>CV Scanner</span>
+              {renderTooltip("CV Scanner")}
+            </Link>
+          </>
         )}
 
         {/* ── Full-access only ──────────────────────── */}

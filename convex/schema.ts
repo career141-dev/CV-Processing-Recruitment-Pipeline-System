@@ -1613,4 +1613,48 @@ export default defineSchema({
     createdAt: v.string(),
   }).index("by_phone", ["phone"]),
 
+  // ■■ QUICK CV SCANS (Ad-Hoc Keyword & Criteria Scanning) ■■■■■■■■■■■■■■■■■■■
+  cvScans: defineTable({
+    userId: v.id("users"),
+    title: v.string(),
+    criteria: v.array(v.string()),
+    status: v.union(v.literal("pending"), v.literal("processing"), v.literal("completed"), v.literal("failed")),
+    totalFiles: v.number(),
+    processedFiles: v.number(),
+    matchedFiles: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(), // Unix timestamp (ms), default 7 days retention
+  })
+    .index("by_userId", ["userId"])
+    .index("by_expiresAt", ["expiresAt"])
+    .index("by_status", ["status"]),
+
+  cvScanResults: defineTable({
+    scanId: v.id("cvScans"),
+    fileStorageId: v.optional(v.id("_storage")),
+    s3Key: v.optional(v.string()),
+    fileName: v.string(),
+    fileSize: v.number(),
+    fileType: v.string(),
+    candidateName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    currentTitle: v.optional(v.string()),
+    matchScore: v.number(), // 0 to 100
+    isMatch: v.boolean(),   // matchScore >= 60
+    matchedCriteria: v.array(v.string()),
+    criterionScores: v.array(v.object({ criterion: v.string(), score: v.number() })),
+    evidenceQuotes: v.array(v.object({ quote: v.string(), isVerifiedQuote: v.boolean() })),
+    reasoning: v.string(),
+    status: v.union(v.literal("pending"), v.literal("processing"), v.literal("completed"), v.literal("failed")),
+    extractionAttempts: v.number(), // Single-retry soft-terminal tracking
+    error: v.optional(v.string()),
+    processedAt: v.optional(v.number()),
+    promotedCandidateId: v.optional(v.id("candidates")),
+  })
+    .index("by_scanId", ["scanId"])
+    .index("by_scanId_matchScore", ["scanId", "matchScore"])
+    .index("by_status", ["status"]),
+
 });
+
