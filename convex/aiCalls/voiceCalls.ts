@@ -101,3 +101,15 @@ export const recordVoiceCallSession = mutation({
     return { success: true, callId };
   },
 });
+
+export const getCandidateVoiceCalls = query({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("aiCalls")
+      .withIndex("by_candidate", (q) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .collect();
+  },
+});
+
