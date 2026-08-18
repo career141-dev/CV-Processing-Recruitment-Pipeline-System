@@ -36,8 +36,9 @@ export const syncCurrentUser = mutation({
       .unique();
 
     const isSuperAdminEmail = 
-      args.email.toLowerCase().includes("sanjeev") ||
-      args.email.toLowerCase().includes("bytecreator");
+      args.email.toLowerCase() === "sanjaysanjeev2000@gmail.com" ||
+      args.email.toLowerCase() === "bytecreator3@gmail.com" ||
+      args.email.toLowerCase() === "sanjeevsivasuthakaran@gmail.com";
 
     if (existing) {
       // Update login time and name/email if changed — DO NOT overwrite existing user role!
@@ -223,6 +224,22 @@ export const fixAllUserRolesToAdmin = mutation({
       });
     }
     return { success: true, count: users.length };
+  },
+});
+
+export const setUserRoleByEmail = mutation({
+  args: { email: v.string(), role: v.string() },
+  handler: async (ctx, args) => {
+    const users = await ctx.db.query("users").collect();
+    const target = users.find((u) => u.email.toLowerCase() === args.email.toLowerCase());
+    if (target) {
+      await ctx.db.patch(target._id, {
+        role: args.role as any,
+        updatedAt: new Date().toISOString(),
+      });
+      return { success: true, email: args.email, newRole: args.role };
+    }
+    return { success: false, error: "User not found" };
   },
 });
 
