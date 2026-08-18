@@ -1,0 +1,13 @@
+{
+	admin off
+}
+
+{$DOMAIN_NAME:voice.career141.com} {
+	# Terminate TLS and reverse proxy HTTPS/WSS browser traffic to LiveKit
+	reverse_proxy livekit:7880 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

@@ -1,0 +1,11 @@
+sip_port: 5060
+rtp_port_range_start: 10000
+rtp_port_range_end: 20000
+redis:
+  address: redis:6379
+  password: ""
+api_key: career141_livekit_key
+api_secret: career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2
+livekit_url: ws://livekit:7880
+logging:
+  level: info

@@ -113,3 +113,34 @@ export const getCandidateVoiceCalls = query({
   },
 });
 
+export const commitConfirmedVoiceAnswer = mutation({
+  args: {
+    callSessionId: v.string(),
+    applicationId: v.optional(v.id("applications")),
+    turnId: v.string(),
+    field: v.string(),
+    value: v.any(),
+    stateVersion: v.number(),
+    mode: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // 1. Isolation check: reject simulation mode writes to production tables
+    if (args.mode === "simulation") {
+      return { success: true, mode: "simulation", committed: false };
+    }
+
+    // 2. Perform durable internal update if applicationId is provided
+    if (args.applicationId) {
+      const patchData: any = {};
+      if (args.field === "currentSalary") patchData.candidateCurrentSalary = Number(args.value);
+      if (args.field === "expectedSalary") patchData.candidateExpectedSalary = Number(args.value);
+      if (args.field === "noticePeriodDays") patchData.candidateNoticePeriodDays = Number(args.value);
+
+      await ctx.db.patch(args.applicationId, patchData);
+    }
+
+    return { success: true, committed: true };
+  },
+});
+
+
