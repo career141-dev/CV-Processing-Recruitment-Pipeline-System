@@ -114,3 +114,30 @@ export const uploadBufferToR2 = internalAction({
     return key;
   },
 });
+
+export const uploadLogoToR2 = action({
+  args: {
+    key: v.string(),
+    contentType: v.string(),
+    base64Data: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const s3 = getS3Client();
+    const binaryString = atob(args.base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME!,
+      Key: args.key,
+      ContentType: args.contentType,
+      Body: bytes,
+    });
+
+    await s3.send(command);
+    console.log(`[R2 Logo Upload] Successfully uploaded ${args.key} to R2 bucket ${process.env.R2_BUCKET_NAME}`);
+    return args.key;
+  },
+});

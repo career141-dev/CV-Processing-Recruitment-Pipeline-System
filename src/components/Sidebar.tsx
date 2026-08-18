@@ -82,18 +82,23 @@ export default function Sidebar() {
     >
       <div className={`flex items-center py-4 border-b border-solid border-slate-200 dark:border-slate-800/80 w-full ${!isExpanded ? 'justify-center' : 'justify-between px-3'}`}>
         {isExpanded ? (
-          <Link href="/dashboard" className="flex items-center cursor-pointer ml-2">
-            <span className="flex flex-col shrink-0 items-center bg-emerald-600 dark:bg-emerald-400 text-left py-[5px] px-[11px] mr-3 rounded-md shadow-sm">
-              <span className="text-white dark:text-slate-950 text-sm font-extrabold">R</span>
-            </span>
-            <span className="text-slate-800 dark:text-emerald-400 text-base font-extrabold tracking-wide">
-              Career141
-            </span>
+          <Link href="/dashboard" className="flex items-center cursor-pointer ml-1">
+            <img
+              src="/Artboard 4@2x 5.png"
+              alt="Career141"
+              className="h-9 w-auto max-w-[170px] object-contain dark:brightness-110 filter drop-shadow-sm"
+            />
           </Link>
         ) : (
-          <div className="flex flex-col shrink-0 items-center bg-emerald-600 dark:bg-emerald-400 text-left py-[5px] px-[11px] rounded-md shadow-sm">
-            <span className="text-white dark:text-slate-950 text-sm font-extrabold">R</span>
-          </div>
+          <Link href="/dashboard" className="flex items-center justify-center cursor-pointer">
+            <div className="w-9 h-9 overflow-hidden rounded-md flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 p-0.5 shadow-sm">
+              <img
+                src="/Artboard 4@2x 5.png"
+                alt="Career141"
+                className="h-7 w-auto object-cover object-left dark:brightness-110"
+              />
+            </div>
+          </Link>
         )}
         
         {isExpanded && (
