@@ -41,10 +41,14 @@ The table below compares the complete cost of a **3-minute phone call** to a Sri
                                                │
                                                ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ BUCKET B: Telephony & Destination Carrier (~$0.015 corporate local vs. ~$0.600 Twilio)                 │
-│ - Twilio to Sri Lanka Mobile: ~$0.18 – $0.22 USD/min ($0.60/call). Extremely expensive for volume.     │
-│ - Corporate GSM Gateway (Dinstar 4-Port with Dialog/Mobitel SIMs): ~1.50 LKR/min ($0.015/call).        │
-│ - Outbound Caller ID: Shows verified Sri Lankan mobile number (`07X-XXXXXXX`), achieving 85%+ answer. │
+│ BUCKET B: Telephony & Destination Carrier (Official Dialog Axiata Corporate Quote)                       │
+│ - Twilio to Sri Lanka Mobile: ~$0.20 USD/min (~183 LKR per 3-min call). Extremely expensive for volume. │
+│ - Dialog Axiata Enterprise SIP Channels (Official Written Quote from Peshala Shehani):                   │
+│   * Option 01 (1 Channel): LKR 9,760.00 / month (~$32 USD/mo)                                           │
+│   * Option 02 (2 Channels): LKR 10,320.00 / month (~$34 USD/mo) - RECOMMENDED STARTING SCALE                │
+│   * Option 03 (5 Channels): LKR 12,090.00 / month (~$40 USD/mo)                                           │
+│   * Option 04 (10 Channels): LKR 15,080.00 / month (~$49 USD/mo)                                          │
+│ - Outbound Caller ID: Displays verified Sri Lankan corporate mobile number (`077-XXXXXXX`), 85%+ answer.│
 └──────────────────────────────────────────────┬─────────────────────────────────────────────────────────┘
                                                │
                                                ▼
