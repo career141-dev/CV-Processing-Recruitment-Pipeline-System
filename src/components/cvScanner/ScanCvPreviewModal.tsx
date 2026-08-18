@@ -41,24 +41,32 @@ export function ScanCvPreviewModal({
     setIsLoading(true);
     setError(null);
 
-    getScanResultDownloadUrl({ resultId })
-      .then((res) => {
+    const fetchUrlWithRetry = async (retriesLeft = 3) => {
+      try {
+        const res = await getScanResultDownloadUrl({ resultId });
         if (!isMounted) return;
         if (res && res.url) {
           setDocUrl(res.url);
           if (res.fileName) setDocFileName(res.fileName);
+          setError(null);
         } else {
           setError("Unable to generate document viewing URL.");
         }
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        console.error("Error fetching CV preview URL:", err);
-        setError("Failed to load document preview.");
-      })
-      .finally(() => {
+      } catch (err: any) {
+        console.warn(`[ScanCvPreviewModal] Fetch preview URL attempt failed (${retriesLeft} retries left):`, err?.message || err);
+        if (retriesLeft > 0 && isMounted) {
+          await new Promise((r) => setTimeout(r, 500));
+          return fetchUrlWithRetry(retriesLeft - 1);
+        }
+        if (isMounted) {
+          setError("Failed to load document preview. Please check connection and try again.");
+        }
+      } finally {
         if (isMounted) setIsLoading(false);
-      });
+      }
+    };
+
+    fetchUrlWithRetry();
 
     return () => {
       isMounted = false;

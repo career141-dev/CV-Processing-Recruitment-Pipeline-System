@@ -247,6 +247,26 @@ export const getScanResultById = query({
   },
 });
 
+export const getScanResultDirectUrl = query({
+  args: { resultId: v.id("cvScanResults") },
+  handler: async (ctx, args) => {
+    const result = await ctx.db.get(args.resultId);
+    if (!result) return { url: null, fileName: "Document.pdf" };
+
+    let url: string | null = null;
+    if (result.fileStorageId) {
+      url = await ctx.storage.getUrl(result.fileStorageId);
+    }
+
+    return {
+      url,
+      fileName: result.fileName,
+      candidateName: result.candidateName,
+      hasS3Key: !!result.s3Key,
+    };
+  },
+});
+
 export const getUserScans = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
