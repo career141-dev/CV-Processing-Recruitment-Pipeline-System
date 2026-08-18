@@ -298,3 +298,32 @@ export const dismissInquiry = mutation({
     return { success: true };
   },
 });
+
+/**
+ * Cleanup Mutation: Purge invalid raw HTML inquiries created by naive email URL query string matching.
+ */
+export const purgeInvalidHtmlInquiries = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const inquiries = await ctx.db.query("candidateInquiries").collect();
+    let deletedCount = 0;
+    for (const inq of inquiries) {
+      const qText = (inq.questionText || "").trim();
+      const isHtmlPayload =
+        qText.startsWith("<html") ||
+        qText.startsWith("<!DOCTYPE") ||
+        qText.includes("<head>") ||
+        qText.includes("data-email-preheader") ||
+        qText.includes("mercado-container") ||
+        qText.includes("<div") ||
+        qText.includes("<table");
+
+      if (isHtmlPayload) {
+        await ctx.db.delete(inq._id);
+        deletedCount++;
+      }
+    }
+    return { success: true, totalEvaluated: inquiries.length, deletedCount };
+  },
+});
+
