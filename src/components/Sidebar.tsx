@@ -129,16 +129,16 @@ export default function Sidebar() {
             <img
               src="/logo.png"
               alt="Career141"
-              className="h-9 w-auto max-w-[170px] object-contain dark:brightness-110 filter drop-shadow-sm"
+              className="h-11 w-auto max-w-[190px] object-contain dark:brightness-110 filter drop-shadow-sm transition-all"
             />
           </Link>
         ) : (
           <Link href="/dashboard" className="flex items-center justify-center cursor-pointer">
-            <div className="w-9 h-9 overflow-hidden rounded-md flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 p-0.5 shadow-sm">
+            <div className="w-11 h-11 overflow-hidden rounded-lg flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1 shadow-md hover:scale-105 transition-all">
               <img
                 src="/logo.png"
                 alt="Career141"
-                className="h-7 w-auto object-cover object-left dark:brightness-110"
+                className="h-9 w-auto object-contain dark:brightness-110"
               />
             </div>
           </Link>
