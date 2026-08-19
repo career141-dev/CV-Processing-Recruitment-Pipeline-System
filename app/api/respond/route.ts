@@ -1,4 +1,9 @@
-import { AGENT_INSTRUCTIONS, AGENT_MODEL, type AgentMessage } from "../../../lib/agent-config";
+import {
+  AGENT_MODEL,
+  buildAgentInstructions,
+  type AgentMessage,
+  type ScreeningContext,
+} from "../../../lib/agent-config";
 
 export const runtime = "edge";
 
@@ -11,6 +16,23 @@ const isAgentMessage = (value: unknown): value is AgentMessage => {
     && message.content.length <= 4_000;
 };
 
+const isShortText = (value: unknown, maximum: number) => typeof value === "string" && value.length <= maximum;
+
+const isScreeningContext = (value: unknown): value is ScreeningContext => {
+  if (!value || typeof value !== "object") return false;
+  const context = value as Record<string, unknown>;
+  return isShortText(context.candidateName, 120)
+    && isShortText(context.companyName, 160)
+    && isShortText(context.jobTitle, 180)
+    && isShortText(context.jobDescription, 18_000)
+    && typeof context.jobDescription === "string"
+    && context.jobDescription.trim().length >= 40
+    && Array.isArray(context.detailsToCollect)
+    && context.detailsToCollect.length >= 1
+    && context.detailsToCollect.length <= 12
+    && context.detailsToCollect.every((item) => isShortText(item, 300) && item.trim().length > 0);
+};
+
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -20,21 +42,29 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { messages?: unknown };
+  let body: { messages?: unknown; screening?: unknown; start?: unknown };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "The conversation request was not valid." }, { status: 400 });
   }
 
-  if (!Array.isArray(body.messages) || !body.messages.every(isAgentMessage)) {
-    return Response.json({ error: "The conversation messages were not valid." }, { status: 400 });
+  if (!Array.isArray(body.messages) || !body.messages.every(isAgentMessage) || !isScreeningContext(body.screening)) {
+    return Response.json({ error: "The screening setup or conversation was not valid." }, { status: 400 });
   }
 
-  const messages = body.messages.slice(-8).map((message) => ({
+  const messages = body.messages.slice(-24).map((message) => ({
     role: message.role,
     content: message.content.trim(),
   }));
+  const input = messages.length > 0
+    ? messages
+    : [{
+      role: "user" as const,
+      content: body.start === true
+        ? "Begin the screening call now. Deliver only the natural spoken opening and the first consent question."
+        : "Continue the screening naturally.",
+    }];
 
   const upstream = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -44,10 +74,10 @@ export async function POST(request: Request) {
     },
     body: JSON.stringify({
       model: AGENT_MODEL,
-      instructions: AGENT_INSTRUCTIONS,
-      input: messages,
+      instructions: buildAgentInstructions(body.screening),
+      input,
       reasoning: { effort: "none" },
-      max_output_tokens: 100,
+      max_output_tokens: 140,
       text: { verbosity: "low" },
       stream: true,
       store: false,
