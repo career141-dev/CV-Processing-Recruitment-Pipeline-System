@@ -23,7 +23,11 @@ const isScreeningContext = (value: unknown): value is ScreeningContext => {
   const context = value as Record<string, unknown>;
   return isShortText(context.candidateName, 120)
     && isShortText(context.companyName, 160)
+    && typeof context.companyName === "string"
+    && context.companyName.trim().length > 0
     && isShortText(context.jobTitle, 180)
+    && typeof context.jobTitle === "string"
+    && context.jobTitle.trim().length > 0
     && isShortText(context.jobDescription, 18_000)
     && typeof context.jobDescription === "string"
     && context.jobDescription.trim().length >= 40
@@ -62,7 +66,7 @@ export async function POST(request: Request) {
     : [{
       role: "user" as const,
       content: body.start === true
-        ? "Begin the screening call now. Deliver only the natural spoken opening and the first consent question."
+        ? "Begin the call now. Give only the natural introduction, the exact position and reason for calling, then ask whether this is an okay time to talk. Do not ask any screening question yet."
         : "Continue the screening naturally.",
     }];
 

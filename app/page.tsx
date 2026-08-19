@@ -6,6 +6,7 @@ import type { ScreeningContext } from "../lib/agent-config";
 type AgentStatus = "idle" | "requesting" | "listening" | "thinking" | "speaking" | "error";
 type MessageRole = "user" | "assistant";
 type Message = { id: string; role: MessageRole; text: string; time: string };
+type SpeechQueueItem = { text: string; audio: Promise<Blob | null>; cycle: number };
 type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
 type RecognitionEvent = { resultIndex: number; results: ArrayLike<SpeechResult> };
 type RecognitionError = { error: string };
@@ -79,6 +80,16 @@ const headingValue = (text: string, label: string) => {
   return match?.[1]?.trim() ?? "";
 };
 
+const prepareNaturalSpeech = async (text: string) => {
+  const response = await fetch("/api/speak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) throw new Error("Natural voice playback was unavailable.");
+  return response.blob();
+};
+
 export default function Home() {
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -100,13 +111,16 @@ export default function Home() {
   const sessionActiveRef = useRef(false);
   const turnBusyRef = useRef(false);
   const speakingRef = useRef(false);
-  const speechQueueRef = useRef<string[]>([]);
+  const speechQueueRef = useRef<SpeechQueueItem[]>([]);
   const speechBufferRef = useRef("");
   const firstSpeechQueuedRef = useRef(false);
   const streamCompleteRef = useRef(false);
   const requestAbortRef = useRef<AbortController | null>(null);
   const silenceTimerRef = useRef<number | null>(null);
   const currentTranscriptRef = useRef("");
+  const speechCycleRef = useRef(0);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentAudioUrlRef = useRef<string | null>(null);
   const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const handleTurnRef = useRef<(text: string) => Promise<void>>(async () => undefined);
   const speakNextRef = useRef<() => void>(() => undefined);
@@ -147,29 +161,69 @@ export default function Home() {
   }, [startListening]);
 
   useEffect(() => {
-    speakNextRef.current = () => {
+    speakNextRef.current = async () => {
       if (speakingRef.current) return;
-      const nextText = speechQueueRef.current.shift();
-      if (!nextText) {
+      const next = speechQueueRef.current.shift();
+      if (!next) {
         if (streamCompleteRef.current && turnBusyRef.current) finishTurnRef.current();
-        return;
-      }
-      if (!("speechSynthesis" in window)) {
-        setErrorMessage("Voice playback is not available in this browser. Try the latest Chrome or Edge.");
-        setStatus("error");
-        turnBusyRef.current = false;
         return;
       }
       speakingRef.current = true;
       setStatus("speaking");
-      const utterance = new SpeechSynthesisUtterance(nextText);
-      const preferredVoice = preferredVoiceRef.current ?? selectNaturalVoice(window.speechSynthesis.getVoices());
-      if (preferredVoice) utterance.voice = preferredVoice;
-      utterance.rate = 1.08;
-      utterance.pitch = 0.98;
-      utterance.onend = () => { speakingRef.current = false; speakNextRef.current(); };
-      utterance.onerror = () => { speakingRef.current = false; speakNextRef.current(); };
-      window.speechSynthesis.speak(utterance);
+
+      const finishItem = () => {
+        if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
+        currentAudioUrlRef.current = null;
+        currentAudioRef.current = null;
+        speakingRef.current = false;
+        speakNextRef.current();
+      };
+
+      const playBrowserFallback = () => {
+        if (!("speechSynthesis" in window)) {
+          setErrorMessage("Voice playback is not available in this browser. Try the latest Chrome or Edge.");
+          setStatus("error");
+          turnBusyRef.current = false;
+          speakingRef.current = false;
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(next.text);
+        const preferredVoice = preferredVoiceRef.current ?? selectNaturalVoice(window.speechSynthesis.getVoices());
+        if (preferredVoice) utterance.voice = preferredVoice;
+        utterance.rate = 1.04;
+        utterance.pitch = 0.98;
+        utterance.onend = finishItem;
+        utterance.onerror = finishItem;
+        window.speechSynthesis.speak(utterance);
+      };
+
+      const audioBlob = await next.audio;
+      if (next.cycle !== speechCycleRef.current || !sessionActiveRef.current) {
+        speakingRef.current = false;
+        speakNextRef.current();
+        return;
+      }
+      if (!audioBlob) {
+        playBrowserFallback();
+        return;
+      }
+
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      currentAudioRef.current = audio;
+      currentAudioUrlRef.current = audioUrl;
+      audio.onended = finishItem;
+      audio.onerror = () => {
+        if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
+        currentAudioUrlRef.current = null;
+        currentAudioRef.current = null;
+        playBrowserFallback();
+      };
+      try {
+        await audio.play();
+      } catch {
+        audio.onerror?.(new Event("error"));
+      }
     };
   }, []);
 
@@ -180,23 +234,22 @@ export default function Home() {
       const spokenText = sentence[1].trim();
       speechBufferRef.current = speechBufferRef.current.slice(sentence[1].length).trimStart();
       if (spokenText) {
-        speechQueueRef.current.push(spokenText);
+        speechQueueRef.current.push({
+          text: spokenText,
+          audio: prepareNaturalSpeech(spokenText).catch(() => null),
+          cycle: speechCycleRef.current,
+        });
         firstSpeechQueuedRef.current = true;
       }
       sentence = speechBufferRef.current.match(/^([\s\S]*?[.!?])(?=\s|$)/);
     }
-    if (!firstSpeechQueuedRef.current && speechBufferRef.current.length >= 48) {
-      const naturalBreak = speechBufferRef.current.match(/^([\s\S]{24,64}?[,;:])(?=\s)/)?.[1];
-      const wordBreak = speechBufferRef.current.length >= 72 ? speechBufferRef.current.slice(0, 72).lastIndexOf(" ") : -1;
-      const firstPhrase = naturalBreak ?? (wordBreak > 35 ? speechBufferRef.current.slice(0, wordBreak) : "");
-      if (firstPhrase) {
-        speechQueueRef.current.push(firstPhrase.trim());
-        speechBufferRef.current = speechBufferRef.current.slice(firstPhrase.length).trimStart();
-        firstSpeechQueuedRef.current = true;
-      }
-    }
     if (flush && speechBufferRef.current.trim()) {
-      speechQueueRef.current.push(speechBufferRef.current.trim());
+      const spokenText = speechBufferRef.current.trim();
+      speechQueueRef.current.push({
+        text: spokenText,
+        audio: prepareNaturalSpeech(spokenText).catch(() => null),
+        cycle: speechCycleRef.current,
+      });
       speechBufferRef.current = "";
     }
     speakNextRef.current();
@@ -213,6 +266,7 @@ export default function Home() {
 
     clearSilenceTimer();
     turnBusyRef.current = true;
+    speechCycleRef.current += 1;
     streamCompleteRef.current = false;
     speechQueueRef.current = [];
     speechBufferRef.current = "";
@@ -368,6 +422,10 @@ export default function Home() {
       setErrorMessage("Add or upload the job description before starting the screening.");
       return;
     }
+    if (!context.companyName || !context.jobTitle) {
+      setErrorMessage("Add the company and job title so Aura can clearly explain why it is calling.");
+      return;
+    }
     if (context.detailsToCollect.length === 0) {
       setErrorMessage("Add at least one detail for Aura to collect.");
       return;
@@ -396,6 +454,7 @@ export default function Home() {
     sessionActiveRef.current = false;
     setSessionActive(false);
     turnBusyRef.current = false;
+    speechCycleRef.current += 1;
     speakingRef.current = false;
     speechQueueRef.current = [];
     speechBufferRef.current = "";
@@ -405,6 +464,14 @@ export default function Home() {
     currentTranscriptRef.current = "";
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
+    if (currentAudioRef.current) {
+      currentAudioRef.current.onended = null;
+      currentAudioRef.current.onerror = null;
+      currentAudioRef.current.pause();
+    }
+    currentAudioRef.current = null;
+    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
+    currentAudioUrlRef.current = null;
     window.speechSynthesis?.cancel();
     try { recognitionRef.current?.abort(); } catch { /* Already stopped. */ }
     setInterimText("");
@@ -415,6 +482,15 @@ export default function Home() {
   const interruptReply = () => {
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
+    speechCycleRef.current += 1;
+    if (currentAudioRef.current) {
+      currentAudioRef.current.onended = null;
+      currentAudioRef.current.onerror = null;
+      currentAudioRef.current.pause();
+    }
+    currentAudioRef.current = null;
+    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
+    currentAudioUrlRef.current = null;
     window.speechSynthesis?.cancel();
     speechQueueRef.current = [];
     speechBufferRef.current = "";
@@ -471,8 +547,15 @@ export default function Home() {
 
   useEffect(() => () => {
     sessionActiveRef.current = false;
+    speechCycleRef.current += 1;
     clearSilenceTimer();
     requestAbortRef.current?.abort();
+    if (currentAudioRef.current) {
+      currentAudioRef.current.onended = null;
+      currentAudioRef.current.onerror = null;
+      currentAudioRef.current.pause();
+    }
+    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
     window.speechSynthesis?.cancel();
     recognitionRef.current?.abort();
   }, [clearSilenceTimer]);
@@ -511,8 +594,8 @@ export default function Home() {
           </div>
           <div className="field-grid">
             <label><span>Candidate name <em>optional</em></span><input value={candidateName} onChange={(event) => setCandidateName(event.target.value)} placeholder="e.g. Sam" /></label>
-            <label><span>Company <em>optional</em></span><input value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="e.g. Northstar" /></label>
-            <label><span>Job title <em>optional</em></span><input value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="e.g. Product Designer" /></label>
+            <label><span>Company</span><input required value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="e.g. Northstar" /></label>
+            <label><span>Job title</span><input required value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="e.g. Product Designer" /></label>
           </div>
           <div className="context-grid">
             <label className="textarea-field">
@@ -573,7 +656,7 @@ export default function Home() {
           <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={!sessionActive || turnBusyRef.current} /><button type="submit" disabled={!sessionActive || !typedReply.trim() || turnBusyRef.current}>Send</button></div>
         </form>
         {errorMessage && sessionActive && <p className="error-banner conversation-error" role="alert">{errorMessage}</p>}
-        <div className="panel-footer"><span>One question at a time</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>
+        <div className="panel-footer"><span>Natural OpenAI voice</span><span>One question at a time</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>
       </section>
 
       <footer className="site-footer"><p>Model-first recruitment screening prototype. Phone connectivity comes later.</p><span>Private prototype · 2026</span></footer>
