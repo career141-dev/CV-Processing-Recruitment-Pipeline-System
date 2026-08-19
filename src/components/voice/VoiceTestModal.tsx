@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useAction, useQuery } from "convex/react";
 import {
   Participant,
   RemoteTrack,
@@ -92,6 +92,11 @@ export function VoiceTestModal({
   const [speakingParty, setSpeakingParty] = useState<SpeakingParty>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const generateVoiceReply = useAction(api.aiCalls.voiceEngine.generateVoicePrescreeningReply);
+
+  const [engineMode, setEngineMode] = useState<"livekit" | "browser_vad">("livekit");
+  const [extractedData, setExtractedData] = useState<Record<string, any>>({});
+
   const roomRef = useRef<Room | null>(null);
   const startAbortControllerRef = useRef<AbortController | null>(null);
   const startGenerationRef = useRef(0);
@@ -104,6 +109,19 @@ export function VoiceTestModal({
   const reservationSessionIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Browser VAD Audio Engine Refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const speechDetectedRef = useRef(false);
+  const isAiSpeakingRef = useRef(false);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const releaseSimulationReservation = useMutation(
     api.aiCalls.voiceCalls.releaseVoiceSimulationReservation,
   );
@@ -144,6 +162,28 @@ export function VoiceTestModal({
     startAbortControllerRef.current?.abort();
     startAbortControllerRef.current = null;
     clearTimers();
+
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.pause();
+        activeAudioRef.current.src = "";
+      } catch {}
+      activeAudioRef.current = null;
+    }
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try { mediaRecorderRef.current.stop(); } catch {}
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      try { audioContextRef.current.close(); } catch {}
+      audioContextRef.current = null;
+    }
+
     const room = roomRef.current;
     roomRef.current = null;
 
@@ -391,22 +431,272 @@ export function VoiceTestModal({
       maxCallTimerRef.current = setTimeout(() => {
         void finishSimulation();
       }, MAX_SIMULATION_SECONDS * 1000);
+      setEngineMode("livekit");
       setCallState("active");
     } catch (error) {
       const wasCancelled =
         finalizedRef.current || abortController.signal.aborted;
-      finalizedRef.current = true;
-      await releaseRoom();
-      if (wasCancelled) return;
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to start the voice test.";
-      setErrorMessage(
-        `${message} No browser fallback was started and no candidate data was changed.`,
-      );
-      setCallState("error");
+      if (wasCancelled) {
+        await releaseRoom();
+        return;
+      }
+      console.warn("[Voice Simulation] LiveKit room unavailable, falling back to browser VAD audio engine:", error);
+      await startBrowserVadSimulation();
     }
+  };
+
+  const playAiVoice = async (text: string, isFinalWrapup = false) => {
+    try {
+      if (finalizedRef.current) return;
+      isAiSpeakingRef.current = true;
+      setSpeakingParty("assistant");
+      setCallState("active");
+
+      const res = await fetch("/api/voice/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!res.ok) throw new Error("TTS request failed");
+
+      const blob = await res.blob();
+      if (finalizedRef.current) return;
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      activeAudioRef.current = audio;
+
+      audio.onended = () => {
+        isAiSpeakingRef.current = false;
+        activeAudioRef.current = null;
+        setSpeakingParty(null);
+        if (finalizedRef.current) return;
+        if (isFinalWrapup) {
+          void finishSimulation();
+        } else {
+          void startListeningWithVAD();
+        }
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.error("[Voice Modal] Speak error:", err);
+      isAiSpeakingRef.current = false;
+      activeAudioRef.current = null;
+      setSpeakingParty(null);
+      if (finalizedRef.current) return;
+      if (isFinalWrapup) {
+        void finishSimulation();
+      } else {
+        void startListeningWithVAD();
+      }
+    }
+  };
+
+  const startListeningWithVAD = async () => {
+    try {
+      if (isAiSpeakingRef.current || finalizedRef.current) return;
+      setSpeakingParty("user");
+      speechDetectedRef.current = false;
+      audioChunksRef.current = [];
+
+      if (!micStreamRef.current) {
+        micStreamRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+      }
+
+      if (!audioContextRef.current || audioContextRef.current.state === "closed") {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioCtx();
+      }
+
+      const audioCtx = audioContextRef.current;
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
+
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
+      analyserRef.current = analyser;
+
+      const source = audioCtx.createMediaStreamSource(micStreamRef.current);
+      source.connect(analyser);
+
+      let mimeType = "audio/webm";
+      if (typeof MediaRecorder !== "undefined") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm";
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4";
+        }
+      }
+
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try { mediaRecorderRef.current.stop(); } catch {}
+      }
+
+      const mediaRecorder = new MediaRecorder(micStreamRef.current, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (audioBlob.size < 2000) {
+          if (!isAiSpeakingRef.current && !finalizedRef.current) void startListeningWithVAD();
+          return;
+        }
+        await processCandidateAudio(audioBlob);
+      };
+
+      if (mediaRecorder.state === "inactive") {
+        mediaRecorder.start(200);
+      }
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const SILENCE_THRESHOLD_MS = 600;
+      const VOLUME_TRIGGER_LEVEL = 12;
+
+      const checkVolume = () => {
+        if (isAiSpeakingRef.current || finalizedRef.current) return;
+
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        const averageVolume = Math.round(sum / dataArray.length);
+
+        if (averageVolume > VOLUME_TRIGGER_LEVEL) {
+          if (!speechDetectedRef.current) {
+            speechDetectedRef.current = true;
+          }
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+        } else if (speechDetectedRef.current) {
+          if (!silenceTimerRef.current) {
+            silenceTimerRef.current = setTimeout(() => {
+              if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                mediaRecorderRef.current.stop();
+              }
+            }, SILENCE_THRESHOLD_MS);
+          }
+        }
+
+        animFrameRef.current = requestAnimationFrame(checkVolume);
+      };
+
+      checkVolume();
+    } catch (err) {
+      console.error("[Voice Modal] VAD error:", err);
+    }
+  };
+
+  const processCandidateAudio = async (audioBlob: Blob) => {
+    if (finalizedRef.current) return;
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+    setLiveTranscript("Analyzing candidate voice...");
+
+    try {
+      const transcribeRes = await fetch("/api/voice/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "audio/webm" },
+        body: audioBlob,
+      });
+
+      const transcribeData = await transcribeRes.json();
+      const userText = transcribeData.transcript?.trim();
+
+      if (!userText || userText.length < 2) {
+        setLiveTranscript("");
+        void startListeningWithVAD();
+        return;
+      }
+
+      setLiveTranscript("");
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        text: userText,
+        timestamp: nowLabel(),
+      };
+
+      const updatedMessages = [...messages, userMsg];
+      setMessages(updatedMessages);
+
+      const chatData = await generateVoiceReply({
+        candidateName: cleanFirstName,
+        jobTitle: selectedApplication?.jobTitle || "Position",
+        jobDescription: simulationContext?.jobDescription,
+        customQuestions,
+        alreadyCollected: extractedData,
+        customScript: customScript.trim() || undefined,
+        messages: updatedMessages.map((m) => ({ role: m.role, content: m.text })),
+      });
+
+      if (chatData?.extracted) {
+        setExtractedData((prev) => ({ ...prev, ...chatData.extracted }));
+      }
+
+      const aiReply = chatData?.spokenResponse || "Thank you. Let's proceed.";
+      const aiMsg: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        text: aiReply,
+        timestamp: nowLabel(),
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+
+      const isWrapup = chatData?.isPrescreeningComplete === true;
+      await playAiVoice(aiReply, isWrapup);
+    } catch (err) {
+      console.error("[Voice Modal] Processing error:", err);
+      void startListeningWithVAD();
+    }
+  };
+
+  const startBrowserVadSimulation = async () => {
+    finalizedRef.current = false;
+    setEngineMode("browser_vad");
+    setMessages([]);
+    setLiveTranscript("");
+    setCallDuration(0);
+    setErrorMessage("");
+    setSpeakingParty(null);
+    setCallState("active");
+
+    startedAtRef.current = Date.now();
+    durationTimerRef.current = setInterval(() => {
+      if (startedAtRef.current === null) return;
+      setCallDuration(
+        Math.min(
+          MAX_SIMULATION_SECONDS,
+          Math.floor((Date.now() - startedAtRef.current) / 1000),
+        ),
+      );
+    }, 1000);
+
+    maxCallTimerRef.current = setTimeout(() => {
+      void finishSimulation();
+    }, MAX_SIMULATION_SECONDS * 1000);
+
+    const greeting = `Hello, I am Sarah, an automated AI recruiter assistant calling on behalf of Career141 regarding your application for the ${selectedApplication?.jobTitle || "position"} role. Do you consent to continue with a short three-minute screening?`;
+    const initialMsg: ChatMessage = {
+      id: `assistant-init-${Date.now()}`,
+      role: "assistant",
+      text: greeting,
+      timestamp: nowLabel(),
+    };
+    setMessages([initialMsg]);
+    await playAiVoice(greeting);
   };
 
   const handleClose = async () => {

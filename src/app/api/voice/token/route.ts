@@ -79,17 +79,35 @@ export async function POST(request: NextRequest) {
       { token: convexToken },
     );
 
-    const apiKey = requiredEnvironment("LIVEKIT_API_KEY");
-    const apiSecret = requiredEnvironment("LIVEKIT_API_SECRET");
+    const apiKey =
+      context.livekitConfig?.apiKey ||
+      process.env.LIVEKIT_API_KEY?.trim() ||
+      requiredEnvironment("LIVEKIT_API_KEY");
+
+    const apiSecret =
+      context.livekitConfig?.apiSecret ||
+      process.env.LIVEKIT_API_SECRET?.trim() ||
+      requiredEnvironment("LIVEKIT_API_SECRET");
+
     const publicUrl = validateLiveKitUrl(
-      requiredEnvironment("NEXT_PUBLIC_LIVEKIT_URL"),
+      context.livekitConfig?.publicUrl ||
+        process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim() ||
+        requiredEnvironment("NEXT_PUBLIC_LIVEKIT_URL"),
       "NEXT_PUBLIC_LIVEKIT_URL",
       new Set(["ws:", "wss:"]),
     );
+
+    const rawServerUrl =
+      context.livekitConfig?.internalUrl ||
+      process.env.LIVEKIT_INTERNAL_URL?.trim() ||
+      publicUrl;
+
     const serverUrl = validateLiveKitUrl(
-      process.env.LIVEKIT_INTERNAL_URL?.trim() || publicUrl,
+      rawServerUrl
+        .replace(/^wss:\/\//i, "https://")
+        .replace(/^ws:\/\//i, "http://"),
       "LIVEKIT_INTERNAL_URL",
-      new Set(["ws:", "wss:", "http:", "https:"]),
+      new Set(["http:", "https:"]),
     );
 
     const sessionId = randomUUID();
@@ -159,7 +177,7 @@ export async function POST(request: NextRequest) {
       },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch (error) {
+  } catch (error: any) {
     if (reservation) {
       await fetchMutation(
         api.aiCalls.voiceCalls.releaseVoiceSimulationReservation,
@@ -167,9 +185,10 @@ export async function POST(request: NextRequest) {
         { token: reservation.token },
       ).catch(() => undefined);
     }
-    console.error("[Voice Token] Failed to create simulation session", error);
+    console.error("[Voice Token] Failed to create simulation session:", error);
+    const detail = error?.message || String(error || "");
     return NextResponse.json(
-      { error: "Unable to create the voice simulation session" },
+      { error: detail ? `Unable to create voice simulation session: ${detail}` : "Unable to create the voice simulation session" },
       { status: 500 },
     );
   }

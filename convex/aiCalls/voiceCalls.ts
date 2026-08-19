@@ -363,6 +363,12 @@ export const getVoiceSimulationContext = query({
       jobDescription: job.jobDescription,
       customQuestions:
         job.agent5CustomQuestions ?? job.customFollowUpQuestions ?? [],
+      livekitConfig: {
+        apiKey: process.env.LIVEKIT_API_KEY?.trim() || null,
+        apiSecret: process.env.LIVEKIT_API_SECRET?.trim() || null,
+        publicUrl: process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim() || null,
+        internalUrl: process.env.LIVEKIT_INTERNAL_URL?.trim() || null,
+      },
     };
   },
 });
