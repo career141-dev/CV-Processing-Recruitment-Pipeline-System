@@ -134,6 +134,11 @@ Rules for voice speech:
 
     ctx.room.on("disconnected", () => {
       console.log(`[Career141 Voice Agent] Room ${ctx.room.name} disconnected. Finalizing session.`);
+      try {
+        session.close();
+      } catch (e) {
+        console.error(`[Career141 Voice Agent] Error closing session:`, e);
+      }
     });
   },
 });

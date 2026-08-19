@@ -92,11 +92,13 @@ export function VoiceTestModal({
   const speechDetectedRef = useRef(false);
   const isAiSpeakingRef = useRef(false);
 
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Ref to hold current state to avoid stale closures in VAD callbacks
   const stateRef = useRef({
+    callState,
     extractedData,
     messages,
     candidateName: cleanFirstName,
@@ -111,6 +113,7 @@ export function VoiceTestModal({
 
   useEffect(() => {
     stateRef.current = {
+      callState,
       extractedData,
       messages,
       candidateName: cleanFirstName,
@@ -122,7 +125,7 @@ export function VoiceTestModal({
       candidateId,
       jobId,
     };
-  }, [extractedData, messages, cleanFirstName, jobTitle, jobDescription, job, jobCustomQuestions, customScript, selectedVoiceId, candidateId, jobId]);
+  }, [callState, extractedData, messages, cleanFirstName, jobTitle, jobDescription, job, jobCustomQuestions, customScript, selectedVoiceId, candidateId, jobId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -142,8 +145,22 @@ export function VoiceTestModal({
   }, [callState]);
 
   const cleanupAudio = () => {
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.pause();
+        activeAudioRef.current.src = "";
+      } catch {}
+      activeAudioRef.current = null;
+    }
     if (roomRef.current) {
       try {
+        roomRef.current.remoteParticipants.forEach((p) => {
+          p.audioTrackPublications.forEach((pub) => {
+            if (pub.track) {
+              try { pub.track.detach().forEach((el) => el.remove()); } catch {}
+            }
+          });
+        });
         roomRef.current.disconnect();
       } catch {}
       roomRef.current = null;
@@ -178,6 +195,7 @@ export function VoiceTestModal({
   // Play synthesized Cartesia voice
   const playAiVoice = async (text: string, isFinalWrapup = false) => {
     try {
+      if ((stateRef.current.callState as string) === "ended") return;
       isAiSpeakingRef.current = true;
       setCallState("speaking");
 
@@ -193,11 +211,15 @@ export function VoiceTestModal({
       if (!res.ok) throw new Error("Fish Audio TTS request failed");
 
       const blob = await res.blob();
+      if ((stateRef.current.callState as string) === "ended") return;
       const audioUrl = URL.createObjectURL(blob);
       const audio = new Audio(audioUrl);
+      activeAudioRef.current = audio;
 
       audio.onended = () => {
         isAiSpeakingRef.current = false;
+        activeAudioRef.current = null;
+        if ((stateRef.current.callState as string) === "ended") return;
         if (isFinalWrapup) {
           handleEndCall();
         } else {
@@ -209,6 +231,8 @@ export function VoiceTestModal({
     } catch (err) {
       console.error("[Voice Modal] Speak error:", err);
       isAiSpeakingRef.current = false;
+      activeAudioRef.current = null;
+      if ((stateRef.current.callState as string) === "ended") return;
       if (isFinalWrapup) {
         handleEndCall();
       } else {
@@ -220,7 +244,7 @@ export function VoiceTestModal({
   // Start continuous recording with Voice Activity Detection (VAD)
   const startListeningWithVAD = async () => {
     try {
-      if (isAiSpeakingRef.current) return;
+      if (isAiSpeakingRef.current || (stateRef.current.callState as string) === "ended") return;
       setCallState("listening");
       setIsSpeakingDetected(false);
       speechDetectedRef.current = false;
@@ -341,6 +365,7 @@ export function VoiceTestModal({
 
   // Process completed candidate audio chunk
   const processCandidateAudio = async (audioBlob: Blob) => {
+    if ((stateRef.current.callState as string) === "ended") return;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
