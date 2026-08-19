@@ -28,88 +28,42 @@ export async function POST(req: NextRequest) {
 
     const spokenTranscript = prepareTextForSpeech(text);
 
-    // 1. Fish Audio TTS (primary)
-    const fishAudioApiKey = process.env.FISH_AUDIO_API_KEY || process.env.FISHAUDIO_API_KEY;
-    if (fishAudioApiKey) {
+    // 1. Deepgram Aura-2 TTS (Ultra-low latency primary: ~200ms)
+    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+    if (deepgramApiKey) {
       try {
-        const DEFAULT_FISH_VOICE_ID = "fb52b0c3c8a44e41b234da575d009d4c";
-        const selectedReferenceId =
-          voiceId && !voiceId.startsWith("aura-") && voiceId !== "default" && voiceId.length >= 20
-            ? voiceId
-            : DEFAULT_FISH_VOICE_ID;
-
-        const fishRes = await fetch("https://api.fish.audio/v1/tts", {
+        const selectedModel =
+          voiceId && voiceId.startsWith("aura-") ? voiceId : "aura-asteria-en";
+        const url = `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(selectedModel)}`;
+        const response = await fetch(url, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${fishAudioApiKey}`,
+            Authorization: `Token ${deepgramApiKey}`,
             "Content-Type": "application/json",
-            model: "s2.1-pro-free",
           },
-          body: JSON.stringify({
-            text: spokenTranscript,
-            format: "mp3",
-            mp3_bitrate: 128,
-            normalize: true,
-            latency: "normal",
-            reference_id: selectedReferenceId,
-          }),
+          body: JSON.stringify({ text: spokenTranscript }),
         });
 
-        if (fishRes.ok) {
-          const audioArrayBuffer = await fishRes.arrayBuffer();
+        if (response.ok) {
+          const audioArrayBuffer = await response.arrayBuffer();
           return new NextResponse(audioArrayBuffer, {
             status: 200,
             headers: {
-              "Content-Type": "audio/mpeg",
+              "Content-Type": "audio/mp3",
               "Content-Length": audioArrayBuffer.byteLength.toString(),
-              "X-TTS-Provider": "fish-audio",
+              "X-TTS-Provider": "deepgram-aura",
             },
           });
         }
       } catch (err: any) {
-        console.warn("[Fish Audio TTS] Error, falling back to Deepgram:", err?.message);
+        console.error("[Deepgram TTS] Error:", err?.message);
       }
     }
 
-    // 2. Deepgram Aura TTS (fallback)
-    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
-    if (!deepgramApiKey) {
-      return NextResponse.json(
-        { error: "No TTS provider configured. Set FISH_AUDIO_API_KEY or DEEPGRAM_API_KEY." },
-        { status: 500 }
-      );
-    }
-
-    const selectedModel =
-      voiceId && voiceId.startsWith("aura-") ? voiceId : "aura-asteria-en";
-    const url = `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(selectedModel)}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${deepgramApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ text: spokenTranscript }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      return NextResponse.json(
-        { error: `Deepgram TTS error: ${errText}` },
-        { status: response.status }
-      );
-    }
-
-    const audioArrayBuffer = await response.arrayBuffer();
-
-    return new NextResponse(audioArrayBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "audio/mp3",
-        "Content-Length": audioArrayBuffer.byteLength.toString(),
-        "X-TTS-Provider": "deepgram",
-      },
-    });
+    return NextResponse.json(
+      { error: "No working TTS provider configured. Check DEEPGRAM_API_KEY." },
+      { status: 500 }
+    );
   } catch (error: any) {
     console.error("[Voice Speak] Exception:", error);
     return NextResponse.json(

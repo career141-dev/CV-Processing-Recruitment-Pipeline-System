@@ -452,16 +452,19 @@ export function VoiceTestModal({
       setSpeakingParty("assistant");
       setCallState("active");
 
+      // Ensure microphone listener is ready in parallel to detect interruptions
+      void startListeningWithVAD();
+
       const res = await fetch("/api/voice/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, voiceId: "aura-asteria-en" }),
       });
 
       if (!res.ok) throw new Error("TTS request failed");
 
       const blob = await res.blob();
-      if (finalizedRef.current) return;
+      if (finalizedRef.current || !isAiSpeakingRef.current) return;
       const audioUrl = URL.createObjectURL(blob);
       const audio = new Audio(audioUrl);
       activeAudioRef.current = audio;
@@ -495,8 +498,10 @@ export function VoiceTestModal({
 
   const startListeningWithVAD = async () => {
     try {
-      if (isAiSpeakingRef.current || finalizedRef.current) return;
-      setSpeakingParty("user");
+      if (finalizedRef.current) return;
+      if (!isAiSpeakingRef.current) {
+        setSpeakingParty("user");
+      }
       speechDetectedRef.current = false;
       audioChunksRef.current = [];
 
@@ -548,7 +553,7 @@ export function VoiceTestModal({
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        if (audioBlob.size < 2000) {
+        if (audioBlob.size < 1500) {
           if (!isAiSpeakingRef.current && !finalizedRef.current) void startListeningWithVAD();
           return;
         }
@@ -556,15 +561,15 @@ export function VoiceTestModal({
       };
 
       if (mediaRecorder.state === "inactive") {
-        mediaRecorder.start(200);
+        mediaRecorder.start(150);
       }
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const SILENCE_THRESHOLD_MS = 600;
-      const VOLUME_TRIGGER_LEVEL = 12;
+      const SILENCE_THRESHOLD_MS = 450;
+      const VOLUME_TRIGGER_LEVEL = 14;
 
       const checkVolume = () => {
-        if (isAiSpeakingRef.current || finalizedRef.current) return;
+        if (finalizedRef.current) return;
 
         analyser.getByteFrequencyData(dataArray);
         let sum = 0;
@@ -572,6 +577,20 @@ export function VoiceTestModal({
         const averageVolume = Math.round(sum / dataArray.length);
 
         if (averageVolume > VOLUME_TRIGGER_LEVEL) {
+          // Interrupt AI speech immediately if candidate speaks while AI is talking
+          if (isAiSpeakingRef.current) {
+            if (activeAudioRef.current) {
+              try {
+                activeAudioRef.current.pause();
+                activeAudioRef.current.src = "";
+              } catch {}
+              activeAudioRef.current = null;
+            }
+            isAiSpeakingRef.current = false;
+            setSpeakingParty("user");
+            audioChunksRef.current = [];
+          }
+
           if (!speechDetectedRef.current) {
             speechDetectedRef.current = true;
           }
@@ -924,7 +943,7 @@ export function VoiceTestModal({
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 bg-slate-950 p-4">
           <span className="text-xs text-slate-400">
-            Flux STT · DeepSeek · Inworld/Aura TTS
+            Flux STT · DeepSeek · Aura TTS
           </span>
           <div className="flex items-center gap-3">
             {callState === "idle" && (
