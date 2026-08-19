@@ -259,11 +259,11 @@ Voice rules:
     });
 
     const usageCollector = new metrics.ModelUsageCollector();
-    session.on(voice.AgentSessionEventTypes.MetricsCollected, (event) => {
+    session.on(voice.AgentSessionEventTypes.MetricsCollected, (event: any) => {
       metrics.logMetrics(event.metrics);
       usageCollector.collect(event.metrics);
     });
-    session.on(voice.AgentSessionEventTypes.Error, (event) => {
+    session.on(voice.AgentSessionEventTypes.Error, (event: any) => {
       console.error("[Career141 Voice Agent] Session pipeline error", event.error);
     });
 
