@@ -17,7 +17,6 @@ const isAgentMessage = (value: unknown): value is AgentMessage => {
 };
 
 const isShortText = (value: unknown, maximum: number) => typeof value === "string" && value.length <= maximum;
-const isConversationLanguage = (value: unknown) => ["adaptive", "en-LK", "si-LK", "ta-LK"].includes(String(value));
 
 const isScreeningContext = (value: unknown): value is ScreeningContext => {
   if (!value || typeof value !== "object") return false;
@@ -35,9 +34,7 @@ const isScreeningContext = (value: unknown): value is ScreeningContext => {
     && Array.isArray(context.detailsToCollect)
     && context.detailsToCollect.length >= 1
     && context.detailsToCollect.length <= 12
-    && context.detailsToCollect.every((item) => isShortText(item, 300) && item.trim().length > 0)
-    && isConversationLanguage(context.preferredLanguage)
-    && isShortText(context.pronunciationGuide, 1_000);
+    && context.detailsToCollect.every((item) => isShortText(item, 300) && item.trim().length > 0);
 };
 
 export async function POST(request: Request) {

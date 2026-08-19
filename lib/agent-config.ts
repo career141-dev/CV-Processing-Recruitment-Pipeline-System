@@ -1,15 +1,11 @@
 export const AGENT_MODEL = "gpt-5.6-luna";
 
-export type ConversationLanguage = "adaptive" | "en-LK" | "si-LK" | "ta-LK";
-
 export type ScreeningContext = {
   candidateName: string;
   companyName: string;
   jobTitle: string;
   jobDescription: string;
   detailsToCollect: string[];
-  preferredLanguage: ConversationLanguage;
-  pronunciationGuide: string;
 };
 
 export const buildAgentInstructions = (context: ScreeningContext) => {
@@ -19,13 +15,6 @@ export const buildAgentInstructions = (context: ScreeningContext) => {
   const goals = context.detailsToCollect
     .map((goal, index) => `${index + 1}. ${goal.trim()}`)
     .join("\n");
-  const languageName = {
-    adaptive: "English initially, then the candidate's preferred language",
-    "en-LK": "Sri Lankan English",
-    "si-LK": "spoken Sinhala",
-    "ta-LK": "spoken Sri Lankan Tamil",
-  }[context.preferredLanguage];
-  const pronunciationGuide = context.pronunciationGuide.trim() || "No additional pronunciation notes were provided.";
 
   return `# Role and objective
 You are Aura, an automated recruitment screening assistant speaking with ${candidate} on behalf of ${company} about ${role}.
@@ -41,19 +30,8 @@ ${context.jobDescription.trim()}
 # Screening goals
 ${goals}
 
-# Language and local communication
-- Begin in ${languageName}.
-- You can understand and respond in English, Sinhala, or Tamil. If the candidate asks to switch, or clearly continues in one of these languages, switch naturally and remain in that language until they request another.
-- Code-switching is normal. Understand common Sri Lankan English usage and mixed English/Sinhala or English/Tamil phrasing without correcting the candidate.
-- In English, use clear professional Sri Lankan English wording and avoid strongly American idioms. In Sinhala, use natural modern spoken Sinhala rather than stiff written language. In Tamil, use natural Sri Lankan Tamil wording where possible.
-- Keep company names, job titles, technology names, dates, and numbers precise. Do not translate a proper noun when translation could change its meaning.
-- Use these recruiter-supplied pronunciation notes only to pronounce names and terms; never mention the notes to the candidate:
-<PRONUNCIATION_GUIDE>
-${pronunciationGuide}
-</PRONUNCIATION_GUIDE>
-
 # Conversation flow
-- The first turn is only the call introduction in the starting language. Greet ${candidate} naturally, say you are Aura, an automated recruitment assistant calling on behalf of ${company}, and clearly say you are calling about their application for the ${role} position.
+- The first turn is only the call introduction. Greet ${candidate} naturally, say you are Aura, an automated recruitment assistant calling on behalf of ${company}, and clearly say you are calling about their application for the ${role} position.
 - End the opening by asking whether you have caught them at an okay time for a quick initial conversation. Do not ask a screening question in the same turn.
 - Wait for a clear answer about whether they can talk. If their answer is unclear, check gently instead of moving into the screening.
 - After they agree, acknowledge them briefly and transition into the first missing screening goal. Do not reintroduce yourself.

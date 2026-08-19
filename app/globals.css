@@ -18,9 +18,9 @@ body {
   color: var(--ink);
   font-family: var(--font-body), sans-serif;
 }
-button, input, textarea, select { font: inherit; }
+button, input, textarea { font: inherit; }
 button, label { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible {
   outline: 3px solid var(--lime-deep);
   outline-offset: 3px;
 }
@@ -164,7 +164,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .step-chip { background: var(--lime); border-color: rgba(116,151,17,.22); }
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin-top: 28px;
 }
@@ -175,7 +175,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   font-weight: 800;
 }
 label em { color: #989b92; font-size: .67rem; font-style: normal; font-weight: 600; }
-input, textarea, select {
+input, textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -183,13 +183,11 @@ input, textarea, select {
   color: var(--ink);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
-input, select { height: 48px; padding: 0 14px; }
-select { appearance: auto; }
+input { height: 48px; padding: 0 14px; }
 textarea { resize: vertical; min-height: 190px; padding: 14px; line-height: 1.48; }
-input:hover, textarea:hover, select:hover { border-color: rgba(23,24,21,.24); }
-input:focus, textarea:focus, select:focus { background: white; box-shadow: 0 8px 24px rgba(23,24,21,.06); }
+input:hover, textarea:hover { border-color: rgba(23,24,21,.24); }
+input:focus, textarea:focus { background: white; box-shadow: 0 8px 24px rgba(23,24,21,.06); }
 input::placeholder, textarea::placeholder { color: #aaaDA5; }
-.pronunciation-field { grid-column: 1 / -1; }
 .context-grid {
   display: grid;
   grid-template-columns: 1.2fr .8fr;
