@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import type { ScreeningContext } from "../lib/agent-config";
+import type { ConversationLanguage, ScreeningContext } from "../lib/agent-config";
 
 type AgentStatus = "idle" | "requesting" | "listening" | "thinking" | "speaking" | "error";
 type MessageRole = "user" | "assistant";
 type Message = { id: string; role: MessageRole; text: string; time: string };
-type SpeechQueueItem = { text: string; audio: Promise<Blob | null>; cycle: number };
+type SpeechQueueItem = { text: string; audio: Promise<Blob | null>; cycle: number; language: "en-LK" | "si-LK" | "ta-LK" };
 type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
 type RecognitionEvent = { resultIndex: number; results: ArrayLike<SpeechResult> };
 type RecognitionError = { error: string };
@@ -50,18 +50,33 @@ const nowLabel = () => new Intl.DateTimeFormat(undefined, { hour: "numeric", min
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const END_OF_TURN_DELAY_MS = 720;
 
-const selectNaturalVoice = (voices: SpeechSynthesisVoice[]) => {
+const LANGUAGE_OPTIONS: Array<{ value: ConversationLanguage; label: string; note: string }> = [
+  { value: "adaptive", label: "Candidate decides", note: "Starts in Sri Lankan English and switches when requested" },
+  { value: "en-LK", label: "English — Sri Lanka", note: "Sri Lankan English conversation and recognition" },
+  { value: "si-LK", label: "සිංහල — Sinhala beta", note: "Best-effort speech support for testing" },
+  { value: "ta-LK", label: "தமிழ் — Sri Lankan Tamil", note: "Tamil conversation with Sri Lankan wording" },
+];
+
+const startingLocale = (language: ConversationLanguage) => language === "adaptive" ? "en-LK" : language;
+const detectSpokenLocale = (text: string, fallback: ConversationLanguage): "en-LK" | "si-LK" | "ta-LK" => {
+  if (/[\u0D80-\u0DFF]/.test(text)) return "si-LK";
+  if (/[\u0B80-\u0BFF]/.test(text)) return "ta-LK";
+  return startingLocale(fallback);
+};
+
+const selectNaturalVoice = (voices: SpeechSynthesisVoice[], locale = "en-LK") => {
   const preferredNames = [
     "Google US English", "Microsoft Aria", "Microsoft Jenny", "Samantha",
     "Ava", "Allison", "Serena", "Daniel", "Karen", "Tessa", "Moira",
   ];
+  const languagePrefix = locale.split("-")[0].toLowerCase();
   return voices
-    .filter((voice) => voice.lang.toLowerCase().startsWith("en"))
+    .filter((voice) => voice.lang.toLowerCase().startsWith(languagePrefix))
     .map((voice) => {
       const preferredIndex = preferredNames.findIndex((name) => voice.name.toLowerCase().includes(name.toLowerCase()));
       const score = (preferredIndex >= 0 ? 200 - preferredIndex : 0)
         + (/natural|neural|premium|enhanced/i.test(voice.name) ? 120 : 0)
-        + (voice.lang.toLowerCase() === "en-us" ? 20 : 0)
+        + (voice.lang.toLowerCase() === locale.toLowerCase() ? 50 : 0)
         + (!voice.localService ? 12 : 0);
       return { voice, score };
     })
@@ -80,11 +95,11 @@ const headingValue = (text: string, label: string) => {
   return match?.[1]?.trim() ?? "";
 };
 
-const prepareNaturalSpeech = async (text: string) => {
+const prepareNaturalSpeech = async (text: string, language: "en-LK" | "si-LK" | "ta-LK", pronunciationGuide: string) => {
   const response = await fetch("/api/speak", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, language, pronunciationGuide }),
   });
   if (!response.ok) throw new Error("Natural voice playback was unavailable.");
   return response.blob();
@@ -99,6 +114,8 @@ export default function Home() {
   const [candidateName, setCandidateName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [jobTitle, setJobTitle] = useState("");
+  const [preferredLanguage, setPreferredLanguage] = useState<ConversationLanguage>("adaptive");
+  const [pronunciationGuide, setPronunciationGuide] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [detailsText, setDetailsText] = useState(DEFAULT_GOALS);
   const [uploadedFileName, setUploadedFileName] = useState("");
@@ -118,6 +135,7 @@ export default function Home() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const silenceTimerRef = useRef<number | null>(null);
   const currentTranscriptRef = useRef("");
+  const activeRecognitionLocaleRef = useRef<"en-LK" | "si-LK" | "ta-LK">("en-LK");
   const speechCycleRef = useRef(0);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const currentAudioUrlRef = useRef<string | null>(null);
@@ -129,7 +147,7 @@ export default function Home() {
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   useEffect(() => {
-    const loadVoices = () => { preferredVoiceRef.current = selectNaturalVoice(window.speechSynthesis.getVoices()); };
+    const loadVoices = () => { preferredVoiceRef.current = selectNaturalVoice(window.speechSynthesis.getVoices(), activeRecognitionLocaleRef.current); };
     loadVoices();
     window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
     return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
@@ -146,6 +164,7 @@ export default function Home() {
     if (!sessionActiveRef.current || turnBusyRef.current || speakingRef.current) return;
     currentTranscriptRef.current = "";
     clearSilenceTimer();
+    if (recognitionRef.current) recognitionRef.current.lang = activeRecognitionLocaleRef.current;
     setStatus("listening");
     try { recognitionRef.current?.start(); } catch { /* Already listening. */ }
   }, [clearSilenceTimer]);
@@ -188,7 +207,7 @@ export default function Home() {
           return;
         }
         const utterance = new SpeechSynthesisUtterance(next.text);
-        const preferredVoice = preferredVoiceRef.current ?? selectNaturalVoice(window.speechSynthesis.getVoices());
+        const preferredVoice = selectNaturalVoice(window.speechSynthesis.getVoices(), next.language) ?? preferredVoiceRef.current;
         if (preferredVoice) utterance.voice = preferredVoice;
         utterance.rate = 1.04;
         utterance.pitch = 0.98;
@@ -234,10 +253,13 @@ export default function Home() {
       const spokenText = sentence[1].trim();
       speechBufferRef.current = speechBufferRef.current.slice(sentence[1].length).trimStart();
       if (spokenText) {
+        const screening = screeningContextRef.current;
+        const language = detectSpokenLocale(spokenText, screening?.preferredLanguage ?? "adaptive");
         speechQueueRef.current.push({
           text: spokenText,
-          audio: prepareNaturalSpeech(spokenText).catch(() => null),
+          audio: prepareNaturalSpeech(spokenText, language, screening?.pronunciationGuide ?? "").catch(() => null),
           cycle: speechCycleRef.current,
+          language,
         });
         firstSpeechQueuedRef.current = true;
       }
@@ -245,10 +267,13 @@ export default function Home() {
     }
     if (flush && speechBufferRef.current.trim()) {
       const spokenText = speechBufferRef.current.trim();
+      const screening = screeningContextRef.current;
+      const language = detectSpokenLocale(spokenText, screening?.preferredLanguage ?? "adaptive");
       speechQueueRef.current.push({
         text: spokenText,
-        audio: prepareNaturalSpeech(spokenText).catch(() => null),
+        audio: prepareNaturalSpeech(spokenText, language, screening?.pronunciationGuide ?? "").catch(() => null),
         cycle: speechCycleRef.current,
+        language,
       });
       speechBufferRef.current = "";
     }
@@ -327,6 +352,9 @@ export default function Home() {
         completeText = "Sorry, I didn't get a usable response. Could you say that again?";
         replaceMessage(assistantId, completeText);
       }
+      const nextLocale = detectSpokenLocale(completeText, screening.preferredLanguage);
+      activeRecognitionLocaleRef.current = nextLocale;
+      if (recognitionRef.current) recognitionRef.current.lang = nextLocale;
       streamCompleteRef.current = true;
       queueSpeech("", true);
     } catch (error) {
@@ -362,7 +390,7 @@ export default function Home() {
     const recognition = new RecognitionApi();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = activeRecognitionLocaleRef.current;
     recognition.onstart = () => setStatus("listening");
     recognition.onresult = (event) => {
       if (turnBusyRef.current) return;
@@ -409,6 +437,8 @@ export default function Home() {
     candidateName: candidateName.trim(),
     companyName: companyName.trim(),
     jobTitle: jobTitle.trim(),
+    preferredLanguage,
+    pronunciationGuide: pronunciationGuide.trim().slice(0, 1_000),
     jobDescription: jobDescription.trim().slice(0, 18_000),
     detailsToCollect: detailsText.split("\n")
       .map((item) => item.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim())
@@ -433,6 +463,8 @@ export default function Home() {
     setStatus("requesting");
     setErrorMessage("");
     try {
+      activeRecognitionLocaleRef.current = startingLocale(context.preferredLanguage);
+      if (recognitionRef.current) recognitionRef.current.lang = activeRecognitionLocaleRef.current;
       if (!recognitionRef.current) createRecognition();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
@@ -596,6 +628,18 @@ export default function Home() {
             <label><span>Candidate name <em>optional</em></span><input value={candidateName} onChange={(event) => setCandidateName(event.target.value)} placeholder="e.g. Sam" /></label>
             <label><span>Company</span><input required value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="e.g. Northstar" /></label>
             <label><span>Job title</span><input required value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="e.g. Product Designer" /></label>
+            <label>
+              <span>Candidate language</span>
+              <select value={preferredLanguage} onChange={(event) => setPreferredLanguage(event.target.value as ConversationLanguage)}>
+                {LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <small className="field-note">{LANGUAGE_OPTIONS.find((option) => option.value === preferredLanguage)?.note}</small>
+            </label>
+            <label className="pronunciation-field">
+              <span>Pronunciation guide <em>optional</em></span>
+              <input value={pronunciationGuide} onChange={(event) => setPronunciationGuide(event.target.value)} placeholder="e.g. Dissanayake = dis-sa-naa-ya-ke; Galle = gaal" />
+              <small className="field-note">Add candidate names, Sri Lankan places or specialist terms Aura should say carefully.</small>
+            </label>
           </div>
           <div className="context-grid">
             <label className="textarea-field">
@@ -656,7 +700,7 @@ export default function Home() {
           <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={!sessionActive || turnBusyRef.current} /><button type="submit" disabled={!sessionActive || !typedReply.trim() || turnBusyRef.current}>Send</button></div>
         </form>
         {errorMessage && sessionActive && <p className="error-banner conversation-error" role="alert">{errorMessage}</p>}
-        <div className="panel-footer"><span>Natural OpenAI voice</span><span>One question at a time</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>
+        <div className="panel-footer"><span>English · සිංහල · தமிழ்</span><span>Sri Lankan voice style</span><span>One question at a time</span><span>JD-grounded answers</span></div>
       </section>
 
       <footer className="site-footer"><p>Model-first recruitment screening prototype. Phone connectivity comes later.</p><span>Private prototype · 2026</span></footer>
