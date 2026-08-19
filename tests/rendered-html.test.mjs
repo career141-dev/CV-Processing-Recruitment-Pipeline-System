@@ -36,9 +36,12 @@ test("keeps the API key server-side and the interaction hands-free", async () =>
 
   assert.match(page, /recognition\.continuous = true/);
   assert.match(page, /window\.speechSynthesis\.speak/);
+  assert.match(page, /END_OF_TURN_DELAY_MS = 720/);
+  assert.match(page, /selectNaturalVoice/);
   assert.match(page, /response\.output_text\.delta/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
   assert.match(route, /process\.env\.OPENAI_API_KEY/);
   assert.match(route, /stream: true/);
-  assert.match(config, /one or two short sentences/);
+  assert.match(config, /8 to 24 words/);
+  assert.match(config, /sound like a real person/);
 });

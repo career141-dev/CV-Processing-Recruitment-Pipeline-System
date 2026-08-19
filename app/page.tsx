@@ -67,6 +67,26 @@ const statusCopy: Record<AgentStatus, { label: string; description: string }> = 
 
 const nowLabel = () => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date());
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const END_OF_TURN_DELAY_MS = 720;
+
+const selectNaturalVoice = (voices: SpeechSynthesisVoice[]) => {
+  const preferredNames = [
+    "Google US English", "Microsoft Aria", "Microsoft Jenny", "Samantha",
+    "Ava", "Allison", "Serena", "Daniel", "Karen", "Tessa", "Moira",
+  ];
+  return voices
+    .filter((voice) => voice.lang.toLowerCase().startsWith("en"))
+    .map((voice) => {
+      const preferredIndex = preferredNames.findIndex((name) => voice.name.toLowerCase().includes(name.toLowerCase()));
+      const naturalName = /natural|neural|premium|enhanced/i.test(voice.name);
+      const score = (preferredIndex >= 0 ? 200 - preferredIndex : 0)
+        + (naturalName ? 120 : 0)
+        + (voice.lang.toLowerCase() === "en-us" ? 20 : 0)
+        + (!voice.localService ? 12 : 0);
+      return { voice, score };
+    })
+    .sort((a, b) => b.score - a.score)[0]?.voice ?? null;
+};
 
 export default function Home() {
   const [status, setStatus] = useState<AgentStatus>("idle");
@@ -82,8 +102,12 @@ export default function Home() {
   const speakingRef = useRef(false);
   const speechQueueRef = useRef<string[]>([]);
   const speechBufferRef = useRef("");
+  const firstSpeechQueuedRef = useRef(false);
   const streamCompleteRef = useRef(false);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const silenceTimerRef = useRef<number | null>(null);
+  const currentTranscriptRef = useRef("");
+  const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const handleTurnRef = useRef<(text: string) => Promise<void>>(async () => undefined);
   const speakNextRef = useRef<() => void>(() => undefined);
   const finishTurnRef = useRef<() => void>(() => undefined);
@@ -92,15 +116,33 @@ export default function Home() {
     messagesRef.current = messages;
   }, [messages]);
 
+  useEffect(() => {
+    const loadVoices = () => {
+      preferredVoiceRef.current = selectNaturalVoice(window.speechSynthesis.getVoices());
+    };
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  }, []);
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
   const startListening = useCallback(() => {
     if (!sessionActiveRef.current || turnBusyRef.current || speakingRef.current) return;
+    currentTranscriptRef.current = "";
+    clearSilenceTimer();
     setStatus("listening");
     try {
       recognitionRef.current?.start();
     } catch {
       // The browser throws if recognition is already running; that state is safe to keep.
     }
-  }, []);
+  }, [clearSilenceTimer]);
 
   useEffect(() => {
     finishTurnRef.current = () => {
@@ -135,8 +177,10 @@ export default function Home() {
       utterance.rate = 1.04;
       utterance.pitch = 1;
       const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find((voice) => voice.lang.startsWith("en") && voice.localService) ?? voices.find((voice) => voice.lang.startsWith("en"));
+      const preferredVoice = preferredVoiceRef.current ?? selectNaturalVoice(voices);
       if (preferredVoice) utterance.voice = preferredVoice;
+      utterance.rate = 1.08;
+      utterance.pitch = 0.98;
       utterance.onend = () => {
         speakingRef.current = false;
         speakNextRef.current();
@@ -155,8 +199,23 @@ export default function Home() {
     while (sentence) {
       const spokenText = sentence[1].trim();
       speechBufferRef.current = speechBufferRef.current.slice(sentence[1].length).trimStart();
-      if (spokenText) speechQueueRef.current.push(spokenText);
+      if (spokenText) {
+        speechQueueRef.current.push(spokenText);
+        firstSpeechQueuedRef.current = true;
+      }
       sentence = speechBufferRef.current.match(/^([\s\S]*?[.!?])(?=\s|$)/);
+    }
+    if (!firstSpeechQueuedRef.current && speechBufferRef.current.length >= 48) {
+      const naturalBreak = speechBufferRef.current.match(/^([\s\S]{24,64}?[,;:])(?=\s)/)?.[1];
+      const wordBreak = speechBufferRef.current.length >= 72
+        ? speechBufferRef.current.slice(0, 72).lastIndexOf(" ")
+        : -1;
+      const firstPhrase = naturalBreak ?? (wordBreak > 35 ? speechBufferRef.current.slice(0, wordBreak) : "");
+      if (firstPhrase) {
+        speechQueueRef.current.push(firstPhrase.trim());
+        speechBufferRef.current = speechBufferRef.current.slice(firstPhrase.length).trimStart();
+        firstSpeechQueuedRef.current = true;
+      }
     }
     if (flush && speechBufferRef.current.trim()) {
       speechQueueRef.current.push(speechBufferRef.current.trim());
@@ -174,10 +233,13 @@ export default function Home() {
       const cleanText = spokenText.trim();
       if (!cleanText || turnBusyRef.current || !sessionActiveRef.current) return;
 
+    clearSilenceTimer();
+    currentTranscriptRef.current = "";
     turnBusyRef.current = true;
     streamCompleteRef.current = false;
     speechQueueRef.current = [];
     speechBufferRef.current = "";
+    firstSpeechQueuedRef.current = false;
     setInterimText("");
     setErrorMessage("");
     setStatus("thinking");
@@ -249,7 +311,7 @@ export default function Home() {
       requestAbortRef.current = null;
       }
     };
-  });
+  }, [clearSilenceTimer]);
 
   const createRecognition = () => {
     const RecognitionApi = window.SpeechRecognition ?? window.webkitSpeechRecognition;
@@ -262,15 +324,27 @@ export default function Home() {
     recognition.onstart = () => setStatus("listening");
     recognition.onresult = (event) => {
       if (turnBusyRef.current) return;
-      let interim = "";
-      let final = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      let transcript = "";
+      let hasFinalResult = false;
+      for (let index = 0; index < event.results.length; index += 1) {
         const result = event.results[index];
-        if (result.isFinal) final += result[0].transcript;
-        else interim += result[0].transcript;
+        transcript += result[0].transcript;
+        hasFinalResult ||= result.isFinal;
       }
-      setInterimText(interim.trim());
-      if (final.trim()) void handleTurnRef.current(final);
+      const cleanTranscript = transcript.trim();
+      currentTranscriptRef.current = cleanTranscript;
+      setInterimText(cleanTranscript);
+      clearSilenceTimer();
+      if (hasFinalResult && cleanTranscript) {
+        void handleTurnRef.current(cleanTranscript);
+        return;
+      }
+      if (cleanTranscript) {
+        silenceTimerRef.current = window.setTimeout(() => {
+          const completedTurn = currentTranscriptRef.current.trim();
+          if (completedTurn && !turnBusyRef.current) void handleTurnRef.current(completedTurn);
+        }, END_OF_TURN_DELAY_MS);
+      }
     };
     recognition.onerror = (event) => {
       if (["aborted", "no-speech"].includes(event.error)) return;
@@ -283,7 +357,9 @@ export default function Home() {
     };
     recognition.onend = () => {
       if (sessionActiveRef.current && !turnBusyRef.current && !speakingRef.current) {
-        window.setTimeout(startListening, 180);
+        const completedTurn = currentTranscriptRef.current.trim();
+        if (completedTurn) void handleTurnRef.current(completedTurn);
+        else window.setTimeout(startListening, 120);
       }
     };
     recognitionRef.current = recognition;
@@ -314,7 +390,10 @@ export default function Home() {
     speakingRef.current = false;
     speechQueueRef.current = [];
     speechBufferRef.current = "";
+    firstSpeechQueuedRef.current = false;
     streamCompleteRef.current = false;
+    clearSilenceTimer();
+    currentTranscriptRef.current = "";
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
     window.speechSynthesis?.cancel();
@@ -330,7 +409,10 @@ export default function Home() {
     window.speechSynthesis?.cancel();
     speechQueueRef.current = [];
     speechBufferRef.current = "";
+    firstSpeechQueuedRef.current = false;
     streamCompleteRef.current = false;
+    clearSilenceTimer();
+    currentTranscriptRef.current = "";
     speakingRef.current = false;
     turnBusyRef.current = false;
     startListening();
@@ -338,10 +420,11 @@ export default function Home() {
 
   useEffect(() => () => {
     sessionActiveRef.current = false;
+    clearSilenceTimer();
     requestAbortRef.current?.abort();
     window.speechSynthesis?.cancel();
     recognitionRef.current?.abort();
-  }, []);
+  }, [clearSilenceTimer]);
 
   const copy = statusCopy[status];
   const buttonLabel = sessionActive ? "End conversation" : status === "error" ? "Try again" : "Start conversation";

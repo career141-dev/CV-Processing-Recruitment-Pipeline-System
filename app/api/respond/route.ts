@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "The conversation messages were not valid." }, { status: 400 });
   }
 
-  const messages = body.messages.slice(-12).map((message) => ({
+  const messages = body.messages.slice(-8).map((message) => ({
     role: message.role,
     content: message.content.trim(),
   }));
@@ -47,7 +47,8 @@ export async function POST(request: Request) {
       instructions: AGENT_INSTRUCTIONS,
       input: messages,
       reasoning: { effort: "none" },
-      max_output_tokens: 180,
+      max_output_tokens: 100,
+      text: { verbosity: "low" },
       stream: true,
       store: false,
     }),
@@ -70,4 +71,3 @@ export async function POST(request: Request) {
     },
   });
 }
-
