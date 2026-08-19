@@ -9,7 +9,8 @@ _storage
 _storage_temp
 *.zip
 *.log
-.env.local
-.env.localdev
+.env*
+!.env.example
+!.env.production.example
 .agents
 .vscode

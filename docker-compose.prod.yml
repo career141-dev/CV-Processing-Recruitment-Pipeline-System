@@ -18,6 +18,27 @@ services:
     # Load all server-side secrets at runtime
     env_file:
       - .env.production
+    environment:
+      # Server-side room creation stays on the private Docker network. The
+      # browser receives NEXT_PUBLIC_LIVEKIT_URL from the authenticated token API.
+      LIVEKIT_INTERNAL_URL: http://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:?NEXT_PUBLIC_LIVEKIT_URL is required}
+      # The web token service needs only LiveKit control credentials. Override
+      # voice-provider and persistence secrets inherited from env_file.
+      REDIS_PASSWORD: ""
+      DEEPGRAM_API_KEY: ""
+      INWORLD_API_KEY: ""
+      OPENROUTER_API_KEY: ""
+      FISH_AUDIO_API_KEY: ""
+      LIVEKIT_SIP_OUTBOUND_TRUNK_ID: ""
+      CALL_TEST_RECIPIENT: ""
+      VOICE_AGENT_EVENTS_URL: ""
+      VOICE_AGENT_SHARED_SECRET: ""
+    networks:
+      - default
+      - voice_control
     # ── CRASH FIX 2: Memory limit — prevents Next.js from eating all RAM ──
     mem_limit: 1g
     mem_reservation: 256m
@@ -47,18 +68,124 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  # Voice-only Redis. It is not published publicly and requires an explicit
+  # runtime password; LiveKit and SIP share it for routing/session state.
+  redis:
+    image: redis:7.4-alpine
+    container_name: career141-voice-redis
+    restart: unless-stopped
+    command:
+      - sh
+      - -ec
+      - exec redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - voice_redis_data:/data
+    networks:
+      - voice_internal
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    mem_limit: 256m
+    mem_reservation: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.13.4
     container_name: career141-livekit
     restart: unless-stopped
     command: --config /etc/livekit.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}"
+      # LiveKit maps the redis-password flag from LIVEKIT_REDIS_PASSWORD.
+      # REDIS_PASSWORD alone is not consumed by the server.
+      LIVEKIT_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
-      - "7880:7880"
+      # HTTPS/WSS is terminated by the existing host-level Caddy installation.
+      - "127.0.0.1:7880:7880"
       - "7881:7881"
+      - "3478:3478/udp"
+      - "5349:5349/tcp"
       - "50000-50200:50000-50200/udp"
     volumes:
-      - ./livekit.yaml:/etc/livekit.yaml:ro
+      - ./infra/livekit.yaml:/etc/livekit.yaml:ro
+    networks:
+      - voice_internal
+      - voice_egress
+      - voice_control
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:7880/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    stop_grace_period: 6m
     mem_limit: 1g
+    mem_reservation: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  sip:
+    image: livekit/sip:v1.8.0
+    container_name: career141-livekit-sip
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      LIVEKIT_WS_URL: ws://livekit:7880
+      # SIP_CONFIG_BODY takes precedence over the image's default config file.
+      # Runtime interpolation keeps the Redis password out of version control.
+      SIP_CONFIG_BODY: |
+        ws_url: ws://livekit:7880
+        redis:
+          address: redis:6379
+          password: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+        sip_port: 5060
+        rtp_port: 10000-10100
+        use_external_ip: true
+        health_port: 8080
+        max_active_calls: 2
+        hide_inbound_port: true
+        logging:
+          level: info
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "10000-10100:10000-10100/udp"
+      # Readiness is loopback-only; SIP/RTP remain the only public listeners.
+      - "127.0.0.1:18080:8080"
+    networks:
+      - voice_internal
+      - voice_egress
+    # The current SIP image has no HTTP client. This liveness check is paired
+    # with a real HTTP readiness probe from the deployment workflow.
+    healthcheck:
+      test: ["CMD-SHELL", "test -r /proc/1/status && grep -q livekit-sip /proc/1/status"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 6m
+    mem_limit: 512m
     mem_reservation: 128m
     logging:
       driver: "json-file"
@@ -71,14 +198,38 @@ services:
       context: ./agent
     container_name: career141-voice-agent
     restart: unless-stopped
+    init: true
     depends_on:
-      - livekit
-    env_file:
-      - .env.production
+      livekit:
+        condition: service_healthy
     environment:
-      - LIVEKIT_URL=ws://livekit:7880
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-career141_livekit_key}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2}
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:?DEEPGRAM_API_KEY is required}
+      INWORLD_API_KEY: ${INWORLD_API_KEY:?INWORLD_API_KEY is required}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      VOICE_AGENT_EVENTS_URL: ${VOICE_AGENT_EVENTS_URL:?VOICE_AGENT_EVENTS_URL is required}
+      VOICE_AGENT_SHARED_SECRET: ${VOICE_AGENT_SHARED_SECRET:?VOICE_AGENT_SHARED_SECRET is required}
+      NODE_ENV: production
+    # The LiveKit Agents CLI only enables production mode/readiness with start.
+    command: ["node", "dist/index.js", "start"]
+    ports:
+      - "127.0.0.1:18081:8081"
+    networks:
+      - voice_control
+      - voice_egress
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8081/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 6m
     mem_limit: 1g
     mem_reservation: 256m
     logging:
@@ -89,3 +240,15 @@ services:
 
 volumes:
   qdrant_storage:
+  voice_redis_data:
+
+networks:
+  # No host ports are published from this network. It carries credentials and
+  # Redis traffic only.
+  voice_internal:
+    internal: true
+  # Web can create LiveKit rooms without being able to reach Redis or SIP.
+  voice_control:
+    internal: true
+  # Provider/WebRTC egress is deliberately separated from Redis traffic.
+  voice_egress:

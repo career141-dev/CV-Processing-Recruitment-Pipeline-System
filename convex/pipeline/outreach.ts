@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { initiateFollowUpOutreach } from "./followUpHelper";
+import { requireJobAssignment, requireUser } from "../lib/permissions";
+import { assertNoPendingVoiceCall } from "../aiCalls/voiceCallGuards";
 
 // Get AI Calls for Outreach dashboard
 export const getAiCalls = query({
@@ -78,21 +80,25 @@ export const triggerAiCall = mutation({
     companyHidden: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    // Assuming we have a user, but we'll mock if not
-    let userId;
-    if (identity) {
-      const user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", identity.email!))
-        .first();
-      userId = user?._id;
-    }
+    const user = await requireUser(ctx);
+    await requireJobAssignment(ctx, args.jobId, ["primary_recruiter", "supporting_recruiter"]);
+
+    const candidate = await ctx.db.get(args.candidateId);
+    if (!candidate) throw new Error("Candidate not found");
+    if (candidate.doNotContact) throw new Error("Candidate is marked do-not-contact");
+
+    const app = await ctx.db.query("applications")
+      .withIndex("by_candidate_job", q => q.eq("candidateId", args.candidateId).eq("jobId", args.jobId))
+      .first();
+    if (!app) throw new Error("Candidate has no application for this job");
+    if (app.isActive === false) throw new Error("Application is not active");
+    await assertNoPendingVoiceCall(ctx, app._id);
 
     const newCallId = await ctx.db.insert("aiCalls", {
       candidateId: args.candidateId,
+      applicationId: app._id,
       jobId: args.jobId,
-      triggeredBy: userId,
+      triggeredBy: user._id,
       triggerType: "manual_ta_trigger",
       callStatus: "scheduled",
       callScriptUsed: args.callScriptUsed,
@@ -103,18 +109,10 @@ export const triggerAiCall = mutation({
       followUpTriggered: false,
     });
 
-    const app = await ctx.db.query("applications")
-      .withIndex("by_candidate_job", q => q.eq("candidateId", args.candidateId).eq("jobId", args.jobId))
-      .first();
-
-    if (app) {
-      await ctx.db.patch(newCallId, { applicationId: app._id });
-      await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerIntakeCall, {
-        applicationId: app._id,
-        candidateId: args.candidateId,
-        jobId: args.jobId,
-      });
-    }
+    await ctx.scheduler.runAfter(0, internal.integrations.livekitSip.dispatchManualVoiceCall, {
+      aiCallId: newCallId,
+      kind: "intake",
+    });
 
     return newCallId;
   },
@@ -312,17 +310,23 @@ export const forceTriggerFollowUpCall = mutation({
     applicationId: v.id("applications"),
   },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
     const app = await ctx.db.get(args.applicationId);
     if (!app) throw new Error("App not found");
+    if (app.isActive === false) throw new Error("Application is not active");
+    await requireJobAssignment(ctx, app.jobId, ["primary_recruiter", "supporting_recruiter"]);
     
     const candidate = await ctx.db.get(app.candidateId);
     if (!candidate) throw new Error("Candidate not found");
+    if (candidate.doNotContact) throw new Error("Candidate is marked do-not-contact");
+    await assertNoPendingVoiceCall(ctx, app._id);
 
     const now = Date.now();
     const newAiCallId = await ctx.db.insert("aiCalls", {
       candidateId: app.candidateId,
       jobId: app.jobId,
       applicationId: app._id,
+      triggeredBy: user._id,
       triggerType: "followup_retry",
       callStatus: "scheduled",
       callScriptUsed: "initial_screening",
@@ -330,15 +334,15 @@ export const forceTriggerFollowUpCall = mutation({
       calledAt: now,
       followUpTriggered: true,
       attempts: 1,
+      firstAttemptAt: now,
+      attemptNumber: 1,
     });
 
-    await ctx.scheduler.runAfter(0, internal.integrations.elevenlabs.triggerFollowUpCall, {
-      applicationId: app._id,
-      candidateId: app.candidateId,
-      jobId: app.jobId,
+    await ctx.scheduler.runAfter(0, internal.integrations.livekitSip.dispatchManualVoiceCall, {
+      aiCallId: newAiCallId,
+      kind: "follow_up",
       attemptNumber: 1,
       lastContactChannel: "Manual Trigger",
-      aiCallId: newAiCallId,
     });
 
     return true;

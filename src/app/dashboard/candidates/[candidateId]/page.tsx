@@ -11,11 +11,6 @@ import { VoiceTestModal } from '@/components/voice/VoiceTestModal';
 import { toast } from 'sonner';
 import { ChevronLeft } from 'lucide-react';
 
-function getInitials(name?: string | null): string {
-  if (!name) return "?";
-  return name.split(" ").filter(Boolean).map(n => n[0]).join("").toUpperCase().slice(0, 2);
-}
-
 function formatYoe(years?: number | null): string {
   if (years == null) return "";
   const y = Math.floor(years);
@@ -50,12 +45,10 @@ export default function CandidateProfile() {
   const triggerLazyParse = useAction(api.cvs.lazyParsing.triggerLazyParse);
   const createApplication = useMutation(api.applications.applications.createApplication);
   const setDoNotContact = useMutation(api.candidates.candidates.setDoNotContact);
-  const triggerManualAiCall = useMutation(api.applications.applications.triggerManualAiCall);
   const reparseReferees = useAction(api.candidates.refereeActions.reparseSingleCandidateReferees);
   
   const [isAddToJobOpen, setIsAddToJobOpen] = useState(false);
   const [isVoiceTestOpen, setIsVoiceTestOpen] = useState(false);
-  const [isTriggeringCall, setIsTriggeringCall] = useState(false);
   const [isReparsingReferees, setIsReparsingReferees] = useState(false);
 
   React.useEffect(() => {
@@ -64,7 +57,7 @@ export default function CandidateProfile() {
     }
   }, [fetchedCandidate, triggerLazyParse]);
 
-  const candidate = fetchedCandidate as any;
+  const candidate = fetchedCandidate;
 
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -275,11 +268,12 @@ export default function CandidateProfile() {
                 isOpen={isVoiceTestOpen}
                 onClose={() => setIsVoiceTestOpen(false)}
                 candidateId={candidateId}
-                jobId={applications?.[0]?.jobId || candidate?.firstSourceJobId || ("j9700000000000000000000000" as any)}
-                applicationId={applications?.[0]?._id}
                 candidateName={candidate.fullName || "Candidate"}
-                jobTitle={applications?.[0]?.jobTitle || candidate.currentTitle || "Open Role"}
-                jobDescription={candidate.summary || "General recruitment prescreening"}
+                applications={(applications || []).map((application) => ({
+                  applicationId: application._id,
+                  jobId: application.jobId,
+                  jobTitle: application.jobTitle,
+                }))}
               />
             )}
 
@@ -438,7 +432,13 @@ export default function CandidateProfile() {
                   </div>
                   {candidate.jobHistory && candidate.jobHistory.length > 0 ? (
                     <div className="flex flex-col gap-5">
-                      {candidate.jobHistory.map((job: any, i: number) => {
+                      {candidate.jobHistory.map((job: {
+                        company?: string;
+                        title?: string;
+                        startDate?: string;
+                        endDate?: string;
+                        description?: string;
+                      }, i: number) => {
                         const dateStr = job.startDate ? `${job.startDate} — ${job.endDate || 'Present'}` : (job.endDate ? `Until ${job.endDate}` : "");
                         return (
                           <div key={i}>
@@ -761,8 +761,12 @@ export default function CandidateProfile() {
                       try {
                         const res = await reparseReferees({ candidateId });
                         toast.success(`Referees extracted successfully! (${res.refereesCount} references found)`);
-                      } catch (err: any) {
-                        toast.error(err?.message || "Failed to re-extract referees");
+                      } catch (error: unknown) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Failed to re-extract referees",
+                        );
                       } finally {
                         setIsReparsingReferees(false);
                       }

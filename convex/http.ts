@@ -3,6 +3,12 @@ import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { handleWhatChimpWebhook } from "./communications/whatchimp";
 import { verifyElevenLabsSignature } from "./lib/webhookSecurity";
+import type { Id } from "./_generated/dataModel";
+import {
+  isFreshVoiceAgentTimestamp,
+  parseVoiceAgentEvent,
+  verifyVoiceAgentSignature,
+} from "./lib/voiceAgentWebhook";
 
 const http = httpRouter();
 
@@ -688,6 +694,125 @@ http.route({
       });
     } catch (e: any) {
       return new Response(e.message, { status: 500 });
+    }
+  }),
+});
+
+// Authenticated write bridge for the external LiveKit worker. All state writes
+// remain internal mutations; the shared secret never grants a public mutation.
+http.route({
+  path: "/api/voice-agent/events",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const respond = (status: number, body: Record<string, unknown>) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const secret = process.env.VOICE_AGENT_SHARED_SECRET;
+    if (!secret || secret.length < 32) {
+      return respond(503, { success: false, error: "Voice bridge unavailable" });
+    }
+    const contentLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > 120_000) {
+      return respond(413, { success: false, error: "Request too large" });
+    }
+
+    const timestamp = request.headers.get("x-career141-timestamp");
+    const nonce = request.headers.get("x-career141-nonce");
+    const signature = request.headers.get("x-career141-signature");
+    if (
+      !timestamp ||
+      !nonce ||
+      !/^[A-Za-z0-9_-]{16,128}$/.test(nonce) ||
+      !isFreshVoiceAgentTimestamp(timestamp)
+    ) {
+      return respond(401, { success: false, error: "Unauthorized" });
+    }
+
+    const rawBody = await request.text();
+    if (rawBody.length > 120_000) {
+      return respond(413, { success: false, error: "Request too large" });
+    }
+    const verified = await verifyVoiceAgentSignature({
+      rawBody,
+      timestamp,
+      nonce,
+      signature,
+      secret,
+    });
+    if (!verified) {
+      return respond(401, { success: false, error: "Unauthorized" });
+    }
+
+    try {
+      await ctx.runMutation(internal.aiCalls.voiceCalls.claimVoiceAgentNonce, {
+        nonce,
+      });
+    } catch {
+      return respond(409, { success: false, error: "Request replayed" });
+    }
+
+    let event;
+    try {
+      event = parseVoiceAgentEvent(JSON.parse(rawBody));
+    } catch {
+      return respond(400, { success: false, error: "Invalid voice event" });
+    }
+
+    try {
+      if (event.type === "consent") {
+        const result = await ctx.runMutation(
+          internal.aiCalls.voiceCalls.recordVoiceConsent,
+          {
+            callSessionId: event.callSessionId as Id<"voiceCallSessions">,
+            decision: event.decision,
+            idempotencyKey: event.idempotencyKey,
+            expectedStateVersion: event.expectedStateVersion,
+          },
+        );
+        return respond(200, {
+          success: true,
+          stateVersion: result.stateVersion,
+        });
+      }
+      if (event.type === "confirmed_answer") {
+        const result = await ctx.runMutation(
+          internal.aiCalls.voiceCalls.commitConfirmedVoiceAnswer,
+          {
+            callSessionId: event.callSessionId as Id<"voiceCallSessions">,
+            turnId: event.turnId,
+            field: event.field,
+            value: event.value,
+            ...(event.currency !== undefined
+              ? { currency: event.currency }
+              : {}),
+            expectedStateVersion: event.expectedStateVersion,
+          },
+        );
+        return respond(200, {
+          success: true,
+          stateVersion: result.stateVersion,
+        });
+      }
+
+      const result = await ctx.runMutation(
+        internal.aiCalls.voiceCalls.finalizeVoiceCallSession,
+        {
+          callSessionId: event.callSessionId as Id<"voiceCallSessions">,
+          expectedStateVersion: event.expectedStateVersion,
+          status: event.status,
+          durationSeconds: event.durationSeconds,
+          transcript: event.transcript,
+        },
+      );
+      return respond(200, {
+        success: true,
+        stateVersion: result.stateVersion,
+      });
+    } catch {
+      return respond(409, { success: false, error: "Voice event rejected" });
     }
   }),
 });

@@ -940,6 +940,21 @@ export default defineSchema({
     attemptNumber: v.optional(v.number()),
     elevenlabsConversationId: v.optional(v.string()),
     elevenlabsAgentId: v.optional(v.string()),
+    isTestCall: v.optional(v.boolean()),
+    voiceCallSessionId: v.optional(v.id("voiceCallSessions")),
+    livekitRoomName: v.optional(v.string()),
+    livekitParticipantId: v.optional(v.string()),
+    livekitParticipantIdentity: v.optional(v.string()),
+    livekitSipCallId: v.optional(v.string()),
+    livekitSipStatus: v.optional(
+      v.union(
+        v.literal("dialing"),
+        v.literal("answered"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("suppressed")
+      )
+    ),
   })
     .index("by_candidate", ["candidateId"])
     .index("by_application", ["applicationId"])
@@ -949,6 +964,108 @@ export default defineSchema({
     .index("by_callStatus", ["callStatus"])
     .index("by_twilio", ["twilioCallSid"])
     .index("by_elevenlabs", ["elevenlabsConversationId"]),
+
+  // Durable server-authoritative state for the real-time voice engine.
+  // Simulation sessions may be represented here for diagnostics, but they
+  // must never mutate candidates, applications, or aiCalls.
+  voiceCallSessions: defineTable({
+    externalSessionId: v.string(),
+    aiCallId: v.optional(v.id("aiCalls")),
+    candidateId: v.id("candidates"),
+    applicationId: v.id("applications"),
+    jobId: v.id("jobs"),
+    mode: v.union(
+      v.literal("simulation"),
+      v.literal("test"),
+      v.literal("live")
+    ),
+    status: v.union(
+      v.literal("active"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("cancelled")
+    ),
+    consentStatus: v.union(
+      v.literal("not_required"),
+      v.literal("pending"),
+      v.literal("granted"),
+      v.literal("declined")
+    ),
+    consentIdempotencyKey: v.optional(v.string()),
+    consentRecordedAt: v.optional(v.number()),
+    livekitRoomName: v.optional(v.string()),
+    livekitParticipantId: v.optional(v.string()),
+    livekitParticipantIdentity: v.optional(v.string()),
+    livekitSipCallId: v.optional(v.string()),
+    livekitSipStatus: v.optional(
+      v.union(
+        v.literal("dialing"),
+        v.literal("answered"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ),
+    livekitFailureReason: v.optional(v.string()),
+    stateVersion: v.number(),
+    startedAt: v.number(),
+    finalizedAt: v.optional(v.number()),
+    durationSeconds: v.optional(v.number()),
+  })
+    .index("by_externalSessionId", ["externalSessionId"])
+    .index("by_aiCallId", ["aiCallId"])
+    .index("by_application_startedAt", ["applicationId", "startedAt"])
+    .index("by_mode_status", ["mode", "status"])
+    .index("by_status_startedAt", ["status", "startedAt"]),
+
+  // One row per candidate-confirmed field. The idempotency index is queried
+  // before state-version validation so an acknowledgement-loss retry returns
+  // the original successful result rather than a false stale-version error.
+  voiceAnswers: defineTable({
+    callSessionId: v.id("voiceCallSessions"),
+    candidateId: v.id("candidates"),
+    applicationId: v.id("applications"),
+    jobId: v.id("jobs"),
+    turnId: v.string(),
+    field: v.union(
+      v.literal("currentSalary"),
+      v.literal("expectedSalary"),
+      v.literal("noticePeriodDays")
+    ),
+    value: v.number(),
+    currency: v.optional(v.string()),
+    idempotencyKey: v.string(),
+    expectedStateVersion: v.number(),
+    committedStateVersion: v.number(),
+    committedAt: v.number(),
+  })
+    .index("by_idempotencyKey", ["idempotencyKey"])
+    .index("by_session", ["callSessionId"])
+    .index("by_session_turn_field", ["callSessionId", "turnId", "field"])
+    .index("by_application_committedAt", ["applicationId", "committedAt"]),
+
+  voiceAgentNonces: defineTable({
+    nonce: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_nonce", ["nonce"])
+    .index("by_expiresAt", ["expiresAt"]),
+
+  voiceSimulationReservations: defineTable({
+    sessionId: v.string(),
+    userId: v.id("users"),
+    candidateId: v.id("candidates"),
+    applicationId: v.id("applications"),
+    jobId: v.id("jobs"),
+    status: v.union(v.literal("reserved"), v.literal("released")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    releasedAt: v.optional(v.number()),
+  })
+    .index("by_sessionId", ["sessionId"])
+    .index("by_user_createdAt", ["userId", "createdAt"])
+    .index("by_user_expiresAt", ["userId", "expiresAt"])
+    .index("by_status_expiresAt", ["status", "expiresAt"]),
 
   communications: defineTable({
     candidateId: v.id("candidates"),
@@ -1682,4 +1799,3 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
 });
-
