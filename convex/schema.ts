@@ -537,6 +537,7 @@ export default defineSchema({
 
   folderImportProgress: defineTable({
     sourceChannel: v.string(),
+    rootFolderName: v.optional(v.string()),
     lastProcessedIndex: v.number(),
     lastProcessedFolderName: v.string(),
     totalDiscoveredFolders: v.optional(v.number()),
@@ -544,7 +545,9 @@ export default defineSchema({
     skippedCount: v.number(),
     failedCount: v.number(),
     updatedAt: v.number(),
-  }).index("by_sourceChannel", ["sourceChannel"]),
+  })
+    .index("by_sourceChannel", ["sourceChannel"])
+    .index("by_channel_folder", ["sourceChannel", "rootFolderName"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),

@@ -307,6 +307,7 @@ async function main() {
       try {
         await client.mutation("cvs/folderIngestion:updateFolderImportProgress", {
           sourceChannel: "Manual Directory Import",
+          rootFolderName: path.basename(state.rootDirectory),
           lastProcessedIndex: state.processedCount,
           lastProcessedFolderName: state.lastStoppedFolder || "Completed Batch",
           uploadedCount: state.uploadedCount,

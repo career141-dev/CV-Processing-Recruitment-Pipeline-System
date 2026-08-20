@@ -68,9 +68,22 @@ export const uploadFolderCandidate = action({
 export const getFolderImportProgress = query({
   args: {
     sourceChannel: v.optional(v.string()),
+    rootFolderName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const sourceChannel = args.sourceChannel || "Manual Directory Import";
+
+    if (args.rootFolderName) {
+      const folderRecord = await ctx.db
+        .query("folderImportProgress")
+        .withIndex("by_channel_folder", (q) =>
+          q.eq("sourceChannel", sourceChannel).eq("rootFolderName", args.rootFolderName)
+        )
+        .first();
+
+      return folderRecord || null;
+    }
+
     const record = await ctx.db
       .query("folderImportProgress")
       .withIndex("by_sourceChannel", (q) => q.eq("sourceChannel", sourceChannel))
@@ -83,6 +96,7 @@ export const getFolderImportProgress = query({
 export const updateFolderImportProgress = mutation({
   args: {
     sourceChannel: v.optional(v.string()),
+    rootFolderName: v.optional(v.string()),
     lastProcessedIndex: v.number(),
     lastProcessedFolderName: v.string(),
     totalDiscoveredFolders: v.optional(v.number()),
@@ -92,13 +106,25 @@ export const updateFolderImportProgress = mutation({
   },
   handler: async (ctx, args) => {
     const sourceChannel = args.sourceChannel || "Manual Directory Import";
-    const existing = await ctx.db
-      .query("folderImportProgress")
-      .withIndex("by_sourceChannel", (q) => q.eq("sourceChannel", sourceChannel))
-      .first();
+    let existing;
+
+    if (args.rootFolderName) {
+      existing = await ctx.db
+        .query("folderImportProgress")
+        .withIndex("by_channel_folder", (q) =>
+          q.eq("sourceChannel", sourceChannel).eq("rootFolderName", args.rootFolderName)
+        )
+        .first();
+    } else {
+      existing = await ctx.db
+        .query("folderImportProgress")
+        .withIndex("by_sourceChannel", (q) => q.eq("sourceChannel", sourceChannel))
+        .first();
+    }
 
     const payload = {
       sourceChannel,
+      rootFolderName: args.rootFolderName,
       lastProcessedIndex: args.lastProcessedIndex,
       lastProcessedFolderName: args.lastProcessedFolderName,
       totalDiscoveredFolders: args.totalDiscoveredFolders,
@@ -114,5 +140,39 @@ export const updateFolderImportProgress = mutation({
     } else {
       return await ctx.db.insert("folderImportProgress", payload);
     }
+  },
+});
+
+export const resetFolderImportProgress = mutation({
+  args: {
+    sourceChannel: v.optional(v.string()),
+    rootFolderName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const sourceChannel = args.sourceChannel || "Manual Directory Import";
+
+    if (args.rootFolderName) {
+      const records = await ctx.db
+        .query("folderImportProgress")
+        .withIndex("by_channel_folder", (q) =>
+          q.eq("sourceChannel", sourceChannel).eq("rootFolderName", args.rootFolderName)
+        )
+        .collect();
+
+      for (const rec of records) {
+        await ctx.db.delete(rec._id);
+      }
+      return { resetCount: records.length };
+    }
+
+    const records = await ctx.db
+      .query("folderImportProgress")
+      .withIndex("by_sourceChannel", (q) => q.eq("sourceChannel", sourceChannel))
+      .collect();
+
+    for (const rec of records) {
+      await ctx.db.delete(rec._id);
+    }
+    return { resetCount: records.length };
   },
 });
