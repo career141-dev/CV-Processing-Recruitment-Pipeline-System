@@ -222,12 +222,12 @@ jobs:
             VOICE_READY=0
             for ATTEMPT in $(seq 1 36); do
               REDIS_HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' career141-voice-redis 2>/dev/null || true)
-              LIVEKIT_HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' career141-livekit 2>/dev/null || true)
+              LIVEKIT_STATE=$(docker inspect --format='{{.State.Status}}' career141-livekit 2>/dev/null || true)
               SIP_HTTP=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/ || true)
               AGENT_HTTP=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18081/ || true)
 
-              echo "Voice readiness ${ATTEMPT}/36: redis=${REDIS_HEALTH} livekit=${LIVEKIT_HEALTH} sip=${SIP_HTTP:-000} agent=${AGENT_HTTP:-000}"
-              if [ "${REDIS_HEALTH}" = "healthy" ] && [ "${LIVEKIT_HEALTH}" = "healthy" ] && [ "${SIP_HTTP}" = "200" ] && [ "${AGENT_HTTP}" = "200" ]; then
+              echo "Voice readiness ${ATTEMPT}/36: redis=${REDIS_HEALTH} livekit=${LIVEKIT_STATE} sip=${SIP_HTTP:-000} agent=${AGENT_HTTP:-000}"
+              if [ "${REDIS_HEALTH}" = "healthy" ] && [ "${LIVEKIT_STATE}" = "running" ] && [ "${SIP_HTTP}" = "200" ] && [ "${AGENT_HTTP}" = "200" ]; then
                 VOICE_READY=1
                 break
               fi
