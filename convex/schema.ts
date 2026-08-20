@@ -601,6 +601,7 @@ export default defineSchema({
       )
     ),
     location: v.optional(v.string()),
+    locationStructured: v.optional(v.any()),
     linkedinUrl: v.optional(v.string()),
     currentJobTitle: v.optional(v.string()),
     currentEmployer: v.optional(v.string()),
@@ -1734,7 +1735,7 @@ export default defineSchema({
   cvScans: defineTable({
     userId: v.id("users"),
     title: v.string(),
-    criteria: v.array(v.string()),
+    criteria: v.array(v.union(v.string(), v.any())),
     expandedCriteria: v.optional(
       v.array(
         v.object({
@@ -1742,6 +1743,7 @@ export default defineSchema({
           definition: v.string(),
           equivalentTitles: v.array(v.string()),
           relatedSignals: v.array(v.string()),
+          isLocation: v.optional(v.boolean()),
         })
       )
     ),

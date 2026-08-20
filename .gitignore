@@ -72,4 +72,5 @@ temp_backup_check/
 checkSanjeevUpdate.mjs
 deleteSanjeevCandidateProfiles.mjs
 removeSingleCandidateSanjeev.mjs
-simulateCandidateReply.mjs
+simulateCandidateReply.mjs
+scratch/

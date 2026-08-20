@@ -14,6 +14,7 @@ import type * as admin_backfillStuckUploads from "../admin/backfillStuckUploads.
 import type * as admin_backfillTokenCache from "../admin/backfillTokenCache.js";
 import type * as admin_checkAndStopImports from "../admin/checkAndStopImports.js";
 import type * as admin_checkData from "../admin/checkData.js";
+import type * as admin_cleanCandidateApps from "../admin/cleanCandidateApps.js";
 import type * as admin_cleanupCandidates from "../admin/cleanupCandidates.js";
 import type * as admin_debugWhatsApp from "../admin/debugWhatsApp.js";
 import type * as admin_ioPerformanceMigrations from "../admin/ioPerformanceMigrations.js";
@@ -131,6 +132,7 @@ declare const fullApi: ApiFromModules<{
   "admin/backfillTokenCache": typeof admin_backfillTokenCache;
   "admin/checkAndStopImports": typeof admin_checkAndStopImports;
   "admin/checkData": typeof admin_checkData;
+  "admin/cleanCandidateApps": typeof admin_cleanCandidateApps;
   "admin/cleanupCandidates": typeof admin_cleanupCandidates;
   "admin/debugWhatsApp": typeof admin_debugWhatsApp;
   "admin/ioPerformanceMigrations": typeof admin_ioPerformanceMigrations;

@@ -1428,6 +1428,19 @@ export const getActiveFollowUpApplication = query({
 
     if (validApps.length === 0) return null;
 
+    // Prioritize the job application that sent the candidate their most recent outbound message
+    const recentOutbound = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", args.candidateId))
+      .order("desc")
+      .filter((q: any) => q.eq(q.field("direction"), "outbound"))
+      .first();
+
+    if (recentOutbound?.applicationId) {
+      const appMatch = validApps.find((a) => a._id === recentOutbound.applicationId);
+      if (appMatch) return appMatch;
+    }
+
     validApps.sort((a, b) => {
       if (a.currentStage === "follow_up" && b.currentStage !== "follow_up") return -1;
       if (b.currentStage === "follow_up" && a.currentStage !== "follow_up") return 1;

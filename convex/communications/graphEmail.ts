@@ -32,8 +32,8 @@ export const sendGraphEmail = internalAction({
 
     if (commRecord?.applicationId) {
       const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
-      if (appRecord && appRecord.currentStage !== "follow_up" && appRecord.currentStage !== "ta_shortlist") {
-        console.log(`[Graph Email] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up" or "ta_shortlist"). Aborting Email follow-up delivery.`);
+      if (appRecord && appRecord.currentStage !== "follow_up" && appRecord.currentStage !== "ta_shortlist" && appRecord.currentStage !== "matched_candidates") {
+        console.log(`[Graph Email] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up", "ta_shortlist", or "matched_candidates"). Aborting Email follow-up delivery.`);
         return;
       }
     }
