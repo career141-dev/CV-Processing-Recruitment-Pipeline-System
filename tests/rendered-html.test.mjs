@@ -38,7 +38,11 @@ test("streams natural speech while keeping the API key server-side", async () =>
 
   assert.match(page, /recognition\.continuous = true/);
   assert.match(page, /window\.speechSynthesis\.speak/);
-  assert.match(page, /END_OF_TURN_DELAY_MS = 720/);
+  assert.match(page, /FINAL_END_OF_TURN_DELAY_MS = 360/);
+  assert.match(page, /INTERIM_END_OF_TURN_DELAY_MS = 600/);
+  assert.match(page, /LOW_CONFIDENCE_THRESHOLD = 0\.78/);
+  assert.match(page, /recognition\.maxAlternatives = 3/);
+  assert.match(page, /transcriptNeedsAccuracyRef/);
   assert.match(page, /selectNaturalVoice/);
   assert.match(page, /new AudioContext/);
   assert.match(page, /speechResponse\.body\.getReader/);
@@ -56,7 +60,9 @@ test("streams natural speech while keeping the API key server-side", async () =>
   assert.doesNotMatch(speechRoute, /brief pauses/);
   assert.match(transcriptionRoute, /gpt-4o-mini-transcribe/);
   assert.match(transcriptionRoute, /v1\/audio\/transcriptions/);
-  assert.match(config, /gpt-4o-mini/);
+  assert.match(config, /gpt-5\.6-luna/);
+  assert.match(route, /reasoning: \{ effort: "none" \}/);
+  assert.match(route, /text: \{ verbosity: "low" \}/);
   assert.match(config, /Sound like a good recruiter on a real call/);
   assert.match(config, /usually under 35 words/);
   assert.doesNotMatch(`${page}\n${route}\n${speechRoute}\n${transcriptionRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);

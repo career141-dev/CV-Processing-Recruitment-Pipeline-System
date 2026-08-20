@@ -7,12 +7,14 @@ type AgentStatus = "idle" | "requesting" | "listening" | "thinking" | "speaking"
 type MessageRole = "user" | "assistant";
 type Message = { id: string; role: MessageRole; text: string; time: string };
 type SpeechQueueItem = { text: string; audio: Promise<Response | null>; controller: AbortController; cycle: number };
-type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
+type SpeechAlternative = { transcript: string; confidence?: number };
+type SpeechResult = { isFinal: boolean; length: number; [index: number]: SpeechAlternative };
 type RecognitionEvent = { resultIndex: number; results: ArrayLike<SpeechResult> };
 type RecognitionError = { error: string };
 type Recognition = {
   continuous: boolean;
   interimResults: boolean;
+  maxAlternatives: number;
   lang: string;
   start: () => void;
   stop: () => void;
@@ -48,7 +50,9 @@ const statusCopy: Record<AgentStatus, { label: string; description: string }> = 
 
 const nowLabel = () => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date());
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const END_OF_TURN_DELAY_MS = 720;
+const FINAL_END_OF_TURN_DELAY_MS = 360;
+const INTERIM_END_OF_TURN_DELAY_MS = 600;
+const LOW_CONFIDENCE_THRESHOLD = 0.78;
 
 const selectNaturalVoice = (voices: SpeechSynthesisVoice[]) => {
   const preferredNames = [
@@ -119,6 +123,7 @@ export default function Home() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const silenceTimerRef = useRef<number | null>(null);
   const currentTranscriptRef = useRef("");
+  const transcriptNeedsAccuracyRef = useRef(false);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedAudioChunksRef = useRef<Blob[]>([]);
@@ -128,7 +133,7 @@ export default function Home() {
   const currentSpeechReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const currentAudioContextRef = useRef<AudioContext | null>(null);
   const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
-  const handleTurnRef = useRef<(text: string) => Promise<void>>(async () => undefined);
+  const handleTurnRef = useRef<(text: string, verifyTranscript?: boolean) => Promise<void>>(async () => undefined);
   const speakNextRef = useRef<() => void>(() => undefined);
   const finishTurnRef = useRef<() => void>(() => undefined);
 
@@ -210,6 +215,7 @@ export default function Home() {
   const startListening = useCallback(() => {
     if (!sessionActiveRef.current || turnBusyRef.current || speakingRef.current) return;
     currentTranscriptRef.current = "";
+    transcriptNeedsAccuracyRef.current = false;
     clearSilenceTimer();
     setStatus("listening");
     startCandidateRecording();
@@ -222,7 +228,7 @@ export default function Home() {
       speakingRef.current = false;
       streamCompleteRef.current = false;
       requestAbortRef.current = null;
-      if (sessionActiveRef.current) window.setTimeout(startListening, 180);
+      if (sessionActiveRef.current) window.setTimeout(startListening, 100);
     };
   }, [startListening]);
 
@@ -289,7 +295,7 @@ export default function Home() {
         const reader = speechResponse.body.getReader();
         currentSpeechReaderRef.current = reader;
         // Give the stream a small head start so brief network jitter cannot create audible gaps.
-        let scheduledUntil = audioContext.currentTime + 0.18;
+        let scheduledUntil = audioContext.currentTime + 0.1;
         let carry = new Uint8Array(0);
         let finalSource: AudioBufferSourceNode | null = null;
 
@@ -319,7 +325,7 @@ export default function Home() {
           const source = audioContext.createBufferSource();
           source.buffer = audioBuffer;
           source.connect(audioContext.destination);
-          scheduledUntil = Math.max(scheduledUntil, audioContext.currentTime + 0.06);
+          scheduledUntil = Math.max(scheduledUntil, audioContext.currentTime + 0.045);
           source.start(scheduledUntil);
           scheduledUntil += audioBuffer.duration;
           finalSource = source;
@@ -440,14 +446,14 @@ export default function Home() {
     }
   }, [clearSilenceTimer, queueSpeech, replaceMessage]);
 
-  const handleCandidateTurn = useCallback(async (spokenText: string, improveTranscript = true) => {
+  const handleCandidateTurn = useCallback(async (spokenText: string, verifyTranscript = false) => {
     let cleanText = spokenText.trim();
     if (!cleanText || turnBusyRef.current || !sessionActiveRef.current) return;
     turnBusyRef.current = true;
     clearSilenceTimer();
     try { recognitionRef.current?.stop(); } catch { /* Already stopped. */ }
     const recordedAudio = await stopCandidateRecording();
-    if (improveTranscript && recordedAudio && recordedAudio.size > 1_000) {
+    if (verifyTranscript && recordedAudio && recordedAudio.size > 1_000) {
       setStatus("thinking");
       try {
         const accurateText = await transcribeCandidateAudio(recordedAudio);
@@ -479,26 +485,44 @@ export default function Home() {
     const recognition = new RecognitionApi();
     recognition.continuous = true;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 3;
     recognition.lang = "en-US";
     recognition.onstart = () => setStatus("listening");
     recognition.onresult = (event) => {
       if (turnBusyRef.current) return;
       let finalTranscript = "";
       let interimTranscript = "";
+      let hasInterimResult = false;
+      let needsAccuracyPass = false;
       for (let index = 0; index < event.results.length; index += 1) {
         const result = event.results[index];
-        if (result.isFinal) finalTranscript += `${result[0].transcript} `;
-        else interimTranscript += `${result[0].transcript} `;
+        const best = result[0];
+        if (result.isFinal) {
+          finalTranscript += `${best.transcript} `;
+          const confidence = typeof best.confidence === "number" ? best.confidence : 0;
+          if (confidence > 0 && confidence < LOW_CONFIDENCE_THRESHOLD) needsAccuracyPass = true;
+          const alternative = result.length > 1 ? result[1] : undefined;
+          if (alternative && best.transcript.trim().toLowerCase() !== alternative.transcript.trim().toLowerCase()) {
+            const alternativeConfidence = typeof alternative.confidence === "number" ? alternative.confidence : 0;
+            if (confidence === 0 || alternativeConfidence >= confidence - 0.12) needsAccuracyPass = true;
+          }
+        } else {
+          interimTranscript += `${best.transcript} `;
+          hasInterimResult = true;
+        }
       }
       const cleanTranscript = `${finalTranscript}${interimTranscript}`.replace(/\s+/g, " ").trim();
       currentTranscriptRef.current = cleanTranscript;
+      transcriptNeedsAccuracyRef.current = needsAccuracyPass;
       setInterimText(cleanTranscript);
       clearSilenceTimer();
       if (cleanTranscript) {
         silenceTimerRef.current = window.setTimeout(() => {
           const completedTurn = currentTranscriptRef.current.trim();
-          if (completedTurn && !turnBusyRef.current) void handleTurnRef.current(completedTurn);
-        }, END_OF_TURN_DELAY_MS);
+          if (completedTurn && !turnBusyRef.current) {
+            void handleTurnRef.current(completedTurn, transcriptNeedsAccuracyRef.current);
+          }
+        }, hasInterimResult ? INTERIM_END_OF_TURN_DELAY_MS : FINAL_END_OF_TURN_DELAY_MS);
       }
     };
     recognition.onerror = (event) => {
@@ -513,7 +537,7 @@ export default function Home() {
     recognition.onend = () => {
       if (sessionActiveRef.current && !turnBusyRef.current && !speakingRef.current) {
         const completedTurn = currentTranscriptRef.current.trim();
-        if (completedTurn) void handleTurnRef.current(completedTurn);
+        if (completedTurn) void handleTurnRef.current(completedTurn, transcriptNeedsAccuracyRef.current);
         else window.setTimeout(startListening, 120);
       }
     };
@@ -585,6 +609,7 @@ export default function Home() {
     streamCompleteRef.current = false;
     clearSilenceTimer();
     currentTranscriptRef.current = "";
+    transcriptNeedsAccuracyRef.current = false;
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
     transcriptionAbortRef.current?.abort();
@@ -609,6 +634,7 @@ export default function Home() {
     streamCompleteRef.current = false;
     clearSilenceTimer();
     currentTranscriptRef.current = "";
+    transcriptNeedsAccuracyRef.current = false;
     speakingRef.current = false;
     turnBusyRef.current = false;
     startListening();
