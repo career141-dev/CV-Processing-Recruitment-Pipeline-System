@@ -62,11 +62,11 @@ services:
       - CALL_TEST_MODE=${CALL_TEST_MODE:-true}
       - CALL_TEST_RECIPIENT
     healthcheck:
-      test: curl -f http://localhost:3210/version
+      test: ["CMD-SHELL", "curl -f http://localhost:3210/version || exit 1"]
       interval: 5s
-      start_period: 10s
-      timeout: 5s
-      retries: 5
+      start_period: 30s
+      timeout: 10s
+      retries: 12
     # ── SCALE & STABILITY FIX: 6g limit ensures system never OOM crashes ──
     mem_limit: 8g
     mem_reservation: 1.5g
