@@ -84,6 +84,7 @@ import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
 import mammoth from "mammoth";
+import { resolveCandidateLocation } from "../lib/locationResolver";
 // Polyfill DOMMatrix for Node.js environment required by pdfjs-dist
 if (typeof globalThis.DOMMatrix === "undefined") {
   (globalThis as any).DOMMatrix = class DOMMatrix {
@@ -1241,10 +1242,20 @@ export async function runCvExtraction(
 
       const { referees, ...safeExtractedWithoutReferees } = safeExtracted;
 
+      let locationStructured: any = undefined;
+      if (safeExtracted.location && typeof safeExtracted.location === "string" && safeExtracted.location.trim()) {
+        try {
+          locationStructured = await resolveCandidateLocation(ctx, safeExtracted.location.trim());
+        } catch (locErr) {
+          console.warn("[CvExtraction] Location resolution error:", locErr);
+        }
+      }
+
       const updateRes: any = await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
         rawText: cappedRawText,
         ...safeExtractedWithoutReferees,
+        locationStructured,
         cvUploadId,
         currentEmployer: derivedEmployer,
         currentTitle: derivedTitle,

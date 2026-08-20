@@ -342,6 +342,14 @@ export const updateCandidateFields = mutation({
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     location: v.optional(v.string()),
+    locationStructured: v.optional(
+      v.object({
+        raw_text: v.string(),
+        city: v.union(v.string(), v.null()),
+        region: v.union(v.string(), v.null()),
+        country: v.union(v.string(), v.null()),
+      })
+    ),
     linkedinUrl: v.optional(v.string()),
     currentTitle: v.optional(v.string()),
     currentEmployer: v.optional(v.string()),

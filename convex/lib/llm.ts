@@ -16,7 +16,8 @@ export type TaskType =
   | "email_auto_reply" 
   | "cv_vision_ocr" 
   | "embedding"
-  | "jd_matching";
+  | "jd_matching"
+  | "cv_location_resolution";
 
 export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
   return (
@@ -27,7 +28,8 @@ export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
     taskType === "email_routing" ||
     taskType === "email_auto_reply" ||
     taskType === "jd_matching" ||
-    taskType === "jd_extraction"
+    taskType === "jd_extraction" ||
+    taskType === "cv_location_resolution"
   );
 };
 

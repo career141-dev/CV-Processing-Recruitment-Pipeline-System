@@ -23,11 +23,19 @@ import {
   FileCheck,
 } from "lucide-react";
 
+import { MapPin } from "lucide-react";
+
+export type SearchCriterion = {
+  text: string;
+  isLocation: boolean;
+};
+
 export default function CvScannerPage() {
   const [scanTitle, setScanTitle] = useState("");
   const [criteriaInput, setCriteriaInput] = useState("");
-  const [criteriaList, setCriteriaList] = useState<string[]>([
-    "Worked in Business Development (BD) previously",
+  const [isLocationTag, setIsLocationTag] = useState(false);
+  const [criteriaList, setCriteriaList] = useState<SearchCriterion[]>([
+    { text: "Worked in Business Development (BD) previously", isLocation: false },
   ]);
 
   const [files, setFiles] = useState<File[]>([]);
@@ -72,12 +80,18 @@ export default function CvScannerPage() {
   const addCriterion = () => {
     const trimmed = criteriaInput.trim();
     if (!trimmed) return;
-    if (criteriaList.includes(trimmed)) {
+    if (criteriaList.some((c) => c.text.toLowerCase() === trimmed.toLowerCase())) {
       toast.error("Criterion already added");
       return;
     }
-    setCriteriaList([...criteriaList, trimmed]);
+    setCriteriaList([...criteriaList, { text: trimmed, isLocation: isLocationTag }]);
     setCriteriaInput("");
+  };
+
+  const toggleLocationTagOnCriterion = (index: number) => {
+    setCriteriaList((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, isLocation: !c.isLocation } : c))
+    );
   };
 
   const removeCriterion = (index: number) => {
@@ -206,7 +220,7 @@ export default function CvScannerPage() {
       toast.loading("Analyzing criteria & expanding job titles (NVIDIA NIM)...", { id: toastId });
 
       const { scanId } = await createScan({
-        title: scanTitle.trim() || `Scan: ${criteriaList[0]} (${files.length} CVs)`,
+        title: scanTitle.trim() || `Scan: ${criteriaList[0]?.text || 'CVs'} (${files.length} CVs)`,
         criteria: criteriaList,
         files: uploadedFilesInfo,
       });
@@ -310,22 +324,43 @@ export default function CvScannerPage() {
               Add specific experience requirements, skills, or prior roles to check across the uploaded batch.
             </p>
 
-            <div className="flex gap-2 mb-4">
-              <input
-                type="text"
-                value={criteriaInput}
-                onChange={(e) => setCriteriaInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addCriterion()}
-                placeholder="e.g. Worked in BD previously"
-                className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
-              />
-              <button
-                onClick={addCriterion}
-                type="button"
-                className="bg-emerald-600 hover:bg-emerald-500 text-white p-2.5 rounded-xl font-medium text-sm flex items-center gap-1 transition-all shadow-md shadow-emerald-950/20 dark:shadow-emerald-950/50"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+            <div className="flex flex-col gap-2 mb-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={criteriaInput}
+                  onChange={(e) => setCriteriaInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addCriterion()}
+                  placeholder={isLocationTag ? "e.g. Bangladesh or Gazipur" : "e.g. Worked in BD previously"}
+                  className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                />
+                <button
+                  onClick={addCriterion}
+                  type="button"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white p-2.5 rounded-xl font-medium text-sm flex items-center gap-1 transition-all shadow-md shadow-emerald-950/20 dark:shadow-emerald-950/50 shrink-0"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Location Tag Mode Toggle */}
+              <div className="flex items-center justify-between text-xs px-1">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">
+                  Tag search term mode:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsLocationTag(!isLocationTag)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs transition-all border ${
+                    isLocationTag
+                      ? "bg-amber-500 text-white border-amber-600 shadow-sm"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  {isLocationTag ? "Location Tag: ON" : "Location Tag: OFF (Default)"}
+                </button>
+              </div>
             </div>
 
             {/* Criteria Queue Tags */}
@@ -336,12 +371,29 @@ export default function CvScannerPage() {
                 criteriaList.map((c, i) => (
                   <span
                     key={i}
-                    className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                      c.isLocation
+                        ? "bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-500/40"
+                        : "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40"
+                    }`}
                   >
-                    {c}
+                    <button
+                      type="button"
+                      onClick={() => toggleLocationTagOnCriterion(i)}
+                      title="Click to toggle Location search mode for this term"
+                      className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                        c.isLocation
+                          ? "bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200"
+                          : "bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200"
+                      }`}
+                    >
+                      {c.isLocation && <MapPin className="w-3 h-3" />}
+                      {c.isLocation ? "Location" : "Keyword"}
+                    </button>
+                    <span>{c.text}</span>
                     <button
                       onClick={() => removeCriterion(i)}
-                      className="hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                      className="hover:text-red-500 dark:hover:text-red-400 transition-colors ml-0.5"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -462,7 +514,7 @@ export default function CvScannerPage() {
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{scanSession.title}</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Target Criteria: {scanSession.criteria.join(" • ")}
+                    Target Criteria: {scanSession.criteria.map((c: any) => typeof c === "object" ? (c.isLocation ? `📍 ${c.text}` : c.text) : String(c)).join(" • ")}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
