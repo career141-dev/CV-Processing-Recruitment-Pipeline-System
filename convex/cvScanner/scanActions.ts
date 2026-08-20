@@ -6,6 +6,7 @@ import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { extractText } from "../cvs/cvExtraction";
 import { executeLLMWithNvidiaFallback, getNvidiaOpenAI, logLLMUsage } from "../lib/llm";
+import { resolveCandidateLocation } from "../lib/locationResolver";
 
 const PROMPT_VERSION = "v1.0";
 const EXPANSION_MODEL = "meta/llama-3.1-70b-instruct";
@@ -62,26 +63,37 @@ export const evaluateCvForCriteria = action({
         throw new Error("Unable to extract readable text from document.");
       }
 
-      // 4. Formulate DeepSeek evaluation prompt using taskType 'cv_criteria_match'
+      // 4. Formulate evaluation for Keyword criteria (via DeepSeek) and Location criteria (via Location Resolver)
       const expandedCriteria = scan.expandedCriteria || [];
-      const expandedContext = expandedCriteria.length > 0
-        ? expandedCriteria
-            .map(
-              (ec: any, i: number) =>
-                `CRITERION ${i + 1}: "${ec.original}"
+      const locationCriteria = expandedCriteria.filter((ec: any) => ec.isLocation);
+      const keywordCriteria = expandedCriteria.filter((ec: any) => !ec.isLocation);
+
+      let parsed: any = {};
+      const criterionScores: Array<{ criterion: string; score: number }> = [];
+      const evidenceQuotesList: Array<{ quote: string; isVerifiedQuote: boolean }> = [];
+
+      // 4a. Evaluate untagged keyword criteria via DeepSeek if any exist
+      if (keywordCriteria.length > 0 || expandedCriteria.length === 0) {
+        const expandedContext = keywordCriteria.length > 0
+          ? keywordCriteria
+              .map(
+                (ec: any, i: number) =>
+                  `CRITERION ${i + 1}: "${ec.original}"
   - Semantic Meaning: ${ec.definition}
   - Equivalent Job Titles / Role Variations: ${ec.equivalentTitles.join(", ")}
   - Related Skills & Signals: ${ec.relatedSignals.join(", ")}`
-            )
-            .join("\n\n")
-        : scan.criteria.map((c: string, i: number) => `${i + 1}. ${c}`).join("\n");
+              )
+              .join("\n\n")
+          : scan.criteria
+              .map((c: any, i: number) => `${i + 1}. ${typeof c === "object" ? c.text : c}`)
+              .join("\n");
 
-      const systemPrompt = `You are an expert HR recruiter and candidate screening assistant.
+        const systemPrompt = `You are an expert HR recruiter and candidate screening assistant.
 Evaluate the candidate's CV text against the requested criteria list and their expanded semantic meanings.
 
 CRITICAL INSTRUCTIONS:
 1. Candidate Identity: Extract candidate name, email, phone, current title if present in text.
-2. Criterion Scoring: Assign a match score from 0 to 100 for EACH criterion. A candidate matches if their actual experience aligns with the criteria's substance, even if their CV uses different terminology than the criteria or the equivalent titles listed. The equivalent titles are examples to guide your judgment, not an exhaustive list or a required literal match.
+2. Criterion Scoring: Assign a match score from 0 to 100 for EACH criterion. A candidate matches if their actual experience aligns with the criteria's substance.
 3. Order of JSON Fields: Return "reasoning" FIRST, then "criterionScores", then "evidenceQuotes".
 4. Evidence Quotes: Provide 1 to 3 exact, verbatim sentences or phrases copied from the CV text that support your evaluation.
 5. Reasoning: Write a 1-2 sentence executive summary of the evaluation.
@@ -101,44 +113,94 @@ Respond ONLY with valid JSON matching this schema:
   ]
 }`;
 
-      const userPrompt = `TARGET CRITERIA & EXPANDED SEMANTIC CONTEXT:
+        const userPrompt = `TARGET CRITERIA & EXPANDED SEMANTIC CONTEXT:
 ${expandedContext}
 
 CANDIDATE CV TEXT:
 ${rawText.slice(0, 15000)}`;
 
-      // 5. Call DeepSeek model via OpenRouter (isolated under 'cv_criteria_match' taskType)
-      const { content } = await executeLLMWithNvidiaFallback(ctx, "cv_criteria_match", {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-      });
+        const { content } = await executeLLMWithNvidiaFallback(ctx, "cv_criteria_match", {
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.1,
+          response_format: { type: "json_object" },
+        });
 
-      let parsed: any = {};
-      try {
-        parsed = JSON.parse(content);
-      } catch (err) {
-        console.warn("[evaluateCvForCriteria] Failed to parse JSON from LLM response:", content);
+        try {
+          parsed = JSON.parse(content);
+        } catch (err) {
+          console.warn("[evaluateCvForCriteria] Failed to parse JSON from LLM response:", content);
+        }
+
+        if (Array.isArray(parsed.criterionScores)) {
+          for (const cs of parsed.criterionScores) {
+            criterionScores.push({
+              criterion: String(cs.criterion || "Criterion"),
+              score: Math.min(100, Math.max(0, Number(cs.score) || 0)),
+            });
+          }
+        }
       }
 
+      // 4b. Evaluate location-tagged criteria via Location Resolver
+      if (locationCriteria.length > 0) {
+        let candidateResolvedLocation = null;
+        try {
+          candidateResolvedLocation = await resolveCandidateLocation(ctx, rawText.slice(0, 3000));
+        } catch (locErr) {
+          console.warn("[evaluateCvForCriteria] Location resolution error:", locErr);
+        }
+
+        const candidateCountry = (candidateResolvedLocation?.country || "").toLowerCase();
+        const candidateRegion = (candidateResolvedLocation?.region || "").toLowerCase();
+        const candidateCity = (candidateResolvedLocation?.city || "").toLowerCase();
+        const rawLocText = (candidateResolvedLocation?.raw_text || rawText).toLowerCase();
+
+        for (const locCrit of locationCriteria) {
+          const targetTerm = (locCrit.original || "").toLowerCase().trim();
+          let score = 0;
+          let matchDetail = "";
+
+          if (
+            (candidateCountry && (candidateCountry.includes(targetTerm) || targetTerm.includes(candidateCountry))) ||
+            (candidateRegion && (candidateRegion.includes(targetTerm) || targetTerm.includes(candidateRegion))) ||
+            (candidateCity && (candidateCity.includes(targetTerm) || targetTerm.includes(candidateCity))) ||
+            rawLocText.includes(targetTerm)
+          ) {
+            score = 100;
+            matchDetail = `Candidate location "${candidateResolvedLocation?.city ? candidateResolvedLocation.city + ', ' : ''}${candidateResolvedLocation?.country || 'Resolved Location'}" matches requested location "${locCrit.original}"`;
+          } else {
+            score = 0;
+            matchDetail = `Candidate location "${candidateResolvedLocation?.city ? candidateResolvedLocation.city + ', ' : ''}${candidateResolvedLocation?.country || 'Unmatched'}" does not match requested location "${locCrit.original}"`;
+          }
+
+          criterionScores.push({
+            criterion: `Location: ${locCrit.original}`,
+            score,
+          });
+
+          if (score === 100) {
+            evidenceQuotesList.push({
+              quote: matchDetail,
+              isVerifiedQuote: true,
+            });
+          }
+        }
+      }
+
+      // Fallback regex candidate identity extraction if no keyword LLM call was run
+      const emailMatch = rawText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      const phoneMatch = rawText.match(/\+?\d[\d\s-]{7,}\d/);
+
       const candidateName = parsed.candidateName || result.fileName.replace(/\.[^/.]+$/, "");
-      const email = parsed.email || undefined;
-      const phone = parsed.phone || undefined;
+      const email = parsed.email || (emailMatch ? emailMatch[0] : undefined);
+      const phone = parsed.phone || (phoneMatch ? phoneMatch[0] : undefined);
       const currentTitle = parsed.currentTitle || undefined;
-      const reasoning = parsed.reasoning || "Evaluation completed.";
+      const reasoning = parsed.reasoning || (locationCriteria.length > 0 ? "Location and criteria evaluation completed." : "Evaluation completed.");
 
-      // 6. Multi-criteria Scoring Math
-      const criterionScores: Array<{ criterion: string; score: number }> = Array.isArray(parsed.criterionScores)
-        ? parsed.criterionScores.map((cs: any) => ({
-            criterion: String(cs.criterion || "Criterion"),
-            score: Math.min(100, Math.max(0, Number(cs.score) || 0)),
-          }))
-        : scan.criteria.map((c: string) => ({ criterion: c, score: 50 }));
-
-      // Average score across all criteria
+      // 5. Multi-criteria Soft Scoring Math across ALL criteria
       const totalScoreSum = criterionScores.reduce((acc, curr) => acc + curr.score, 0);
       const matchScore = criterionScores.length > 0 ? Math.round(totalScoreSum / criterionScores.length) : 0;
 
@@ -148,21 +210,23 @@ ${rawText.slice(0, 15000)}`;
 
       const isMatch = matchScore >= 60;
 
-      // 7. Substring Hallucination Check for Evidence Quotes
+      // 6. Substring Hallucination Check for Evidence Quotes
       const rawTextNormalized = rawText.toLowerCase().replace(/\s+/g, " ");
       const rawEvidence: string[] = Array.isArray(parsed.evidenceQuotes) ? parsed.evidenceQuotes.map(String) : [];
 
-      const verifiedEvidenceQuotes = rawEvidence.map((quote) => {
-        const quoteNormalized = quote.toLowerCase().replace(/\s+/g, " ").trim();
-        // Test if normalized quote exists in normalized raw text (or key 15-char substring)
-        const isVerified = quoteNormalized.length > 10 && rawTextNormalized.includes(quoteNormalized.slice(0, Math.min(40, quoteNormalized.length)));
-        return {
-          quote,
-          isVerifiedQuote: isVerified,
-        };
-      });
+      const verifiedEvidenceQuotes = [
+        ...evidenceQuotesList,
+        ...rawEvidence.map((quote) => {
+          const quoteNormalized = quote.toLowerCase().replace(/\s+/g, " ").trim();
+          const isVerified = quoteNormalized.length > 10 && rawTextNormalized.includes(quoteNormalized.slice(0, Math.min(40, quoteNormalized.length)));
+          return {
+            quote,
+            isVerifiedQuote: isVerified,
+          };
+        }),
+      ];
 
-      // 8. Update scan result as completed
+      // 7. Update scan result as completed
       await ctx.runMutation(internal.cvScanner.scanMutations.updateResult, {
         resultId: args.resultId,
         status: "completed",
@@ -279,13 +343,29 @@ export const expandCriteriaViaNim = action({
       definition: string;
       equivalentTitles: string[];
       relatedSignals: string[];
+      isLocation?: boolean;
     }> = [];
 
     const nvidiaOpenAI = getNvidiaOpenAI();
 
     try {
-      for (const criterion of scan.criteria) {
-        const normalized = criterion.trim().toLowerCase();
+      for (const rawCrit of scan.criteria) {
+        const termText = typeof rawCrit === "object" && rawCrit !== null ? (rawCrit as any).text : String(rawCrit);
+        const isLocation = typeof rawCrit === "object" && rawCrit !== null ? !!(rawCrit as any).isLocation : false;
+
+        if (isLocation) {
+          console.log(`[expandCriteriaViaNim] Bypassing NIM expansion for Location-tagged term "${termText}"`);
+          expandedResults.push({
+            original: termText,
+            definition: "Location search filter",
+            equivalentTitles: [],
+            relatedSignals: [],
+            isLocation: true,
+          });
+          continue;
+        }
+
+        const normalized = termText.trim().toLowerCase();
 
         // 1. Check cache first
         const cached: any = await ctx.runMutation(internal.cvScanner.scanMutations.getCachedExpansion, {
@@ -294,23 +374,24 @@ export const expandCriteriaViaNim = action({
         });
 
         if (cached) {
-          console.log(`[expandCriteriaViaNim] Cache HIT for criterion "${criterion}"`);
+          console.log(`[expandCriteriaViaNim] Cache HIT for criterion "${termText}"`);
           expandedResults.push({
-            original: criterion,
+            original: termText,
             definition: cached.definition,
             equivalentTitles: cached.equivalentTitles || [],
             relatedSignals: cached.relatedSignals || [],
+            isLocation: false,
           });
           continue;
         }
 
-        console.log(`[expandCriteriaViaNim] Cache MISS for criterion "${criterion}". Invoking NVIDIA NIM (${EXPANSION_MODEL})...`);
+        console.log(`[expandCriteriaViaNim] Cache MISS for criterion "${termText}". Invoking NVIDIA NIM (${EXPANSION_MODEL})...`);
 
         // 2. Invoke NVIDIA NIM Llama 3.1 70B Instruct for expansion
         const prompt = `You are an expert HR recruitment taxonomist.
 Expand the following candidate search criterion into a rich, comprehensive semantic definition, equivalent job titles, and related experience signals.
 
-Target Criterion: "${criterion}"
+Target Criterion: "${termText}"
 
 CRITICAL INSTRUCTIONS:
 1. Return ONLY a valid JSON object matching the exact schema below.
@@ -353,7 +434,7 @@ Expected JSON format:
 
         const parsed = JSON.parse(cleanContent);
         const expansion = {
-          definition: parsed.definition || criterion,
+          definition: parsed.definition || termText,
           equivalentTitles: Array.isArray(parsed.equivalentTitles) ? parsed.equivalentTitles : [],
           relatedSignals: Array.isArray(parsed.relatedSignals) ? parsed.relatedSignals : [],
         };
@@ -366,8 +447,9 @@ Expected JSON format:
         });
 
         expandedResults.push({
-          original: criterion,
+          original: termText,
           ...expansion,
+          isLocation: false,
         });
       }
 

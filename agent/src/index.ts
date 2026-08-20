@@ -8,11 +8,9 @@ import {
   llm,
   metrics,
   stt,
-  tts,
   voice,
 } from "@livekit/agents";
 import * as deepgram from "@livekit/agents-plugin-deepgram";
-import * as inworld from "@livekit/agents-plugin-inworld";
 import * as openai from "@livekit/agents-plugin-openai";
 import * as silero from "@livekit/agents-plugin-silero";
 import dotenv from "dotenv";
@@ -25,12 +23,9 @@ const WRAP_UP_NOTICE_MS = MAX_CALL_DURATION_MS - 10_000;
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const PRIMARY_LLM_MODEL = "deepseek/deepseek-v4-flash";
 const FALLBACK_LLM_MODEL = "anthropic/claude-3.5-haiku";
-const PRIMARY_TTS_MODEL = "inworld-tts-1.5-mini";
-const PRIMARY_TTS_VOICE = "Ashley";
 
 type RequiredEnvName =
   | "DEEPGRAM_API_KEY"
-  | "INWORLD_API_KEY"
   | "LIVEKIT_API_KEY"
   | "LIVEKIT_API_SECRET"
   | "LIVEKIT_URL"
@@ -38,7 +33,6 @@ type RequiredEnvName =
 
 type AgentConfig = Readonly<{
   deepgramApiKey: string;
-  inworldApiKey: string;
   openRouterApiKey: string;
 }>;
 
@@ -63,7 +57,6 @@ function loadConfig(): AgentConfig {
 
   return Object.freeze({
     deepgramApiKey: requiredEnv("DEEPGRAM_API_KEY"),
-    inworldApiKey: requiredEnv("INWORLD_API_KEY"),
     openRouterApiKey: requiredEnv("OPENROUTER_API_KEY"),
   });
 }
@@ -154,14 +147,14 @@ export default defineAgent<ProcessUserData>({
       apiKey: config.openRouterApiKey,
       model: PRIMARY_LLM_MODEL,
       temperature: 0.2,
-      maxCompletionTokens: 120,
+      maxCompletionTokens: 200,
     });
     const fallbackLlm = new openai.LLM({
       baseURL: OPENROUTER_BASE_URL,
       apiKey: config.openRouterApiKey,
       model: FALLBACK_LLM_MODEL,
       temperature: 0.2,
-      maxCompletionTokens: 120,
+      maxCompletionTokens: 200,
     });
     primaryLlm.prewarm();
     fallbackLlm.prewarm();
@@ -174,33 +167,11 @@ export default defineAgent<ProcessUserData>({
     });
 
     let resourcesClosing = false;
-    const primaryTts = new inworld.TTS({
-      apiKey: config.inworldApiKey,
-      model: PRIMARY_TTS_MODEL,
-      voice: PRIMARY_TTS_VOICE,
-      language: "en-US",
-      sampleRate: 24_000,
-    });
-    const fallbackTts = new deepgram.TTS({
+    const textToSpeech = new deepgram.TTS({
       apiKey: config.deepgramApiKey,
       model: "aura-2-asteria-en",
       sampleRate: 24_000,
       mipOptOut: true,
-    });
-    const textToSpeech = new tts.FallbackAdapter({
-      ttsInstances: [primaryTts, fallbackTts],
-      maxRetryPerTTS: 0,
-      recoveryDelayMs: 5000,
-    });
-    // Begin the persistent WebSocket handshake while waiting for the caller.
-    // If it fails, skip directly to Aura-2 instead of paying the same timeout
-    // again on the greeting.
-    void primaryTts.pool.getConnection().catch((error: unknown) => {
-      console.warn(
-        "[Career141 Voice Agent] Inworld TTS preconnect failed; switching to Aura-2",
-        error,
-      );
-      if (!resourcesClosing) textToSpeech.markUnAvailable(0);
     });
 
     const systemPrompt = `You are Sarah, a warm, professional automated AI recruiter assistant calling on behalf of Career141.

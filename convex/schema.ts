@@ -537,6 +537,7 @@ export default defineSchema({
 
   folderImportProgress: defineTable({
     sourceChannel: v.string(),
+    rootFolderName: v.optional(v.string()),
     lastProcessedIndex: v.number(),
     lastProcessedFolderName: v.string(),
     totalDiscoveredFolders: v.optional(v.number()),
@@ -544,7 +545,9 @@ export default defineSchema({
     skippedCount: v.number(),
     failedCount: v.number(),
     updatedAt: v.number(),
-  }).index("by_sourceChannel", ["sourceChannel"]),
+  })
+    .index("by_sourceChannel", ["sourceChannel"])
+    .index("by_channel_folder", ["sourceChannel", "rootFolderName"]),
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
@@ -601,7 +604,14 @@ export default defineSchema({
       )
     ),
     location: v.optional(v.string()),
-    locationStructured: v.optional(v.any()),
+    locationStructured: v.optional(
+      v.object({
+        raw_text: v.string(),
+        city: v.union(v.string(), v.null()),
+        region: v.union(v.string(), v.null()),
+        country: v.union(v.string(), v.null()),
+      })
+    ),
     linkedinUrl: v.optional(v.string()),
     currentJobTitle: v.optional(v.string()),
     currentEmployer: v.optional(v.string()),
@@ -1735,7 +1745,15 @@ export default defineSchema({
   cvScans: defineTable({
     userId: v.id("users"),
     title: v.string(),
-    criteria: v.array(v.union(v.string(), v.any())),
+    criteria: v.array(
+      v.union(
+        v.string(),
+        v.object({
+          text: v.string(),
+          isLocation: v.boolean(),
+        })
+      )
+    ),
     expandedCriteria: v.optional(
       v.array(
         v.object({
@@ -1760,6 +1778,16 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"])
     .index("by_status", ["status"]),
+
+  locationResolutionCache: defineTable({
+    rawTextNormalized: v.string(),
+    city: v.union(v.string(), v.null()),
+    region: v.union(v.string(), v.null()),
+    country: v.union(v.string(), v.null()),
+    resolvedVia: v.union(v.literal("gazetteer"), v.literal("llm_fallback")),
+    createdAt: v.number(),
+  })
+    .index("by_rawTextNormalized", ["rawTextNormalized"]),
 
   criteriaExpansionCache: defineTable({
     normalizedCriterion: v.string(),

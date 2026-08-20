@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -18,7 +18,7 @@ import {
   Layers,
   Sparkles,
   Copy,
-  Check,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,6 +33,7 @@ type CandidateFolderItem = {
 
 export default function FolderUploadPage() {
   const [selectedPath, setSelectedPath] = useState<string>("");
+  const [rootFolderName, setRootFolderName] = useState<string>("");
   const [candidateItems, setCandidateItems] = useState<CandidateFolderItem[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [status, setStatus] = useState<"idle" | "running" | "paused" | "stopped" | "done">("idle");
@@ -51,13 +52,44 @@ export default function FolderUploadPage() {
   const [currentBatchIndex, setCurrentBatchIndex] = useState<number>(1);
   const [totalBatches, setTotalBatches] = useState<number>(1);
   const [copiedCliCommand, setCopiedCliCommand] = useState<boolean>(false);
+  const [importMode, setImportMode] = useState<"test_100" | "full">("test_100");
+  const [lastStoppedItem, setLastStoppedItem] = useState<{ index: number; folderName: string } | null>(null);
 
   const uploadFolderCandidate = useAction(api.cvs.folderIngestion.uploadFolderCandidate);
   const cancelAllRunningExtractions = useMutation(api.cvs.cvUploads.cancelAllRunningExtractions);
   const dbProgress = useQuery(api.cvs.folderIngestion.getFolderImportProgress, {
     sourceChannel: "Manual Directory Import",
+    rootFolderName: rootFolderName || undefined,
   });
   const updateFolderProgressMutation = useMutation(api.cvs.folderIngestion.updateFolderImportProgress);
+  const resetFolderProgressMutation = useMutation(api.cvs.folderIngestion.resetFolderImportProgress);
+
+  // Auto-restore progress from database when a folder is selected and dbProgress matches
+  useEffect(() => {
+    if (!rootFolderName || candidateItems.length === 0) return;
+
+    if (dbProgress && dbProgress.rootFolderName === rootFolderName && dbProgress.lastProcessedIndex > 0) {
+      // If we are currently idle and at 0 (fresh folder selection or after page reload), auto-resume
+      if (status === "idle" && processedCount === 0) {
+        const resumeIndex = Math.min(dbProgress.lastProcessedIndex, candidateItems.length);
+        setProcessedCount(resumeIndex);
+        setUploadedCount(dbProgress.uploadedCount || 0);
+        setSkippedCount(dbProgress.skippedCount || 0);
+        setFailedCount(dbProgress.failedCount || 0);
+        setCurrentBatchIndex(Math.floor(resumeIndex / BATCH_SIZE) + 1);
+        setLastStoppedItem({
+          index: resumeIndex,
+          folderName: dbProgress.lastProcessedFolderName || "Previous Upload Checkpoint",
+        });
+        if (resumeIndex >= 100) {
+          setImportMode("full");
+        }
+        toast.info(
+          `⚡ Auto-Resumed: Picked up "${rootFolderName}" at candidate #${resumeIndex + 1} (${resumeIndex.toLocaleString()} already processed).`
+        );
+      }
+    }
+  }, [dbProgress, rootFolderName, candidateItems.length, status, processedCount]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,7 +99,7 @@ export default function FolderUploadPage() {
 
     setIsScanning(true);
     const discoveredCandidates: Map<string, File> = new Map();
-    let rootFolderName = "";
+    let detectedRoot = "";
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -75,7 +107,7 @@ export default function FolderUploadPage() {
       const parts = relPath.split("/");
 
       if (parts.length >= 2) {
-        if (!rootFolderName) rootFolderName = parts[0];
+        if (!detectedRoot) detectedRoot = parts[0];
         const candidateFolderName = parts[1];
 
         // Check if file is inside a "Downloads" or "download" folder
@@ -106,28 +138,21 @@ export default function FolderUploadPage() {
     );
 
     setCandidateItems(items);
-    setSelectedPath(rootFolderName ? `Selected Folder: ${rootFolderName}` : "External Drive Folder");
+    setRootFolderName(detectedRoot);
+    setSelectedPath(detectedRoot ? `Selected Folder: ${detectedRoot}` : "External Drive Folder");
     setTotalBatches(Math.ceil(items.length / BATCH_SIZE) || 1);
     setIsScanning(false);
 
-    // Check database-backed checkpoint index
-    if (dbProgress && dbProgress.lastProcessedIndex > 0) {
-      const resumeIndex = Math.min(dbProgress.lastProcessedIndex, items.length);
-      setProcessedCount(resumeIndex);
-      setUploadedCount(dbProgress.uploadedCount || 0);
-      setSkippedCount(dbProgress.skippedCount || 0);
-      setFailedCount(dbProgress.failedCount || 0);
+    // Reset progress counters to 0 for the selected directory
+    setProcessedCount(0);
+    setUploadedCount(0);
+    setSkippedCount(0);
+    setFailedCount(0);
+    setCurrentBatchIndex(1);
+    setLastStoppedItem(null);
+    updateStatus("idle");
 
-      if (resumeIndex >= 100) {
-        setImportMode("full");
-      }
-
-      toast.info(
-        `⚡ Auto-Resume Active: Last stopped on folder #${resumeIndex} ("${dbProgress.lastProcessedFolderName}"). Resuming from folder #${resumeIndex + 1}!`
-      );
-    } else {
-      toast.success(`Discovered ${items.length.toLocaleString()} candidates with resumes in Downloads folders!`);
-    }
+    toast.success(`Discovered ${items.length.toLocaleString()} candidates with resumes in Downloads folders!`);
   };
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -143,8 +168,40 @@ export default function FolderUploadPage() {
     });
   };
 
-  const [importMode, setImportMode] = useState<"test_100" | "full">("test_100");
-  const [lastStoppedItem, setLastStoppedItem] = useState<{ index: number; folderName: string } | null>(null);
+  const handleResetProgress = async () => {
+    try {
+      await resetFolderProgressMutation({
+        sourceChannel: "Manual Directory Import",
+        rootFolderName: rootFolderName || undefined,
+      });
+      setProcessedCount(0);
+      setUploadedCount(0);
+      setSkippedCount(0);
+      setFailedCount(0);
+      setCurrentBatchIndex(1);
+      setLastStoppedItem(null);
+      updateStatus("idle");
+      toast.success("Progress reset to 0 candidates.");
+    } catch (err: any) {
+      console.error("Failed to reset progress:", err);
+      toast.error("Failed to reset progress.");
+    }
+  };
+
+  const handleResumeFromCheckpoint = () => {
+    if (!dbProgress || !dbProgress.lastProcessedIndex) return;
+    const resumeIndex = Math.min(dbProgress.lastProcessedIndex, candidateItems.length);
+    setProcessedCount(resumeIndex);
+    setUploadedCount(dbProgress.uploadedCount || 0);
+    setSkippedCount(dbProgress.skippedCount || 0);
+    setFailedCount(dbProgress.failedCount || 0);
+    setCurrentBatchIndex(Math.floor(resumeIndex / BATCH_SIZE) + 1);
+    setLastStoppedItem({ index: resumeIndex, folderName: dbProgress.lastProcessedFolderName || "Saved Checkpoint" });
+    if (resumeIndex >= 100) {
+      setImportMode("full");
+    }
+    toast.info(`Resuming from candidate #${resumeIndex + 1}!`);
+  };
 
   const handlePause = () => {
     updateStatus("paused");
@@ -233,6 +290,7 @@ export default function FolderUploadPage() {
         // Update database-backed folder progress checkpoint
         updateFolderProgressMutation({
           sourceChannel: "Manual Directory Import",
+          rootFolderName: rootFolderName || undefined,
           lastProcessedIndex: i + 1,
           lastProcessedFolderName: item.folderName,
           uploadedCount: currentUploaded,
@@ -508,6 +566,33 @@ export default function FolderUploadPage() {
             </button>
           </div>
 
+          {/* Checkpoint Detected for Folder Banner */}
+          {dbProgress && dbProgress.lastProcessedIndex > 0 && processedCount === 0 && candidateItems.length > 0 && (
+            <div className="p-3.5 bg-[#E8F5E9] text-[#1B5E20] rounded-lg text-xs font-semibold border border-[#C8E6C9] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#006E1C] shrink-0" />
+                <span>
+                  <strong>Previous Checkpoint Found:</strong> Processed up to candidate #{dbProgress.lastProcessedIndex}{" "}
+                  ({dbProgress.uploadedCount || 0} uploaded, {dbProgress.skippedCount || 0} skipped).
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleResumeFromCheckpoint}
+                  className="px-3 py-1.5 bg-[#006E1C] text-white rounded-md text-xs font-bold hover:bg-[#005415] transition shadow-sm"
+                >
+                  ⚡ Resume from #{dbProgress.lastProcessedIndex + 1}
+                </button>
+                <button
+                  onClick={handleResetProgress}
+                  className="px-3 py-1.5 bg-white text-text-secondary border border-border-color rounded-md text-xs font-bold hover:bg-surface-hover transition"
+                >
+                  Start Fresh from 0
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Recorded Stop Location Banner */}
           {lastStoppedItem && (status === "paused" || status === "stopped" || status === "done") && (
             <div className="p-3 bg-[#FFF3E0] text-[#E65100] rounded-lg text-xs font-semibold border border-[#FFE0B2] flex items-center justify-between">
@@ -522,19 +607,30 @@ export default function FolderUploadPage() {
           )}
 
           {/* Controls */}
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex flex-wrap items-center gap-3 pt-2">
             {status !== "running" && status !== "done" && (
               <button
                 onClick={startBatchUpload}
                 disabled={candidateItems.length === 0}
-                className="py-2.5 px-5 bg-[#006E1C] hover:bg-[#005415] text-white text-xs font-bold rounded-lg transition flex items-center gap-2 disabled:opacity-50"
+                className="py-2.5 px-5 bg-[#006E1C] hover:bg-[#005415] text-white text-xs font-bold rounded-lg transition flex items-center gap-2 disabled:opacity-50 shadow-sm"
               >
                 <Play className="w-4 h-4 fill-current" />
-                {status === "paused" || status === "stopped"
+                {status === "paused" || status === "stopped" || processedCount > 0
                   ? `Resume Upload (from Candidate #${processedCount + 1})`
                   : importMode === "test_100"
                   ? "Start First 100 Test Batch"
                   : "Start 100-Batch Upload"}
+              </button>
+            )}
+
+            {status !== "running" && (processedCount > 0 || (dbProgress && dbProgress.lastProcessedIndex > 0)) && (
+              <button
+                onClick={handleResetProgress}
+                className="py-2.5 px-4 bg-surface-card hover:bg-surface-hover text-text-secondary hover:text-text-primary text-xs font-bold rounded-lg border border-border-color transition flex items-center gap-2 shadow-sm"
+                title="Reset all counters and start from candidate #0"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Reset Progress (Start from 0)
               </button>
             )}
 

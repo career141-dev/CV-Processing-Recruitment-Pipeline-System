@@ -22,7 +22,8 @@ import {
   LogOut,
   UserCheck,
   Search,
-  ScanLine
+  ScanLine,
+  Mic
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -299,7 +300,9 @@ function CandidatesDropdown({
   renderTooltip,
 }: CandidatesDropdownProps) {
   const isCandidateRoute =
-    pathname.startsWith('/dashboard/candidates') || pathname.startsWith('/dashboard/cv-scanner');
+    pathname.startsWith('/dashboard/candidates') ||
+    pathname.startsWith('/dashboard/cv-scanner') ||
+    pathname.startsWith('/dashboard/aura-voice-agent');
 
   const [isOpen, setIsOpen] = React.useState<boolean>(isCandidateRoute);
   const [isHovered, setIsHovered] = React.useState<boolean>(false);
@@ -318,6 +321,8 @@ function CandidatesDropdown({
       isActiveItem = pathname.startsWith('/dashboard/candidates/search');
     } else if (path === '/dashboard/cv-scanner') {
       isActiveItem = pathname.startsWith('/dashboard/cv-scanner');
+    } else if (path === '/dashboard/aura-voice-agent') {
+      isActiveItem = pathname.startsWith('/dashboard/aura-voice-agent');
     }
 
     return `flex items-center py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
@@ -371,6 +376,10 @@ function CandidatesDropdown({
             <ScanLine className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             CV Scan
           </Link>
+          <Link href="/dashboard/aura-voice-agent" className={subItemClass('/dashboard/aura-voice-agent')}>
+            <Mic className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            Aura Voice Lab
+          </Link>
         </div>
       )}
 
@@ -402,6 +411,13 @@ function CandidatesDropdown({
             >
               <ScanLine className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
               CV Scan
+            </Link>
+            <Link
+              href="/dashboard/aura-voice-agent"
+              className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
+            >
+              <Mic className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
+              Aura Voice Lab
             </Link>
           </div>
         </div>

@@ -73,4 +73,5 @@ checkSanjeevUpdate.mjs
 deleteSanjeevCandidateProfiles.mjs
 removeSingleCandidateSanjeev.mjs
 simulateCandidateReply.mjs
-scratch/
+scratch/
+.freebuff

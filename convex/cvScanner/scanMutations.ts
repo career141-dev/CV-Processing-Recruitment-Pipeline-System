@@ -9,7 +9,15 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 export const createScan = mutation({
   args: {
     title: v.string(),
-    criteria: v.array(v.string()),
+    criteria: v.array(
+      v.union(
+        v.string(),
+        v.object({
+          text: v.string(),
+          isLocation: v.boolean(),
+        })
+      )
+    ),
     files: v.array(
       v.object({
         fileStorageId: v.optional(v.id("_storage")),
@@ -326,6 +334,7 @@ export const updateScanExpandedCriteria = internalMutation({
         definition: v.string(),
         equivalentTitles: v.array(v.string()),
         relatedSignals: v.array(v.string()),
+        isLocation: v.optional(v.boolean()),
       })
     ),
   },
