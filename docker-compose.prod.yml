@@ -22,9 +22,9 @@ services:
       # Server-side room creation stays on the private Docker network. The
       # browser receives NEXT_PUBLIC_LIVEKIT_URL from the authenticated token API.
       LIVEKIT_INTERNAL_URL: http://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
-      NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:?NEXT_PUBLIC_LIVEKIT_URL is required}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
+      NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-wss://voice.career141.com}
       # The web token service needs only LiveKit control credentials. Override
       # voice-provider and persistence secrets inherited from env_file.
       REDIS_PASSWORD: ""
@@ -202,12 +202,12 @@ services:
         condition: service_healthy
     environment:
       LIVEKIT_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
-      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:?DEEPGRAM_API_KEY is required}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
-      VOICE_AGENT_EVENTS_URL: ${VOICE_AGENT_EVENTS_URL:?VOICE_AGENT_EVENTS_URL is required}
-      VOICE_AGENT_SHARED_SECRET: ${VOICE_AGENT_SHARED_SECRET:?VOICE_AGENT_SHARED_SECRET is required}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-disabled}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-disabled}
+      VOICE_AGENT_EVENTS_URL: ${VOICE_AGENT_EVENTS_URL:-http://127.0.0.1:3000/api/voice/events}
+      VOICE_AGENT_SHARED_SECRET: ${VOICE_AGENT_SHARED_SECRET:-career141_voice_agent_shared_secret_default_32chars}
       NODE_ENV: production
     # The LiveKit Agents CLI only enables production mode/readiness with start.
     command: ["node", "dist/index.js", "start"]

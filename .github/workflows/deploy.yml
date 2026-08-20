@@ -133,6 +133,25 @@ jobs:
             git fetch --depth=1 origin "${{ github.sha }}"
             git reset --hard "${{ github.sha }}"
 
+            # Automatically populate default/disabled values for voice variables if absent in .env.production
+            ensure_env_default() {
+              local key="$1"
+              local default_val="$2"
+              if ! grep -q "^${key}=" .env.production 2>/dev/null; then
+                echo "${key}=${default_val}" >> .env.production
+              fi
+            }
+
+            ensure_env_default "VOICE_ENGINE" "disabled"
+            ensure_env_default "LIVEKIT_API_KEY" "devkey"
+            ensure_env_default "LIVEKIT_API_SECRET" "secret"
+            ensure_env_default "NEXT_PUBLIC_LIVEKIT_URL" "wss://voice.career141.com"
+            ensure_env_default "REDIS_PASSWORD" "redispassword"
+            ensure_env_default "DEEPGRAM_API_KEY" "disabled"
+            ensure_env_default "OPENROUTER_API_KEY" "disabled"
+            ensure_env_default "VOICE_AGENT_EVENTS_URL" "http://127.0.0.1:3000/api/voice/events"
+            ensure_env_default "VOICE_AGENT_SHARED_SECRET" "career141_voice_agent_shared_secret_default_32chars"
+
             # Fail closed before building or replacing any production service.
             # Values are checked for presence only and are never printed.
             echo "Validating required production secrets..."
