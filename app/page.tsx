@@ -49,7 +49,6 @@ const statusCopy: Record<AgentStatus, { label: string; description: string }> = 
 const nowLabel = () => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date());
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const END_OF_TURN_DELAY_MS = 720;
-const NATURAL_SPEECH_TIMEOUT_MS = 4_500;
 
 const selectNaturalVoice = (voices: SpeechSynthesisVoice[]) => {
   const preferredNames = [
@@ -82,20 +81,13 @@ const headingValue = (text: string, label: string) => {
 };
 
 const prepareNaturalSpeech = async (text: string) => {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), NATURAL_SPEECH_TIMEOUT_MS);
-  try {
-    const response = await fetch("/api/speak", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error("Natural voice playback was unavailable.");
-    return await response.blob();
-  } finally {
-    window.clearTimeout(timeout);
-  }
+  const response = await fetch("/api/speak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) throw new Error("Natural voice playback was unavailable.");
+  return response.blob();
 };
 
 export default function Home() {
@@ -569,7 +561,6 @@ export default function Home() {
   }, [clearSilenceTimer]);
 
   const copy = statusCopy[status];
-  const candidateInputDisabled = !sessionActive || ["requesting", "thinking", "speaking"].includes(status);
 
   return (
     <main className={`voice-shell status-${status}`}>
@@ -662,7 +653,7 @@ export default function Home() {
 
         <form className="typed-reply" onSubmit={submitTypedReply}>
           <label htmlFor="candidate-reply">Test a candidate reply by typing</label>
-          <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={candidateInputDisabled} /><button type="submit" disabled={candidateInputDisabled || !typedReply.trim()}>Send</button></div>
+          <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={!sessionActive || turnBusyRef.current} /><button type="submit" disabled={!sessionActive || !typedReply.trim() || turnBusyRef.current}>Send</button></div>
         </form>
         {errorMessage && sessionActive && <p className="error-banner conversation-error" role="alert">{errorMessage}</p>}
         <div className="panel-footer"><span>Natural OpenAI voice</span><span>One question at a time</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>

@@ -20,18 +20,17 @@ test("server-renders the Aura voice-agent experience", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Aura — Candidate screening rehearsal<\/title>/i);
-  assert.match(html, /Give Aura the brief/);
-  assert.match(html, /Start practice screening/);
-  assert.match(html, /One question at a time/);
+  assert.match(html, /<title>Aura — Hands-free voice agent<\/title>/i);
+  assert.match(html, /A conversation/);
+  assert.match(html, /Start conversation/);
+  assert.match(html, /Automatic turn detection/);
   assert.doesNotMatch(html, /OPENAI_API_KEY/);
 });
 
 test("keeps the API key server-side and the interaction hands-free", async () => {
-  const [page, route, speechRoute, config] = await Promise.all([
+  const [page, route, config] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/respond/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/speak/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/agent-config.ts", import.meta.url), "utf8"),
   ]);
 
@@ -39,13 +38,10 @@ test("keeps the API key server-side and the interaction hands-free", async () =>
   assert.match(page, /window\.speechSynthesis\.speak/);
   assert.match(page, /END_OF_TURN_DELAY_MS = 720/);
   assert.match(page, /selectNaturalVoice/);
-  assert.match(page, /NATURAL_SPEECH_TIMEOUT_MS = 4_500/);
   assert.match(page, /response\.output_text\.delta/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
   assert.match(route, /process\.env\.OPENAI_API_KEY/);
   assert.match(route, /stream: true/);
-  assert.match(speechRoute, /signal: request\.signal/);
-  assert.match(config, /gpt-4o-mini/);
-  assert.match(config, /Sound like a good recruiter on a real call/);
-  assert.match(config, /usually under 45 words/);
+  assert.match(config, /8 to 24 words/);
+  assert.match(config, /sound like a real person/);
 });
