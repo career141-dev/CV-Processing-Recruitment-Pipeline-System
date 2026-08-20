@@ -45,6 +45,8 @@ test("streams natural speech while keeping the API key server-side", async () =>
   assert.match(page, /transcriptNeedsAccuracyRef/);
   assert.match(page, /selectNaturalVoice/);
   assert.match(page, /new AudioContext/);
+  assert.match(page, /Start the first complete sentence while the rest of the reply is still arriving/);
+  assert.match(page, /if \(!firstSpeechQueuedRef\.current\)/);
   assert.match(page, /speechResponse\.body\.getReader/);
   assert.match(page, /noiseSuppression: true/);
   assert.match(page, /new MediaRecorder/);

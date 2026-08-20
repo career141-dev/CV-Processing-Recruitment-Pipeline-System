@@ -250,9 +250,6 @@ export default function Home() {
         finished = true;
         currentSpeechControllerRef.current = null;
         currentSpeechReaderRef.current = null;
-        const audioContext = currentAudioContextRef.current;
-        currentAudioContextRef.current = null;
-        if (audioContext && audioContext.state !== "closed") void audioContext.close().catch(() => undefined);
         speakingRef.current = false;
         speakNextRef.current();
       };
@@ -289,8 +286,11 @@ export default function Home() {
 
       let audioStarted = false;
       try {
-        const audioContext = new AudioContext({ latencyHint: "interactive" });
-        currentAudioContextRef.current = audioContext;
+        const existingContext = currentAudioContextRef.current;
+        const audioContext = existingContext && existingContext.state !== "closed"
+          ? existingContext
+          : new AudioContext({ latencyHint: "interactive" });
+        if (audioContext !== existingContext) currentAudioContextRef.current = audioContext;
         await audioContext.resume();
         const reader = speechResponse.body.getReader();
         currentSpeechReaderRef.current = reader;
@@ -344,7 +344,26 @@ export default function Home() {
 
   const queueSpeech = useCallback((delta: string, flush = false) => {
     speechBufferRef.current += delta;
-    // One TTS request per reply keeps cadence and voice character consistent across sentences.
+    // Start the first complete sentence while the rest of the reply is still arriving.
+    // Holding everything else for one final request limits voice changes to one seam at most.
+    if (!firstSpeechQueuedRef.current) {
+      const firstSentence = speechBufferRef.current.match(/^([\s\S]*?[.!?])(?=\s|$)/);
+      if (firstSentence) {
+        const spokenText = firstSentence[1].trim();
+        speechBufferRef.current = speechBufferRef.current.slice(firstSentence[1].length).trimStart();
+        if (spokenText) {
+          const controller = new AbortController();
+          speechQueueRef.current.push({
+            text: spokenText,
+            audio: prepareNaturalSpeech(spokenText, controller.signal).catch(() => null),
+            controller,
+            cycle: speechCycleRef.current,
+          });
+          firstSpeechQueuedRef.current = true;
+          speakNextRef.current();
+        }
+      }
+    }
     if (flush && speechBufferRef.current.trim()) {
       const spokenText = speechBufferRef.current.trim();
       const controller = new AbortController();
@@ -572,6 +591,11 @@ export default function Home() {
     setStatus("requesting");
     setErrorMessage("");
     try {
+      if (typeof AudioContext !== "undefined"
+        && (!currentAudioContextRef.current || currentAudioContextRef.current.state === "closed")) {
+        currentAudioContextRef.current = new AudioContext({ latencyHint: "interactive" });
+        await currentAudioContextRef.current.resume();
+      }
       if (!recognitionRef.current) createRecognition();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
