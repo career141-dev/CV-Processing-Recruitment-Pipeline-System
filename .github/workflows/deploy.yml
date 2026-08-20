@@ -144,13 +144,20 @@ jobs:
 
             ensure_env_default "VOICE_ENGINE" "disabled"
             ensure_env_default "LIVEKIT_API_KEY" "devkey"
-            ensure_env_default "LIVEKIT_API_SECRET" "secret"
+            ensure_env_default "LIVEKIT_API_SECRET" "career141_livekit_secret_32characters_long"
             ensure_env_default "NEXT_PUBLIC_LIVEKIT_URL" "wss://voice.career141.com"
             ensure_env_default "REDIS_PASSWORD" "redispassword"
             ensure_env_default "DEEPGRAM_API_KEY" "disabled"
             ensure_env_default "OPENROUTER_API_KEY" "disabled"
             ensure_env_default "VOICE_AGENT_EVENTS_URL" "http://127.0.0.1:3000/api/voice/events"
             ensure_env_default "VOICE_AGENT_SHARED_SECRET" "career141_voice_agent_shared_secret_default_32chars"
+
+            # Enforce 32+ characters for LIVEKIT_API_SECRET
+            LK_SECRET_VAL="$(sed -n 's/^LIVEKIT_API_SECRET=//p' .env.production | tail -n 1 | tr -d '\r')"
+            if [ "${#LK_SECRET_VAL}" -lt 32 ]; then
+              sed -i '/^LIVEKIT_API_SECRET=/d' .env.production
+              echo "LIVEKIT_API_SECRET=career141_livekit_secret_32characters_long" >> .env.production
+            fi
 
             # Fail closed before building or replacing any production service.
             # Values are checked for presence only and are never printed.
@@ -235,10 +242,14 @@ jobs:
             done
 
             if [ "${VOICE_READY}" -ne 1 ]; then
-              echo "ERROR: production voice stack did not become ready"
-              docker compose --env-file .env.production -f docker-compose.prod.yml ps
-              docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=100 redis livekit sip voice-agent
-              exit 1
+              if [ "${VOICE_ENGINE_VALUE}" = "livekit" ]; then
+                echo "ERROR: production voice stack did not become ready"
+                docker compose --env-file .env.production -f docker-compose.prod.yml ps
+                docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=100 redis livekit sip voice-agent
+                exit 1
+              else
+                echo "Voice engine is disabled (VOICE_ENGINE=disabled). Continuing deployment."
+              fi
             fi
 
             echo "======================================"

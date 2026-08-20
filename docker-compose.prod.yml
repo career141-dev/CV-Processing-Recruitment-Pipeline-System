@@ -105,7 +105,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-career141_livekit_secret_32characters_long}"
       # LiveKit maps the redis-password flag from LIVEKIT_REDIS_PASSWORD.
       # REDIS_PASSWORD alone is not consumed by the server.
       LIVEKIT_REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
