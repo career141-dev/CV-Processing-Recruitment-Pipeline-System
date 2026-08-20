@@ -67,13 +67,25 @@ jobs:
             cd ~/career141
             echo "Installing dependencies on server..."
             npm install --no-audit --no-fund
+            
             ADMIN_KEY="${{ secrets.CONVEX_ADMIN_KEY }}"
-            if [ -z "$ADMIN_KEY" ]; then
-              ADMIN_KEY=$(grep CONVEX_SELF_HOSTED_ADMIN_KEY .env.production | head -n 1 | cut -d '=' -f2- | tr -d '\r')
+            if [ -z "$ADMIN_KEY" ] && [ -f .env.production ]; then
+              ADMIN_KEY=$(grep -E '^(CONVEX_SELF_HOSTED_ADMIN_KEY|CONVEX_DEPLOY_KEY|CONVEX_ADMIN_KEY)=' .env.production | head -n 1 | cut -d '=' -f2- | tr -d '\r' | sed -e 's/^["'\'' ]*//' -e 's/["'\'' ]*$//')
+            fi
+            if [ -z "$ADMIN_KEY" ] && [ -f .env.production ]; then
+              RAW_INST_SECRET=$(grep '^INSTANCE_SECRET=' .env.production | head -n 1 | cut -d '=' -f2- | tr -d '\r' | sed -e 's/^["'\'' ]*//' -e 's/["'\'' ]*$//')
+              if [ -n "$RAW_INST_SECRET" ]; then
+                if [[ "$RAW_INST_SECRET" == convex-self-hosted* ]]; then
+                  ADMIN_KEY="$RAW_INST_SECRET"
+                else
+                  ADMIN_KEY="convex-self-hosted|${RAW_INST_SECRET}"
+                fi
+              fi
             fi
             if [ -z "$ADMIN_KEY" ]; then
-              ADMIN_KEY=$(grep CONVEX_DEPLOY_KEY .env.production | head -n 1 | cut -d '=' -f2- | tr -d '\r')
+              ADMIN_KEY="convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
             fi
+            
             echo "Deploying Convex functions and schema..."
             npx convex deploy --url https://api.career141.com --admin-key "$ADMIN_KEY"
 
