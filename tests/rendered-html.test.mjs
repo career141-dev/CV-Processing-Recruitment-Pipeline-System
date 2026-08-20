@@ -28,10 +28,11 @@ test("server-renders the Aura voice-agent experience", async () => {
 });
 
 test("streams natural speech while keeping the API key server-side", async () => {
-  const [page, route, speechRoute, config] = await Promise.all([
+  const [page, route, speechRoute, transcriptionRoute, config] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/respond/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/speak/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/transcribe/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/agent-config.ts", import.meta.url), "utf8"),
   ]);
 
@@ -41,6 +42,9 @@ test("streams natural speech while keeping the API key server-side", async () =>
   assert.match(page, /selectNaturalVoice/);
   assert.match(page, /new AudioContext/);
   assert.match(page, /speechResponse\.body\.getReader/);
+  assert.match(page, /noiseSuppression: true/);
+  assert.match(page, /new MediaRecorder/);
+  assert.match(page, /\/api\/transcribe/);
   assert.match(page, /response\.output_text\.delta/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
   assert.match(route, /process\.env\.OPENAI_API_KEY/);
@@ -48,8 +52,12 @@ test("streams natural speech while keeping the API key server-side", async () =>
   assert.match(speechRoute, /gpt-4o-mini-tts/);
   assert.match(speechRoute, /voice: "marin"/);
   assert.match(speechRoute, /response_format: "pcm"/);
+  assert.match(speechRoute, /smooth, connected phrasing/);
+  assert.doesNotMatch(speechRoute, /brief pauses/);
+  assert.match(transcriptionRoute, /gpt-4o-mini-transcribe/);
+  assert.match(transcriptionRoute, /v1\/audio\/transcriptions/);
   assert.match(config, /gpt-4o-mini/);
   assert.match(config, /Sound like a good recruiter on a real call/);
   assert.match(config, /usually under 35 words/);
-  assert.doesNotMatch(`${page}\n${route}\n${speechRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);
+  assert.doesNotMatch(`${page}\n${route}\n${speechRoute}\n${transcriptionRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);
 });

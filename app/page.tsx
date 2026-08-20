@@ -119,6 +119,10 @@ export default function Home() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const silenceTimerRef = useRef<number | null>(null);
   const currentTranscriptRef = useRef("");
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedAudioChunksRef = useRef<Blob[]>([]);
+  const transcriptionAbortRef = useRef<AbortController | null>(null);
   const speechCycleRef = useRef(0);
   const currentSpeechControllerRef = useRef<AbortController | null>(null);
   const currentSpeechReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
@@ -144,6 +148,52 @@ export default function Home() {
     }
   }, []);
 
+  const startCandidateRecording = useCallback(() => {
+    const stream = microphoneStreamRef.current;
+    if (!stream || typeof MediaRecorder === "undefined" || mediaRecorderRef.current?.state === "recording") return;
+    const supportedType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
+      .find((type) => MediaRecorder.isTypeSupported(type));
+    const recorder = new MediaRecorder(stream, supportedType ? { mimeType: supportedType } : undefined);
+    recordedAudioChunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) recordedAudioChunksRef.current.push(event.data);
+    };
+    recorder.start();
+    mediaRecorderRef.current = recorder;
+  }, []);
+
+  const stopCandidateRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return Promise.resolve<Blob | null>(null);
+    mediaRecorderRef.current = null;
+    return new Promise<Blob | null>((resolve) => {
+      const finish = () => {
+        const chunks = recordedAudioChunksRef.current;
+        recordedAudioChunksRef.current = [];
+        resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null);
+      };
+      recorder.onstop = finish;
+      recorder.onerror = () => resolve(null);
+      recorder.stop();
+    });
+  }, []);
+
+  const transcribeCandidateAudio = useCallback(async (audio: Blob) => {
+    const controller = new AbortController();
+    transcriptionAbortRef.current = controller;
+    const extension = audio.type.includes("mp4") ? "m4a" : "webm";
+    const formData = new FormData();
+    formData.append("audio", audio, `candidate.${extension}`);
+    try {
+      const response = await fetch("/api/transcribe", { method: "POST", body: formData, signal: controller.signal });
+      if (!response.ok) throw new Error("Accurate transcription was unavailable.");
+      const result = await response.json() as { text?: unknown };
+      return typeof result.text === "string" ? result.text.trim() : "";
+    } finally {
+      if (transcriptionAbortRef.current === controller) transcriptionAbortRef.current = null;
+    }
+  }, []);
+
   const stopSpeechPlayback = useCallback(() => {
     currentSpeechControllerRef.current?.abort();
     currentSpeechControllerRef.current = null;
@@ -162,8 +212,9 @@ export default function Home() {
     currentTranscriptRef.current = "";
     clearSilenceTimer();
     setStatus("listening");
+    startCandidateRecording();
     try { recognitionRef.current?.start(); } catch { /* Already listening. */ }
-  }, [clearSilenceTimer]);
+  }, [clearSilenceTimer, startCandidateRecording]);
 
   useEffect(() => {
     finishTurnRef.current = () => {
@@ -237,7 +288,8 @@ export default function Home() {
         await audioContext.resume();
         const reader = speechResponse.body.getReader();
         currentSpeechReaderRef.current = reader;
-        let scheduledUntil = audioContext.currentTime + 0.04;
+        // Give the stream a small head start so brief network jitter cannot create audible gaps.
+        let scheduledUntil = audioContext.currentTime + 0.18;
         let carry = new Uint8Array(0);
         let finalSource: AudioBufferSourceNode | null = null;
 
@@ -267,7 +319,7 @@ export default function Home() {
           const source = audioContext.createBufferSource();
           source.buffer = audioBuffer;
           source.connect(audioContext.destination);
-          scheduledUntil = Math.max(scheduledUntil, audioContext.currentTime + 0.025);
+          scheduledUntil = Math.max(scheduledUntil, audioContext.currentTime + 0.06);
           source.start(scheduledUntil);
           scheduledUntil += audioBuffer.duration;
           finalSource = source;
@@ -286,22 +338,7 @@ export default function Home() {
 
   const queueSpeech = useCallback((delta: string, flush = false) => {
     speechBufferRef.current += delta;
-    let sentence = speechBufferRef.current.match(/^([\s\S]*?[.!?])(?=\s|$)/);
-    while (sentence) {
-      const spokenText = sentence[1].trim();
-      speechBufferRef.current = speechBufferRef.current.slice(sentence[1].length).trimStart();
-      if (spokenText) {
-        const controller = new AbortController();
-        speechQueueRef.current.push({
-          text: spokenText,
-          audio: prepareNaturalSpeech(spokenText, controller.signal).catch(() => null),
-          controller,
-          cycle: speechCycleRef.current,
-        });
-        firstSpeechQueuedRef.current = true;
-      }
-      sentence = speechBufferRef.current.match(/^([\s\S]*?[.!?])(?=\s|$)/);
-    }
+    // One TTS request per reply keeps cadence and voice character consistent across sentences.
     if (flush && speechBufferRef.current.trim()) {
       const spokenText = speechBufferRef.current.trim();
       const controller = new AbortController();
@@ -311,9 +348,10 @@ export default function Home() {
         controller,
         cycle: speechCycleRef.current,
       });
+      firstSpeechQueuedRef.current = true;
       speechBufferRef.current = "";
+      speakNextRef.current();
     }
-    speakNextRef.current();
   }, []);
 
   const replaceMessage = useCallback((id: string, text: string) => {
@@ -387,6 +425,7 @@ export default function Home() {
       if (!completeText.trim()) {
         completeText = "Sorry, I didn't get a usable response. Could you say that again?";
         replaceMessage(assistantId, completeText);
+        speechBufferRef.current = completeText;
       }
       streamCompleteRef.current = true;
       queueSpeech("", true);
@@ -401,10 +440,26 @@ export default function Home() {
     }
   }, [clearSilenceTimer, queueSpeech, replaceMessage]);
 
-  const handleCandidateTurn = useCallback(async (spokenText: string) => {
-    const cleanText = spokenText.trim();
+  const handleCandidateTurn = useCallback(async (spokenText: string, improveTranscript = true) => {
+    let cleanText = spokenText.trim();
     if (!cleanText || turnBusyRef.current || !sessionActiveRef.current) return;
+    turnBusyRef.current = true;
     clearSilenceTimer();
+    try { recognitionRef.current?.stop(); } catch { /* Already stopped. */ }
+    const recordedAudio = await stopCandidateRecording();
+    if (improveTranscript && recordedAudio && recordedAudio.size > 1_000) {
+      setStatus("thinking");
+      try {
+        const accurateText = await transcribeCandidateAudio(recordedAudio);
+        if (accurateText) cleanText = accurateText;
+      } catch {
+        // The browser transcript remains a fast fallback if the accuracy pass is unavailable.
+      }
+    }
+    if (!sessionActiveRef.current) {
+      turnBusyRef.current = false;
+      return;
+    }
     currentTranscriptRef.current = "";
     setInterimText("");
     setTypedReply("");
@@ -412,8 +467,9 @@ export default function Home() {
     const conversation = [...messagesRef.current, userMessage];
     messagesRef.current = conversation;
     setMessages(conversation);
+    turnBusyRef.current = false;
     await requestAgentReply(conversation);
-  }, [clearSilenceTimer, requestAgentReply]);
+  }, [clearSilenceTimer, requestAgentReply, stopCandidateRecording, transcribeCandidateAudio]);
 
   useEffect(() => { handleTurnRef.current = handleCandidateTurn; }, [handleCandidateTurn]);
 
@@ -427,20 +483,18 @@ export default function Home() {
     recognition.onstart = () => setStatus("listening");
     recognition.onresult = (event) => {
       if (turnBusyRef.current) return;
-      let transcript = "";
-      let hasFinalResult = false;
+      let finalTranscript = "";
+      let interimTranscript = "";
       for (let index = 0; index < event.results.length; index += 1) {
         const result = event.results[index];
-        transcript += result[0].transcript;
-        hasFinalResult ||= result.isFinal;
+        if (result.isFinal) finalTranscript += `${result[0].transcript} `;
+        else interimTranscript += `${result[0].transcript} `;
       }
-      const cleanTranscript = transcript.trim();
+      const cleanTranscript = `${finalTranscript}${interimTranscript}`.replace(/\s+/g, " ").trim();
       currentTranscriptRef.current = cleanTranscript;
       setInterimText(cleanTranscript);
       clearSilenceTimer();
-      if (hasFinalResult && cleanTranscript) {
-        void handleTurnRef.current(cleanTranscript);
-      } else if (cleanTranscript) {
+      if (cleanTranscript) {
         silenceTimerRef.current = window.setTimeout(() => {
           const completedTurn = currentTranscriptRef.current.trim();
           if (completedTurn && !turnBusyRef.current) void handleTurnRef.current(completedTurn);
@@ -495,8 +549,15 @@ export default function Home() {
     setErrorMessage("");
     try {
       if (!recognitionRef.current) createRecognition();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
+      microphoneStreamRef.current = stream;
       screeningContextRef.current = context;
       messagesRef.current = [];
       setMessages([]);
@@ -526,6 +587,11 @@ export default function Home() {
     currentTranscriptRef.current = "";
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
+    transcriptionAbortRef.current?.abort();
+    transcriptionAbortRef.current = null;
+    void stopCandidateRecording();
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
     try { recognitionRef.current?.abort(); } catch { /* Already stopped. */ }
     setInterimText("");
     setTypedReply("");
@@ -550,7 +616,7 @@ export default function Home() {
 
   const submitTypedReply = (event: FormEvent) => {
     event.preventDefault();
-    void handleCandidateTurn(typedReply);
+    void handleCandidateTurn(typedReply, false);
   };
 
   const uploadJobDescription = async (file: File | undefined) => {
@@ -595,9 +661,13 @@ export default function Home() {
     speechCycleRef.current += 1;
     clearSilenceTimer();
     requestAbortRef.current?.abort();
+    transcriptionAbortRef.current?.abort();
+    void stopCandidateRecording();
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
     stopSpeechPlayback();
     recognitionRef.current?.abort();
-  }, [clearSilenceTimer, stopSpeechPlayback]);
+  }, [clearSilenceTimer, stopCandidateRecording, stopSpeechPlayback]);
 
   const copy = statusCopy[status];
   const candidateInputDisabled = !sessionActive || ["requesting", "thinking", "speaking"].includes(status);

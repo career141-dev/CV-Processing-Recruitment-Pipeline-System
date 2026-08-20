@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       model: "gpt-4o-mini-tts",
       voice: "marin",
       input: body.text.trim(),
-      instructions: "Speak like a warm, attentive recruiter in a real phone conversation. Use natural pacing, subtle intonation, and brief pauses. Keep the delivery calm and conversational, never dramatic or announcer-like.",
+      instructions: "Speak with smooth, connected phrasing at a steady conversational pace. Keep the tone, pitch, and volume consistent with restrained natural intonation. Minimize pauses between words and clauses. Sound like a calm, attentive recruiter on a real phone call, never like an announcer or performer.",
       response_format: "pcm",
     }),
   });
