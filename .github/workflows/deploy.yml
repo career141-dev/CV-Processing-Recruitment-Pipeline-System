@@ -65,6 +65,8 @@ jobs:
           script: |
             set -e
             cd ~/career141
+            echo "Installing dependencies on server..."
+            npm install --no-audit --no-fund
             ADMIN_KEY="${{ secrets.CONVEX_ADMIN_KEY }}"
             if [ -z "$ADMIN_KEY" ]; then
               ADMIN_KEY=$(grep CONVEX_SELF_HOSTED_ADMIN_KEY .env.production | head -n 1 | cut -d '=' -f2- | tr -d '\r')
