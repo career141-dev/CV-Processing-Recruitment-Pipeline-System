@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     : [{
       role: "user" as const,
       content: body.start === true
-        ? "Begin the call now. Give only the natural introduction, the exact position and reason for calling, then ask whether this is an okay time to talk. Do not ask any screening question yet."
+        ? "Begin the call now. Give only a natural introduction, the exact position and reason for calling, then ask whether this is a good time for a quick chat. Do not ask any screening question yet."
         : "Continue the screening naturally.",
     }];
 
@@ -80,9 +80,7 @@ export async function POST(request: Request) {
       model: AGENT_MODEL,
       instructions: buildAgentInstructions(body.screening),
       input,
-      reasoning: { effort: "none" },
       max_output_tokens: 140,
-      text: { verbosity: "low" },
       stream: true,
       store: false,
     }),
