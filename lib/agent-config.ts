@@ -1,4 +1,4 @@
-export const AGENT_MODEL = "gpt-5.6-luna";
+export const AGENT_MODEL = "gpt-4o-mini";
 
 export type ScreeningContext = {
   candidateName: string;

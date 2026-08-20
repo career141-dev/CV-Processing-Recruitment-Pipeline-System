@@ -19,6 +19,7 @@ export async function POST(request: Request) {
 
   const upstream = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
+    signal: request.signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
