@@ -6,7 +6,7 @@ import type { ScreeningContext } from "../lib/agent-config";
 type AgentStatus = "idle" | "requesting" | "listening" | "thinking" | "speaking" | "error";
 type MessageRole = "user" | "assistant";
 type Message = { id: string; role: MessageRole; text: string; time: string };
-type SpeechQueueItem = { text: string; audio: Promise<Blob | null>; cycle: number };
+type SpeechQueueItem = { text: string; audio: Promise<Response | null>; controller: AbortController; cycle: number };
 type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
 type RecognitionEvent = { resultIndex: number; results: ArrayLike<SpeechResult> };
 type RecognitionError = { error: string };
@@ -80,14 +80,15 @@ const headingValue = (text: string, label: string) => {
   return match?.[1]?.trim() ?? "";
 };
 
-const prepareNaturalSpeech = async (text: string) => {
+const prepareNaturalSpeech = async (text: string, signal: AbortSignal) => {
   const response = await fetch("/api/speak", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
+    signal,
   });
   if (!response.ok) throw new Error("Natural voice playback was unavailable.");
-  return response.blob();
+  return response;
 };
 
 export default function Home() {
@@ -118,9 +119,14 @@ export default function Home() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const silenceTimerRef = useRef<number | null>(null);
   const currentTranscriptRef = useRef("");
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedAudioChunksRef = useRef<Blob[]>([]);
+  const transcriptionAbortRef = useRef<AbortController | null>(null);
   const speechCycleRef = useRef(0);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const currentAudioUrlRef = useRef<string | null>(null);
+  const currentSpeechControllerRef = useRef<AbortController | null>(null);
+  const currentSpeechReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const currentAudioContextRef = useRef<AudioContext | null>(null);
   const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const handleTurnRef = useRef<(text: string) => Promise<void>>(async () => undefined);
   const speakNextRef = useRef<() => void>(() => undefined);
@@ -142,13 +148,73 @@ export default function Home() {
     }
   }, []);
 
+  const startCandidateRecording = useCallback(() => {
+    const stream = microphoneStreamRef.current;
+    if (!stream || typeof MediaRecorder === "undefined" || mediaRecorderRef.current?.state === "recording") return;
+    const supportedType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
+      .find((type) => MediaRecorder.isTypeSupported(type));
+    const recorder = new MediaRecorder(stream, supportedType ? { mimeType: supportedType } : undefined);
+    recordedAudioChunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) recordedAudioChunksRef.current.push(event.data);
+    };
+    recorder.start();
+    mediaRecorderRef.current = recorder;
+  }, []);
+
+  const stopCandidateRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return Promise.resolve<Blob | null>(null);
+    mediaRecorderRef.current = null;
+    return new Promise<Blob | null>((resolve) => {
+      const finish = () => {
+        const chunks = recordedAudioChunksRef.current;
+        recordedAudioChunksRef.current = [];
+        resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null);
+      };
+      recorder.onstop = finish;
+      recorder.onerror = () => resolve(null);
+      recorder.stop();
+    });
+  }, []);
+
+  const transcribeCandidateAudio = useCallback(async (audio: Blob) => {
+    const controller = new AbortController();
+    transcriptionAbortRef.current = controller;
+    const extension = audio.type.includes("mp4") ? "m4a" : "webm";
+    const formData = new FormData();
+    formData.append("audio", audio, `candidate.${extension}`);
+    try {
+      const response = await fetch("/api/transcribe", { method: "POST", body: formData, signal: controller.signal });
+      if (!response.ok) throw new Error("Accurate transcription was unavailable.");
+      const result = await response.json() as { text?: unknown };
+      return typeof result.text === "string" ? result.text.trim() : "";
+    } finally {
+      if (transcriptionAbortRef.current === controller) transcriptionAbortRef.current = null;
+    }
+  }, []);
+
+  const stopSpeechPlayback = useCallback(() => {
+    currentSpeechControllerRef.current?.abort();
+    currentSpeechControllerRef.current = null;
+    speechQueueRef.current.forEach((item) => item.controller.abort());
+    const reader = currentSpeechReaderRef.current;
+    currentSpeechReaderRef.current = null;
+    if (reader) void reader.cancel().catch(() => undefined);
+    const audioContext = currentAudioContextRef.current;
+    currentAudioContextRef.current = null;
+    if (audioContext && audioContext.state !== "closed") void audioContext.close().catch(() => undefined);
+    window.speechSynthesis?.cancel();
+  }, []);
+
   const startListening = useCallback(() => {
     if (!sessionActiveRef.current || turnBusyRef.current || speakingRef.current) return;
     currentTranscriptRef.current = "";
     clearSilenceTimer();
     setStatus("listening");
+    startCandidateRecording();
     try { recognitionRef.current?.start(); } catch { /* Already listening. */ }
-  }, [clearSilenceTimer]);
+  }, [clearSilenceTimer, startCandidateRecording]);
 
   useEffect(() => {
     finishTurnRef.current = () => {
@@ -170,11 +236,17 @@ export default function Home() {
       }
       speakingRef.current = true;
       setStatus("speaking");
+      currentSpeechControllerRef.current = next.controller;
+      let finished = false;
 
       const finishItem = () => {
-        if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-        currentAudioUrlRef.current = null;
-        currentAudioRef.current = null;
+        if (finished) return;
+        finished = true;
+        currentSpeechControllerRef.current = null;
+        currentSpeechReaderRef.current = null;
+        const audioContext = currentAudioContextRef.current;
+        currentAudioContextRef.current = null;
+        if (audioContext && audioContext.state !== "closed") void audioContext.close().catch(() => undefined);
         speakingRef.current = false;
         speakNextRef.current();
       };
@@ -197,62 +269,89 @@ export default function Home() {
         window.speechSynthesis.speak(utterance);
       };
 
-      const audioBlob = await next.audio;
+      const speechResponse = await next.audio;
       if (next.cycle !== speechCycleRef.current || !sessionActiveRef.current) {
+        currentSpeechControllerRef.current = null;
         speakingRef.current = false;
         speakNextRef.current();
         return;
       }
-      if (!audioBlob) {
+      if (!speechResponse?.body || typeof AudioContext === "undefined") {
         playBrowserFallback();
         return;
       }
 
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      currentAudioRef.current = audio;
-      currentAudioUrlRef.current = audioUrl;
-      audio.onended = finishItem;
-      audio.onerror = () => {
-        if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-        currentAudioUrlRef.current = null;
-        currentAudioRef.current = null;
-        playBrowserFallback();
-      };
+      let audioStarted = false;
       try {
-        await audio.play();
+        const audioContext = new AudioContext({ latencyHint: "interactive" });
+        currentAudioContextRef.current = audioContext;
+        await audioContext.resume();
+        const reader = speechResponse.body.getReader();
+        currentSpeechReaderRef.current = reader;
+        // Give the stream a small head start so brief network jitter cannot create audible gaps.
+        let scheduledUntil = audioContext.currentTime + 0.18;
+        let carry = new Uint8Array(0);
+        let finalSource: AudioBufferSourceNode | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (next.cycle !== speechCycleRef.current || !sessionActiveRef.current) {
+            await reader.cancel().catch(() => undefined);
+            return;
+          }
+
+          const combined = new Uint8Array(carry.length + value.length);
+          combined.set(carry);
+          combined.set(value, carry.length);
+          const usableBytes = combined.length - (combined.length % 2);
+          carry = usableBytes < combined.length ? combined.slice(usableBytes) : new Uint8Array(0);
+          if (usableBytes === 0) continue;
+
+          const sampleCount = usableBytes / 2;
+          const audioBuffer = audioContext.createBuffer(1, sampleCount, 24_000);
+          const samples = audioBuffer.getChannelData(0);
+          const view = new DataView(combined.buffer, combined.byteOffset, usableBytes);
+          for (let index = 0; index < sampleCount; index += 1) {
+            samples[index] = view.getInt16(index * 2, true) / 32_768;
+          }
+
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+          scheduledUntil = Math.max(scheduledUntil, audioContext.currentTime + 0.06);
+          source.start(scheduledUntil);
+          scheduledUntil += audioBuffer.duration;
+          finalSource = source;
+          audioStarted = true;
+        }
+
+        currentSpeechReaderRef.current = null;
+        if (!finalSource) throw new Error("The voice stream was empty.");
+        finalSource.onended = finishItem;
       } catch {
-        audio.onerror?.(new Event("error"));
+        if (audioStarted) finishItem();
+        else playBrowserFallback();
       }
     };
   }, []);
 
   const queueSpeech = useCallback((delta: string, flush = false) => {
     speechBufferRef.current += delta;
-    let sentence = speechBufferRef.current.match(/^([\s\S]*?[.!?])(?=\s|$)/);
-    while (sentence) {
-      const spokenText = sentence[1].trim();
-      speechBufferRef.current = speechBufferRef.current.slice(sentence[1].length).trimStart();
-      if (spokenText) {
-        speechQueueRef.current.push({
-          text: spokenText,
-          audio: prepareNaturalSpeech(spokenText).catch(() => null),
-          cycle: speechCycleRef.current,
-        });
-        firstSpeechQueuedRef.current = true;
-      }
-      sentence = speechBufferRef.current.match(/^([\s\S]*?[.!?])(?=\s|$)/);
-    }
+    // One TTS request per reply keeps cadence and voice character consistent across sentences.
     if (flush && speechBufferRef.current.trim()) {
       const spokenText = speechBufferRef.current.trim();
+      const controller = new AbortController();
       speechQueueRef.current.push({
         text: spokenText,
-        audio: prepareNaturalSpeech(spokenText).catch(() => null),
+        audio: prepareNaturalSpeech(spokenText, controller.signal).catch(() => null),
+        controller,
         cycle: speechCycleRef.current,
       });
+      firstSpeechQueuedRef.current = true;
       speechBufferRef.current = "";
+      speakNextRef.current();
     }
-    speakNextRef.current();
   }, []);
 
   const replaceMessage = useCallback((id: string, text: string) => {
@@ -326,6 +425,7 @@ export default function Home() {
       if (!completeText.trim()) {
         completeText = "Sorry, I didn't get a usable response. Could you say that again?";
         replaceMessage(assistantId, completeText);
+        speechBufferRef.current = completeText;
       }
       streamCompleteRef.current = true;
       queueSpeech("", true);
@@ -340,10 +440,26 @@ export default function Home() {
     }
   }, [clearSilenceTimer, queueSpeech, replaceMessage]);
 
-  const handleCandidateTurn = useCallback(async (spokenText: string) => {
-    const cleanText = spokenText.trim();
+  const handleCandidateTurn = useCallback(async (spokenText: string, improveTranscript = true) => {
+    let cleanText = spokenText.trim();
     if (!cleanText || turnBusyRef.current || !sessionActiveRef.current) return;
+    turnBusyRef.current = true;
     clearSilenceTimer();
+    try { recognitionRef.current?.stop(); } catch { /* Already stopped. */ }
+    const recordedAudio = await stopCandidateRecording();
+    if (improveTranscript && recordedAudio && recordedAudio.size > 1_000) {
+      setStatus("thinking");
+      try {
+        const accurateText = await transcribeCandidateAudio(recordedAudio);
+        if (accurateText) cleanText = accurateText;
+      } catch {
+        // The browser transcript remains a fast fallback if the accuracy pass is unavailable.
+      }
+    }
+    if (!sessionActiveRef.current) {
+      turnBusyRef.current = false;
+      return;
+    }
     currentTranscriptRef.current = "";
     setInterimText("");
     setTypedReply("");
@@ -351,8 +467,9 @@ export default function Home() {
     const conversation = [...messagesRef.current, userMessage];
     messagesRef.current = conversation;
     setMessages(conversation);
+    turnBusyRef.current = false;
     await requestAgentReply(conversation);
-  }, [clearSilenceTimer, requestAgentReply]);
+  }, [clearSilenceTimer, requestAgentReply, stopCandidateRecording, transcribeCandidateAudio]);
 
   useEffect(() => { handleTurnRef.current = handleCandidateTurn; }, [handleCandidateTurn]);
 
@@ -366,20 +483,18 @@ export default function Home() {
     recognition.onstart = () => setStatus("listening");
     recognition.onresult = (event) => {
       if (turnBusyRef.current) return;
-      let transcript = "";
-      let hasFinalResult = false;
+      let finalTranscript = "";
+      let interimTranscript = "";
       for (let index = 0; index < event.results.length; index += 1) {
         const result = event.results[index];
-        transcript += result[0].transcript;
-        hasFinalResult ||= result.isFinal;
+        if (result.isFinal) finalTranscript += `${result[0].transcript} `;
+        else interimTranscript += `${result[0].transcript} `;
       }
-      const cleanTranscript = transcript.trim();
+      const cleanTranscript = `${finalTranscript}${interimTranscript}`.replace(/\s+/g, " ").trim();
       currentTranscriptRef.current = cleanTranscript;
       setInterimText(cleanTranscript);
       clearSilenceTimer();
-      if (hasFinalResult && cleanTranscript) {
-        void handleTurnRef.current(cleanTranscript);
-      } else if (cleanTranscript) {
+      if (cleanTranscript) {
         silenceTimerRef.current = window.setTimeout(() => {
           const completedTurn = currentTranscriptRef.current.trim();
           if (completedTurn && !turnBusyRef.current) void handleTurnRef.current(completedTurn);
@@ -434,8 +549,15 @@ export default function Home() {
     setErrorMessage("");
     try {
       if (!recognitionRef.current) createRecognition();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
+      microphoneStreamRef.current = stream;
       screeningContextRef.current = context;
       messagesRef.current = [];
       setMessages([]);
@@ -456,6 +578,7 @@ export default function Home() {
     turnBusyRef.current = false;
     speechCycleRef.current += 1;
     speakingRef.current = false;
+    stopSpeechPlayback();
     speechQueueRef.current = [];
     speechBufferRef.current = "";
     firstSpeechQueuedRef.current = false;
@@ -464,15 +587,11 @@ export default function Home() {
     currentTranscriptRef.current = "";
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
-    if (currentAudioRef.current) {
-      currentAudioRef.current.onended = null;
-      currentAudioRef.current.onerror = null;
-      currentAudioRef.current.pause();
-    }
-    currentAudioRef.current = null;
-    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-    currentAudioUrlRef.current = null;
-    window.speechSynthesis?.cancel();
+    transcriptionAbortRef.current?.abort();
+    transcriptionAbortRef.current = null;
+    void stopCandidateRecording();
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
     try { recognitionRef.current?.abort(); } catch { /* Already stopped. */ }
     setInterimText("");
     setTypedReply("");
@@ -483,15 +602,7 @@ export default function Home() {
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
     speechCycleRef.current += 1;
-    if (currentAudioRef.current) {
-      currentAudioRef.current.onended = null;
-      currentAudioRef.current.onerror = null;
-      currentAudioRef.current.pause();
-    }
-    currentAudioRef.current = null;
-    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-    currentAudioUrlRef.current = null;
-    window.speechSynthesis?.cancel();
+    stopSpeechPlayback();
     speechQueueRef.current = [];
     speechBufferRef.current = "";
     firstSpeechQueuedRef.current = false;
@@ -505,7 +616,7 @@ export default function Home() {
 
   const submitTypedReply = (event: FormEvent) => {
     event.preventDefault();
-    void handleCandidateTurn(typedReply);
+    void handleCandidateTurn(typedReply, false);
   };
 
   const uploadJobDescription = async (file: File | undefined) => {
@@ -550,17 +661,16 @@ export default function Home() {
     speechCycleRef.current += 1;
     clearSilenceTimer();
     requestAbortRef.current?.abort();
-    if (currentAudioRef.current) {
-      currentAudioRef.current.onended = null;
-      currentAudioRef.current.onerror = null;
-      currentAudioRef.current.pause();
-    }
-    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-    window.speechSynthesis?.cancel();
+    transcriptionAbortRef.current?.abort();
+    void stopCandidateRecording();
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
+    stopSpeechPlayback();
     recognitionRef.current?.abort();
-  }, [clearSilenceTimer]);
+  }, [clearSilenceTimer, stopCandidateRecording, stopSpeechPlayback]);
 
   const copy = statusCopy[status];
+  const candidateInputDisabled = !sessionActive || ["requesting", "thinking", "speaking"].includes(status);
 
   return (
     <main className={`voice-shell status-${status}`}>
@@ -653,7 +763,7 @@ export default function Home() {
 
         <form className="typed-reply" onSubmit={submitTypedReply}>
           <label htmlFor="candidate-reply">Test a candidate reply by typing</label>
-          <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={!sessionActive || turnBusyRef.current} /><button type="submit" disabled={!sessionActive || !typedReply.trim() || turnBusyRef.current}>Send</button></div>
+          <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={candidateInputDisabled} /><button type="submit" disabled={candidateInputDisabled || !typedReply.trim()}>Send</button></div>
         </form>
         {errorMessage && sessionActive && <p className="error-banner conversation-error" role="alert">{errorMessage}</p>}
         <div className="panel-footer"><span>Natural OpenAI voice</span><span>One question at a time</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>

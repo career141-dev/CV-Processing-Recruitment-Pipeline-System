@@ -19,16 +19,17 @@ export async function POST(request: Request) {
 
   const upstream = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
+    signal: request.signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "tts-1",
-      voice: "nova",
+      model: "gpt-4o-mini-tts",
+      voice: "marin",
       input: body.text.trim(),
-      response_format: "mp3",
-      speed: 1.0,
+      instructions: "Speak with smooth, connected phrasing at a steady conversational pace. Keep the tone, pitch, and volume consistent with restrained natural intonation. Minimize pauses between words and clauses. Sound like a calm, attentive recruiter on a real phone call, never like an announcer or performer.",
+      response_format: "pcm",
     }),
   });
 
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
   return new Response(upstream.body, {
     status: 200,
     headers: {
-      "Content-Type": upstream.headers.get("content-type") || "audio/mpeg",
+      "Content-Type": "audio/pcm; rate=24000; channels=1",
       "Cache-Control": "no-store",
     },
   });
