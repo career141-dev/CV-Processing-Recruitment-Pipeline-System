@@ -20,17 +20,18 @@ test("server-renders the Aura voice-agent experience", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Aura — Hands-free voice agent<\/title>/i);
-  assert.match(html, /A conversation/);
-  assert.match(html, /Start conversation/);
-  assert.match(html, /Automatic turn detection/);
+  assert.match(html, /<title>Aura — Candidate screening rehearsal<\/title>/i);
+  assert.match(html, /Give Aura the brief/);
+  assert.match(html, /Start practice screening/);
+  assert.match(html, /Natural OpenAI voice/);
   assert.doesNotMatch(html, /OPENAI_API_KEY/);
 });
 
-test("keeps the API key server-side and the interaction hands-free", async () => {
-  const [page, route, config] = await Promise.all([
+test("streams natural speech while keeping the API key server-side", async () => {
+  const [page, route, speechRoute, config] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/respond/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/speak/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/agent-config.ts", import.meta.url), "utf8"),
   ]);
 
@@ -38,10 +39,17 @@ test("keeps the API key server-side and the interaction hands-free", async () =>
   assert.match(page, /window\.speechSynthesis\.speak/);
   assert.match(page, /END_OF_TURN_DELAY_MS = 720/);
   assert.match(page, /selectNaturalVoice/);
+  assert.match(page, /new AudioContext/);
+  assert.match(page, /speechResponse\.body\.getReader/);
   assert.match(page, /response\.output_text\.delta/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
   assert.match(route, /process\.env\.OPENAI_API_KEY/);
   assert.match(route, /stream: true/);
-  assert.match(config, /8 to 24 words/);
-  assert.match(config, /sound like a real person/);
+  assert.match(speechRoute, /gpt-4o-mini-tts/);
+  assert.match(speechRoute, /voice: "marin"/);
+  assert.match(speechRoute, /response_format: "pcm"/);
+  assert.match(config, /gpt-4o-mini/);
+  assert.match(config, /Sound like a good recruiter on a real call/);
+  assert.match(config, /usually under 35 words/);
+  assert.doesNotMatch(`${page}\n${route}\n${speechRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);
 });

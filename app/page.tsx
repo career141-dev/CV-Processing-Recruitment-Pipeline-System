@@ -6,7 +6,7 @@ import type { ScreeningContext } from "../lib/agent-config";
 type AgentStatus = "idle" | "requesting" | "listening" | "thinking" | "speaking" | "error";
 type MessageRole = "user" | "assistant";
 type Message = { id: string; role: MessageRole; text: string; time: string };
-type SpeechQueueItem = { text: string; audio: Promise<Blob | null>; cycle: number };
+type SpeechQueueItem = { text: string; audio: Promise<Response | null>; controller: AbortController; cycle: number };
 type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
 type RecognitionEvent = { resultIndex: number; results: ArrayLike<SpeechResult> };
 type RecognitionError = { error: string };
@@ -80,14 +80,15 @@ const headingValue = (text: string, label: string) => {
   return match?.[1]?.trim() ?? "";
 };
 
-const prepareNaturalSpeech = async (text: string) => {
+const prepareNaturalSpeech = async (text: string, signal: AbortSignal) => {
   const response = await fetch("/api/speak", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
+    signal,
   });
   if (!response.ok) throw new Error("Natural voice playback was unavailable.");
-  return response.blob();
+  return response;
 };
 
 export default function Home() {
@@ -119,8 +120,9 @@ export default function Home() {
   const silenceTimerRef = useRef<number | null>(null);
   const currentTranscriptRef = useRef("");
   const speechCycleRef = useRef(0);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const currentAudioUrlRef = useRef<string | null>(null);
+  const currentSpeechControllerRef = useRef<AbortController | null>(null);
+  const currentSpeechReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const currentAudioContextRef = useRef<AudioContext | null>(null);
   const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const handleTurnRef = useRef<(text: string) => Promise<void>>(async () => undefined);
   const speakNextRef = useRef<() => void>(() => undefined);
@@ -140,6 +142,19 @@ export default function Home() {
       window.clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
+  }, []);
+
+  const stopSpeechPlayback = useCallback(() => {
+    currentSpeechControllerRef.current?.abort();
+    currentSpeechControllerRef.current = null;
+    speechQueueRef.current.forEach((item) => item.controller.abort());
+    const reader = currentSpeechReaderRef.current;
+    currentSpeechReaderRef.current = null;
+    if (reader) void reader.cancel().catch(() => undefined);
+    const audioContext = currentAudioContextRef.current;
+    currentAudioContextRef.current = null;
+    if (audioContext && audioContext.state !== "closed") void audioContext.close().catch(() => undefined);
+    window.speechSynthesis?.cancel();
   }, []);
 
   const startListening = useCallback(() => {
@@ -170,11 +185,17 @@ export default function Home() {
       }
       speakingRef.current = true;
       setStatus("speaking");
+      currentSpeechControllerRef.current = next.controller;
+      let finished = false;
 
       const finishItem = () => {
-        if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-        currentAudioUrlRef.current = null;
-        currentAudioRef.current = null;
+        if (finished) return;
+        finished = true;
+        currentSpeechControllerRef.current = null;
+        currentSpeechReaderRef.current = null;
+        const audioContext = currentAudioContextRef.current;
+        currentAudioContextRef.current = null;
+        if (audioContext && audioContext.state !== "closed") void audioContext.close().catch(() => undefined);
         speakingRef.current = false;
         speakNextRef.current();
       };
@@ -197,32 +218,68 @@ export default function Home() {
         window.speechSynthesis.speak(utterance);
       };
 
-      const audioBlob = await next.audio;
+      const speechResponse = await next.audio;
       if (next.cycle !== speechCycleRef.current || !sessionActiveRef.current) {
+        currentSpeechControllerRef.current = null;
         speakingRef.current = false;
         speakNextRef.current();
         return;
       }
-      if (!audioBlob) {
+      if (!speechResponse?.body || typeof AudioContext === "undefined") {
         playBrowserFallback();
         return;
       }
 
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      currentAudioRef.current = audio;
-      currentAudioUrlRef.current = audioUrl;
-      audio.onended = finishItem;
-      audio.onerror = () => {
-        if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-        currentAudioUrlRef.current = null;
-        currentAudioRef.current = null;
-        playBrowserFallback();
-      };
+      let audioStarted = false;
       try {
-        await audio.play();
+        const audioContext = new AudioContext({ latencyHint: "interactive" });
+        currentAudioContextRef.current = audioContext;
+        await audioContext.resume();
+        const reader = speechResponse.body.getReader();
+        currentSpeechReaderRef.current = reader;
+        let scheduledUntil = audioContext.currentTime + 0.04;
+        let carry = new Uint8Array(0);
+        let finalSource: AudioBufferSourceNode | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (next.cycle !== speechCycleRef.current || !sessionActiveRef.current) {
+            await reader.cancel().catch(() => undefined);
+            return;
+          }
+
+          const combined = new Uint8Array(carry.length + value.length);
+          combined.set(carry);
+          combined.set(value, carry.length);
+          const usableBytes = combined.length - (combined.length % 2);
+          carry = usableBytes < combined.length ? combined.slice(usableBytes) : new Uint8Array(0);
+          if (usableBytes === 0) continue;
+
+          const sampleCount = usableBytes / 2;
+          const audioBuffer = audioContext.createBuffer(1, sampleCount, 24_000);
+          const samples = audioBuffer.getChannelData(0);
+          const view = new DataView(combined.buffer, combined.byteOffset, usableBytes);
+          for (let index = 0; index < sampleCount; index += 1) {
+            samples[index] = view.getInt16(index * 2, true) / 32_768;
+          }
+
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+          scheduledUntil = Math.max(scheduledUntil, audioContext.currentTime + 0.025);
+          source.start(scheduledUntil);
+          scheduledUntil += audioBuffer.duration;
+          finalSource = source;
+          audioStarted = true;
+        }
+
+        currentSpeechReaderRef.current = null;
+        if (!finalSource) throw new Error("The voice stream was empty.");
+        finalSource.onended = finishItem;
       } catch {
-        audio.onerror?.(new Event("error"));
+        if (audioStarted) finishItem();
+        else playBrowserFallback();
       }
     };
   }, []);
@@ -234,9 +291,11 @@ export default function Home() {
       const spokenText = sentence[1].trim();
       speechBufferRef.current = speechBufferRef.current.slice(sentence[1].length).trimStart();
       if (spokenText) {
+        const controller = new AbortController();
         speechQueueRef.current.push({
           text: spokenText,
-          audio: prepareNaturalSpeech(spokenText).catch(() => null),
+          audio: prepareNaturalSpeech(spokenText, controller.signal).catch(() => null),
+          controller,
           cycle: speechCycleRef.current,
         });
         firstSpeechQueuedRef.current = true;
@@ -245,9 +304,11 @@ export default function Home() {
     }
     if (flush && speechBufferRef.current.trim()) {
       const spokenText = speechBufferRef.current.trim();
+      const controller = new AbortController();
       speechQueueRef.current.push({
         text: spokenText,
-        audio: prepareNaturalSpeech(spokenText).catch(() => null),
+        audio: prepareNaturalSpeech(spokenText, controller.signal).catch(() => null),
+        controller,
         cycle: speechCycleRef.current,
       });
       speechBufferRef.current = "";
@@ -456,6 +517,7 @@ export default function Home() {
     turnBusyRef.current = false;
     speechCycleRef.current += 1;
     speakingRef.current = false;
+    stopSpeechPlayback();
     speechQueueRef.current = [];
     speechBufferRef.current = "";
     firstSpeechQueuedRef.current = false;
@@ -464,15 +526,6 @@ export default function Home() {
     currentTranscriptRef.current = "";
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
-    if (currentAudioRef.current) {
-      currentAudioRef.current.onended = null;
-      currentAudioRef.current.onerror = null;
-      currentAudioRef.current.pause();
-    }
-    currentAudioRef.current = null;
-    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-    currentAudioUrlRef.current = null;
-    window.speechSynthesis?.cancel();
     try { recognitionRef.current?.abort(); } catch { /* Already stopped. */ }
     setInterimText("");
     setTypedReply("");
@@ -483,15 +536,7 @@ export default function Home() {
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
     speechCycleRef.current += 1;
-    if (currentAudioRef.current) {
-      currentAudioRef.current.onended = null;
-      currentAudioRef.current.onerror = null;
-      currentAudioRef.current.pause();
-    }
-    currentAudioRef.current = null;
-    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-    currentAudioUrlRef.current = null;
-    window.speechSynthesis?.cancel();
+    stopSpeechPlayback();
     speechQueueRef.current = [];
     speechBufferRef.current = "";
     firstSpeechQueuedRef.current = false;
@@ -550,17 +595,12 @@ export default function Home() {
     speechCycleRef.current += 1;
     clearSilenceTimer();
     requestAbortRef.current?.abort();
-    if (currentAudioRef.current) {
-      currentAudioRef.current.onended = null;
-      currentAudioRef.current.onerror = null;
-      currentAudioRef.current.pause();
-    }
-    if (currentAudioUrlRef.current) URL.revokeObjectURL(currentAudioUrlRef.current);
-    window.speechSynthesis?.cancel();
+    stopSpeechPlayback();
     recognitionRef.current?.abort();
-  }, [clearSilenceTimer]);
+  }, [clearSilenceTimer, stopSpeechPlayback]);
 
   const copy = statusCopy[status];
+  const candidateInputDisabled = !sessionActive || ["requesting", "thinking", "speaking"].includes(status);
 
   return (
     <main className={`voice-shell status-${status}`}>
@@ -653,7 +693,7 @@ export default function Home() {
 
         <form className="typed-reply" onSubmit={submitTypedReply}>
           <label htmlFor="candidate-reply">Test a candidate reply by typing</label>
-          <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={!sessionActive || turnBusyRef.current} /><button type="submit" disabled={!sessionActive || !typedReply.trim() || turnBusyRef.current}>Send</button></div>
+          <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={candidateInputDisabled} /><button type="submit" disabled={candidateInputDisabled || !typedReply.trim()}>Send</button></div>
         </form>
         {errorMessage && sessionActive && <p className="error-banner conversation-error" role="alert">{errorMessage}</p>}
         <div className="panel-footer"><span>Natural OpenAI voice</span><span>One question at a time</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>
