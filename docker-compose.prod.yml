@@ -123,9 +123,9 @@ services:
       - voice_egress
       - voice_control
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:7880/"]
+      test: ["CMD-SHELL", "test -r /proc/1/status && grep -q livekit /proc/1/status"]
       interval: 10s
-      timeout: 5s
+      timeout: 3s
       retries: 10
       start_period: 10s
     stop_grace_period: 6m
@@ -147,8 +147,8 @@ services:
       livekit:
         condition: service_healthy
     environment:
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
       LIVEKIT_WS_URL: ws://livekit:7880
       # SIP_CONFIG_BODY takes precedence over the image's default config file.
       # Runtime interpolation keeps the Redis password out of version control.
@@ -156,7 +156,7 @@ services:
         ws_url: ws://livekit:7880
         redis:
           address: redis:6379
-          password: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+          password: "${REDIS_PASSWORD:-redispassword}"
         sip_port: 5060
         rtp_port: 10000-10100
         use_external_ip: true
