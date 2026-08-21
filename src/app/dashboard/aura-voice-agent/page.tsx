@@ -177,8 +177,14 @@ export default function AuraVoiceAgentPage() {
       });
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: "Failed to connect to LiveKit token service." }));
-        throw new Error(errorData.error || "Unable to acquire LiveKit room token.");
+        let msg = "Unable to acquire LiveKit room token.";
+        try {
+          const errorData = await res.json();
+          msg = errorData.error || msg;
+        } catch {
+          msg = `LiveKit token service returned status ${res.status}.`;
+        }
+        throw new Error(msg);
       }
 
       const tokenPayload = await res.json();

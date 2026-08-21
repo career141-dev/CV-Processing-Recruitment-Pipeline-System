@@ -93,29 +93,34 @@ export async function POST(request: NextRequest) {
       createdAt: Date.now(),
     });
 
-    const roomService = new RoomServiceClient(serverUrl, apiKey, apiSecret, {
-      requestTimeout: 5,
-    });
+    try {
+      const roomService = new RoomServiceClient(serverUrl, apiKey, apiSecret, {
+        requestTimeout: 2,
+      });
 
-    await roomService.createRoom({
-      name: roomName,
-      emptyTimeout: 120,
-      departureTimeout: 30,
-      maxParticipants: 4,
-      metadata: roomMetadata,
-    });
+      await roomService.createRoom({
+        name: roomName,
+        emptyTimeout: 120,
+        departureTimeout: 30,
+        maxParticipants: 4,
+        metadata: roomMetadata,
+      });
+    } catch (err: any) {
+      console.warn("[Aura LiveKit Token] Room pre-creation skipped or timed out; relying on token roomCreate grant:", err?.message || err);
+    }
 
     const participantIdentity = `recruiter-${recruiterUserId.slice(0, 8)}-${sessionId.slice(0, 6)}`;
     const accessToken = new AccessToken(apiKey, apiSecret, {
       identity: participantIdentity,
       name: candidateName?.trim() || "Candidate",
       ttl: "20m",
-      metadata: JSON.stringify({ mode: "screening", sessionId }),
+      metadata: roomMetadata,
     });
 
     accessToken.addGrant({
       room: roomName,
       roomJoin: true,
+      roomCreate: true,
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
