@@ -108,20 +108,26 @@ export async function updateFollowUpFlags(
   const app = await ctx.db.get(applicationId);
   if (!app) return;
 
-  const updates: Record<string, boolean> = {};
+  const updates: Record<string, any> = {};
 
   // CV: check cvUploadId on candidate OR on the application itself
   const hasCV = !!candidate.cvUploadId || !!app.cvFileId;
   if (hasCV && !app.followUpCvReceived) updates.followUpCvReceived = true;
 
-  if (candidate.currentSalary !== undefined && candidate.currentSalary !== null && !app.followUpCurrentSalary)
-    updates.followUpCurrentSalary = true;
+  if (candidate.currentSalary !== undefined && candidate.currentSalary !== null) {
+    if (!app.followUpCurrentSalary) updates.followUpCurrentSalary = true;
+    if (app.candidateCurrentSalary !== candidate.currentSalary) updates.candidateCurrentSalary = candidate.currentSalary;
+  }
 
-  if (candidate.expectedSalary !== undefined && candidate.expectedSalary !== null && !app.followUpExpectedSalary)
-    updates.followUpExpectedSalary = true;
+  if (candidate.expectedSalary !== undefined && candidate.expectedSalary !== null) {
+    if (!app.followUpExpectedSalary) updates.followUpExpectedSalary = true;
+    if (app.candidateExpectedSalary !== candidate.expectedSalary) updates.candidateExpectedSalary = candidate.expectedSalary;
+  }
 
-  if (candidate.noticePeriodDays !== undefined && candidate.noticePeriodDays !== null && !app.followUpNoticePeriod)
-    updates.followUpNoticePeriod = true;
+  if (candidate.noticePeriodDays !== undefined && candidate.noticePeriodDays !== null) {
+    if (!app.followUpNoticePeriod) updates.followUpNoticePeriod = true;
+    if (app.candidateNoticePeriodDays !== candidate.noticePeriodDays) updates.candidateNoticePeriodDays = candidate.noticePeriodDays;
+  }
 
   if (Object.keys(updates).length > 0) {
     await ctx.db.patch(applicationId, updates);

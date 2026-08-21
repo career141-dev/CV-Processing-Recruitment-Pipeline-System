@@ -7,13 +7,14 @@ An enterprise AI-driven recruitment automation platform, multi-channel candidate
 ## 📋 Table of Contents
 
 1. [System Architecture & Technology Stack](#-system-architecture--technology-stack)
-2. [Prerequisites](#-prerequisites)
-3. [Environment Setup & Configuration](#-environment-setup--configuration)
-4. [Local vs Hosted Development Workflows](#-local-vs-hosted-development-workflows)
-5. [Database Operations & 1-Click Sync](#-database-operations--1-click-sync)
-6. [Role-Based Access Control (RBAC)](#-role-based-access-control-rbac)
-7. [Testing, QA Suite & Verification](#-testing-qa-suite--verification)
-8. [Engineering Rules & Deployment Discipline](#-engineering-rules--deployment-discipline)
+2. [Self-Hosted Production Microservices Architecture](#-self-hosted-production-microservices-architecture)
+3. [Prerequisites](#-prerequisites)
+4. [Environment Setup & Configuration](#-environment-setup--configuration)
+5. [Local vs Hosted Development Workflows](#-local-vs-hosted-development-workflows)
+6. [Database Operations & 1-Click Sync](#-database-operations--1-click-sync)
+7. [Role-Based Access Control (RBAC)](#-role-based-access-control-rbac)
+8. [Testing, QA Suite & Verification](#-testing-qa-suite--verification)
+9. [Engineering Rules & Deployment Discipline](#-engineering-rules--deployment-discipline)
 
 ---
 
@@ -62,6 +63,76 @@ Career141 automates recruitment across 8 AI agents:
 - **AI & Extraction Engine**: OpenRouter API (DeepSeek R1/V3, Claude 3.5 Sonnet)
 - **Embeddings & Vector Database**: Voyage AI (`voyage-multilingual-2`, 1024-dim vectors) & Qdrant
 - **Communications**: Meta Cloud API (WhatsApp Business), Microsoft 365 MS Graph API (Email inbox monitor)
+
+---
+
+## 🐳 Self-Hosted Production Microservices Architecture
+
+Career141 runs as an enterprise, self-hosted containerized microservices stack on Contabo VPS (`docker-compose.prod.yml` & `docker-compose.yml`):
+
+```
+                                ┌───────────────────────────┐
+                                │   Caddy Reverse Proxy     │
+                                │ (HTTPS / WSS Termination) │
+                                └─────────────┬─────────────┘
+                                              │
+            ┌─────────────────────────────────┼─────────────────────────────────┐
+            │                                 │                                 │
+            ▼                                 ▼                                 ▼
+┌───────────────────────┐         ┌───────────────────────┐         ┌───────────────────────┐
+│     career141-web     │         │   career141-backend   │         │  career141-dashboard  │
+│ (Next.js 16 App & UI) │         │ (Convex DB & V8 Node) │         │ (Convex Admin Studio) │
+│       Port 3000       │         │    Ports 3210/3211    │         │       Port 6791       │
+└───────────┬───────────┘         └───────────┬───────────┘         └───────────────────────┘
+            │                                 │
+            ├─────────────────────────────────┴─────────────────────────────────┐
+            │                                                                   │
+            ▼                                                                   ▼
+┌───────────────────────┐                                           ┌───────────────────────┐
+│   career141-qdrant    │                                           │  career141-livekit    │
+│  (Qdrant Vector DB)   │                                           │ (WebRTC Voice Server) │
+│    Ports 6333/6334    │                                           │    Ports 7880/7881    │
+└───────────────────────┘                                           └───────────┬───────────┘
+                                                                                │
+                                              ┌─────────────────────────────────┴─────────────────────────────────┐
+                                              │                                                                   │
+                                              ▼                                                                   ▼
+                                  ┌───────────────────────┐                                           ┌───────────────────────┐
+                                  │ career141-livekit-sip │                                           │ career141-voice-agent │
+                                  │ (Dialog SIP Gateway)  │                                           │ (AI Voice Worker Node)│
+                                  │       Port 5060       │                                           │       Port 8081       │
+                                  └───────────┬───────────┘                                           └───────────────────────┘
+                                              │
+                                              ▼
+                                  ┌───────────────────────┐
+                                  │ career141-voice-redis │
+                                  │ (Shared Session Store)│
+                                  │       Port 6379       │
+                                  └───────────────────────┘
+```
+
+### Production Microservices Breakdown
+
+| Service Name | Container / Image | Internal Port | Description & Responsibilities |
+| :--- | :--- | :--- | :--- |
+| **`career141-web`** | `career141-prod:latest` (Next.js 16) | `3000` | Recruiter Dashboard, Candidate Management, Kanban Pipelines, CV Scanner UI, Real-time Voice Screenings. |
+| **`career141-backend`** | `ghcr.io/get-convex/convex-backend` | `3210` (Cloud), `3211` (Site) | Self-hosted reactive document database, ACID transactional mutations, V8/Node.js background actions, and webhooks. |
+| **`career141-dashboard`** | `ghcr.io/get-convex/convex-dashboard` | `6791` | Convex self-hosted administrative web studio for real-time document inspection and data browsing. |
+| **`career141-qdrant`** | `qdrant/qdrant:latest` | `6333` (HTTP), `6334` (gRPC) | High-performance vector database storing 1024-dimension Voyage AI candidate embeddings for sub-millisecond semantic search. |
+| **`career141-livekit`** | `livekit/livekit-server:v1.13.4` | `7880` (HTTP), `7881` (TCP) | Real-time WebRTC media server powering low-latency bi-directional voice streaming for AI candidate screening. |
+| **`career141-livekit-sip`**| `livekit/sip:v1.8.0` | `5060` (SIP), `18080` (Health) | SIP telephony gateway bridging LiveKit audio rooms to Dialog Axiata E1/SIP trunks for outbound phone calls. |
+| **`career141-voice-agent`**| `career141-voice-agent:latest` | `8081` (Health) | Standalone Node.js worker daemon executing Deepgram Nova-2 STT, DeepSeek LLM reasoning, and Cartesia TTS. |
+| **`career141-voice-redis`**| `redis:7.4-alpine` | `6379` | In-memory cache and session state synchronization across LiveKit WebRTC and SIP telephony workers. |
+
+### Enterprise Zero-Downtime Deployment Lifecycle
+
+Career141 uses a production CI/CD pipeline ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) that guarantees high availability and zero downtime:
+
+1. **Pre-Deploy Safety Verification**: Verifies database health, memory availability, and disk usage (auto-pruning old cache if disk > 85%).
+2. **Atomic Schema & Function Push**: Bundles and pushes Convex functions and database schemas to `api.career141.com` with automated admin key resolution.
+3. **Background Image Compilation**: Compiles the new Next.js production build in the background while the previous container continues serving live recruiter traffic.
+4. **1-Second Atomic Swap**: Recreates and swaps `career141-web` in 1 second (`--no-deps --force-recreate web`), preventing any user downtime.
+5. **Automated Post-Deploy Maintenance**: Recalculates dashboard counters and synchronizes candidate embeddings to Qdrant vector storage immediately following container swap.
 
 ---
 

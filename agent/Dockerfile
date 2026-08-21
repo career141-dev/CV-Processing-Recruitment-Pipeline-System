@@ -9,7 +9,7 @@ FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm install --omit=dev --legacy-peer-deps
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 EXPOSE 8081
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \

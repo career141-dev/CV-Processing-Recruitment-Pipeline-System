@@ -235,8 +235,8 @@ export const sendWhatsApp = internalAction({
 
     if (commRecord?.applicationId) {
       const appRecord = await ctx.runQuery(internal.communications.whatsappOutbound.getApplicationRecord, { applicationId: commRecord.applicationId });
-      if (appRecord && appRecord.currentStage !== "follow_up" && appRecord.currentStage !== "ta_shortlist") {
-        console.log(`[WhatsApp Outbound] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up" or "ta_shortlist"). Aborting WhatsApp follow-up delivery.`);
+      if (appRecord && appRecord.currentStage !== "follow_up" && appRecord.currentStage !== "ta_shortlist" && appRecord.currentStage !== "matched_candidates") {
+        console.log(`[WhatsApp Outbound] Application ${commRecord.applicationId} is in stage "${appRecord.currentStage}" (not "follow_up", "ta_shortlist", or "matched_candidates"). Aborting WhatsApp follow-up delivery.`);
         await ctx.runMutation(internal.communications.whatsappOutbound.updateStatus, {
           communicationId: args.communicationId,
           status: "failed",
@@ -426,9 +426,23 @@ export const checkAndRecordFollowUpReply = internalMutation({
       .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
       .collect();
 
-    const activeApp = apps.find(
-      (a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed"
-    );
+    // Match inbound reply to the application that sent the candidate their most recent outbound communication
+    const recentOutbound = await ctx.db
+      .query("communications")
+      .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", candidate._id))
+      .order("desc")
+      .filter((q: any) => q.and(q.eq(q.field("direction"), "outbound"), q.eq(q.field("channel"), "whatsapp")))
+      .first();
+
+    let activeApp = recentOutbound?.applicationId
+      ? apps.find((a: any) => a._id === recentOutbound.applicationId && a.currentStage !== "rejected" && a.currentStage !== "placed")
+      : null;
+
+    if (!activeApp) {
+      activeApp = apps.find(
+        (a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed"
+      );
+    }
 
     console.log(`[checkAndRecordFollowUpReply] Sender: ${args.senderPhone} -> Candidate: ${candidate.fullName} (${candidate._id}). Active stage: ${activeApp?.currentStage || "NONE"}. Text length: ${args.textBody?.length || 0}. Text preview: "${(args.textBody || "").substring(0, 100)}"`);
 

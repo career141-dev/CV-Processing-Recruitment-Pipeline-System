@@ -175,6 +175,12 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         return `: ${val}`;
       });
 
+      const firstBrace = cleanJson.indexOf("{");
+      const lastBrace = cleanJson.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+      }
+
       const extracted = JSON.parse(cleanJson);
 
       // Check 72-hour ETA Ceiling Safeguard
