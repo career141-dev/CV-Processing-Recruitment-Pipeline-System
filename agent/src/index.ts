@@ -27,19 +27,18 @@ dotenv.config({ quiet: true });
 const MAX_CALL_DURATION_MS = 5 * 60 * 1000;
 const WRAP_UP_NOTICE_MS = MAX_CALL_DURATION_MS - 10_000;
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const PRIMARY_LLM_MODEL = "deepseek/deepseek-v4-flash";
-const FALLBACK_LLM_MODEL = "anthropic/claude-3.5-haiku";
+const PRIMARY_LLM_MODEL = "gpt-4o-mini";
 
 type RequiredEnvName =
   | "DEEPGRAM_API_KEY"
   | "LIVEKIT_API_KEY"
   | "LIVEKIT_API_SECRET"
-  | "LIVEKIT_URL"
-  | "OPENROUTER_API_KEY";
+  | "LIVEKIT_URL";
 
 type AgentConfig = Readonly<{
   deepgramApiKey: string;
-  openRouterApiKey: string;
+  openaiApiKey?: string;
+  openRouterApiKey?: string;
 }>;
 
 type ProcessUserData = {
@@ -70,9 +69,17 @@ function loadConfig(): AgentConfig {
   requiredEnv("LIVEKIT_API_KEY");
   requiredEnv("LIVEKIT_API_SECRET");
 
+  const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
+
+  if (!openaiApiKey && !openRouterApiKey) {
+    throw new Error("[Career141 Voice Agent] Either OPENAI_API_KEY or OPENROUTER_API_KEY is required");
+  }
+
   return Object.freeze({
     deepgramApiKey: requiredEnv("DEEPGRAM_API_KEY"),
-    openRouterApiKey: requiredEnv("OPENROUTER_API_KEY"),
+    openaiApiKey,
+    openRouterApiKey,
   });
 }
 
@@ -140,53 +147,32 @@ export default defineAgent<ProcessUserData>({
       `[Career141 Voice Agent] Starting Aura session [mode=${mode}] [room=${ctx.room.name}] [company=${companyName}] [job=${jobTitle}]`,
     );
 
-    const primaryStt = new deepgram.STTv2({
-      apiKey: config.deepgramApiKey,
-      model: "flux-general-en",
-      eagerEotThreshold: 0.4,
-      eotThreshold: 0.7,
-      eotTimeoutMs: 3000,
-      mipOptOut: true,
-    });
-    const fallbackStt = new deepgram.STT({
+    const speechToText = new deepgram.STT({
       apiKey: config.deepgramApiKey,
       model: "nova-3",
       language: "en",
       endpointing: 300,
       interimResults: true,
+      smartFormat: true,
       mipOptOut: true,
     });
-    const speechToText = new stt.FallbackAdapter({
-      sttInstances: [primaryStt, fallbackStt],
-      vad,
-      attemptTimeoutMs: 2500,
-      maxRetryPerSTT: 0,
-      retryIntervalMs: 250,
-    });
 
-    const primaryLlm = new openai.LLM({
-      baseURL: OPENROUTER_BASE_URL,
-      apiKey: config.openRouterApiKey,
-      model: PRIMARY_LLM_MODEL,
-      temperature: 0.2,
-      maxCompletionTokens: 200,
-    });
-    const fallbackLlm = new openai.LLM({
-      baseURL: OPENROUTER_BASE_URL,
-      apiKey: config.openRouterApiKey,
-      model: FALLBACK_LLM_MODEL,
-      temperature: 0.2,
-      maxCompletionTokens: 200,
-    });
+    const primaryLlm = config.openaiApiKey
+      ? new openai.LLM({
+          apiKey: config.openaiApiKey,
+          model: "gpt-4o-mini",
+          temperature: 0.2,
+          maxCompletionTokens: 180,
+        })
+      : new openai.LLM({
+          baseURL: OPENROUTER_BASE_URL,
+          apiKey: config.openRouterApiKey,
+          model: PRIMARY_LLM_MODEL,
+          temperature: 0.2,
+          maxCompletionTokens: 180,
+        });
+
     primaryLlm.prewarm();
-    fallbackLlm.prewarm();
-    const languageModel = new llm.FallbackAdapter({
-      llms: [primaryLlm, fallbackLlm],
-      attemptTimeout: 1.1,
-      maxRetryPerLLM: 0,
-      retryInterval: 0.25,
-      retryOnChunkSent: false,
-    });
 
     let resourcesClosing = false;
     const textToSpeech = new deepgram.TTS({
@@ -253,7 +239,7 @@ ${goals}
     const session = new voice.AgentSession({
       vad,
       stt: speechToText,
-      llm: languageModel,
+      llm: primaryLlm,
       tts: textToSpeech,
       ttsReadIdleTimeout: 5000,
       forwardAudioIdleTimeout: 5000,
@@ -262,9 +248,9 @@ ${goals}
         interruption: {
           enabled: true,
           mode: "adaptive",
-          minDuration: 500,
-          minWords: 1,
-          resumeFalseInterruption: true,
+          minDuration: 750,
+          minWords: 2,
+          resumeFalseInterruption: false,
         },
         preemptiveGeneration: {
           enabled: true,
