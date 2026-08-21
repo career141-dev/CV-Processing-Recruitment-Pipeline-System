@@ -77,7 +77,7 @@ services:
       - -ec
       - exec redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDIS_PASSWORD"
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-career141_voice_redis_secure_pass_2026}
     volumes:
       - voice_redis_data:/data
     networks:
@@ -108,7 +108,7 @@ services:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-career141_livekit_secret_32characters_long}"
       # LiveKit maps the redis-password flag from LIVEKIT_REDIS_PASSWORD.
       # REDIS_PASSWORD alone is not consumed by the server.
-      LIVEKIT_REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      LIVEKIT_REDIS_PASSWORD: ${REDIS_PASSWORD:-career141_voice_redis_secure_pass_2026}
     ports:
       # HTTPS/WSS is terminated by the existing host-level Caddy installation.
       - "127.0.0.1:7880:7880"
