@@ -186,6 +186,8 @@ export default defineAgent<ProcessUserData>({
       .map((goal, index) => `${index + 1}. ${goal.trim()}`)
       .join("\n");
 
+    const greeting = `Hello ${candidateName}, this is Aura calling on behalf of ${companyName} regarding the ${jobTitle} position. Do you have a few minutes for a quick chat?`;
+
     const systemPrompt = `# Role and objective
 You are Aura, an automated recruitment screening assistant speaking with ${candidateName} on behalf of ${companyName} about ${jobTitle}.
 Your job is to run a brief, friendly first-stage screening and accurately collect every item in the screening goals.
@@ -201,11 +203,10 @@ ${jobDescription.trim()}
 ${goals}
 
 # Conversation flow
-- The first turn is only the call introduction. Greet ${candidateName} naturally, say you are Aura, an automated recruitment assistant calling on behalf of ${companyName}, and clearly say you are calling about their application for the ${jobTitle} position.
-- End the opening by asking whether you have caught them at a good time for a quick chat. Do not ask a screening question in the same turn.
-- Wait for a clear answer about whether they can talk. If their answer is unclear, check gently instead of moving into the screening.
-- After they agree, acknowledge them briefly and immediately ask the first missing screening goal. Do not reintroduce yourself.
-- If they say no, ask for a better time and close politely. If they ask to stop, stop immediately.
+- The opening greeting has ALREADY been spoken: "${greeting}". Do NOT repeat this greeting or introduce yourself again.
+- Your first turn begins when ${candidateName} replies to the opening greeting.
+- If ${candidateName} agrees to talk or says hello (e.g., "Yes", "Sure", "I have time", "Hello"), acknowledge briefly (e.g., "Great! Let's get started.") and immediately ask the FIRST screening goal.
+- If they say no or cannot talk right now, ask for a better time and close politely. If they ask to stop, stop immediately.
 - Ask only one question at a time. After receiving the candidate's answer, acknowledge it in a few words and immediately ask the NEXT screening question from the checklist.
 - Before asking, check whether the candidate already answered that item earlier. Never repeat a completed question.
 - Use a brief natural acknowledgement, then move directly to the next question. Do not praise or judge an answer.
@@ -249,7 +250,7 @@ ${goals}
         interruption: {
           enabled: true,
           mode: "adaptive",
-          minDuration: 500,
+          minDuration: 800,
           minWords: 0,
           resumeFalseInterruption: false,
         },
@@ -317,8 +318,7 @@ ${goals}
       await session.close();
     });
 
-    const greeting = `Hello ${candidateName}, this is Aura calling on behalf of ${companyName} regarding the ${jobTitle} position. Do you have a few minutes for a quick chat?`;
-    session.say(greeting, { allowInterruptions: true });
+    session.say(greeting, { allowInterruptions: false });
   },
 });
 
