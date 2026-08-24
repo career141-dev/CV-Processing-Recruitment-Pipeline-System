@@ -2,6 +2,48 @@ import { action, mutation, query } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 
+export const registerFolderCandidateUpload = mutation({
+  args: {
+    fileName: v.string(),
+    fileType: v.string(),
+    fileSize: v.number(),
+    s3Key: v.string(),
+    uploadedBy: v.string(),
+    sourceChannel: v.optional(v.string()),
+    batchIndex: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<{ cvUploadId: string; s3Key: string }> => {
+    const sourceChannel = args.sourceChannel || "Manual Directory Import";
+
+    // 1. Save cvUploads record
+    const cvUploadId: any = await ctx.db.insert("cvUploads", {
+      s3Key: args.s3Key,
+      storageProvider: "r2",
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      fileType: args.fileType,
+      source: sourceChannel,
+      uploadedBy: args.uploadedBy,
+      status: "uploaded",
+    });
+
+    // 2. Queue background DeepSeek V4 Flash AI extraction
+    const delayMs = (args.batchIndex ?? 0) * 500; // Paced 500ms delay per candidate in batch
+    await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
+      cvUploadId,
+      s3Key: args.s3Key,
+      storageProvider: "r2",
+      fileName: args.fileName,
+      fileType: args.fileType,
+      sourceChannel,
+      uploadedBy: args.uploadedBy,
+      delayMs,
+    });
+
+    return { cvUploadId, s3Key: args.s3Key };
+  },
+});
+
 export const uploadFolderCandidate = action({
   args: {
     fileName: v.string(),

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useAction, useQuery, useMutation } from "convex/react";
+import { useAction, useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import {
   FolderUp,
@@ -32,6 +32,7 @@ type CandidateFolderItem = {
 };
 
 export default function FolderUploadPage() {
+  const convex = useConvex();
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [rootFolderName, setRootFolderName] = useState<string>("");
   const [candidateItems, setCandidateItems] = useState<CandidateFolderItem[]>([]);
@@ -55,7 +56,8 @@ export default function FolderUploadPage() {
   const [importMode, setImportMode] = useState<"test_100" | "full">("test_100");
   const [lastStoppedItem, setLastStoppedItem] = useState<{ index: number; folderName: string } | null>(null);
 
-  const uploadFolderCandidate = useAction(api.cvs.folderIngestion.uploadFolderCandidate);
+  const generateR2UploadUrl = useAction(api.storage.r2.generateUploadUrl);
+  const registerFolderCandidateUpload = useMutation(api.cvs.folderIngestion.registerFolderCandidateUpload);
   const cancelAllRunningExtractions = useMutation(api.cvs.cvUploads.cancelAllRunningExtractions);
   const dbProgress = useQuery(api.cvs.folderIngestion.getFolderImportProgress, {
     sourceChannel: "Manual Directory Import",
@@ -155,19 +157,6 @@ export default function FolderUploadPage() {
     toast.success(`Discovered ${items.length.toLocaleString()} candidates with resumes in Downloads folders!`);
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.split(",")[1];
-        resolve(base64);
-      };
-      reader.onerror = (err) => reject(err);
-    });
-  };
-
   const handleResetProgress = async () => {
     try {
       await resetFolderProgressMutation({
@@ -247,32 +236,60 @@ export default function FolderUploadPage() {
       setCurrentBatchIndex(batchIdx);
 
       const uploadFileName = `${item.folderName}_${item.file.name}`;
+      const ext = item.file.name.split(".").pop()?.toLowerCase() || "pdf";
+      const contentType = item.file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
 
       try {
-        const base64Data = await fileToBase64(item.file);
-        const ext = item.file.name.split(".").pop()?.toLowerCase() || "pdf";
-
         let success = false;
         let retries = 3;
 
         while (retries > 0 && !success) {
           try {
-            const res = await uploadFolderCandidate({
+            // 0. Pre-check if already uploaded
+            const existingCheck = await convex.query(api.cvs.cvUploads.checkUploadedFile, {
+              fileName: uploadFileName,
+              sourceChannel: "Manual Directory Import",
+            });
+
+            if (existingCheck?.isUploaded) {
+              currentSkipped++;
+              setSkippedCount(currentSkipped);
+              success = true;
+              break;
+            }
+
+            // 1. Get Direct Pre-signed Cloudflare R2 Upload URL
+            const { url: uploadUrl, key: s3Key } = await generateR2UploadUrl({
+              fileName: uploadFileName,
+              contentType,
+            });
+
+            // 2. Direct HTTP PUT stream to Cloudflare R2 (Bypasses WebSockets, 0 size ceiling)
+            const uploadRes = await fetch(uploadUrl, {
+              method: "PUT",
+              body: item.file,
+              headers: {
+                "Content-Type": contentType,
+              },
+            });
+
+            if (!uploadRes.ok) {
+              throw new Error(`Cloudflare R2 HTTP ${uploadRes.status} upload failed`);
+            }
+
+            // 3. Register upload in Convex and queue AI extraction
+            await registerFolderCandidateUpload({
               fileName: uploadFileName,
               fileType: ext,
-              base64Data,
+              fileSize: item.file.size,
+              s3Key,
               uploadedBy: "Browser Folder Importer",
               sourceChannel: "Manual Directory Import",
               batchIndex: i % BATCH_SIZE,
             });
 
-            if (res.isSkipped) {
-              currentSkipped++;
-              setSkippedCount(currentSkipped);
-            } else {
-              currentUploaded++;
-              setUploadedCount(currentUploaded);
-            }
+            currentUploaded++;
+            setUploadedCount(currentUploaded);
             success = true;
           } catch (err: any) {
             retries--;
@@ -280,7 +297,7 @@ export default function FolderUploadPage() {
             if (retries === 0 || activeStatus === "stopped" || activeStatus === "paused") {
               throw err;
             }
-            console.warn(`[FolderUpload] Connection flicker on ${item.folderName}. Retrying upload (${3 - retries}/3)...`);
+            console.warn(`[FolderUpload] Retrying upload for ${item.folderName} (${3 - retries}/3)...`, err);
             await new Promise((r) => setTimeout(r, 1000 * (4 - retries)));
           }
         }
@@ -288,7 +305,7 @@ export default function FolderUploadPage() {
         setLastStoppedItem({ index: i + 1, folderName: item.folderName });
 
         // Update database-backed folder progress checkpoint
-        updateFolderProgressMutation({
+        await updateFolderProgressMutation({
           sourceChannel: "Manual Directory Import",
           rootFolderName: rootFolderName || undefined,
           lastProcessedIndex: i + 1,
@@ -297,7 +314,9 @@ export default function FolderUploadPage() {
           skippedCount: currentSkipped,
           failedCount: currentFailed,
           totalDiscoveredFolders: candidateItems.length,
-        }).catch(console.error);
+        }).catch((err) => {
+          console.warn("[FolderUpload] Checkpoint sync warning:", err);
+        });
 
       } catch (err) {
         console.error(`Failed to upload ${item.folderName}:`, err);

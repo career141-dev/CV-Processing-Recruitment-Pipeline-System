@@ -80,7 +80,7 @@ services:
       - -ec
       - exec redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDIS_PASSWORD"
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-career141_voice_redis_secure_pass_2026}
     volumes:
       - voice_redis_data:/data
     networks:
@@ -111,7 +111,7 @@ services:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-career141_livekit_secret_32characters_long}"
       # LiveKit maps the redis-password flag from LIVEKIT_REDIS_PASSWORD.
       # REDIS_PASSWORD alone is not consumed by the server.
-      LIVEKIT_REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      LIVEKIT_REDIS_PASSWORD: ${REDIS_PASSWORD:-career141_voice_redis_secure_pass_2026}
     ports:
       # HTTPS/WSS is terminated by the existing host-level Caddy installation.
       - "127.0.0.1:7880:7880"
@@ -203,9 +203,10 @@ services:
       NODE_OPTIONS: "--max-old-space-size=768"
       LIVEKIT_URL: ws://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
-      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-disabled}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-disabled}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-594eaaac4f6e7a98eb79deb9e528e27f51fd269e}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       VOICE_AGENT_EVENTS_URL: ${VOICE_AGENT_EVENTS_URL:-http://127.0.0.1:3000/api/voice/events}
       VOICE_AGENT_SHARED_SECRET: ${VOICE_AGENT_SHARED_SECRET:-career141_voice_agent_shared_secret_default_32chars}
       NODE_ENV: production
@@ -232,8 +233,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "20m"
-        max-file: "5"
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   qdrant_storage:
