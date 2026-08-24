@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, action, internalQuery } from "../_generated/server";
+import { query, mutation, action, internalQuery, internalMutation } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
@@ -1216,6 +1216,13 @@ export async function syncCandidateOverallStatus(ctx: any, candidateId: Id<"cand
   });
 }
 
+export const syncCandidateOverallStatusInternal = internalMutation({
+  args: { candidateId: v.id("candidates") },
+  handler: async (ctx, args) => {
+    await syncCandidateOverallStatus(ctx, args.candidateId);
+  },
+});
+
 export async function syncCandidateSummaryToApplications(ctx: any, candidateId: Id<"candidates">) {
   const candidate = await ctx.db.get(candidateId);
   if (!candidate) return;
@@ -1497,7 +1504,7 @@ export const getCandidatesByIds = query({
   },
 });
 
-export const countHeavyCandidates = query({
+export const countHeavyCandidates = internalMutation({
   args: {},
   handler: async (ctx) => {
     const candidates = await ctx.db.query("candidates").collect();

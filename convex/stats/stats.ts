@@ -557,17 +557,27 @@ export const syncWorkableTokenLogs = mutation({
 export const getDeepSeekExtractionStats = query({
   args: {},
   handler: async (ctx) => {
-    const candidates = await ctx.db.query("candidates").collect();
-    
-    const candidatesBySource: Record<string, number> = {};
-    let parsedCandidatesCount = 0;
-    for (const c of candidates) {
-      const src = (c as any).source || "Manual";
-      candidatesBySource[src] = (candidatesBySource[src] || 0) + 1;
-      if (c.isParsed) parsedCandidatesCount++;
-    }
+    // 1. Read systemStats singleton for candidate & upload totals without scanning 115K rows
+    const sysStat = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
+      .first();
 
-    const tokenLogs = await ctx.db.query("nvidiaTokenLogs").collect();
+    const totalCandidates = sysStat?.totalCandidates ?? 0;
+    const totalUploads = sysStat?.totalCvUploads ?? 0;
+
+    // 2. Read tokenStatsCache singleton for global token & call aggregates
+    const tokenCache = await ctx.db
+      .query("tokenStatsCache")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_token_stats"))
+      .first();
+
+    // 3. Inspect recent token logs (bounded to last 1,000 logs instead of unbounded scan)
+    const tokenLogs = await ctx.db
+      .query("nvidiaTokenLogs")
+      .order("desc")
+      .take(1000);
+
     let deepseekCallsCount = 0;
     let deepseekSuccessfulCalls = 0;
     let deepseekCvStructuringCount = 0;
@@ -591,7 +601,12 @@ export const getDeepSeekExtractionStats = query({
       }
     }
 
-    const cvUploads = await ctx.db.query("cvUploads").collect();
+    // 4. Sample recent uploads (bounded to last 500)
+    const cvUploads = await ctx.db
+      .query("cvUploads")
+      .order("desc")
+      .take(500);
+
     const uploadsByStatus: Record<string, number> = {};
     const uploadsBySource: Record<string, number> = {};
     for (const u of cvUploads) {
@@ -602,17 +617,19 @@ export const getDeepSeekExtractionStats = query({
     }
 
     return {
-      totalCandidatesInDb: candidates.length,
-      parsedCandidatesCount,
-      candidatesBySource,
+      totalCandidatesInDb: totalCandidates,
+      parsedCandidatesCount: tokenCache?.totalCvExtractionsCount ?? totalCandidates,
+      candidatesBySource: {
+        "Manual / Database": totalCandidates,
+      },
       deepseekLogs: {
-        totalCallsCount: deepseekCallsCount,
-        successfulCalls: deepseekSuccessfulCalls,
-        cvStructuringSuccessCount: deepseekCvStructuringCount,
+        totalCallsCount: tokenCache?.totalRequests ?? deepseekCallsCount,
+        successfulCalls: tokenCache?.successfulCalls ?? deepseekSuccessfulCalls,
+        cvStructuringSuccessCount: tokenCache?.totalCvExtractionsCount ?? deepseekCvStructuringCount,
         workableCvStructuringCount: workableDeepseekCount,
       },
       cvUploads: {
-        totalCount: cvUploads.length,
+        totalCount: totalUploads > 0 ? totalUploads : cvUploads.length,
         byStatus: uploadsByStatus,
         bySource: uploadsBySource,
       },
@@ -660,10 +677,13 @@ export const getCanonicalDeepSeekTokenLogsCount = query({
       }
     }
 
-    for (const uploadId of Array.from(distinctUploadIds)) {
-      const cv: any = await ctx.db.get(uploadId as any);
-      if (cv && cv.candidateId) {
-        distinctCandidateIds.add(cv.candidateId);
+    const uploadDocs = await Promise.all(
+      Array.from(distinctUploadIds).map((id) => ctx.db.get(id as any))
+    );
+
+    for (const cv of uploadDocs) {
+      if (cv && (cv as any).candidateId) {
+        distinctCandidateIds.add((cv as any).candidateId);
       }
     }
 

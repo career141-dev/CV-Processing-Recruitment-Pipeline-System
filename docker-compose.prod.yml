@@ -19,6 +19,7 @@ services:
     env_file:
       - .env.production
     environment:
+      NODE_OPTIONS: "--max-old-space-size=768"
       # Server-side room creation stays on the private Docker network. The
       # browser receives NEXT_PUBLIC_LIVEKIT_URL from the authenticated token API.
       LIVEKIT_INTERNAL_URL: http://livekit:7880
@@ -48,7 +49,7 @@ services:
         max-file: "5"
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.14.0
     container_name: career141-qdrant
     restart: unless-stopped
     ports:
@@ -58,6 +59,8 @@ services:
       - qdrant_storage:/qdrant/storage:z
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__STORAGE__QUANTIZATION__SCALAR__TYPE=int8
+      - QDRANT__STORAGE__MMAP_THRESHOLD_KILOBYTES=20000
     mem_limit: 2g
     mem_reservation: 256m
     logging:
@@ -130,8 +133,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "20m"
-        max-file: "5"
+        max-size: "10m"
+        max-file: "3"
 
   sip:
     image: livekit/sip:v1.8.0
@@ -184,8 +187,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "20m"
-        max-file: "5"
+        max-size: "10m"
+        max-file: "3"
 
   voice-agent:
     build:
@@ -197,6 +200,7 @@ services:
       livekit:
         condition: service_started
     environment:
+      NODE_OPTIONS: "--max-old-space-size=768"
       LIVEKIT_URL: ws://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-career141_livekit_secret_8f4a1c9e2b7d5a3f60e1d8c2}
@@ -229,8 +233,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "20m"
-        max-file: "5"
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   qdrant_storage:
