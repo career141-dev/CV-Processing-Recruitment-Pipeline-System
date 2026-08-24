@@ -88,31 +88,18 @@ export const listCandidatesPaginated = query({
     if (args.searchQuery) {
       const sq = args.searchQuery.trim();
       if (sq.includes("@")) {
-        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
+        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq)).order("desc");
       } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
-        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
+        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, ""))).order("desc");
       } else {
         q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
       }
-    } else if (overallStatus) {
-      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
     } else if (sourceChannel) {
-      q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel));
+      q = ctx.db.query("candidates").withIndex("by_firstSourceChannel", q => q.eq("firstSourceChannel", sourceChannel as any)).order("desc");
+    } else if (overallStatus) {
+      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any)).order("desc");
     } else {
-      q = ctx.db.query("candidates").withIndex("by_firstSeenAt").order("desc");
-    }
-
-    if (sourceChannel && (args.searchQuery || overallStatus)) {
-      q = q.filter(q => 
-        q.or(
-          q.eq(q.field("firstSourceChannel"), sourceChannel as any),
-          q.eq(q.field("sourceChannel"), sourceChannel)
-        )
-      );
-    }
-
-    if (args.searchQuery && overallStatus) {
-      q = q.filter(q => q.eq(q.field("overallStatus"), overallStatus as any));
+      q = ctx.db.query("candidates").order("desc");
     }
 
     let page;
