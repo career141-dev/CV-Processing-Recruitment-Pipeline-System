@@ -550,6 +550,15 @@ export const requeueAllStuckUploads = internalMutation({
         continue;
       }
 
+      if ((upload.extractionAttempts ?? 0) >= 2) {
+        // Exceeded max retry budget — mark for human review to break infinite retry storm
+        await ctx.db.patch(upload._id, {
+          status: "needs_review",
+          errorMessage: `Extraction attempted ${upload.extractionAttempts} times without resolution. Flagged for review.`,
+        });
+        continue;
+      }
+
       await ctx.db.patch(upload._id, {
         status: "uploaded",
         errorMessage: undefined,

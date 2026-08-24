@@ -25,13 +25,13 @@ export async function getGraphToken(): Promise<string> {
     return cachedToken;
   }
 
-  const tenantId = process.env.MS_TENANT_ID;
-  const clientId = process.env.MS_CLIENT_ID;
-  const clientSecret = process.env.MS_CLIENT_SECRET;
+  const tenantId = process.env.MS_GRAPH_TENANT_ID || process.env.MS_TENANT_ID;
+  const clientId = process.env.MS_GRAPH_CLIENT_ID || process.env.MS_CLIENT_ID;
+  const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET || process.env.MS_CLIENT_SECRET;
 
   if (!tenantId || !clientId || !clientSecret) {
     throw new Error(
-      "[Graph Client] Missing MS_TENANT_ID, MS_CLIENT_ID, or MS_CLIENT_SECRET environment variables."
+      "[Graph Client] Missing MS_GRAPH_TENANT_ID/MS_TENANT_ID, MS_GRAPH_CLIENT_ID/MS_CLIENT_ID, or MS_GRAPH_CLIENT_SECRET/MS_CLIENT_SECRET environment variables."
     );
   }
 
