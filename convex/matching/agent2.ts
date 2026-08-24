@@ -108,33 +108,8 @@ export const generateAndStoreEmbedding = internalAction({
       } catch (qdrantErr: any) {
         console.warn(`[Agent2] Non-blocking Qdrant sync warning for candidate ${args.candidateId}:`, qdrantErr?.message);
       }
-
-      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
-        logs: [
-          {
-            taskType: "embedding",
-            model: usage.model,
-            promptTokens: usage.promptTokens,
-            completionTokens: 0,
-            success: true,
-            cvUploadId: candidate.cvUploadId ?? undefined,
-          }
-        ]
-      });
     } catch (err) {
-      await ctx.runMutation(internal.stats.stats.logNvidiaCallsBatchMutation, {
-        logs: [
-          {
-            taskType: "embedding",
-            model: "nvidia/nv-embedqa-e5-v5",
-            promptTokens: 0,
-            completionTokens: 0,
-            success: false,
-            error: err instanceof Error ? err.message : String(err),
-            cvUploadId: candidate.cvUploadId ?? undefined,
-          }
-        ]
-      });
+      console.warn(`[Agent2] Embedding generation error for candidate ${args.candidateId}:`, err);
       throw err;
     }
   },

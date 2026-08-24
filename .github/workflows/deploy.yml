@@ -44,6 +44,7 @@ jobs:
           script: |
             set -e
             cd ~/career141
+            # Always sync to the exact commit that triggered this run
             git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
             git fetch --depth=1 origin "${{ github.sha }}"
             git reset --hard "${{ github.sha }}"
@@ -52,7 +53,24 @@ jobs:
             # named services here prevents the legacy base LiveKit service from
             # being launched with its local-only configuration.
             docker compose --env-file .env.production -f docker-compose.yml up -d backend dashboard qdrant
-            sleep 5
+
+            echo "Waiting for Convex backend to finish bootstrapping indexes (up to 3 minutes)..."
+            CONVEX_READY=0
+            for ATTEMPT in $(seq 1 36); do
+              HTTP_STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3210/version || echo '000')
+              echo "  Attempt ${ATTEMPT}/36: Convex /version returned HTTP ${HTTP_STATUS}"
+              if [ "${HTTP_STATUS}" = "200" ]; then
+                CONVEX_READY=1
+                break
+              fi
+              sleep 5
+            done
+            if [ "${CONVEX_READY}" -ne 1 ]; then
+              echo "ERROR: Convex backend did not become ready in time. Check logs:"
+              docker logs --tail 50 career141-backend-1 || true
+              exit 1
+            fi
+            echo "Convex is ready!"
 
       # ── Step 4: Deploy Convex functions & schema to production ─────────
       - name: Deploy Convex Database
@@ -207,6 +225,24 @@ jobs:
             # Ensure the self-hosted Convex database is running!
             echo "Starting Convex Database (if not already running)..."
             docker compose --env-file .env.production -f docker-compose.yml up -d backend dashboard qdrant
+
+            echo "Waiting for Convex to be ready before building (up to 3 minutes)..."
+            CONVEX_READY=0
+            for ATTEMPT in $(seq 1 36); do
+              HTTP_STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3210/version || echo '000')
+              echo "  Attempt ${ATTEMPT}/36: Convex /version returned HTTP ${HTTP_STATUS}"
+              if [ "${HTTP_STATUS}" = "200" ]; then
+                CONVEX_READY=1
+                break
+              fi
+              sleep 5
+            done
+            if [ "${CONVEX_READY}" -ne 1 ]; then
+              echo "ERROR: Convex backend did not become ready in time. Check logs:"
+              docker logs --tail 50 career141-backend-1 || true
+              exit 1
+            fi
+            echo "Convex is ready! Proceeding with deployment..."
             
             # Build new release at normal speed (old container is still alive and serving traffic)
             echo "Building new release (old container still serving live traffic)..."
@@ -287,31 +323,3 @@ jobs:
           fi
 
           echo "✅ Production deployment is healthy and serving traffic"
-
-      # ── Step 7: Run safe stats backfill on production ──────────────────
-      # This safely recalculates dashboard counters page-by-page
-      # without scanning the full database or risking a crash.
-      - name: Run Stats Backfill on Production
-        run: |
-          echo "Running safe stats backfill on production..."
-          ADMIN_KEY="${{ secrets.CONVEX_ADMIN_KEY }}"
-          if [ -z "$ADMIN_KEY" ]; then
-            ADMIN_KEY="convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
-          fi
-          npx convex run stats/stats:runSafeBackfill \
-            --url https://api.career141.com \
-            --admin-key "$ADMIN_KEY" || true
-          echo "✅ Stats backfill complete"
-
-      # ── Step 8: Sync Candidate Vectors to Qdrant on Production ───────────
-      - name: Sync Candidate Vectors to Qdrant on Production
-        run: |
-          echo "Syncing candidate vectors to production Qdrant..."
-          ADMIN_KEY="${{ secrets.CONVEX_ADMIN_KEY }}"
-          if [ -z "$ADMIN_KEY" ]; then
-            ADMIN_KEY="convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
-          fi
-          npx convex run admin/qdrantBackfill:syncAllCandidateVectorsToQdrant \
-            --url https://api.career141.com \
-            --admin-key "$ADMIN_KEY" || true
-          echo "✅ Production Qdrant vector sync complete"

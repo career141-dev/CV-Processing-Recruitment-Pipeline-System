@@ -461,7 +461,7 @@ export default function CandidatesSearchPage() {
                   disabled={isAiSearching}
                   icon={isAiSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 >
-                  {isAiSearching ? "Searching Voyage AI..." : "Run AI Candidate Search"}
+                  {isAiSearching ? "Finding Candidates with AI..." : "Run AI Candidate Search"}
                 </Button>
               </div>
             </div>

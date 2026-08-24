@@ -116,34 +116,19 @@ import type { Id } from "../_generated/dataModel";
 import { embedText } from "../matching/agent2";
 
 export async function logLLMUsage(
-  ctx: ActionCtx,
-  taskType: string,
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-  success: boolean,
-  error?: string,
-  cvUploadId?: Id<"cvUploads">,
-  provider?: string,
-  sourceChannel?: string
+  _ctx: ActionCtx,
+  _taskType: string,
+  _model: string,
+  _inputTokens: number,
+  _outputTokens: number,
+  _success: boolean,
+  _error?: string,
+  _cvUploadId?: Id<"cvUploads">,
+  _provider?: string,
+  _sourceChannel?: string
 ): Promise<void> {
-  try {
-    const resolvedProvider = provider || (taskType === "embedding" || !IS_CV_EXTRACTION_TASK(taskType) || model.includes("nvidia") ? "nvidia" : "openrouter");
-    await ctx.runMutation(internal.stats.stats.logNvidiaCallMutation, {
-      taskType,
-      model,
-      promptTokens: inputTokens,
-      completionTokens: outputTokens,
-      totalTokens: inputTokens + outputTokens,
-      success,
-      error,
-      cvUploadId,
-      provider: resolvedProvider,
-      sourceChannel,
-    });
-  } catch (err) {
-    console.error("Failed to log LLM usage:", err);
-  }
+  // Token database tracking disabled for maximum throughput and zero DB overhead
+  return;
 }
 
 export async function generateNvidiaEmbedding(

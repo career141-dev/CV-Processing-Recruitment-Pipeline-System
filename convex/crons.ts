@@ -34,16 +34,16 @@ export const evaluateFollowUpStage = internalMutation({
     );
     const followUpJobIds = new Set(followUpJobs.map((j) => j._id));
 
-    // 2. Fetch applications ONLY for active follow-up jobs (Capped to 200 per stage to prevent cron lock)
+    // 2. Fetch applications ONLY for active follow-up jobs (Capped to 50 per stage to prevent cron lock)
     const followUpApps = await ctx.db
       .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .take(200);
+      .take(50);
 
     const taShortlistApps = await ctx.db
       .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
-      .take(200);
+      .take(50);
 
     const appsToEvaluate = [
       ...followUpApps.filter((a) => followUpJobIds.has(a.jobId)),
@@ -639,7 +639,7 @@ export const evaluateFollowUpStage = internalMutation({
 
 crons.interval(
   "evaluate-follow-up",
-  { minutes: 1 },
+  { minutes: 5 },
   internal.crons.evaluateFollowUpStage
 );
 
