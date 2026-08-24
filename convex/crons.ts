@@ -1,7 +1,6 @@
 import { cronJobs } from "convex/server";
 import { internalMutation } from "./_generated/server";
 import { internal, api } from "./_generated/api";
-import { syncCandidateOverallStatus } from "./candidates/candidates";
 import { adjustJobStageStat } from "./jobs/stats";
 import { buildStructuredEmailHtml } from "./communications/emailHtml";
 
@@ -35,16 +34,16 @@ export const evaluateFollowUpStage = internalMutation({
     );
     const followUpJobIds = new Set(followUpJobs.map((j) => j._id));
 
-    // 2. Fetch applications ONLY for active follow-up jobs
+    // 2. Fetch applications ONLY for active follow-up jobs (Capped to 200 per stage to prevent cron lock)
     const followUpApps = await ctx.db
       .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .collect();
+      .take(200);
 
     const taShortlistApps = await ctx.db
       .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
-      .collect();
+      .take(200);
 
     const appsToEvaluate = [
       ...followUpApps.filter((a) => followUpJobIds.has(a.jobId)),
@@ -73,6 +72,18 @@ export const evaluateFollowUpStage = internalMutation({
 
     const jobCache = new Map<string, any>();
 
+    // Batch candidate reads across all appsToEvaluate in a single parallel fetch (O(1) round-trip instead of N queries)
+    const uniqueCandidateIds = Array.from(new Set(appsToEvaluate.map((a) => a.candidateId)));
+    const candidateDocs = await Promise.all(
+      uniqueCandidateIds.map((id) => ctx.db.get(id))
+    );
+    const candidateMap = new Map<string, any>();
+    for (let i = 0; i < uniqueCandidateIds.length; i++) {
+      if (candidateDocs[i]) {
+        candidateMap.set(uniqueCandidateIds[i], candidateDocs[i]);
+      }
+    }
+
     for (const app of appsToEvaluate) {
       // 1. Skip if application is flagged for TA review (automated nudging paused)
       if (app.flaggedForTaReview === true) {
@@ -80,7 +91,7 @@ export const evaluateFollowUpStage = internalMutation({
         continue;
       }
 
-      const candidate = await ctx.db.get(app.candidateId);
+      const candidate = candidateMap.get(app.candidateId);
       if (!candidate) continue;
 
       // 2. Enforce doNotContact
@@ -129,7 +140,7 @@ export const evaluateFollowUpStage = internalMutation({
           createdAt: now,
         });
         await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
-        await syncCandidateOverallStatus(ctx, app.candidateId);
+        await ctx.scheduler.runAfter(0, internal.candidates.candidates.syncCandidateOverallStatusInternal, { candidateId: app.candidateId });
         continue;
       }
 
@@ -185,7 +196,7 @@ export const evaluateFollowUpStage = internalMutation({
           ],
         });
         await adjustJobStageStat(ctx, app.jobId, app.currentStage, "second_shortlist");
-        await syncCandidateOverallStatus(ctx, app.candidateId);
+        await ctx.scheduler.runAfter(0, internal.candidates.candidates.syncCandidateOverallStatusInternal, { candidateId: app.candidateId });
         continue;
       }
 
@@ -222,7 +233,7 @@ export const evaluateFollowUpStage = internalMutation({
           }
         });
         await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
-        await syncCandidateOverallStatus(ctx, app.candidateId);
+        await ctx.scheduler.runAfter(0, internal.candidates.candidates.syncCandidateOverallStatusInternal, { candidateId: app.candidateId });
         continue;
       }
 
@@ -392,7 +403,7 @@ export const evaluateFollowUpStage = internalMutation({
           }
         });
         await adjustJobStageStat(ctx, app.jobId, app.currentStage, "unresponsive");
-        await syncCandidateOverallStatus(ctx, app.candidateId);
+        await ctx.scheduler.runAfter(0, internal.candidates.candidates.syncCandidateOverallStatusInternal, { candidateId: app.candidateId });
         continue;
       }
 

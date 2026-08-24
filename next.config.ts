@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  compress: true,
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'date-fns', '@livekit/components-react'],
+  },
+  serverExternalPackages: ['pdfjs-dist', 'tesseract.js', 'mammoth', 'jimp'],
   allowedDevOrigins: ['192.168.56.1', '172.18.224.1', 'localhost', 'local.career141.com', 'local.career141.com:3000'],
   output: 'standalone',
   images: {

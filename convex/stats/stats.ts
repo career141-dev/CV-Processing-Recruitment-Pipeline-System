@@ -677,10 +677,13 @@ export const getCanonicalDeepSeekTokenLogsCount = query({
       }
     }
 
-    for (const uploadId of Array.from(distinctUploadIds)) {
-      const cv: any = await ctx.db.get(uploadId as any);
-      if (cv && cv.candidateId) {
-        distinctCandidateIds.add(cv.candidateId);
+    const uploadDocs = await Promise.all(
+      Array.from(distinctUploadIds).map((id) => ctx.db.get(id as any))
+    );
+
+    for (const cv of uploadDocs) {
+      if (cv && (cv as any).candidateId) {
+        distinctCandidateIds.add((cv as any).candidateId);
       }
     }
 
