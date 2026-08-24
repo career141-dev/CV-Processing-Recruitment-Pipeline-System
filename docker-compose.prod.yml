@@ -5,8 +5,8 @@ services:
       args:
         # These are baked in at build time. On your VPS,
         # Compose will automatically read these from .env.production
-        - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL}
-        - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL:-https://api.career141.com}
+        - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_dXB3YXJkLXNxdWlkLTE5LmNsZXJrLmFjY291bnRzLmRldiQ}
     image: career141-prod:latest
     container_name: career141-web
     # ── CRASH FIX 1: Auto-restart if Next.js crashes ──

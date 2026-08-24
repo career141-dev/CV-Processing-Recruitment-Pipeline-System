@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../../convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+function getConvexClient(): ConvexHttpClient {
+  const convexUrl =
+    process.env.NEXT_PUBLIC_CONVEX_URL?.trim() || "https://api.career141.com";
+  return new ConvexHttpClient(convexUrl);
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -13,6 +17,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const convex = getConvexClient();
     const signedUrl = await convex.action(api.storage.r2.generateDownloadUrl, { key });
     return NextResponse.redirect(signedUrl);
   } catch (error: any) {
