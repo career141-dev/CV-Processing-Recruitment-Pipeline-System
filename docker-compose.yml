@@ -68,9 +68,9 @@ services:
       start_period: 5m
       timeout: 10s
       retries: 18
-    # ── SCALE & STABILITY FIX: 8.5g limit provides ample headroom on 11GB VPS ──
-    mem_limit: 8.5g
-    mem_reservation: 2g
+    # SCALE & STABILITY FIX: 7g limit, confirmed 12GB VPS RAM (raised from 6g after OOM incident 2026-08-24)
+    mem_limit: 7g
+    mem_reservation: 2g   # soft floor only, does not add to 7g hard cap 2014 origin unconfirmed, needs Antigravity explanation
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
       driver: "json-file"
