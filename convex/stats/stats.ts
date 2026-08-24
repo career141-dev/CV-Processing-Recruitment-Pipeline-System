@@ -442,7 +442,7 @@ export const logNvidiaCallMutation = internalMutation({
       }
     }
 
-    // Insert the log with denormalized fields
+    // Insert the log with denormalized fields (inserts never conflict!)
     await ctx.db.insert("nvidiaTokenLogs", {
       ...args,
       provider: resolvedProvider,
@@ -450,80 +450,6 @@ export const logNvidiaCallMutation = internalMutation({
       fileName,
       sourceChannel,
     });
-
-    // --- 2. Update the all-time rolling singleton cache ---
-    const SINGLETON_KEY = "global_token_stats";
-    const existing = await ctx.db
-      .query("tokenStatsCache")
-      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", SINGLETON_KEY))
-      .first();
-
-    const isCvExtraction = args.taskType === "cv_structuring" && args.success;
-    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens?: number; completionTokens?: number }> =
-      (existing?.taskBreakdown as any) ?? {};
-    if (!taskBreakdown[args.taskType]) {
-      taskBreakdown[args.taskType] = { tokens: 0, credits: 0, count: 0, promptTokens: 0, completionTokens: 0 };
-    }
-    taskBreakdown[args.taskType].tokens += args.totalTokens;
-    taskBreakdown[args.taskType].credits += cost;
-    taskBreakdown[args.taskType].count += 1;
-    taskBreakdown[args.taskType].promptTokens = (taskBreakdown[args.taskType].promptTokens ?? 0) + args.promptTokens;
-    taskBreakdown[args.taskType].completionTokens = (taskBreakdown[args.taskType].completionTokens ?? 0) + args.completionTokens;
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        totalTokens: existing.totalTokens + args.totalTokens,
-        totalPromptTokens: existing.totalPromptTokens + args.promptTokens,
-        totalCompletionTokens: existing.totalCompletionTokens + args.completionTokens,
-        totalCredits: existing.totalCredits + cost,
-        successfulCalls: existing.successfulCalls + (args.success ? 1 : 0),
-        totalRequests: existing.totalRequests + 1,
-        totalCvExtractionsCount: existing.totalCvExtractionsCount + (isCvExtraction ? 1 : 0),
-        cvExtractionCredits: existing.cvExtractionCredits + (isCvExtraction ? cost : 0),
-        taskBreakdown,
-      });
-    } else {
-      await ctx.db.insert("tokenStatsCache", {
-        singletonKey: SINGLETON_KEY,
-        totalTokens: args.totalTokens,
-        totalPromptTokens: args.promptTokens,
-        totalCompletionTokens: args.completionTokens,
-        totalCredits: cost,
-        successfulCalls: args.success ? 1 : 0,
-        totalRequests: 1,
-        totalCvExtractionsCount: isCvExtraction ? 1 : 0,
-        cvExtractionCredits: isCvExtraction ? cost : 0,
-        taskBreakdown,
-      });
-    }
-
-    // --- 3. Update today's daily cost row for the 7-day chart ---
-    const dateStr = new Date(now).toISOString().split("T")[0];
-    const dailyRow = await ctx.db
-      .query("dailyTokenStats")
-      .withIndex("by_dateStr", (q) => q.eq("dateStr", dateStr))
-      .first();
-
-    if (dailyRow) {
-      await ctx.db.patch(dailyRow._id, {
-        totalCost: dailyRow.totalCost + cost,
-        cvExtractionCost: dailyRow.cvExtractionCost + (args.taskType === "cv_structuring" ? cost : 0),
-        promptTokens: (dailyRow.promptTokens ?? 0) + args.promptTokens,
-        completionTokens: (dailyRow.completionTokens ?? 0) + args.completionTokens,
-        cvPromptTokens: (dailyRow.cvPromptTokens ?? 0) + (args.taskType === "cv_structuring" ? args.promptTokens : 0),
-        cvCompletionTokens: (dailyRow.cvCompletionTokens ?? 0) + (args.taskType === "cv_structuring" ? args.completionTokens : 0),
-      });
-    } else {
-      await ctx.db.insert("dailyTokenStats", {
-        dateStr,
-        totalCost: cost,
-        cvExtractionCost: args.taskType === "cv_structuring" ? cost : 0,
-        promptTokens: args.promptTokens,
-        completionTokens: args.completionTokens,
-        cvPromptTokens: args.taskType === "cv_structuring" ? args.promptTokens : 0,
-        cvCompletionTokens: args.taskType === "cv_structuring" ? args.completionTokens : 0,
-      });
-    }
   },
 });
 
@@ -972,37 +898,10 @@ export const logNvidiaCallsBatchMutation = internalMutation({
   },
   handler: async (ctx, args) => {
     if (args.logs.length === 0) return;
-
     const now = Date.now();
-    const dateStr = new Date(now).toISOString().split("T")[0];
-
-    // --- 1. Load rolling cache singletons to update them in one go ---
-    const SINGLETON_KEY = "global_token_stats";
-    const existingCache = await ctx.db
-      .query("tokenStatsCache")
-      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", SINGLETON_KEY))
-      .first();
-
-    const dailyRow = await ctx.db
-      .query("dailyTokenStats")
-      .withIndex("by_dateStr", (q) => q.eq("dateStr", dateStr))
-      .first();
-
-    // Accumulators for this batch
-    let batchTotalTokens = 0;
-    let batchPromptTokens = 0;
-    let batchCompletionTokens = 0;
-    let batchCredits = 0;
-    let batchSuccessfulCalls = 0;
-    let batchCvExtractionsCount = 0;
-    let batchCvExtractionCredits = 0;
-    let batchCvPromptTokens = 0;
-    let batchCvCompletionTokens = 0;
-    const batchTaskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens: number; completionTokens: number }> = {};
 
     for (const log of args.logs) {
       const resolvedProvider = log.provider || (log.taskType === "embedding" || log.model.includes("nvidia") ? "nvidia" : "openrouter");
-      const cost = calculateLLMCost(log.model, log.promptTokens, log.completionTokens, resolvedProvider);
       const totalTokens = log.promptTokens + log.completionTokens;
 
       // Point read the CV file name at write-time if cvUploadId is provided
@@ -1012,7 +911,7 @@ export const logNvidiaCallsBatchMutation = internalMutation({
         if (cv) fileName = cv.fileName;
       }
 
-      // Insert log row
+      // Insert log row (pure inserts never collide with concurrent mutations!)
       await ctx.db.insert("nvidiaTokenLogs", {
         taskType: log.taskType,
         model: log.model,
@@ -1025,97 +924,6 @@ export const logNvidiaCallsBatchMutation = internalMutation({
         provider: resolvedProvider,
         timestamp: now,
         fileName,
-      });
-
-      // Accumulate
-      batchTotalTokens += totalTokens;
-      batchPromptTokens += log.promptTokens;
-      batchCompletionTokens += log.completionTokens;
-      batchCredits += cost;
-      if (log.success) {
-        batchSuccessfulCalls++;
-        if (log.taskType === "cv_structuring") {
-          batchCvExtractionsCount++;
-          batchCvExtractionCredits += cost;
-          batchCvPromptTokens += log.promptTokens;
-          batchCvCompletionTokens += log.completionTokens;
-        }
-      }
-
-      if (!batchTaskBreakdown[log.taskType]) {
-        batchTaskBreakdown[log.taskType] = { tokens: 0, credits: 0, count: 0, promptTokens: 0, completionTokens: 0 };
-      }
-      batchTaskBreakdown[log.taskType].tokens += totalTokens;
-      batchTaskBreakdown[log.taskType].credits += cost;
-      batchTaskBreakdown[log.taskType].count += 1;
-      batchTaskBreakdown[log.taskType].promptTokens += log.promptTokens;
-      batchTaskBreakdown[log.taskType].completionTokens += log.completionTokens;
-    }
-
-    // --- 2. Update all-time rolling singleton cache ---
-    const taskBreakdown: Record<string, { tokens: number; credits: number; count: number; promptTokens?: number; completionTokens?: number }> =
-      (existingCache?.taskBreakdown as any) ?? {};
-    for (const [taskType, delta] of Object.entries(batchTaskBreakdown)) {
-      if (!taskBreakdown[taskType]) {
-        taskBreakdown[taskType] = { tokens: 0, credits: 0, count: 0, promptTokens: 0, completionTokens: 0 };
-      }
-      taskBreakdown[taskType].tokens += delta.tokens;
-      taskBreakdown[taskType].credits += delta.credits;
-      taskBreakdown[taskType].count += delta.count;
-      taskBreakdown[taskType].promptTokens = (taskBreakdown[taskType].promptTokens ?? 0) + delta.promptTokens;
-      taskBreakdown[taskType].completionTokens = (taskBreakdown[taskType].completionTokens ?? 0) + delta.completionTokens;
-    }
-
-    if (existingCache) {
-      await ctx.db.patch(existingCache._id, {
-        totalTokens: existingCache.totalTokens + batchTotalTokens,
-        totalPromptTokens: existingCache.totalPromptTokens + batchPromptTokens,
-        totalCompletionTokens: existingCache.totalCompletionTokens + batchCompletionTokens,
-        totalCredits: existingCache.totalCredits + batchCredits,
-        successfulCalls: existingCache.successfulCalls + batchSuccessfulCalls,
-        totalRequests: existingCache.totalRequests + args.logs.length,
-        totalCvExtractionsCount: existingCache.totalCvExtractionsCount + batchCvExtractionsCount,
-        cvExtractionCredits: existingCache.cvExtractionCredits + batchCvExtractionCredits,
-        taskBreakdown,
-      });
-    } else {
-      await ctx.db.insert("tokenStatsCache", {
-        singletonKey: SINGLETON_KEY,
-        totalTokens: batchTotalTokens,
-        totalPromptTokens: batchPromptTokens,
-        totalCompletionTokens: batchCompletionTokens,
-        totalCredits: batchCredits,
-        successfulCalls: batchSuccessfulCalls,
-        totalRequests: args.logs.length,
-        totalCvExtractionsCount: batchCvExtractionsCount,
-        cvExtractionCredits: batchCvExtractionCredits,
-        taskBreakdown,
-      });
-    }
-
-    // --- 3. Update daily cost row ---
-    const batchCvExtractionCreditsAll = args.logs
-      .filter((l) => l.taskType === "cv_structuring" && l.success)
-      .reduce((sum, l) => sum + calculateNvidiaCredits(l.model, l.promptTokens, l.completionTokens), 0);
-
-    if (dailyRow) {
-      await ctx.db.patch(dailyRow._id, {
-        totalCost: dailyRow.totalCost + batchCredits,
-        cvExtractionCost: dailyRow.cvExtractionCost + batchCvExtractionCreditsAll,
-        promptTokens: (dailyRow.promptTokens ?? 0) + batchPromptTokens,
-        completionTokens: (dailyRow.completionTokens ?? 0) + batchCompletionTokens,
-        cvPromptTokens: (dailyRow.cvPromptTokens ?? 0) + batchCvPromptTokens,
-        cvCompletionTokens: (dailyRow.cvCompletionTokens ?? 0) + batchCvCompletionTokens,
-      });
-    } else {
-      await ctx.db.insert("dailyTokenStats", {
-        dateStr,
-        totalCost: batchCredits,
-        cvExtractionCost: batchCvExtractionCreditsAll,
-        promptTokens: batchPromptTokens,
-        completionTokens: batchCompletionTokens,
-        cvPromptTokens: batchCvPromptTokens,
-        cvCompletionTokens: batchCvCompletionTokens,
       });
     }
   },
