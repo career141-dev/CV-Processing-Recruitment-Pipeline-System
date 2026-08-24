@@ -14,8 +14,8 @@ services:
     volumes:
       - data:/convex/data
     environment:
-      - V8_ACTION_USER_TIMEOUT_SECS
-      - NODE_ACTION_USER_TIMEOUT_SECS
+      - V8_ACTION_USER_TIMEOUT_SECS=${V8_ACTION_USER_TIMEOUT_SECS:-180}
+      - NODE_ACTION_USER_TIMEOUT_SECS=${NODE_ACTION_USER_TIMEOUT_SECS:-180}
       # ── CRASH FIX 3: Reduced concurrency to prevent CPU/memory overload ──
       # Original was 16 for all — lowered to prevent thundering herd under load
       - APPLICATION_MAX_CONCURRENT_MUTATIONS=${APPLICATION_MAX_CONCURRENT_MUTATIONS:-16}
