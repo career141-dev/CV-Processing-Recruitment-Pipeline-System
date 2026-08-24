@@ -102,7 +102,7 @@ const config = loadConfig();
 export default defineAgent<ProcessUserData>({
   prewarm: async (proc: JobProcess<ProcessUserData>) => {
     proc.userData.vad = await silero.VAD.load({
-      minSilenceDuration: 300,
+      minSilenceDuration: 250,
       minSpeechDuration: 100,
     });
   },
@@ -151,7 +151,7 @@ export default defineAgent<ProcessUserData>({
       apiKey: config.deepgramApiKey,
       model: "nova-3",
       language: "en",
-      endpointing: 300,
+      endpointing: 200,
       interimResults: true,
       smartFormat: true,
       mipOptOut: true,
@@ -256,7 +256,7 @@ ${goals}
         },
         preemptiveGeneration: {
           enabled: true,
-          preemptiveTts: false,
+          preemptiveTts: true,
           maxSpeechDuration: 10_000,
           maxRetries: 2,
         },

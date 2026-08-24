@@ -205,6 +205,12 @@ export default function AuraVoiceAgentPage() {
         element.autoplay = true;
         attachedAudioElementsRef.current.add(element);
         audioContainerRef.current?.appendChild(element);
+
+        // Resume & play to ensure browser autoplay policies do not silence remote audio
+        element.play().catch((err) => {
+          console.warn("[Aura] Autoplay prevented, triggering room.startAudio():", err);
+          void room.startAudio();
+        });
       });
 
       room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {

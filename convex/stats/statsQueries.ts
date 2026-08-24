@@ -1,6 +1,45 @@
 // convex/stats/statsQueries.ts
-import { internalQuery } from "../_generated/server";
+import { query, internalQuery, action } from "../_generated/server";
+import { internal } from "../_generated/api";
 import { v } from "convex/values";
+
+export const countAllCandidatesAction = action({
+  args: {},
+  handler: async (ctx) => {
+    let total = 0;
+    let cursor: string | null = null;
+    let isDone = false;
+    while (!isDone) {
+      const page: any = await ctx.runQuery(internal.stats.statsQueries.getCandidatesPage, {
+        cursor,
+        limit: 50,
+      });
+      total += page.count || 0;
+      isDone = page.isDone;
+      cursor = page.continueCursor;
+    }
+    return { exactTotalCandidates: total };
+  },
+});
+
+export const countAllCvUploadsAction = action({
+  args: {},
+  handler: async (ctx) => {
+    let total = 0;
+    let cursor: string | null = null;
+    let isDone = false;
+    while (!isDone) {
+      const page: any = await ctx.runQuery(internal.stats.statsQueries.getCvUploadsPage, {
+        cursor,
+        limit: 500,
+      });
+      total += page.count || 0;
+      isDone = page.isDone;
+      cursor = page.continueCursor;
+    }
+    return { exactTotalCvUploads: total };
+  },
+});
 
 export const getCandidatesPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.optional(v.number()) },
