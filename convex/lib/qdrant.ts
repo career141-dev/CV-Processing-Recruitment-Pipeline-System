@@ -64,18 +64,27 @@ export function candidateIdToPointId(candidateId: string): string {
 
 let clientInstance: QdrantClient | null = null;
 let isCollectionInitialized = false;
+let connectedUrl: string = "http://qdrant:6333";
 
 export function getQdrantClient(targetUrl?: string): QdrantClient {
-  const url = targetUrl || process.env.QDRANT_URL || "http://127.0.0.1:6333";
+  if (!targetUrl && clientInstance) return clientInstance;
+
+  const url = targetUrl || process.env.QDRANT_URL || connectedUrl || "http://qdrant:6333";
   const apiKey = process.env.QDRANT_API_KEY || undefined;
 
-  return new QdrantClient({
+  const client = new QdrantClient({
     url,
     apiKey,
     checkCompatibility: false,
     timeout: 1500,
     maxConnections: 10,
   });
+
+  if (!targetUrl) {
+    clientInstance = client;
+  }
+
+  return client;
 }
 
 /**
@@ -87,6 +96,7 @@ export async function ensureCandidateCollection(): Promise<boolean> {
 
   const candidateUrls: string[] = [
     process.env.QDRANT_URL,
+    connectedUrl,
     "http://qdrant:6333",
     "http://career141-qdrant:6333",
     "http://172.17.0.1:6333",
@@ -139,6 +149,7 @@ export async function ensureCandidateCollection(): Promise<boolean> {
       }
 
       clientInstance = client;
+      connectedUrl = url;
       isCollectionInitialized = true;
       console.log(`[Qdrant] Connected to Qdrant successfully at ${url}!`);
       return true;
