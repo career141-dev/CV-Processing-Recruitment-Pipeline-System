@@ -68,9 +68,9 @@ services:
       start_period: 5m
       timeout: 10s
       retries: 18
-    # ── SCALE & STABILITY FIX: 6g limit ensures system never OOM crashes ──
-    mem_limit: 6g
-    mem_reservation: 1.5g
+    # ── SCALE & STABILITY FIX: 8.5g limit provides ample headroom on 11GB VPS ──
+    mem_limit: 8.5g
+    mem_reservation: 2g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
       driver: "json-file"
