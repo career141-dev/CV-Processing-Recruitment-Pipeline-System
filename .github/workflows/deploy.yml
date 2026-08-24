@@ -323,31 +323,3 @@ jobs:
           fi
 
           echo "✅ Production deployment is healthy and serving traffic"
-
-      # ── Step 7: Run safe stats backfill on production ──────────────────
-      # This safely recalculates dashboard counters page-by-page
-      # without scanning the full database or risking a crash.
-      - name: Run Stats Backfill on Production
-        run: |
-          echo "Running safe stats backfill on production..."
-          ADMIN_KEY="${{ secrets.CONVEX_ADMIN_KEY }}"
-          if [ -z "$ADMIN_KEY" ]; then
-            ADMIN_KEY="convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
-          fi
-          npx convex run stats/stats:runSafeBackfill \
-            --url https://api.career141.com \
-            --admin-key "$ADMIN_KEY" || true
-          echo "✅ Stats backfill complete"
-
-      # ── Step 8: Sync Candidate Vectors to Qdrant on Production ───────────
-      - name: Sync Candidate Vectors to Qdrant on Production
-        run: |
-          echo "Syncing candidate vectors to production Qdrant..."
-          ADMIN_KEY="${{ secrets.CONVEX_ADMIN_KEY }}"
-          if [ -z "$ADMIN_KEY" ]; then
-            ADMIN_KEY="convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
-          fi
-          npx convex run admin/qdrantBackfill:syncAllCandidateVectorsToQdrant \
-            --url https://api.career141.com \
-            --admin-key "$ADMIN_KEY" || true
-          echo "✅ Production Qdrant vector sync complete"
