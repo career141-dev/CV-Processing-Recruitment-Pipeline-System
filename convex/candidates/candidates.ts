@@ -99,7 +99,7 @@ export const listCandidatesPaginated = query({
     } else if (sourceChannel) {
       q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel));
     } else {
-      q = ctx.db.query("candidates").withIndex("by_firstSeenAt").order("desc");
+      q = ctx.db.query("candidates").order("desc");
     }
 
     if (sourceChannel && (args.searchQuery || overallStatus)) {
