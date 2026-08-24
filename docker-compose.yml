@@ -63,12 +63,12 @@ services:
       - CALL_TEST_RECIPIENT
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3210/version || exit 1"]
-      interval: 5s
-      start_period: 30s
+      interval: 10s
+      start_period: 5m
       timeout: 10s
-      retries: 12
+      retries: 18
     # ── SCALE & STABILITY FIX: 6g limit ensures system never OOM crashes ──
-    mem_limit: 8g
+    mem_limit: 6g
     mem_reservation: 1.5g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
@@ -110,8 +110,8 @@ services:
       - qdrant_storage:/qdrant/storage:z
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
-    mem_limit: 2g
-    mem_reservation: 256m
+    mem_limit: 512m
+    mem_reservation: 128m
     logging:
       driver: "json-file"
       options:
@@ -130,7 +130,7 @@ services:
       - "50000-50200:50000-50200/udp"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
-    mem_limit: 1g
+    mem_limit: 512m
     mem_reservation: 128m
     logging:
       driver: "json-file"
