@@ -27,12 +27,14 @@ export const searchCandidates = query({
       }).take(limit);
 
     let titleResults: Doc<"candidates">[] = [];
+    let skillsResults: Doc<"candidates">[] = [];
     let summaryResults: Doc<"candidates">[] = [];
     let resumeResults: Doc<"candidateResumes">[] = [];
 
     try {
-      [titleResults, summaryResults, resumeResults] = await Promise.all([
+      [titleResults, skillsResults, summaryResults, resumeResults] = await Promise.all([
         searchWithFilters("search_title", "currentJobTitle"),
+        searchWithFilters("search_skills", "skills"),
         searchWithFilters("search_summary", "summary"),
         ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
       ]);
@@ -45,15 +47,22 @@ export const searchCandidates = query({
       resumeCandidateIds.push({ candidateId: res.candidateId, resumeId: res._id });
     }
 
-    // Weighted scoring: title match > text match > summary match
+    // Weighted scoring: title match > skills match > text match > summary match
     const weight = new Map<Id<"candidates">, number>();
     for (const cv of titleResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 100);
+    for (const cv of skillsResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 90);
     for (const r of resumeCandidateIds) weight.set(r.candidateId, (weight.get(r.candidateId) ?? 0) + 50);
     for (const cv of summaryResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 30);
 
     const seen = new Set<Id<"candidates">>();
     const merged: { candidateId: Id<"candidates"> }[] = [];
     for (const cv of titleResults) {
+      if (!seen.has(cv._id)) {
+        seen.add(cv._id);
+        merged.push({ candidateId: cv._id });
+      }
+    }
+    for (const cv of skillsResults) {
       if (!seen.has(cv._id)) {
         seen.add(cv._id);
         merged.push({ candidateId: cv._id });
@@ -263,13 +272,21 @@ export const aiSearch = action({
     if (!isQueryEmpty) {
       const primaryTitle = effectiveReq.title && effectiveReq.title.length > 2 ? effectiveReq.title : args.query;
       const searchTerms = buildSearchTerms(effectiveReq, args.query);
-      const batchQueries: Promise<KeywordSearchResult[]>[] = [
-        ctx.runQuery(api.matching.search.searchCandidates, { query: primaryTitle, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
-      ];
-      // Add targeted keyword term queries (alternative titles and key skills)
-      for (const term of searchTerms.filter((t) => t && t !== primaryTitle).slice(0, 3)) {
+      const queryList = new Set<string>();
+      if (primaryTitle) queryList.add(primaryTitle);
+      for (const alt of (effectiveReq.alternativeTitles ?? []).slice(0, 3)) if (alt) queryList.add(alt);
+      for (const sk of (effectiveReq.requiredSkills ?? []).slice(0, 4)) if (sk) queryList.add(sk);
+      for (const t of searchTerms.slice(0, 4)) if (t) queryList.add(t);
+
+      const batchQueries: Promise<KeywordSearchResult[]>[] = [];
+      for (const qStr of queryList) {
         batchQueries.push(
-          ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: 40 })
+          ctx.runQuery(api.matching.search.searchCandidates, {
+            query: qStr,
+            industry: interp.industry,
+            seniority: interp.seniority,
+            limit: fetchLimit,
+          })
         );
       }
       try {
@@ -606,6 +623,10 @@ export const aiSearch = action({
     }
 
     const results = finalRanked
+      .filter((item) => {
+        const sc = item.llmScore?.score !== undefined ? Number(item.llmScore.score) : item.overallScore;
+        return sc > 0;
+      })
       .slice(0, args.limit ?? 20)
       .map((item) => {
         const displayScore = item.llmScore?.score ? Math.round(Number(item.llmScore.score)) : Math.round(item.overallScore);

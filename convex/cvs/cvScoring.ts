@@ -217,7 +217,7 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
     const jobNorm = normalizeText(cleanedJob);
     if (!jobNorm) continue;
 
-    let baseScore = 55;
+    let baseScore = 0;
     if (candidateNorm === jobNorm) {
       baseScore = 100;
     } else if (textContainsEither(candidateNorm, jobNorm)) {
@@ -229,15 +229,19 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
         const jobTokenSet = new Set(jobTokens);
         const candidateTokenSet = new Set(candidateTokens);
         const overlap = [...jobTokenSet].filter((token) => candidateTokenSet.has(token)).length;
-        const coverage = overlap / jobTokenSet.size;
-        const reciprocal = overlap / candidateTokenSet.size;
-        const blended = (coverage * 0.7) + (reciprocal * 0.3);
-        baseScore = 55 + Math.round(blended * 40);
+        if (overlap > 0) {
+          const coverage = overlap / jobTokenSet.size;
+          const reciprocal = overlap / candidateTokenSet.size;
+          const blended = (coverage * 0.7) + (reciprocal * 0.3);
+          baseScore = Math.round(blended * 90);
+        } else {
+          baseScore = 0;
+        }
       }
     }
 
     // Fix title-stripping overlap bug: if candidate and job titles explicitly specify conflicting seniority levels, apply adjustment factor
-    if (jobSeniorityToken && candSeniorityToken && jobSeniorityToken !== candSeniorityToken) {
+    if (jobSeniorityToken && candSeniorityToken && jobSeniorityToken !== candSeniorityToken && baseScore > 0) {
       const jRank = seniorityRank(jobSeniorityToken);
       const cRank = seniorityRank(candSeniorityToken);
       if (jRank >= 0 && cRank >= 0 && cRank > jRank) {
@@ -248,7 +252,7 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
     best = Math.max(best, baseScore);
   }
 
-  return Math.max(45, Math.min(100, Math.round(best || 55)));
+  return best;
 }
 
 function skillMatches(requiredSkill: string, candidateSkills: string[]): string | null {
@@ -1045,7 +1049,7 @@ export function scoreCandidateAgainstRequirements(
   if (req.roleFamilyMatch === "adjacent") roleFamilyMultiplier = 0.65;
   else if (req.roleFamilyMatch === "unrelated") roleFamilyMultiplier = 0.15;
 
-  const titleScore = Math.round(roleFamilyMultiplier * Math.max(baseTitleScore, 70));
+  const titleScore = Math.round(roleFamilyMultiplier * baseTitleScore);
 
   const seniorityScore = calculateAsymmetricSeniorityScore(jobSeniority, candidateSeniority);
   const experienceScore = yearsScore(cv.yearsOfExperience ?? null, req.minYearsExperience, effectiveMaxYears);
@@ -1062,7 +1066,10 @@ export function scoreCandidateAgainstRequirements(
   const locationPenalty = locEval.penalty;
 
   let overallScore: number;
-  if (normalizedJobSeniority === "intern" || normalizedJobSeniority === "entry_level" || req.title?.toLowerCase().includes("intern")) {
+  if (titleScore === 0 && skillScore === 0) {
+    // Hard domain isolation: Zero title match + Zero skill match = 0 score
+    overallScore = 0;
+  } else if (normalizedJobSeniority === "intern" || normalizedJobSeniority === "entry_level" || req.title?.toLowerCase().includes("intern")) {
     // For Intern / Entry Level roles, give higher weight to Seniority & Experience alignment
     overallScore = Math.round(
       (seniorityScore * 0.35) +
