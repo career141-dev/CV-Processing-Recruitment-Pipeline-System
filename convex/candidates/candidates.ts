@@ -94,9 +94,9 @@ export const listCandidatesPaginated = query({
         q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
       }
     } else if (sourceChannel) {
-      q = ctx.db.query("candidates").withIndex("by_firstSourceChannel", q => q.eq("firstSourceChannel", sourceChannel as any)).order("desc");
+      q = ctx.db.query("candidates").withIndex("by_firstSourceChannel", q => q.eq("firstSourceChannel", sourceChannel as any));
     } else if (overallStatus) {
-      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any)).order("desc");
+      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
     } else {
       // Direct primary B-tree traversal: O(1) instantaneous 2ms load across 115K records
       q = ctx.db.query("candidates").order("desc");
