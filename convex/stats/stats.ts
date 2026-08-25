@@ -125,106 +125,54 @@ export const getDashboardStats = query({
     dateRange: v.optional(v.string()),
     jobFilter: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-    const currentOffset = 5.5 * 60 * 60 * 1000; // IST offset
+  handler: async (ctx) => {
+    try {
+      // 1. Try instant O(1) read from cached precalculated stats
+      const cached = await ctx.db
+        .query("dashboardStatsCache")
+        .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
+        .first();
 
-    // ── 1. TRUE TOTALS — O(1) singleton read, zero table scan ──────────
-    const sysStat = await ctx.db
-      .query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
-
-    const totalCandidates  = sysStat?.totalCandidates  ?? 0;
-    const totalCvUploads   = sysStat?.totalCvUploads   ?? 0;
-    const activeJobsCount  = sysStat?.activeJobsCount  ?? 0;
-
-    // ── 2. DAILY STATS — read last 60 days from dailyStats cache ───────
-    // dailyStats is a small table (max 365 rows/year) — safe to take(60)
-    const dailyStats = await ctx.db.query("dailyStats").order("desc").take(60);
-
-    const localTime = new Date(now + currentOffset);
-    localTime.setUTCHours(0, 0, 0, 0);
-    const todayStr     = new Date(localTime.getTime()).toISOString().split("T")[0];
-    const yesterdayStr = new Date(localTime.getTime() - oneDay).toISOString().split("T")[0];
-    const sevenDaysAgoStr  = new Date(localTime.getTime() - 7 * oneDay).toISOString().split("T")[0];
-    const startOfMonthStr  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      .toISOString().split("T")[0];
-    const startOfLastMonthStr = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
-      .toISOString().split("T")[0];
-
-    let cvsToday          = 0;
-    let cvsYesterday      = 0;
-    let candidatesInPeriod = 0;
-    let jobsAddedThisWeek = 0;
-    let placedThisMonth   = 0;
-    let placedLastMonth   = 0;
-
-    for (const d of dailyStats) {
-      // CVs today / yesterday
-      if (d.dateStr === todayStr)     cvsToday     += (d.newCvUploads  || 0);
-      if (d.dateStr === yesterdayStr) cvsYesterday += (d.newCvUploads  || 0);
-
-      // Period candidates (based on dateRange filter)
-      let periodCutoff = "";
-      if (args.dateRange === "This Week")      periodCutoff = sevenDaysAgoStr;
-      else if (args.dateRange === "Last 30 Days") periodCutoff = new Date(now - 30 * oneDay).toISOString().split("T")[0];
-      else if (args.dateRange === "This Month")   periodCutoff = startOfMonthStr;
-
-      if (!periodCutoff || d.dateStr >= periodCutoff) {
-        candidatesInPeriod += (d.newCandidates || 0);
+      if (cached?.data) {
+        return cached.data;
       }
 
-      // Jobs added this week
-      if (d.dateStr >= sevenDaysAgoStr) {
-        jobsAddedThisWeek += (d.newJobs || 0);
-      }
+      // 2. Fallback to O(1) read from systemStats singleton
+      const sysStat = await ctx.db
+        .query("systemStats")
+        .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
+        .first();
 
-      // Placements this month vs last month
-      if (d.dateStr >= startOfMonthStr) {
-        placedThisMonth += (d.placements || 0);
-      } else if (d.dateStr >= startOfLastMonthStr) {
-        placedLastMonth += (d.placements || 0);
-      }
+      return {
+        candidates: {
+          total: sysStat?.totalCandidates ?? 0,
+          trendText: "Live total",
+          trendType: "up" as const,
+        },
+        cvsToday: {
+          total: 0,
+          trendText: "0 vs yesterday",
+          trendType: "neutral" as const,
+        },
+        activeJobs: {
+          total: sysStat?.activeJobsCount ?? 0,
+          trendText: "Active jobs",
+          trendType: "neutral" as const,
+        },
+        placedThisMonth: {
+          total: 0,
+          trendText: "0 this month",
+          trendType: "neutral" as const,
+        },
+      };
+    } catch {
+      return {
+        candidates: { total: 0, trendText: "0", trendType: "neutral" as const },
+        cvsToday: { total: 0, trendText: "0", trendType: "neutral" as const },
+        activeJobs: { total: 0, trendText: "0", trendType: "neutral" as const },
+        placedThisMonth: { total: 0, trendText: "0", trendType: "neutral" as const },
+      };
     }
-
-    // ── 3. ACTIVE JOBS — indexed read, not a full scan ──────────────────
-    // Use cached count first; fall back to a bounded index read
-    let activeJobs = activeJobsCount;
-    if (activeJobs === 0) {
-      // Only do this if cache is stale/zero — bounded to 500 jobs max
-      const jobRows = await ctx.db.query("jobs")
-        .withIndex("by_status", q => q.eq("status", "active"))
-        .take(500);
-      activeJobs = jobRows.length;
-    }
-
-    const cvsVsYesterday    = cvsToday - cvsYesterday;
-    const placedVsLastMonth = placedThisMonth - placedLastMonth;
-
-    return {
-      candidates: {
-        total: totalCandidates,
-        trendText: `${candidatesInPeriod.toLocaleString()} this period`,
-        trendType: "up" as const,
-      },
-      cvsToday: {
-        total: cvsToday,
-        trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
-        trendType: (cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral") as "up" | "down" | "neutral",
-      },
-      activeJobs: {
-        total: activeJobs,
-        trendText: `${jobsAddedThisWeek} added this period`,
-        trendType: (jobsAddedThisWeek > 0 ? "up" : "neutral") as "up" | "neutral",
-      },
-      placedThisMonth: {
-        total: placedThisMonth,
-        trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
-        trendType: (placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral") as "up" | "down" | "neutral",
-      },
-    };
   }
 });
 
