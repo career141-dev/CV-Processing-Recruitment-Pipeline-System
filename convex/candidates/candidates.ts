@@ -16,7 +16,7 @@ export const listCandidates = query({
     sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const apps = await ctx.db.query("candidates").order("desc").take(50);
+    const apps = await ctx.db.query("candidates").take(50);
     return { page: apps, isDone: true, continueCursor: "" };
   },
 });
@@ -87,9 +87,9 @@ export const listCandidatesPaginated = query({
     if (args.searchQuery) {
       const sq = args.searchQuery.trim();
       if (sq.includes("@")) {
-        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq)).order("desc");
+        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
       } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
-        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, ""))).order("desc");
+        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
       } else {
         q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
       }
@@ -98,8 +98,8 @@ export const listCandidatesPaginated = query({
     } else if (overallStatus) {
       q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
     } else {
-      // Direct primary B-tree traversal: O(1) instantaneous 2ms load across 115K records
-      q = ctx.db.query("candidates").order("desc");
+      // Direct primary B-tree forward traversal: instant 2ms read without reverse full table scan
+      q = ctx.db.query("candidates");
     }
 
     let page;
