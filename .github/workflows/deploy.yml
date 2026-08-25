@@ -40,7 +40,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
-          command_timeout: 5m
+          command_timeout: 10m
           script: |
             set -e
             cd ~/career141
@@ -57,7 +57,7 @@ jobs:
             echo "Waiting for Convex backend to finish bootstrapping indexes (up to 3 minutes)..."
             CONVEX_READY=0
             for ATTEMPT in $(seq 1 36); do
-              HTTP_STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3210/version || echo '000')
+              HTTP_STATUS=$(docker exec career141-backend-1 curl -s -o /dev/null -w '%{http_code}' http://localhost:3210/version 2>/dev/null || curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3210/version 2>/dev/null || echo '000')
               echo "  Attempt ${ATTEMPT}/36: Convex /version returned HTTP ${HTTP_STATUS}"
               if [ "${HTTP_STATUS}" = "200" ]; then
                 CONVEX_READY=1
@@ -79,7 +79,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
-          command_timeout: 5m
+          command_timeout: 10m
           script: |
             set -e
             cd ~/career141
