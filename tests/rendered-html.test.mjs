@@ -20,28 +20,40 @@ test("server-renders the Aura voice-agent experience", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Aura — Hands-free voice agent<\/title>/i);
-  assert.match(html, /A conversation/);
-  assert.match(html, /Start conversation/);
-  assert.match(html, /Automatic turn detection/);
+  assert.match(html, /<title>Aura — Candidate screening rehearsal<\/title>/i);
+  assert.match(html, /Give Aura the brief/);
+  assert.match(html, /Start practice screening/);
+  assert.match(html, /Realtime OpenAI voice/);
   assert.doesNotMatch(html, /OPENAI_API_KEY/);
 });
 
-test("keeps the API key server-side and the interaction hands-free", async () => {
-  const [page, route, config] = await Promise.all([
+test("uses one secure Realtime voice session with accurate transcription and barge-in", async () => {
+  const [page, realtimeRoute, config] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/respond/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/app/api/realtime/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/agent-config.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /recognition\.continuous = true/);
-  assert.match(page, /window\.speechSynthesis\.speak/);
-  assert.match(page, /END_OF_TURN_DELAY_MS = 720/);
-  assert.match(page, /selectNaturalVoice/);
-  assert.match(page, /response\.output_text\.delta/);
+  assert.match(page, /new RTCPeerConnection/);
+  assert.match(page, /createDataChannel\("oai-events"\)/);
+  assert.match(page, /\/api\/realtime/);
+  assert.match(page, /input_audio_buffer\.speech_started/);
+  assert.match(page, /conversation\.item\.input_audio_transcription\.completed/);
+  assert.match(page, /response\.output_audio_transcript\.delta/);
+  assert.match(page, /output_audio_buffer\.clear/);
+  assert.match(page, /noiseSuppression: true/);
+  assert.doesNotMatch(page, /SpeechRecognition|speechSynthesis|MediaRecorder|AudioContext/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
-  assert.match(route, /process\.env\.OPENAI_API_KEY/);
-  assert.match(route, /stream: true/);
-  assert.match(config, /8 to 24 words/);
-  assert.match(config, /sound like a real person/);
+  assert.match(realtimeRoute, /process\.env\.OPENAI_API_KEY/);
+  assert.match(realtimeRoute, /gpt-realtime-2\.1-mini/);
+  assert.match(realtimeRoute, /v1\/realtime\/calls/);
+  assert.match(realtimeRoute, /voice: "marin"/);
+  assert.match(realtimeRoute, /gpt-4o-transcribe/);
+  assert.match(realtimeRoute, /type: "semantic_vad"/);
+  assert.match(realtimeRoute, /eagerness: "high"/);
+  assert.match(realtimeRoute, /interrupt_response: true/);
+  assert.match(config, /Sound like a good recruiter on a real call/);
+  assert.match(config, /Keep one steady vocal character throughout the call/);
+  assert.match(config, /usually under 35 words/);
+  assert.doesNotMatch(`${page}\n${realtimeRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);
 });
