@@ -93,110 +93,90 @@ Return ONLY valid JSON with these fields:
 If the query is vague, infer the most likely role and include likely related skills so the search remains broad enough.
 For occupationSynonyms, include alternative job titles that represent the same occupation as the primary title — not seniority variations, but genuinely equivalent role names a candidate might use on their CV.`;
 
-  const model = getModelForTask("jd_extraction");
-  const openai = getOpenAI("jd_extraction");
+  const candidateProviders = [
+    { client: getOpenAI("jd_extraction"), model: OPENROUTER_PRIMARY_MODEL, isNvidia: false },
+    { client: getNvidiaOpenAI(), model: "meta/llama-3.1-70b-instruct", isNvidia: true },
+  ];
 
-  try {
-    const response = await openai.chat.completions.create({
-      model,
-      temperature: 0,
-      max_tokens: 1400,
-      messages: [
-        { role: "system", content: prompt },
-        { role: "user", content: text.slice(0, 7000) },
-      ],
-      response_format: { type: "json_object" },
-    });
-
-    const inputTokens = response.usage?.prompt_tokens || 0;
-    const outputTokens = response.usage?.completion_tokens || 0;
-    let content = response.choices[0]?.message?.content ?? "{}";
-
-    // Clean any markdown formatting if present
-    content = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-
+  for (const provider of candidateProviders) {
     try {
+      const response = await provider.client.chat.completions.create({
+        model: provider.model,
+        temperature: 0.1,
+        max_tokens: 1400,
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: text.slice(0, 7000) },
+        ],
+      });
+
+      const inputTokens = response.usage?.prompt_tokens || 0;
+      const outputTokens = response.usage?.completion_tokens || 0;
+      let content = response.choices[0]?.message?.content ?? "{}";
+
+      // Clean any markdown formatting if present
+      content = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
       const parsed = JSON.parse(content) as Partial<SearchRequirements>;
-      return {
-        requirements: normalizeRequirements({
-          title: parsed.title && parsed.title !== "Position" ? parsed.title : text.slice(0, 50),
-          alternativeTitles: parsed.alternativeTitles ?? [],
-          requiredSkills: parsed.requiredSkills ?? [],
-          preferredSkills: parsed.preferredSkills ?? [],
-          minYearsExperience: typeof parsed.minYearsExperience === "number" ? parsed.minYearsExperience : null,
-          industry: parsed.industry ?? null,
-          seniority: parsed.seniority ?? null,
-          location: parsed.location ?? null,
-          education: parsed.education ?? null,
-          summary: parsed.summary ?? text.slice(0, 100),
-          occupationSynonyms: parsed.occupationSynonyms ?? [],
-          keywords: parsed.keywords ?? [],
-          languages: parsed.languages ?? [],
-          clientCompany: parsed.clientCompany ?? null,
-          clientContactEmail: parsed.clientContactEmail ?? null,
-          salaryRange: parsed.salaryRange ?? null,
-        }),
-        usage: {
-          promptTokens: inputTokens,
-          completionTokens: outputTokens,
-          model,
-        },
-      };
-    } catch (parseErr) {
-      console.warn("[extractSearchRequirements] JSON parse error:", parseErr);
-      return {
-        requirements: normalizeRequirements({
-          title: text.slice(0, 50),
-          alternativeTitles: [],
-          requiredSkills: text.split(/\s+/).filter(w => w.length > 3),
-          preferredSkills: [],
-          minYearsExperience: null,
-          industry: null,
-          seniority: null,
-          location: null,
-          education: null,
-          summary: text,
-          occupationSynonyms: [],
-          keywords: text.split(/\s+/).filter(w => w.length > 3),
-          languages: [],
-          clientCompany: null,
-          clientContactEmail: null,
-          salaryRange: null,
-        }),
-        usage: {
-          promptTokens: inputTokens,
-          completionTokens: outputTokens,
-          model,
-        },
-      };
+      if (parsed && (parsed.title || (parsed.requiredSkills && parsed.requiredSkills.length > 0))) {
+        return {
+          requirements: normalizeRequirements({
+            title: parsed.title && parsed.title !== "Position" ? parsed.title : text.slice(0, 60),
+            alternativeTitles: parsed.alternativeTitles ?? [],
+            requiredSkills: parsed.requiredSkills ?? [],
+            preferredSkills: parsed.preferredSkills ?? [],
+            minYearsExperience: typeof parsed.minYearsExperience === "number" ? parsed.minYearsExperience : null,
+            industry: parsed.industry ?? null,
+            seniority: parsed.seniority ?? null,
+            location: parsed.location ?? null,
+            education: parsed.education ?? null,
+            summary: parsed.summary ?? text.slice(0, 120),
+            occupationSynonyms: parsed.occupationSynonyms ?? [],
+            keywords: parsed.keywords ?? [],
+            languages: parsed.languages ?? [],
+            clientCompany: parsed.clientCompany ?? null,
+            clientContactEmail: parsed.clientContactEmail ?? null,
+            salaryRange: parsed.salaryRange ?? null,
+          }),
+          usage: {
+            promptTokens: inputTokens,
+            completionTokens: outputTokens,
+            model: provider.model,
+          },
+        };
+      }
+    } catch (providerErr: any) {
+      console.warn(`[extractSearchRequirements] Provider ${provider.model} notice:`, providerErr?.message || providerErr);
     }
-  } catch (error) {
-    return {
-      requirements: normalizeRequirements({
-        title: "Position",
-        alternativeTitles: [],
-        requiredSkills: [],
-        preferredSkills: [],
-        minYearsExperience: null,
-        industry: null,
-        seniority: null,
-        location: null,
-        education: null,
-        summary: "Searching for a qualified candidate",
-        occupationSynonyms: [],
-        keywords: [],
-        languages: [],
-        clientCompany: null,
-        clientContactEmail: null,
-        salaryRange: null,
-      }),
-      usage: {
-        promptTokens: 0,
-        completionTokens: 0,
-        model,
-      },
-    };
   }
+
+  // Dynamic regex / token fallback if all LLM endpoints fail
+  const words = text.replace(/[^a-zA-Z0-9+#.\s]/g, " ").split(/\s+/).filter(w => w.length >= 3);
+  return {
+    requirements: normalizeRequirements({
+      title: text.slice(0, 60),
+      alternativeTitles: [],
+      requiredSkills: words.slice(0, 8),
+      preferredSkills: [],
+      minYearsExperience: null,
+      industry: null,
+      seniority: null,
+      location: null,
+      education: null,
+      summary: text.slice(0, 120),
+      occupationSynonyms: [],
+      keywords: words.slice(0, 10),
+      languages: [],
+      clientCompany: null,
+      clientContactEmail: null,
+      salaryRange: null,
+    }),
+    usage: {
+      promptTokens: 0,
+      completionTokens: 0,
+      model: "regex-fallback",
+    },
+  };
 }
 
 export function buildSearchTerms(req: SearchRequirements, sourceText: string): string[] {
