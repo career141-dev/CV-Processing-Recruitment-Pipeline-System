@@ -27,11 +27,11 @@ export const getIngestionStats = query({
 
     // Query bounded lists via by_status index in parallel with Promise.all — instant O(1) reads
     const [activeUploads, queuedUploads, uploadedList, failedUploads, failedRetryUploads, recentDone] = await Promise.all([
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processing")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "queued")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed_retry")).order("desc").take(20),
+      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processing")).take(20),
+      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "queued")).take(20),
+      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).take(20),
+      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).take(20),
+      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed_retry")).take(20),
       ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processed")).take(20),
     ]);
 
