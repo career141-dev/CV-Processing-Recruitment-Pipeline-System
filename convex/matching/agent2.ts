@@ -39,7 +39,7 @@ export async function embedText(
     },
     body: JSON.stringify({
       input: sanitized,
-      model: "baai/bge-m3",
+      model: "openai/text-embedding-3-small",
     })
   });
 
@@ -58,7 +58,7 @@ export async function embedText(
     embedding: data.data[0].embedding,
     usage: {
       promptTokens,
-      model: "baai/bge-m3",
+      model: "openai/text-embedding-3-small",
     },
   };
 }
