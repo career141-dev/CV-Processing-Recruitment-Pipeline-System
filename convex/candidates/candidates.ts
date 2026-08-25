@@ -80,35 +80,31 @@ export const listCandidatesPaginated = query({
   },
   handler: async (ctx, args) => {
     await requireFullAccess(ctx);
-    let q;
-    const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;
-    const sourceChannel = args.sourceChannel && args.sourceChannel !== "all" ? args.sourceChannel : undefined;
-    
-    if (args.searchQuery) {
-      const sq = args.searchQuery.trim();
-      if (sq.includes("@")) {
-        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
-      } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
-        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
+    const buildQuery = () => {
+      if (args.searchQuery) {
+        const sq = args.searchQuery.trim();
+        if (sq.includes("@")) {
+          return ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
+        } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
+          return ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
+        } else {
+          return ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
+        }
+      } else if (sourceChannel) {
+        return ctx.db.query("candidates").withIndex("by_firstSourceChannel", q => q.eq("firstSourceChannel", sourceChannel as any));
+      } else if (overallStatus) {
+        return ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
       } else {
-        q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
+        return ctx.db.query("candidates").withIndex("by_firstSeenAt", q => q.gt("firstSeenAt", 0)).order("desc");
       }
-    } else if (sourceChannel) {
-      q = ctx.db.query("candidates").withIndex("by_firstSourceChannel", q => q.eq("firstSourceChannel", sourceChannel as any));
-    } else if (overallStatus) {
-      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
-    } else {
-      // Instant O(1) B-tree traversal bounded strictly to valid timestamps (> 0) in descending order
-      // This ignores undefined/null legacy records and seeks directly to the latest candidates in < 2ms
-      q = ctx.db.query("candidates").withIndex("by_firstSeenAt", q => q.gt("firstSeenAt", 0)).order("desc");
-    }
+    };
 
     let page;
     try {
-      page = await q.paginate(args.paginationOpts);
+      page = await buildQuery().paginate(args.paginationOpts);
     } catch (err: any) {
-      console.warn("[listCandidatesPaginated] Pagination error detected, resetting to page 1:", err?.message || err);
-      page = await q.paginate({ numItems: 10, cursor: null });
+      console.warn("[listCandidatesPaginated] Stale cursor detected, auto-resetting to page 1:", err?.message || err);
+      page = await buildQuery().paginate({ numItems: 10, cursor: null });
     }
       
     return {
