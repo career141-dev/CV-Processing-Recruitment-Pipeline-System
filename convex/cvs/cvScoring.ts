@@ -336,6 +336,8 @@ export function scoreSkills(requiredSkills: string[], preferredSkills: string[],
   const cleanRequired = distinct(requiredSkills).filter(s => !GENERIC_FILLER_SKILLS.has(s.toLowerCase().trim()));
   const cleanPreferred = distinct(preferredSkills).filter(s => !GENERIC_FILLER_SKILLS.has(s.toLowerCase().trim()));
 
+  const matchedNormalizedSet = new Set<string>();
+
   for (const skill of cleanRequired) {
     const match = skillMatches(skill, candidateSkills);
     if (match) {
