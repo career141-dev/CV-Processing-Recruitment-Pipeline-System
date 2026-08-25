@@ -13,11 +13,11 @@ import { upsertCandidateVector } from "../lib/qdrant";
  */
 export async function embedText(
   text: string,
-  inputType: "query" | "passage" = "query"
+  _inputType: "query" | "passage" = "query"
 ): Promise<{ embedding: number[]; usage: { promptTokens: number; model: string } }> {
-  const apiKey = process.env.NVIDIA_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("NVIDIA_API_KEY environment variable not set.");
+    throw new Error("OPENROUTER_API_KEY environment variable not set.");
   }
 
   const sanitized = text
@@ -29,30 +29,28 @@ export async function embedText(
     throw new Error("Text is empty after sanitization");
   }
 
-  const response = await fetch("https://integrate.api.nvidia.com/v1/embeddings", {
+  const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "Accept": "application/json",
+      "HTTP-Referer": "https://career141.com",
+      "X-Title": "Career141 System",
     },
     body: JSON.stringify({
-      input: [sanitized],
-      model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
-      input_type: inputType,
-      encoding_format: "float",
-      truncate: "END"
+      input: sanitized,
+      model: "openai/text-embedding-3-small",
     })
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`NVIDIA API Error: ${response.status} ${errorText}`);
+    throw new Error(`OpenRouter Embedding Error: ${response.status} ${errorText}`);
   }
 
   const data = await response.json();
   if (!data.data || !data.data[0] || !data.data[0].embedding) {
-    throw new Error("Invalid response format from NVIDIA Embedding API");
+    throw new Error("Invalid response format from OpenRouter Embedding API");
   }
 
   const promptTokens = data.usage?.prompt_tokens ?? 0;
@@ -60,7 +58,7 @@ export async function embedText(
     embedding: data.data[0].embedding,
     usage: {
       promptTokens,
-      model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
+      model: "openai/text-embedding-3-small",
     },
   };
 }
