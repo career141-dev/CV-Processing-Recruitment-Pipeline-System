@@ -499,15 +499,14 @@ export const aiSearch = action({
       filteredResults = rawResults;
     }
 
-    const topCandidates = filteredResults.slice(0, 30);
-
-    const ranked = topCandidates
+    // Score all candidate matches across title, skills, experience, and domain
+    const ranked = filteredResults
       .map((cv: ScoredCandidateDoc, index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))
       .sort((a: ScoredCandidate, b: ScoredCandidate) =>
+        (b.overallScore - a.overallScore) ||
         (b.titleScore - a.titleScore) ||
         (b.skillScore - a.skillScore) ||
-        (b.experienceScore - a.experienceScore) ||
-        (b.overallScore - a.overallScore)
+        (b.experienceScore - a.experienceScore)
       );
 
     // LLM-based re-scoring for candidates (skip if query is empty)
