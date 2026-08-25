@@ -106,11 +106,10 @@ export const listCandidatesPaginated = query({
     try {
       page = await q.paginate(args.paginationOpts);
     } catch (err: any) {
-      const errStr = String(err?.message || err);
-      if (errStr.includes("InvalidCursor") || errStr.includes("cursor")) {
-        console.warn("[listCandidatesPaginated] Invalid cursor detected, resetting pagination to page 1");
+      console.warn("[listCandidatesPaginated] Pagination error detected, resetting to page 1:", err?.message || err);
+      try {
         page = await q.paginate({ ...args.paginationOpts, cursor: null });
-      } else {
+      } catch (retryErr) {
         throw err;
       }
     }
