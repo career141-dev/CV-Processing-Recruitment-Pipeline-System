@@ -57,9 +57,11 @@ export async function embedText(
         if (response.ok) {
           const data = await response.json();
           if (data.data && data.data[0] && data.data[0].embedding) {
+            const rawEmbedding = data.data[0].embedding;
+            const embedding = rawEmbedding.length > 1024 ? rawEmbedding.slice(0, 1024) : rawEmbedding;
             const promptTokens = data.usage?.prompt_tokens ?? 0;
             return {
-              embedding: data.data[0].embedding,
+              embedding,
               usage: { promptTokens, model },
             };
           }
@@ -101,9 +103,11 @@ export async function embedText(
         if (response.ok) {
           const data = await response.json();
           if (data.data && data.data[0] && data.data[0].embedding) {
+            const rawEmbedding = data.data[0].embedding;
+            const embedding = rawEmbedding.length > 1024 ? rawEmbedding.slice(0, 1024) : rawEmbedding;
             const promptTokens = data.usage?.prompt_tokens ?? 0;
             return {
-              embedding: data.data[0].embedding,
+              embedding,
               usage: { promptTokens, model },
             };
           }
