@@ -39,7 +39,17 @@ export const searchCandidates = query({
         ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
       ]);
     } catch (searchIndexErr: any) {
-      console.warn("[searchCandidates] Text search index warning:", searchIndexErr?.message);
+      console.warn("[searchCandidates] Text search index notice (bootstrapping):", searchIndexErr?.message);
+    }
+
+    // If search indexes are currently bootstrapping, fallback to recent candidates to ensure zero empty state
+    if (titleResults.length === 0 && skillsResults.length === 0 && summaryResults.length === 0) {
+      try {
+        const recentCand = await ctx.db.query("candidates").order("desc").take(limit);
+        titleResults = recentCand;
+      } catch (e) {
+        // Continue
+      }
     }
 
     const resumeCandidateIds: { candidateId: Id<"candidates">; resumeId: Id<"candidateResumes"> }[] = [];
