@@ -149,11 +149,10 @@ export default defineAgent<ProcessUserData>({
 
     const speechToText = new deepgram.STT({
       apiKey: config.deepgramApiKey,
-      model: "nova-3",
+      model: "nova-2-general",
       language: "en",
-      endpointing: 200,
-      interimResults: true,
       smartFormat: true,
+      interimResults: true,
       mipOptOut: true,
     });
 
@@ -249,24 +248,8 @@ ${goals}
       llm: primaryLlm,
       tts: textToSpeech,
       aecWarmupDuration: 0,
-      ttsReadIdleTimeout: 5000,
-      forwardAudioIdleTimeout: 5000,
-      turnHandling: {
-        turnDetection: "vad",
-        endpointing: {
-          mode: "fixed",
-          minDelay: 400,
-          maxDelay: 2500,
-          alpha: 0.9,
-        },
-        interruption: {
-          enabled: true,
-          mode: "vad",
-          minDuration: 300,
-          minWords: 0,
-          resumeFalseInterruption: false,
-        },
-      },
+      ttsReadIdleTimeout: 10000,
+      forwardAudioIdleTimeout: 10000,
     });
 
     const usageCollector = new metrics.ModelUsageCollector();
