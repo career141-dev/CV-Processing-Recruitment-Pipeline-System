@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getOpenAI, getModelForTask } from "./llm";
+import { getOpenAI, getNvidiaOpenAI, getModelForTask, OPENROUTER_PRIMARY_MODEL } from "./llm";
 
 function distinct(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
