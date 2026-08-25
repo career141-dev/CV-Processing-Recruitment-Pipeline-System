@@ -105,26 +105,30 @@ For occupationSynonyms, include alternative job titles that represent the same o
         { role: "system", content: prompt },
         { role: "user", content: text.slice(0, 7000) },
       ],
+      response_format: { type: "json_object" },
     });
 
     const inputTokens = response.usage?.prompt_tokens || 0;
     const outputTokens = response.usage?.completion_tokens || 0;
-    const content = response.choices[0]?.message?.content ?? "{}";
+    let content = response.choices[0]?.message?.content ?? "{}";
+
+    // Clean any markdown formatting if present
+    content = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
     try {
       const parsed = JSON.parse(content) as Partial<SearchRequirements>;
       return {
         requirements: normalizeRequirements({
-          title: parsed.title ?? "Position",
+          title: parsed.title && parsed.title !== "Position" ? parsed.title : text.slice(0, 50),
           alternativeTitles: parsed.alternativeTitles ?? [],
           requiredSkills: parsed.requiredSkills ?? [],
           preferredSkills: parsed.preferredSkills ?? [],
-          minYearsExperience: parsed.minYearsExperience ?? null,
+          minYearsExperience: typeof parsed.minYearsExperience === "number" ? parsed.minYearsExperience : null,
           industry: parsed.industry ?? null,
           seniority: parsed.seniority ?? null,
           location: parsed.location ?? null,
           education: parsed.education ?? null,
-          summary: parsed.summary ?? "Searching for a qualified candidate",
+          summary: parsed.summary ?? text.slice(0, 100),
           occupationSynonyms: parsed.occupationSynonyms ?? [],
           keywords: parsed.keywords ?? [],
           languages: parsed.languages ?? [],
@@ -138,21 +142,22 @@ For occupationSynonyms, include alternative job titles that represent the same o
           model,
         },
       };
-    } catch {
+    } catch (parseErr) {
+      console.warn("[extractSearchRequirements] JSON parse error:", parseErr);
       return {
         requirements: normalizeRequirements({
-          title: "Position",
+          title: text.slice(0, 50),
           alternativeTitles: [],
-          requiredSkills: [],
+          requiredSkills: text.split(/\s+/).filter(w => w.length > 3),
           preferredSkills: [],
           minYearsExperience: null,
           industry: null,
           seniority: null,
           location: null,
           education: null,
-          summary: "Searching for a qualified candidate",
+          summary: text,
           occupationSynonyms: [],
-          keywords: [],
+          keywords: text.split(/\s+/).filter(w => w.length > 3),
           languages: [],
           clientCompany: null,
           clientContactEmail: null,
