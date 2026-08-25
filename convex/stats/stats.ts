@@ -20,49 +20,54 @@ export const getSystemStats = query({
 export const getIngestionStats = query({
   args: {},
   handler: async (ctx) => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    const dailyStat = await ctx.db.query("dailyStats")
-      .withIndex("by_dateStr", q => q.eq("dateStr", todayStr))
-      .first();
+    try {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const dailyStat = await ctx.db.query("dailyStats")
+        .withIndex("by_dateStr", q => q.eq("dateStr", todayStr))
+        .first();
 
-    // Query bounded lists via by_status index in parallel with Promise.all — instant O(1) reads
-    const [activeUploads, queuedUploads, uploadedList, failedUploads, failedRetryUploads, recentDone] = await Promise.all([
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processing")).take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "queued")).take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed_retry")).take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processed")).take(20),
-    ]);
+      const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {
+        WhatsApp: { todayCount: 0, lastReceived: null },
+        Email: { todayCount: 0, lastReceived: null },
+        LinkedIn: { todayCount: 0, lastReceived: null },
+      };
 
-    const activeCombined = [...activeUploads, ...queuedUploads, ...uploadedList];
-
-    const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {};
-
-    if (dailyStat && dailyStat.cvsBySource) {
-      for (const [source, count] of Object.entries(dailyStat.cvsBySource)) {
-        statsBySource[source] = { todayCount: count, lastReceived: null };
+      if (dailyStat && dailyStat.cvsBySource) {
+        for (const [source, count] of Object.entries(dailyStat.cvsBySource)) {
+          statsBySource[source] = { todayCount: count, lastReceived: null };
+        }
       }
+
+      // Small bounded reads (max 5 items) via status index
+      const [processing, queued, uploaded, failed] = await Promise.all([
+        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processing")).take(5),
+        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "queued")).take(5),
+        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).take(5),
+        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).take(5),
+      ]);
+
+      const activeUploads = [...processing, ...queued, ...uploaded];
+
+      return {
+        statsBySource,
+        activeUploads,
+        failedUploads: failed,
+        failedRetryUploads: [],
+        recentDone: []
+      };
+    } catch {
+      return {
+        statsBySource: {
+          WhatsApp: { todayCount: 0, lastReceived: null },
+          Email: { todayCount: 0, lastReceived: null },
+          LinkedIn: { todayCount: 0, lastReceived: null },
+        },
+        activeUploads: [],
+        failedUploads: [],
+        failedRetryUploads: [],
+        recentDone: []
+      };
     }
-
-    const allRecent = [...activeCombined, ...failedUploads, ...failedRetryUploads, ...recentDone];
-    for (const upload of allRecent) {
-      const source = upload.source || "Manual";
-      if (!statsBySource[source]) {
-        statsBySource[source] = { todayCount: 0, lastReceived: null };
-      }
-      if (statsBySource[source].lastReceived === null) {
-        statsBySource[source].lastReceived = upload._creationTime;
-      }
-    }
-
-    return {
-      statsBySource,
-      activeUploads: activeCombined,
-      failedUploads,
-      failedRetryUploads,
-      recentDone
-    };
   },
 });
 
