@@ -261,12 +261,13 @@ export const aiSearch = action({
     type KeywordSearchResult = { candidateId: Id<"candidates">; score: number };
     let searchBatches: KeywordSearchResult[][] = [];
     if (!isQueryEmpty) {
+      const primaryTitle = effectiveReq.title && effectiveReq.title.length > 2 ? effectiveReq.title : args.query;
       const searchTerms = buildSearchTerms(effectiveReq, args.query);
       const batchQueries: Promise<KeywordSearchResult[]>[] = [
-        ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
+        ctx.runQuery(api.matching.search.searchCandidates, { query: primaryTitle, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
       ];
-      // Add at most 2 additional keyword term queries
-      for (const term of searchTerms.slice(0, 2).filter((t) => t !== args.query)) {
+      // Add targeted keyword term queries (alternative titles and key skills)
+      for (const term of searchTerms.filter((t) => t && t !== primaryTitle).slice(0, 3)) {
         batchQueries.push(
           ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: 40 })
         );
@@ -607,36 +608,23 @@ export const aiSearch = action({
 
     const results = finalRanked
       .slice(0, args.limit ?? 20)
-      .filter((item) => item.overallScore >= 20 || item.titleScore >= 40)
       .map((item) => {
-        // Calculate breakdown categories
-        const titleMatch = item.titleScore >= 90 ? "strong match" : item.titleScore >= 70 ? "partial match" : "loose match";
-        const skillsMatch = item.skillScore >= 80 ? "strong match" : item.skillScore >= 50 ? "partial match" : "loose match";
-        
-        let expMatch = "not specified";
-        if (effectiveReq.minYearsExperience != null) {
-          const exp = (item.cv as any).yearsOfExperience ?? (item.cv as any).totalExperienceYears;
-          if (exp == null) expMatch = "not specified";
-          else if (exp >= effectiveReq.minYearsExperience) expMatch = "meets target";
-          else expMatch = "below range";
-        }
-        
-        const locMatch = item.locationStatus === "match" ? "match" 
-          : item.locationStatus === "different" ? "different" 
-          : "not specified";
-          
-        const indMatch = item.industryScore === 100 ? "match" : "different";
+        const displayScore = item.llmScore?.score ? Math.round(Number(item.llmScore.score)) : Math.round(item.overallScore);
+        const displayReason = item.llmScore?.reason || item.reason || buildDeterministicTaReason(item, effectiveReq);
 
         return {
           candidateId: item.cv._id,
-          score: item.overallScore,
-          reason: item.reason,
+          score: displayScore,
+          reason: displayReason,
           breakdown: {
-            title: titleMatch,
-            skills: skillsMatch,
-            experience: expMatch,
-            location: locMatch,
-            industry: indMatch
+            title: item.titleScore >= 90 ? "strong match" : item.titleScore >= 70 ? "partial match" : "loose match",
+            skills: item.skillScore >= 80 ? "strong match" : item.skillScore >= 50 ? "partial match" : "loose match",
+            experience: effectiveReq.minYearsExperience != null ? (
+              ((item.cv as any).yearsOfExperience ?? (item.cv as any).totalExperienceYears ?? 0) >= effectiveReq.minYearsExperience
+                ? "meets target" : "below range"
+            ) : "not specified",
+            location: item.locationStatus === "match" ? "match" : item.locationStatus === "different" ? "different" : "not specified",
+            industry: item.industryScore === 100 ? "match" : "different",
           }
         };
       });
