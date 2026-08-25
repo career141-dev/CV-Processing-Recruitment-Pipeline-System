@@ -29,38 +29,53 @@ export async function embedText(
     throw new Error("Text is empty after sanitization");
   }
 
-  const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://career141.com",
-      "X-Title": "Career141 System",
-    },
-    body: JSON.stringify({
-      input: sanitized,
-      model: "openai/text-embedding-3-small",
-    })
-  });
+  const candidateModels = [
+    "openai/text-embedding-3-small",
+    "baai/bge-m3",
+    "liquid/lfm-2.5-embedding-350m:free",
+    "baai/bge-large-en-v1.5",
+  ];
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter Embedding Error: ${response.status} ${errorText}`);
+  let lastError: any = null;
+
+  for (const model of candidateModels) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://career141.com",
+          "X-Title": "Career141 System",
+        },
+        body: JSON.stringify({
+          input: sanitized,
+          model,
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data && data.data[0] && data.data[0].embedding) {
+          const promptTokens = data.usage?.prompt_tokens ?? 0;
+          return {
+            embedding: data.data[0].embedding,
+            usage: {
+              promptTokens,
+              model,
+            },
+          };
+        }
+      } else {
+        const errorText = await response.text();
+        lastError = new Error(`OpenRouter (${model}): ${response.status} ${errorText}`);
+      }
+    } catch (fetchErr) {
+      lastError = fetchErr;
+    }
   }
 
-  const data = await response.json();
-  if (!data.data || !data.data[0] || !data.data[0].embedding) {
-    throw new Error("Invalid response format from OpenRouter Embedding API");
-  }
-
-  const promptTokens = data.usage?.prompt_tokens ?? 0;
-  return {
-    embedding: data.data[0].embedding,
-    usage: {
-      promptTokens,
-      model: "openai/text-embedding-3-small",
-    },
-  };
+  throw lastError || new Error("Failed to generate embedding from available OpenRouter models");
 }
 
 /**
