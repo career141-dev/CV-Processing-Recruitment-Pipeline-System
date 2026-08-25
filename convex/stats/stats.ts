@@ -79,29 +79,6 @@ export const updateDashboardStatsCache = internalMutation({
   handler: async () => {
     return;
   }
-});Month,
-        trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
-        trendType: placedTrendType,
-      },
-    };
-
-    const existing = await ctx.db.query("dashboardStatsCache")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
-      .first();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        data: statsData,
-        updatedAt: Date.now(),
-      });
-    } else {
-      await ctx.db.insert("dashboardStatsCache", {
-        singletonKey: "global_dashboard_stats",
-        data: statsData,
-        updatedAt: Date.now(),
-      });
-    }
-  }
 });
 
 export const getTeamActivity = query({
