@@ -175,12 +175,18 @@ export default defineAgent<ProcessUserData>({
     primaryLlm.prewarm();
 
     let resourcesClosing = false;
-    const textToSpeech = new deepgram.TTS({
-      apiKey: config.deepgramApiKey,
-      model: "aura-2-asteria-en",
-      sampleRate: 24_000,
-      mipOptOut: true,
-    });
+    const textToSpeech = config.openaiApiKey
+      ? new openai.TTS({
+          apiKey: config.openaiApiKey,
+          model: "tts-1",
+          voice: "nova",
+        })
+      : new deepgram.TTS({
+          apiKey: config.deepgramApiKey,
+          model: "aura-2-asteria-en",
+          sampleRate: 24_000,
+          mipOptOut: true,
+        });
 
     const goals = detailsToCollect
       .map((goal, index) => `${index + 1}. ${goal.trim()}`)
@@ -203,9 +209,8 @@ ${jobDescription.trim()}
 ${goals}
 
 # Conversation flow
-- The opening greeting has ALREADY been spoken: "${greeting}". Do NOT repeat this greeting or introduce yourself again.
-- Your first turn begins when ${candidateName} replies to the opening greeting.
-- If ${candidateName} agrees to talk or says hello (e.g., "Yes", "Sure", "I have time", "Hello"), acknowledge briefly (e.g., "Great! Let's get started.") and immediately ask the FIRST screening goal.
+- Begin the call by greeting ${candidateName} naturally, introducing yourself as Aura calling on behalf of ${companyName} regarding the ${jobTitle} application, and asking whether this is a good time for a quick chat.
+- When ${candidateName} agrees to talk or greets you (e.g., "Yes", "Sure", "I have time", "Hello", "Proceed"), acknowledge briefly (e.g., "Great! Let's get started.") and immediately ask the FIRST screening goal.
 - If they say no or cannot talk right now, ask for a better time and close politely. If they ask to stop, stop immediately.
 - Ask only one question at a time. After receiving the candidate's answer, acknowledge it in a few words and immediately ask the NEXT screening question from the checklist.
 - Before asking, check whether the candidate already answered that item earlier. Never repeat a completed question.
@@ -243,22 +248,23 @@ ${goals}
       stt: speechToText,
       llm: primaryLlm,
       tts: textToSpeech,
+      aecWarmupDuration: 0,
       ttsReadIdleTimeout: 5000,
       forwardAudioIdleTimeout: 5000,
       turnHandling: {
-        turnDetection: "stt",
+        turnDetection: "vad",
+        endpointing: {
+          mode: "fixed",
+          minDelay: 400,
+          maxDelay: 2500,
+          alpha: 0.9,
+        },
         interruption: {
           enabled: true,
-          mode: "adaptive",
-          minDuration: 800,
+          mode: "vad",
+          minDuration: 300,
           minWords: 0,
           resumeFalseInterruption: false,
-        },
-        preemptiveGeneration: {
-          enabled: true,
-          preemptiveTts: true,
-          maxSpeechDuration: 10_000,
-          maxRetries: 2,
         },
       },
     });
@@ -268,6 +274,27 @@ ${goals}
       metrics.logMetrics(event.metrics);
       usageCollector.collect(event.metrics);
     });
+
+    session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event: any) => {
+      if (event?.transcript?.trim()) {
+        console.info(`[Candidate Spoke] (final=${event.isFinal ?? true}): "${event.transcript.trim()}"`);
+      }
+    });
+
+    session.on(voice.AgentSessionEventTypes.SpeechCreated, (event: any) => {
+      if (event?.text?.trim()) {
+        console.info(`[Aura Speaking]: "${event.text.trim()}"`);
+      }
+    });
+
+    session.on(voice.AgentSessionEventTypes.AgentStateChanged, (event: any) => {
+      console.info(`[Agent State Changed]: ${event.state}`);
+    });
+
+    session.on(voice.AgentSessionEventTypes.UserStateChanged, (event: any) => {
+      console.info(`[User State Changed]: ${event.state}`);
+    });
+
     session.on(voice.AgentSessionEventTypes.Error, (event: any) => {
       console.error("[Career141 Voice Agent] Session pipeline error", event.error);
     });
@@ -318,7 +345,9 @@ ${goals}
       await session.close();
     });
 
-    session.say(greeting, { allowInterruptions: false });
+    session.generateReply({
+      instructions: `Greet ${candidateName} warmly and naturally. Introduce yourself as Aura calling on behalf of ${companyName} regarding the ${jobTitle} position, and ask whether this is a good time for a quick chat.`,
+    });
   },
 });
 
