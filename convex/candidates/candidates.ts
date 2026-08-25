@@ -98,8 +98,8 @@ export const listCandidatesPaginated = query({
     } else if (overallStatus) {
       q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
     } else {
-      // Direct primary B-tree forward traversal: instant 2ms read without reverse full table scan
-      q = ctx.db.query("candidates");
+      // Instant O(1) B-tree traversal via firstSeenAt index
+      q = ctx.db.query("candidates").withIndex("by_firstSeenAt");
     }
 
     let page;
