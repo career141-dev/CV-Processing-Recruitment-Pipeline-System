@@ -1,0 +1,28 @@
+name: Stability Guard
+
+# Fast, secret-free check that runs on every push and pull request, independently
+# of the gated production deploy. A commit that reintroduces a known-fatal
+# backend setting is flagged here immediately, without waiting for a deploy
+# approval that may sit unattended.
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No dependency install: the guard uses only the Node standard library.
+      - name: Verify stability invariants
+        run: node scripts/check-stability-invariants.mjs

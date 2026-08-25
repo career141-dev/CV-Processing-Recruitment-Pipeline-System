@@ -32,6 +32,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ── Step 3.1: Stability invariants ─────────────────────────────────
+      # Runs before anything touches the VPS. dab19e7 silently reverted three
+      # backend stability settings and caused a multi-day crash loop that
+      # nothing in this pipeline detected. A commit that reintroduces a
+      # known-fatal setting now fails here instead of on production.
+      - name: Verify stability invariants
+        run: node scripts/check-stability-invariants.mjs
+
       # ── Step 3.5: Ensure Convex Database is Online ─────────────────────
       # We must ensure the self-hosted database is running before we can push code to it
       - name: Ensure Convex is Online

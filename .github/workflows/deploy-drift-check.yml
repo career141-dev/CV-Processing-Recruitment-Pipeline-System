@@ -1,0 +1,63 @@
+name: Production Drift Check
+
+# Keeping the manual approval gate on the production deploy means a fix can sit
+# merged on main while production keeps running older code. That is exactly what
+# happened for three days: the bounded listCandidatesPaginated fix was pushed and
+# never deployed, so the dashboard kept failing with
+# "Your request timed out performing too many system operations."
+#
+# Nothing reported that gap. This job does. It compares the commit checked out on
+# the VPS against the current tip of main and fails when they diverge, which
+# sends a GitHub notification. A failure here almost always means a production
+# deploy is waiting for approval in the Actions tab.
+#
+# Read-only: it runs `git rev-parse` on the VPS and changes nothing.
+on:
+  schedule:
+    # Twice an hour on off-peak minutes. Scheduled runs on :00 are heavily
+    # contended across GitHub and get delayed.
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+
+# Never queue behind an in-flight check; the newest reading is the only one worth
+# having.
+concurrency:
+  group: production-drift-check
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compare production checkout against main
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          command_timeout: 2m
+          script: |
+            set -e
+            EXPECTED="${{ github.sha }}"
+            ACTUAL="$(git -C ~/career141 rev-parse HEAD)"
+
+            echo "main tip:              ${EXPECTED}"
+            echo "production checkout:   ${ACTUAL}"
+
+            if [ "${EXPECTED}" = "${ACTUAL}" ]; then
+              echo ""
+              echo "In sync. Production is running the current tip of main."
+              exit 0
+            fi
+
+            echo ""
+            echo "DRIFT DETECTED: production is not running the current tip of main."
+            echo ""
+            echo "Commits merged to main but not deployed:"
+            git -C ~/career141 log --oneline "${ACTUAL}..${EXPECTED}" 2>/dev/null \
+              || echo "  (unable to list; the VPS checkout is shallow)"
+            echo ""
+            echo "Most likely cause: the 'Deploy to VPS' run for ${EXPECTED} is waiting"
+            echo "for approval on the 'production' environment. Open the Actions tab and"
+            echo "approve it, or deploy by hand on the VPS."
+            exit 1
