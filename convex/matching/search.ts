@@ -192,7 +192,7 @@ export const aiSearch = action({
         queryEmbedding = null;
         tokenLogs.push({
           taskType: "embedding",
-          model: "nvidia/nv-embedqa-e5-v5",
+          model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
           promptTokens: 0,
           completionTokens: 0,
           success: false,
@@ -714,7 +714,7 @@ export const semanticSearch = action({
         logs: [
           {
             taskType: "embedding",
-            model: "nvidia/nv-embedqa-e5-v5",
+            model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
             promptTokens: 0,
             completionTokens: 0,
             success: false,

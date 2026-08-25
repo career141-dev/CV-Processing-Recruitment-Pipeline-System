@@ -38,7 +38,7 @@ export async function embedText(
     },
     body: JSON.stringify({
       input: [sanitized],
-      model: "nvidia/nv-embedqa-e5-v5",
+      model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
       input_type: inputType,
       encoding_format: "float",
       truncate: "END"
@@ -60,7 +60,7 @@ export async function embedText(
     embedding: data.data[0].embedding,
     usage: {
       promptTokens,
-      model: "nvidia/nv-embedqa-e5-v5",
+      model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
     },
   };
 }
@@ -160,7 +160,7 @@ export const generateJobEmbedding = action({
         logs: [
           {
             taskType: "embedding",
-            model: "nvidia/nv-embedqa-e5-v5",
+            model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
             promptTokens: 0,
             completionTokens: 0,
             success: false,
@@ -349,7 +349,7 @@ Return ONLY valid JSON matching this schema:
         } catch (err) {
           tokenLogs.push({
             taskType: "embedding",
-            model: "nvidia/nv-embedqa-e5-v5",
+            model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
             promptTokens: 0,
             completionTokens: 0,
             success: false,
@@ -1010,7 +1010,7 @@ export const backfillCandidateEmbeddings = action({
         console.error(`Failed to backfill embedding for candidate ${resume.candidateId}:`, err);
         tokenLogs.push({
           taskType: "embedding",
-          model: "nvidia/nv-embedqa-e5-v5",
+          model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
           promptTokens: 0,
           completionTokens: 0,
           success: false,

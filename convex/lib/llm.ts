@@ -170,7 +170,7 @@ export async function generateNvidiaEmbedding(
       await logLLMUsage(
         ctx,
         "embedding",
-        "nvidia/nv-embedqa-e5-v5",
+        "nvidia/llama-3.2-nv-embedqa-1b-v2",
         0,
         0,
         false,
