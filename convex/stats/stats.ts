@@ -32,7 +32,7 @@ export const getIngestionStats = query({
       ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).order("desc").take(20),
       ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).order("desc").take(20),
       ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed_retry")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processed")).order("desc").take(20),
+      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processed")).take(20),
     ]);
 
     const activeCombined = [...activeUploads, ...queuedUploads, ...uploadedList];
@@ -1322,7 +1322,6 @@ export const getDirectUploadLiveStatus = query({
     const latestProcessed = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "processed"))
-      .order("desc")
       .first();
 
     const sysStat = await ctx.db

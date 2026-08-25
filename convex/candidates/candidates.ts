@@ -72,8 +72,8 @@ export const listCandidatesByIds = query({
 });
 
 export const listCandidatesPaginated = query({
-  args: {
-    paginationOpts: paginationOptsValidator,
+  args: { 
+    paginationOpts: v.any(),
     searchQuery: v.optional(v.string()),
     overallStatus: v.optional(v.string()),
     sourceChannel: v.optional(v.string()),
@@ -82,7 +82,7 @@ export const listCandidatesPaginated = query({
     await requireFullAccess(ctx);
     let q;
     
-    if (args.searchQuery && args.searchQuery.trim().length >= 2) {
+    if (args.searchQuery) {
       const sq = args.searchQuery.trim();
       if (sq.includes("@")) {
         q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq)).order("desc");
@@ -96,33 +96,40 @@ export const listCandidatesPaginated = query({
       q = ctx.db.query("candidates").order("desc");
     }
 
-    const numItems = Math.min(Math.max(args.paginationOpts.numItems || 10, 1), 50);
-    const paginationOpts = { ...args.paginationOpts, numItems };
-
     let page;
     try {
-      page = await q.paginate(paginationOpts);
+      page = await q.paginate(args.paginationOpts);
     } catch (err: any) {
-      console.warn("[listCandidatesPaginated] Pagination cursor reset:", err?.message || err);
-      page = await q.paginate({ ...paginationOpts, cursor: null });
+      const errStr = String(err?.message || err);
+      if (errStr.includes("InvalidCursor") || errStr.includes("cursor")) {
+        console.warn("[listCandidatesPaginated] Invalid cursor detected, resetting pagination to page 1");
+        page = await q.paginate({ ...args.paginationOpts, cursor: null });
+      } else {
+        throw err;
+      }
     }
       
     return {
       ...page,
-      page: page.page.map((c) => {
-        const { rawText, embedding, jobHistory, activeApplicationsSummary, ...safeCandidate } = c as any;
+      page: await Promise.all(
+        page.page.map(async (c) => {
+          const { rawText, embedding, jobHistory, activeApplicationsSummary, ...safeCandidate } = c as any;
 
-        let activeApplications: any[] = [];
-        if (Array.isArray(activeApplicationsSummary)) {
-          activeApplications = activeApplicationsSummary;
-        }
+          // Prefer the pre-computed summary field (O(1)) over the live N+2 query
+          let activeApplications: any[] = [];
+          if (Array.isArray(activeApplicationsSummary)) {
+            activeApplications = activeApplicationsSummary;
+          }
+          // Fallback omitted: backfill confirmed all candidates have activeApplicationsSummary.
+          // Using [] is safe — summary self-heals on next candidate write.
 
-        return {
-          ...safeCandidate,
-          profileImageUrl: null,
-          activeApplications: activeApplications,
-        };
-      }),
+          return {
+            ...safeCandidate,
+            profileImageUrl: null,
+            activeApplications: activeApplications,
+          };
+        })
+      ),
     };
   },
 });
