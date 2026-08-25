@@ -19,9 +19,9 @@ services:
       # ── CRASH FIX 3: Reduced concurrency to prevent CPU/memory overload ──
       # Original was 16 for all — lowered to prevent thundering herd under load
       - APPLICATION_MAX_CONCURRENT_MUTATIONS=${APPLICATION_MAX_CONCURRENT_MUTATIONS:-16}
-      - APPLICATION_MAX_CONCURRENT_NODE_ACTIONS=${APPLICATION_MAX_CONCURRENT_NODE_ACTIONS:-32}
+      - APPLICATION_MAX_CONCURRENT_NODE_ACTIONS=${APPLICATION_MAX_CONCURRENT_NODE_ACTIONS:-8}
       - APPLICATION_MAX_CONCURRENT_QUERIES=${APPLICATION_MAX_CONCURRENT_QUERIES:-32}
-      - APPLICATION_MAX_CONCURRENT_V8_ACTIONS=${APPLICATION_MAX_CONCURRENT_V8_ACTIONS:-32}
+      - APPLICATION_MAX_CONCURRENT_V8_ACTIONS=${APPLICATION_MAX_CONCURRENT_V8_ACTIONS:-8}
       - AWS_ACCESS_KEY_ID
       - AWS_REGION
       - AWS_S3_DISABLE_CHECKSUMS
@@ -35,7 +35,7 @@ services:
       - DATABASE_URL
       - DISABLE_BEACON
       - DISABLE_METRICS_ENDPOINT=${DISABLE_METRICS_ENDPOINT:-true}
-      - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-172800}
+      - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-3600}
       - DO_NOT_REQUIRE_SSL
       - HTTP_SERVER_TIMEOUT_SECONDS
       - INSTANCE_NAME
@@ -65,11 +65,11 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3210/version || exit 1"]
       interval: 10s
-      start_period: 5m
+      start_period: 150s
       timeout: 10s
       retries: 18
-    # ── SCALE & STABILITY FIX: 8.5g limit provides ample headroom on 11GB VPS ──
-    mem_limit: 8.5g
+    # ── SCALE & STABILITY FIX: 7.5g limit provides safe headroom for 4.6GB SQLite DB ──
+    mem_limit: 7.5g
     mem_reservation: 2g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
