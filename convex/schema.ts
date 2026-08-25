@@ -551,7 +551,8 @@ export default defineSchema({
 
   candidateResumes: defineTable({
     candidateId: v.id("candidates"),
-    rawText: v.string(),
+    rawText: v.optional(v.string()),
+    rawTextKey: v.optional(v.string()),
     jobHistory: v.optional(v.array(v.object({
       company: v.string(),
       title: v.string(),
@@ -718,6 +719,9 @@ export default defineSchema({
     doNotContact: v.optional(v.boolean()),
     doNotContactReason: v.optional(v.string()),
     doNotContactAt: v.optional(v.number()),
+    rawText: v.optional(v.string()),
+    rawTextKey: v.optional(v.string()),
+    hasEmbedding: v.optional(v.boolean()),
     candidateQuestions: v.optional(v.string()),
     customCallData: v.optional(v.any()),
   })

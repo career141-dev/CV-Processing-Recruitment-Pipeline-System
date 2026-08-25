@@ -112,6 +112,30 @@ export const updateCandidateEmbedding = internalMutation({
   },
 });
 
+export const markCandidateHasEmbedding = internalMutation({
+  args: { 
+    candidateId: v.id("candidates"),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("candidateResumes")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", args.candidateId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { 
+        hasEmbedding: true,
+      });
+    } else {
+      await ctx.db.insert("candidateResumes", {
+        candidateId: args.candidateId,
+        hasEmbedding: true,
+      });
+    }
+    await ctx.db.patch(args.candidateId, {
+      hasEmbedding: true,
+    });
+  },
+});
+
 export const updateJobEmbedding = internalMutation({
   args: { 
     jobId: v.id("jobs"),
