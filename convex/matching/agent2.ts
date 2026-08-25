@@ -29,51 +29,13 @@ export async function embedText(
     throw new Error("Text is empty after sanitization");
   }
 
-  // 1. Try NVIDIA NIM API First (if NVIDIA_API_KEY is available)
-  const nvidiaKey = process.env.NVIDIA_API_KEY;
-  if (nvidiaKey) {
-    const nvidiaModels = ["baai/bge-m3", "snowflake/arctic-embed-l"];
-    for (const model of nvidiaModels) {
-      try {
-        const response = await fetch("https://integrate.api.nvidia.com/v1/embeddings", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${nvidiaKey}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-          },
-          body: JSON.stringify({
-            input: [sanitized],
-            model,
-            encoding_format: "float",
-            truncate: "END",
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.data && data.data[0] && data.data[0].embedding) {
-            const promptTokens = data.usage?.prompt_tokens ?? 0;
-            return {
-              embedding: data.data[0].embedding,
-              usage: { promptTokens, model },
-            };
-          }
-        }
-      } catch (e) {
-        // Continue to next model/provider
-      }
-    }
-  }
-
-  // 2. Fallback to OpenRouter
+  // 1. Primary: OpenRouter openai/text-embedding-3-small
   const openRouterKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
   if (openRouterKey) {
     const candidateModels = [
+      "openai/text-embedding-3-small",
       "baai/bge-m3",
       "liquid/lfm-2.5-embedding-350m:free",
-      "openai/text-embedding-3-small",
-      "baai/bge-large-en-v1.5",
     ];
 
     for (const model of candidateModels) {
@@ -108,7 +70,44 @@ export async function embedText(
     }
   }
 
-  throw new Error("Failed to generate embedding across all configured providers (NVIDIA NIM & OpenRouter)");
+  // 2. Secondary Fallback: NVIDIA NIM API
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
+  if (nvidiaKey) {
+    const nvidiaModels = ["baai/bge-m3", "snowflake/arctic-embed-l"];
+    for (const model of nvidiaModels) {
+      try {
+        const response = await fetch("https://integrate.api.nvidia.com/v1/embeddings", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${nvidiaKey}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({
+            input: [sanitized],
+            model,
+            encoding_format: "float",
+            truncate: "END",
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.data && data.data[0] && data.data[0].embedding) {
+            const promptTokens = data.usage?.prompt_tokens ?? 0;
+            return {
+              embedding: data.data[0].embedding,
+              usage: { promptTokens, model },
+            };
+          }
+        }
+      } catch (e) {
+        // Continue to next model
+      }
+    }
+  }
+
+  throw new Error("Failed to generate embedding across all configured providers (OpenRouter & NVIDIA NIM)");
 }
 
 /**
