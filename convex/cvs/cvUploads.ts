@@ -501,7 +501,7 @@ export const requeueAllStuckUploads = internalMutation({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 100;
+    const limit = args.limit ?? 10;
 
     const failedList = await ctx.db
       .query("cvUploads")
