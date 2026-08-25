@@ -63,9 +63,12 @@ export async function embedText(
               usage: { promptTokens, model },
             };
           }
+        } else {
+          const errText = await response.text();
+          console.warn(`[embedText] OpenRouter ${model} error (${response.status}):`, errText);
         }
-      } catch (fetchErr) {
-        // Continue to next model
+      } catch (fetchErr: any) {
+        console.warn(`[embedText] OpenRouter ${model} network error:`, fetchErr?.message || fetchErr);
       }
     }
   }
@@ -100,9 +103,12 @@ export async function embedText(
               usage: { promptTokens, model },
             };
           }
+        } else {
+          const errText = await response.text();
+          console.warn(`[embedText] NVIDIA ${model} error (${response.status}):`, errText);
         }
-      } catch (e) {
-        // Continue to next model
+      } catch (e: any) {
+        console.warn(`[embedText] NVIDIA ${model} network error:`, e?.message || e);
       }
     }
   }
