@@ -588,31 +588,26 @@ export const recoverCreditDepletedCVs = mutation({
     const processedList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "processed"))
-      .order("desc")
       .take(150);
 
     const failedList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "failed"))
-      .order("desc")
       .take(50);
 
     const failedRetryList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "failed_retry"))
-      .order("desc")
       .take(50);
 
     const permFailedList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "extraction_failed_permanent"))
-      .order("desc")
       .take(50);
 
     const processingList = await ctx.db
       .query("cvUploads")
       .withIndex("by_status", (q) => q.eq("status", "processing"))
-      .order("desc")
       .take(100);
 
     const threeMinsAgo = Date.now() - 3 * 60 * 1000;
