@@ -622,19 +622,11 @@ export const aiSearch = action({
       })).sort((a, b) => b.overallScore - a.overallScore);
     }
 
-    let qualifyingCandidates = finalRanked.filter((item) => {
-      const sc = item.llmScore?.score !== undefined ? Number(item.llmScore.score) : item.overallScore;
-      return sc >= 45 && (item.titleScore >= 30 || item.skillScore >= 35);
-    });
-
-    if (qualifyingCandidates.length === 0) {
-      qualifyingCandidates = finalRanked.filter((item) => {
+    const results = finalRanked
+      .filter((item) => {
         const sc = item.llmScore?.score !== undefined ? Number(item.llmScore.score) : item.overallScore;
         return sc > 0;
-      });
-    }
-
-    const results = qualifyingCandidates
+      })
       .slice(0, args.limit ?? 20)
       .map((item) => {
         const displayScore = item.llmScore?.score ? Math.round(Number(item.llmScore.score)) : Math.round(item.overallScore);
