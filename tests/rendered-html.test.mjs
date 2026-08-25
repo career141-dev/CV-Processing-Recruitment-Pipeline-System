@@ -44,6 +44,12 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(page, /BARGE_IN_CONFIRMATION_MS = 380/);
   assert.match(page, /pendingCandidateResponseRef/);
   assert.match(page, /response_cancel_not_active/);
+  assert.match(page, /buildOpeningInstructions/);
+  assert.match(page, /candidate's supplied name/);
+  assert.match(page, /Say the company exactly as/);
+  assert.match(page, /Say the position exactly as/);
+  assert.match(page, /what the position involves/);
+  assert.match(page, /Never say the information is unavailable without checking the full brief first/);
   assert.match(page, /noiseSuppression: true/);
   assert.doesNotMatch(page, /SpeechRecognition|speechSynthesis|MediaRecorder|AudioContext/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
@@ -61,6 +67,8 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(config, /Keep one steady vocal character throughout the call/);
   assert.match(config, /authoritative recruiter-provided call brief/);
   assert.match(config, /silently find the supporting fact/);
+  assert.match(config, /Address .* by name when a name was supplied/);
+  assert.match(config, /one short, concrete and accurate sentence explaining what the position involves/);
   assert.match(config, /usually under 35 words/);
   assert.doesNotMatch(`${page}\n${realtimeRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);
 });

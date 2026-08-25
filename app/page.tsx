@@ -60,6 +60,23 @@ const eventTranscript = (event: RealtimeEvent) => {
     .trim();
 };
 
+const buildOpeningInstructions = (screening: ScreeningContext) => {
+  const candidateInstruction = screening.candidateName.trim()
+    ? `Start with the candidate's supplied name: ${JSON.stringify(screening.candidateName.trim())}.`
+    : "No candidate name was supplied, so use a simple natural greeting without inventing a name.";
+
+  return [
+    "Begin the call now using the authoritative session brief.",
+    candidateInstruction,
+    `Say the company exactly as ${JSON.stringify(screening.companyName.trim())}.`,
+    `Say the position exactly as ${JSON.stringify(screening.jobTitle.trim())}.`,
+    "Add one short, concrete and accurate sentence explaining what the position involves, using only the supplied job description.",
+    "Explain that the call concerns the candidate's application.",
+    "Then ask whether now is a good time for a quick chat.",
+    "Do not ask a screening question yet, and do not omit any of the required opening details.",
+  ].join(" ");
+};
+
 export default function Home() {
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -121,7 +138,7 @@ export default function Home() {
       type: "response.create",
       response: {
         output_modalities: ["audio"],
-        ...(instructions ? { instructions } : {}),
+        instructions: instructions ?? "Use the recruiter-provided candidate name, company, exact position, and full job description in the session brief as the authoritative source. When the candidate asks about the role, answer from that brief before returning naturally to the screening. Never say the information is unavailable without checking the full brief first.",
       },
     });
   }, [sendRealtimeEvent]);
@@ -374,7 +391,7 @@ export default function Home() {
 
       sessionActiveRef.current = true;
       setSessionActive(true);
-      beginAgentResponse("Begin the call now. Use the authoritative company and position from the session brief. Give only a natural introduction, clearly name the company and exact position, explain that this is about the candidate's application, then ask whether now is a good time for a quick chat. Do not ask a screening question yet.");
+      beginAgentResponse(buildOpeningInstructions(screening));
     } catch (error) {
       closeRealtimeSession();
       sessionActiveRef.current = false;
