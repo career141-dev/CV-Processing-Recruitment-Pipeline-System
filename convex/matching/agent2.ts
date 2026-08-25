@@ -474,45 +474,30 @@ Return ONLY valid JSON matching this schema:
       );
 
       if (missingEmbeddings.length > 0) {
-        const limitToEmbed = missingEmbeddings.slice(0, 15);
-        await Promise.all(
-          limitToEmbed.map(async (k) => {
-            try {
-              const resume: any = keywordResumeMap.get(k.candidateId);
-              if (resume && resume.rawText) {
-                const textToEmbed = resume.rawText.slice(0, 15000);
-                const embedResult = await embedText(textToEmbed, "passage");
-                const embedding = embedResult.embedding;
-                await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
-                  candidateId: k.candidateId,
-                  embedding,
-                });
-                resume.embedding = embedding; // Update in-memory reference
-                const cand = candidatesMap.get(k.candidateId.toString());
-                tokenLogs.push({
-                  taskType: "embedding",
-                  model: embedResult.usage.model,
-                  promptTokens: embedResult.usage.promptTokens,
-                  completionTokens: 0,
-                  success: true,
-                  cvUploadId: cand?.cvUploadId ?? undefined,
-                });
+        const limitToEmbed = missingEmbeddings.slice(0, 9);
+        const CHUNK_SIZE = 3;
+        for (let i = 0; i < limitToEmbed.length; i += CHUNK_SIZE) {
+          const chunk = limitToEmbed.slice(i, i + CHUNK_SIZE);
+          await Promise.all(
+            chunk.map(async (k) => {
+              try {
+                const resume: any = keywordResumeMap.get(k.candidateId);
+                if (resume && resume.rawText) {
+                  const textToEmbed = resume.rawText.slice(0, 15000);
+                  const embedResult = await embedText(textToEmbed, "passage");
+                  const embedding = embedResult.embedding;
+                  await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
+                    candidateId: k.candidateId,
+                    embedding,
+                  });
+                  resume.embedding = embedding; // Update in-memory reference
+                }
+              } catch (err) {
+                console.warn(`[ReverseMatch] Non-blocking embedding generation notice for candidate ${k.candidateId}:`, err);
               }
-            } catch (err) {
-              console.error(`Failed to generate on-the-fly embedding for candidate ${k.candidateId}:`, err);
-              const cand = candidatesMap.get(k.candidateId.toString());
-              tokenLogs.push({
-                taskType: "embedding",
-                model: "nvidia/nv-embedqa-e5-v5",
-                promptTokens: 0,
-                completionTokens: 0,
-                success: false,
-                error: err instanceof Error ? err.message : String(err),
-                cvUploadId: cand?.cvUploadId ?? undefined,
-              });
-            }
-          })
-        );
+            })
+          );
+        }
       }
 
       // 7. Merge, enrich, and calculate similarity scores
