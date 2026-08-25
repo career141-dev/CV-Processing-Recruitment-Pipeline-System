@@ -80,6 +80,9 @@ export const listCandidatesPaginated = query({
   },
   handler: async (ctx, args) => {
     await requireFullAccess(ctx);
+    const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;
+    const sourceChannel = args.sourceChannel && args.sourceChannel !== "all" ? args.sourceChannel : undefined;
+
     const buildQuery = () => {
       if (args.searchQuery) {
         const sq = args.searchQuery.trim();
