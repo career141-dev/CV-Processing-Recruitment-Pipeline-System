@@ -6,30 +6,18 @@ import type { ScreeningContext } from "../lib/agent-config";
 type AgentStatus = "idle" | "requesting" | "listening" | "thinking" | "speaking" | "error";
 type MessageRole = "user" | "assistant";
 type Message = { id: string; role: MessageRole; text: string; time: string };
-type SpeechQueueItem = { text: string; audio: Promise<Response | null>; controller: AbortController; cycle: number };
-type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
-type RecognitionEvent = { resultIndex: number; results: ArrayLike<SpeechResult> };
-type RecognitionError = { error: string };
-type Recognition = {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onstart: null | (() => void);
-  onend: null | (() => void);
-  onresult: null | ((event: RecognitionEvent) => void);
-  onerror: null | ((event: RecognitionError) => void);
+type RealtimeEvent = {
+  type?: string;
+  item_id?: string;
+  delta?: string;
+  transcript?: string;
+  error?: { message?: string };
+  response?: {
+    status?: string;
+    status_details?: { error?: { message?: string } };
+    output?: Array<{ content?: Array<{ transcript?: string; text?: string }> }>;
+  };
 };
-type RecognitionConstructor = new () => Recognition;
-
-declare global {
-  interface Window {
-    SpeechRecognition?: RecognitionConstructor;
-    webkitSpeechRecognition?: RecognitionConstructor;
-  }
-}
 
 const DEFAULT_GOALS = `Confirm continued interest in the role
 Understand the candidate's most relevant recent experience
@@ -39,34 +27,15 @@ Collect availability for a next-stage interview`;
 
 const statusCopy: Record<AgentStatus, { label: string; description: string }> = {
   idle: { label: "Screening ready", description: "Add the job context, then start a practice screening." },
-  requesting: { label: "Waiting for microphone", description: "Allow microphone access once to rehearse the call by voice." },
-  listening: { label: "Listening to candidate", description: "Answer as the candidate. Aura will move through the screening naturally." },
-  thinking: { label: "Choosing the next question", description: "Aura is checking what has already been answered." },
-  speaking: { label: "Aura is speaking", description: "Listen to the question, then reply naturally or type a test answer below." },
+  requesting: { label: "Connecting the call", description: "Allow microphone access once while Aura prepares the live conversation." },
+  listening: { label: "Listening to candidate", description: "Answer naturally. Aura can hear pauses, tone, and interruptions." },
+  thinking: { label: "Choosing the next question", description: "Aura is responding through the live voice connection." },
+  speaking: { label: "Aura is speaking", description: "You can interrupt naturally at any time, just like a phone call." },
   error: { label: "Needs attention", description: "Review the message and try the screening again." },
 };
 
 const nowLabel = () => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date());
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const END_OF_TURN_DELAY_MS = 720;
-
-const selectNaturalVoice = (voices: SpeechSynthesisVoice[]) => {
-  const preferredNames = [
-    "Google US English", "Microsoft Aria", "Microsoft Jenny", "Samantha",
-    "Ava", "Allison", "Serena", "Daniel", "Karen", "Tessa", "Moira",
-  ];
-  return voices
-    .filter((voice) => voice.lang.toLowerCase().startsWith("en"))
-    .map((voice) => {
-      const preferredIndex = preferredNames.findIndex((name) => voice.name.toLowerCase().includes(name.toLowerCase()));
-      const score = (preferredIndex >= 0 ? 200 - preferredIndex : 0)
-        + (/natural|neural|premium|enhanced/i.test(voice.name) ? 120 : 0)
-        + (voice.lang.toLowerCase() === "en-us" ? 20 : 0)
-        + (!voice.localService ? 12 : 0);
-      return { voice, score };
-    })
-    .sort((a, b) => b.score - a.score)[0]?.voice ?? null;
-};
 
 const fileAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -80,15 +49,13 @@ const headingValue = (text: string, label: string) => {
   return match?.[1]?.trim() ?? "";
 };
 
-const prepareNaturalSpeech = async (text: string, signal: AbortSignal) => {
-  const response = await fetch("/api/speak", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-    signal,
-  });
-  if (!response.ok) throw new Error("Natural voice playback was unavailable.");
-  return response;
+const eventTranscript = (event: RealtimeEvent) => {
+  const output = event.response?.output ?? [];
+  return output
+    .flatMap((item) => item.content ?? [])
+    .map((content) => content.transcript ?? content.text ?? "")
+    .join(" ")
+    .trim();
 };
 
 export default function Home() {
@@ -106,421 +73,131 @@ export default function Home() {
   const [preparingFile, setPreparingFile] = useState(false);
   const [typedReply, setTypedReply] = useState("");
 
-  const messagesRef = useRef(messages);
-  const screeningContextRef = useRef<ScreeningContext | null>(null);
-  const recognitionRef = useRef<Recognition | null>(null);
+  const messagesRef = useRef<Message[]>([]);
   const sessionActiveRef = useRef(false);
-  const turnBusyRef = useRef(false);
-  const speakingRef = useRef(false);
-  const speechQueueRef = useRef<SpeechQueueItem[]>([]);
-  const speechBufferRef = useRef("");
-  const firstSpeechQueuedRef = useRef(false);
-  const streamCompleteRef = useRef(false);
-  const requestAbortRef = useRef<AbortController | null>(null);
-  const silenceTimerRef = useRef<number | null>(null);
-  const currentTranscriptRef = useRef("");
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedAudioChunksRef = useRef<Blob[]>([]);
-  const transcriptionAbortRef = useRef<AbortController | null>(null);
-  const speechCycleRef = useRef(0);
-  const currentSpeechControllerRef = useRef<AbortController | null>(null);
-  const currentSpeechReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
-  const currentAudioContextRef = useRef<AudioContext | null>(null);
-  const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
-  const handleTurnRef = useRef<(text: string) => Promise<void>>(async () => undefined);
-  const speakNextRef = useRef<() => void>(() => undefined);
-  const finishTurnRef = useRef<() => void>(() => undefined);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const connectionAbortRef = useRef<AbortController | null>(null);
+  const assistantDraftRef = useRef<{ itemId: string; messageId: string; text: string } | null>(null);
 
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
-
-  useEffect(() => {
-    const loadVoices = () => { preferredVoiceRef.current = selectNaturalVoice(window.speechSynthesis.getVoices()); };
-    loadVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
-    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  const updateMessages = useCallback((next: Message[]) => {
+    messagesRef.current = next;
+    setMessages(next);
   }, []);
 
-  const clearSilenceTimer = useCallback(() => {
-    if (silenceTimerRef.current !== null) {
-      window.clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-  }, []);
-
-  const startCandidateRecording = useCallback(() => {
-    const stream = microphoneStreamRef.current;
-    if (!stream || typeof MediaRecorder === "undefined" || mediaRecorderRef.current?.state === "recording") return;
-    const supportedType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
-      .find((type) => MediaRecorder.isTypeSupported(type));
-    const recorder = new MediaRecorder(stream, supportedType ? { mimeType: supportedType } : undefined);
-    recordedAudioChunksRef.current = [];
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) recordedAudioChunksRef.current.push(event.data);
-    };
-    recorder.start();
-    mediaRecorderRef.current = recorder;
-  }, []);
-
-  const stopCandidateRecording = useCallback(() => {
-    const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state === "inactive") return Promise.resolve<Blob | null>(null);
-    mediaRecorderRef.current = null;
-    return new Promise<Blob | null>((resolve) => {
-      const finish = () => {
-        const chunks = recordedAudioChunksRef.current;
-        recordedAudioChunksRef.current = [];
-        resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null);
-      };
-      recorder.onstop = finish;
-      recorder.onerror = () => resolve(null);
-      recorder.stop();
-    });
-  }, []);
-
-  const transcribeCandidateAudio = useCallback(async (audio: Blob) => {
-    const controller = new AbortController();
-    transcriptionAbortRef.current = controller;
-    const extension = audio.type.includes("mp4") ? "m4a" : "webm";
-    const formData = new FormData();
-    formData.append("audio", audio, `candidate.${extension}`);
-    try {
-      const response = await fetch("/api/transcribe", { method: "POST", body: formData, signal: controller.signal });
-      if (!response.ok) throw new Error("Accurate transcription was unavailable.");
-      const result = await response.json() as { text?: unknown };
-      return typeof result.text === "string" ? result.text.trim() : "";
-    } finally {
-      if (transcriptionAbortRef.current === controller) transcriptionAbortRef.current = null;
-    }
-  }, []);
-
-  const stopSpeechPlayback = useCallback(() => {
-    currentSpeechControllerRef.current?.abort();
-    currentSpeechControllerRef.current = null;
-    speechQueueRef.current.forEach((item) => item.controller.abort());
-    const reader = currentSpeechReaderRef.current;
-    currentSpeechReaderRef.current = null;
-    if (reader) void reader.cancel().catch(() => undefined);
-    const audioContext = currentAudioContextRef.current;
-    currentAudioContextRef.current = null;
-    if (audioContext && audioContext.state !== "closed") void audioContext.close().catch(() => undefined);
-    window.speechSynthesis?.cancel();
-  }, []);
-
-  const startListening = useCallback(() => {
-    if (!sessionActiveRef.current || turnBusyRef.current || speakingRef.current) return;
-    currentTranscriptRef.current = "";
-    clearSilenceTimer();
-    setStatus("listening");
-    startCandidateRecording();
-    try { recognitionRef.current?.start(); } catch { /* Already listening. */ }
-  }, [clearSilenceTimer, startCandidateRecording]);
-
-  useEffect(() => {
-    finishTurnRef.current = () => {
-      turnBusyRef.current = false;
-      speakingRef.current = false;
-      streamCompleteRef.current = false;
-      requestAbortRef.current = null;
-      if (sessionActiveRef.current) window.setTimeout(startListening, 180);
-    };
-  }, [startListening]);
-
-  useEffect(() => {
-    speakNextRef.current = async () => {
-      if (speakingRef.current) return;
-      const next = speechQueueRef.current.shift();
-      if (!next) {
-        if (streamCompleteRef.current && turnBusyRef.current) finishTurnRef.current();
-        return;
-      }
-      speakingRef.current = true;
-      setStatus("speaking");
-      currentSpeechControllerRef.current = next.controller;
-      let finished = false;
-
-      const finishItem = () => {
-        if (finished) return;
-        finished = true;
-        currentSpeechControllerRef.current = null;
-        currentSpeechReaderRef.current = null;
-        const audioContext = currentAudioContextRef.current;
-        currentAudioContextRef.current = null;
-        if (audioContext && audioContext.state !== "closed") void audioContext.close().catch(() => undefined);
-        speakingRef.current = false;
-        speakNextRef.current();
-      };
-
-      const playBrowserFallback = () => {
-        if (!("speechSynthesis" in window)) {
-          setErrorMessage("Voice playback is not available in this browser. Try the latest Chrome or Edge.");
-          setStatus("error");
-          turnBusyRef.current = false;
-          speakingRef.current = false;
-          return;
-        }
-        const utterance = new SpeechSynthesisUtterance(next.text);
-        const preferredVoice = preferredVoiceRef.current ?? selectNaturalVoice(window.speechSynthesis.getVoices());
-        if (preferredVoice) utterance.voice = preferredVoice;
-        utterance.rate = 1.04;
-        utterance.pitch = 0.98;
-        utterance.onend = finishItem;
-        utterance.onerror = finishItem;
-        window.speechSynthesis.speak(utterance);
-      };
-
-      const speechResponse = await next.audio;
-      if (next.cycle !== speechCycleRef.current || !sessionActiveRef.current) {
-        currentSpeechControllerRef.current = null;
-        speakingRef.current = false;
-        speakNextRef.current();
-        return;
-      }
-      if (!speechResponse?.body || typeof AudioContext === "undefined") {
-        playBrowserFallback();
-        return;
-      }
-
-      let audioStarted = false;
-      try {
-        const audioContext = new AudioContext({ latencyHint: "interactive" });
-        currentAudioContextRef.current = audioContext;
-        await audioContext.resume();
-        const reader = speechResponse.body.getReader();
-        currentSpeechReaderRef.current = reader;
-        // Give the stream a small head start so brief network jitter cannot create audible gaps.
-        let scheduledUntil = audioContext.currentTime + 0.18;
-        let carry = new Uint8Array(0);
-        let finalSource: AudioBufferSourceNode | null = null;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (next.cycle !== speechCycleRef.current || !sessionActiveRef.current) {
-            await reader.cancel().catch(() => undefined);
-            return;
-          }
-
-          const combined = new Uint8Array(carry.length + value.length);
-          combined.set(carry);
-          combined.set(value, carry.length);
-          const usableBytes = combined.length - (combined.length % 2);
-          carry = usableBytes < combined.length ? combined.slice(usableBytes) : new Uint8Array(0);
-          if (usableBytes === 0) continue;
-
-          const sampleCount = usableBytes / 2;
-          const audioBuffer = audioContext.createBuffer(1, sampleCount, 24_000);
-          const samples = audioBuffer.getChannelData(0);
-          const view = new DataView(combined.buffer, combined.byteOffset, usableBytes);
-          for (let index = 0; index < sampleCount; index += 1) {
-            samples[index] = view.getInt16(index * 2, true) / 32_768;
-          }
-
-          const source = audioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(audioContext.destination);
-          scheduledUntil = Math.max(scheduledUntil, audioContext.currentTime + 0.06);
-          source.start(scheduledUntil);
-          scheduledUntil += audioBuffer.duration;
-          finalSource = source;
-          audioStarted = true;
-        }
-
-        currentSpeechReaderRef.current = null;
-        if (!finalSource) throw new Error("The voice stream was empty.");
-        finalSource.onended = finishItem;
-      } catch {
-        if (audioStarted) finishItem();
-        else playBrowserFallback();
-      }
-    };
-  }, []);
-
-  const queueSpeech = useCallback((delta: string, flush = false) => {
-    speechBufferRef.current += delta;
-    // One TTS request per reply keeps cadence and voice character consistent across sentences.
-    if (flush && speechBufferRef.current.trim()) {
-      const spokenText = speechBufferRef.current.trim();
-      const controller = new AbortController();
-      speechQueueRef.current.push({
-        text: spokenText,
-        audio: prepareNaturalSpeech(spokenText, controller.signal).catch(() => null),
-        controller,
-        cycle: speechCycleRef.current,
-      });
-      firstSpeechQueuedRef.current = true;
-      speechBufferRef.current = "";
-      speakNextRef.current();
-    }
-  }, []);
+  const addMessage = useCallback((role: MessageRole, text: string) => {
+    const message: Message = { id: makeId(), role, text, time: nowLabel() };
+    updateMessages([...messagesRef.current, message]);
+    return message.id;
+  }, [updateMessages]);
 
   const replaceMessage = useCallback((id: string, text: string) => {
-    messagesRef.current = messagesRef.current.map((message) => message.id === id ? { ...message, text } : message);
-    setMessages(messagesRef.current);
+    updateMessages(messagesRef.current.map((message) => message.id === id ? { ...message, text } : message));
+  }, [updateMessages]);
+
+  const sendRealtimeEvent = useCallback((event: Record<string, unknown>) => {
+    const channel = dataChannelRef.current;
+    if (!channel || channel.readyState !== "open") throw new Error("The live voice connection is not ready yet.");
+    channel.send(JSON.stringify(event));
   }, []);
 
-  const requestAgentReply = useCallback(async (conversation: Message[], start = false) => {
-    const screening = screeningContextRef.current;
-    if (!screening || turnBusyRef.current || !sessionActiveRef.current) return;
-
-    clearSilenceTimer();
-    turnBusyRef.current = true;
-    speechCycleRef.current += 1;
-    streamCompleteRef.current = false;
-    speechQueueRef.current = [];
-    speechBufferRef.current = "";
-    firstSpeechQueuedRef.current = false;
-    setInterimText("");
-    setErrorMessage("");
-    setStatus("thinking");
-    try { recognitionRef.current?.stop(); } catch { /* Already stopped. */ }
-
-    const assistantId = makeId();
-    const assistantMessage: Message = { id: assistantId, role: "assistant", text: "…", time: nowLabel() };
-    messagesRef.current = [...conversation, assistantMessage];
-    setMessages(messagesRef.current);
-    const controller = new AbortController();
-    requestAbortRef.current = controller;
-    let completeText = "";
-
-    try {
-      const response = await fetch("/api/respond", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          start,
-          screening,
-          messages: conversation.map(({ role, text }) => ({ role, content: text })),
-        }),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        const problem = await response.json().catch(() => ({ error: "Aura could not connect to the AI service." }));
-        throw new Error(problem.error || "Aura could not connect to the AI service.");
-      }
-      if (!response.body) throw new Error("The AI service returned no response stream.");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += decoder.decode(value, { stream: !done });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (!data || data === "[DONE]") continue;
-          const event = JSON.parse(data) as { type?: string; delta?: string; error?: { message?: string } };
-          if (event.type === "response.output_text.delta" && event.delta) {
-            completeText += event.delta;
-            replaceMessage(assistantId, completeText);
-            queueSpeech(event.delta);
-          }
-          if (event.type === "error") throw new Error(event.error?.message || "The AI response was interrupted.");
-        }
-        if (done) break;
-      }
-      if (!completeText.trim()) {
-        completeText = "Sorry, I didn't get a usable response. Could you say that again?";
-        replaceMessage(assistantId, completeText);
-        speechBufferRef.current = completeText;
-      }
-      streamCompleteRef.current = true;
-      queueSpeech("", true);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      const message = error instanceof Error ? error.message : "Aura could not complete the response.";
-      replaceMessage(assistantId, message);
-      setErrorMessage(message);
-      setStatus("error");
-      turnBusyRef.current = false;
-      requestAbortRef.current = null;
+  const closeRealtimeSession = useCallback(() => {
+    connectionAbortRef.current?.abort();
+    connectionAbortRef.current = null;
+    const channel = dataChannelRef.current;
+    dataChannelRef.current = null;
+    if (channel && channel.readyState !== "closed") channel.close();
+    const peer = peerConnectionRef.current;
+    peerConnectionRef.current = null;
+    if (peer && peer.connectionState !== "closed") peer.close();
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
     }
-  }, [clearSilenceTimer, queueSpeech, replaceMessage]);
+    remoteAudioRef.current = null;
+    assistantDraftRef.current = null;
+  }, []);
 
-  const handleCandidateTurn = useCallback(async (spokenText: string, improveTranscript = true) => {
-    let cleanText = spokenText.trim();
-    if (!cleanText || turnBusyRef.current || !sessionActiveRef.current) return;
-    turnBusyRef.current = true;
-    clearSilenceTimer();
-    try { recognitionRef.current?.stop(); } catch { /* Already stopped. */ }
-    const recordedAudio = await stopCandidateRecording();
-    if (improveTranscript && recordedAudio && recordedAudio.size > 1_000) {
-      setStatus("thinking");
-      try {
-        const accurateText = await transcribeCandidateAudio(recordedAudio);
-        if (accurateText) cleanText = accurateText;
-      } catch {
-        // The browser transcript remains a fast fallback if the accuracy pass is unavailable.
-      }
-    }
-    if (!sessionActiveRef.current) {
-      turnBusyRef.current = false;
+  const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
+    if (!sessionActiveRef.current) return;
+
+    if (event.type === "input_audio_buffer.speech_started") {
+      setInterimText("");
+      setStatus("listening");
       return;
     }
-    currentTranscriptRef.current = "";
-    setInterimText("");
-    setTypedReply("");
-    const userMessage: Message = { id: makeId(), role: "user", text: cleanText, time: nowLabel() };
-    const conversation = [...messagesRef.current, userMessage];
-    messagesRef.current = conversation;
-    setMessages(conversation);
-    turnBusyRef.current = false;
-    await requestAgentReply(conversation);
-  }, [clearSilenceTimer, requestAgentReply, stopCandidateRecording, transcribeCandidateAudio]);
-
-  useEffect(() => { handleTurnRef.current = handleCandidateTurn; }, [handleCandidateTurn]);
-
-  const createRecognition = useCallback(() => {
-    const RecognitionApi = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!RecognitionApi) throw new Error("Voice testing needs the latest Chrome or Edge for this prototype.");
-    const recognition = new RecognitionApi();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognition.onstart = () => setStatus("listening");
-    recognition.onresult = (event) => {
-      if (turnBusyRef.current) return;
-      let finalTranscript = "";
-      let interimTranscript = "";
-      for (let index = 0; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (result.isFinal) finalTranscript += `${result[0].transcript} `;
-        else interimTranscript += `${result[0].transcript} `;
+    if (event.type === "input_audio_buffer.speech_stopped") {
+      setStatus("thinking");
+      return;
+    }
+    if (event.type === "conversation.item.input_audio_transcription.delta" && event.delta) {
+      setInterimText((current) => `${current}${event.delta}`.replace(/\s+/g, " ").trimStart());
+      return;
+    }
+    if (event.type === "conversation.item.input_audio_transcription.completed") {
+      const transcript = event.transcript?.trim();
+      setInterimText("");
+      if (transcript) addMessage("user", transcript);
+      return;
+    }
+    if (event.type === "response.created") {
+      setStatus("thinking");
+      return;
+    }
+    if (event.type === "response.output_audio.delta" || event.type === "response.output_audio_transcript.delta") {
+      setStatus("speaking");
+      if (event.type !== "response.output_audio_transcript.delta" || !event.delta) return;
+      const itemId = event.item_id ?? "assistant-current";
+      let draft = assistantDraftRef.current;
+      if (!draft || draft.itemId !== itemId) {
+        const messageId = addMessage("assistant", event.delta);
+        draft = { itemId, messageId, text: event.delta };
+      } else {
+        draft = { ...draft, text: `${draft.text}${event.delta}` };
+        replaceMessage(draft.messageId, draft.text);
       }
-      const cleanTranscript = `${finalTranscript}${interimTranscript}`.replace(/\s+/g, " ").trim();
-      currentTranscriptRef.current = cleanTranscript;
-      setInterimText(cleanTranscript);
-      clearSilenceTimer();
-      if (cleanTranscript) {
-        silenceTimerRef.current = window.setTimeout(() => {
-          const completedTurn = currentTranscriptRef.current.trim();
-          if (completedTurn && !turnBusyRef.current) void handleTurnRef.current(completedTurn);
-        }, END_OF_TURN_DELAY_MS);
-      }
-    };
-    recognition.onerror = (event) => {
-      if (["aborted", "no-speech"].includes(event.error)) return;
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        sessionActiveRef.current = false;
-        setSessionActive(false);
-        setErrorMessage("Microphone access was blocked. Allow it in your browser settings, then try again.");
+      assistantDraftRef.current = draft;
+      return;
+    }
+    if (event.type === "response.output_audio_transcript.done") {
+      const transcript = event.transcript?.trim();
+      const draft = assistantDraftRef.current;
+      if (transcript && draft) replaceMessage(draft.messageId, transcript);
+      assistantDraftRef.current = null;
+      return;
+    }
+    if (event.type === "response.done") {
+      const failure = event.response?.status_details?.error?.message;
+      if (event.response?.status === "failed") {
+        setErrorMessage(failure || "Aura could not complete that response.");
         setStatus("error");
+        return;
       }
-    };
-    recognition.onend = () => {
-      if (sessionActiveRef.current && !turnBusyRef.current && !speakingRef.current) {
-        const completedTurn = currentTranscriptRef.current.trim();
-        if (completedTurn) void handleTurnRef.current(completedTurn);
-        else window.setTimeout(startListening, 120);
+      if (event.response?.status === "cancelled" || event.response?.status === "incomplete") {
+        assistantDraftRef.current = null;
+        setStatus("listening");
+        return;
       }
-    };
-    recognitionRef.current = recognition;
-  }, [clearSilenceTimer, startListening]);
+      const fallbackTranscript = eventTranscript(event);
+      if (fallbackTranscript && !assistantDraftRef.current
+        && messagesRef.current.at(-1)?.text !== fallbackTranscript) {
+        addMessage("assistant", fallbackTranscript);
+      }
+      assistantDraftRef.current = null;
+      setStatus("listening");
+      return;
+    }
+    if (event.type === "error") {
+      setErrorMessage(event.error?.message || "The live voice connection was interrupted.");
+      setStatus("error");
+    }
+  }, [addMessage, replaceMessage]);
 
-  const getScreeningContext = () => ({
+  const getScreeningContext = (): ScreeningContext => ({
     candidateName: candidateName.trim(),
     companyName: companyName.trim(),
     jobTitle: jobTitle.trim(),
@@ -532,91 +209,159 @@ export default function Home() {
   });
 
   const startConversation = async () => {
-    const context = getScreeningContext();
-    if (context.jobDescription.length < 40) {
+    const screening = getScreeningContext();
+    if (screening.jobDescription.length < 40) {
       setErrorMessage("Add or upload the job description before starting the screening.");
       return;
     }
-    if (!context.companyName || !context.jobTitle) {
+    if (!screening.companyName || !screening.jobTitle) {
       setErrorMessage("Add the company and job title so Aura can clearly explain why it is calling.");
       return;
     }
-    if (context.detailsToCollect.length === 0) {
+    if (screening.detailsToCollect.length === 0) {
       setErrorMessage("Add at least one detail for Aura to collect.");
       return;
     }
+    if (typeof RTCPeerConnection === "undefined") {
+      setErrorMessage("Realtime voice needs a current version of Chrome, Edge, Safari, or Firefox.");
+      return;
+    }
+
+    closeRealtimeSession();
     setStatus("requesting");
     setErrorMessage("");
+    setInterimText("");
+    updateMessages([]);
+
     try {
-      if (!recognitionRef.current) createRecognition();
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-        },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
       microphoneStreamRef.current = stream;
-      screeningContextRef.current = context;
-      messagesRef.current = [];
-      setMessages([]);
+
+      const peer = new RTCPeerConnection();
+      peerConnectionRef.current = peer;
+      const remoteAudio = document.createElement("audio");
+      remoteAudio.autoplay = true;
+      remoteAudio.playsInline = true;
+      remoteAudioRef.current = remoteAudio;
+      peer.ontrack = (trackEvent) => {
+        remoteAudio.srcObject = trackEvent.streams[0];
+        void remoteAudio.play().catch(() => undefined);
+      };
+      peer.onconnectionstatechange = () => {
+        if (!sessionActiveRef.current) return;
+        if (["failed", "disconnected", "closed"].includes(peer.connectionState)) {
+          setErrorMessage("The live voice connection ended. Start the screening again to reconnect.");
+          setStatus("error");
+        }
+      };
+      stream.getAudioTracks().forEach((track) => peer.addTrack(track, stream));
+
+      const dataChannel = peer.createDataChannel("oai-events");
+      dataChannelRef.current = dataChannel;
+      dataChannel.onmessage = (messageEvent) => {
+        try {
+          handleRealtimeEvent(JSON.parse(messageEvent.data) as RealtimeEvent);
+        } catch {
+          // Ignore malformed diagnostic events while keeping the call alive.
+        }
+      };
+      dataChannel.onerror = () => {
+        if (!sessionActiveRef.current) return;
+        setErrorMessage("The live conversation channel was interrupted.");
+        setStatus("error");
+      };
+
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      const controller = new AbortController();
+      connectionAbortRef.current = controller;
+      const response = await fetch("/api/realtime", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sdp: offer.sdp, screening }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => ({ error: "Aura could not open the live voice session." }));
+        throw new Error(problem.error || "Aura could not open the live voice session.");
+      }
+      const answerSdp = await response.text();
+      await peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+      await new Promise<void>((resolve, reject) => {
+        if (dataChannel.readyState === "open") {
+          resolve();
+          return;
+        }
+        const timeout = window.setTimeout(() => reject(new Error("The live voice session took too long to connect.")), 12_000);
+        dataChannel.onopen = () => {
+          window.clearTimeout(timeout);
+          resolve();
+        };
+      });
+
       sessionActiveRef.current = true;
       setSessionActive(true);
-      await requestAgentReply([], true);
+      setStatus("thinking");
+      sendRealtimeEvent({
+        type: "response.create",
+        response: {
+          output_modalities: ["audio"],
+          instructions: "Begin the call now. Give only a natural introduction, clearly name the company and exact position, explain that this is about the candidate's application, then ask whether now is a good time for a quick chat. Do not ask a screening question yet.",
+        },
+      });
     } catch (error) {
+      closeRealtimeSession();
       sessionActiveRef.current = false;
       setSessionActive(false);
       setStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : "Aura could not access your microphone.");
+      setErrorMessage(error instanceof Error ? error.message : "Aura could not access the microphone or start the call.");
     }
   };
 
-  const endConversation = () => {
+  const endConversation = useCallback(() => {
     sessionActiveRef.current = false;
     setSessionActive(false);
-    turnBusyRef.current = false;
-    speechCycleRef.current += 1;
-    speakingRef.current = false;
-    stopSpeechPlayback();
-    speechQueueRef.current = [];
-    speechBufferRef.current = "";
-    firstSpeechQueuedRef.current = false;
-    streamCompleteRef.current = false;
-    clearSilenceTimer();
-    currentTranscriptRef.current = "";
-    requestAbortRef.current?.abort();
-    requestAbortRef.current = null;
-    transcriptionAbortRef.current?.abort();
-    transcriptionAbortRef.current = null;
-    void stopCandidateRecording();
-    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
-    microphoneStreamRef.current = null;
-    try { recognitionRef.current?.abort(); } catch { /* Already stopped. */ }
+    closeRealtimeSession();
     setInterimText("");
     setTypedReply("");
     setStatus("idle");
-  };
+  }, [closeRealtimeSession]);
 
   const interruptReply = () => {
-    requestAbortRef.current?.abort();
-    requestAbortRef.current = null;
-    speechCycleRef.current += 1;
-    stopSpeechPlayback();
-    speechQueueRef.current = [];
-    speechBufferRef.current = "";
-    firstSpeechQueuedRef.current = false;
-    streamCompleteRef.current = false;
-    clearSilenceTimer();
-    currentTranscriptRef.current = "";
-    speakingRef.current = false;
-    turnBusyRef.current = false;
-    startListening();
+    try {
+      sendRealtimeEvent({ type: "response.cancel" });
+      sendRealtimeEvent({ type: "output_audio_buffer.clear" });
+    } catch {
+      // Speaking into the microphone still triggers automatic WebRTC barge-in.
+    }
+    assistantDraftRef.current = null;
+    setStatus("listening");
   };
 
   const submitTypedReply = (event: FormEvent) => {
     event.preventDefault();
-    void handleCandidateTurn(typedReply, false);
+    const text = typedReply.trim();
+    if (!text || !sessionActiveRef.current) return;
+    try {
+      if (status === "speaking") {
+        sendRealtimeEvent({ type: "response.cancel" });
+        sendRealtimeEvent({ type: "output_audio_buffer.clear" });
+      }
+      addMessage("user", text);
+      setTypedReply("");
+      setStatus("thinking");
+      sendRealtimeEvent({
+        type: "conversation.item.create",
+        item: { type: "message", role: "user", content: [{ type: "input_text", text }] },
+      });
+      sendRealtimeEvent({ type: "response.create", response: { output_modalities: ["audio"] } });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Aura could not send that reply.");
+      setStatus("error");
+    }
   };
 
   const uploadJobDescription = async (file: File | undefined) => {
@@ -658,19 +403,11 @@ export default function Home() {
 
   useEffect(() => () => {
     sessionActiveRef.current = false;
-    speechCycleRef.current += 1;
-    clearSilenceTimer();
-    requestAbortRef.current?.abort();
-    transcriptionAbortRef.current?.abort();
-    void stopCandidateRecording();
-    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
-    microphoneStreamRef.current = null;
-    stopSpeechPlayback();
-    recognitionRef.current?.abort();
-  }, [clearSilenceTimer, stopCandidateRecording, stopSpeechPlayback]);
+    closeRealtimeSession();
+  }, [closeRealtimeSession]);
 
   const copy = statusCopy[status];
-  const candidateInputDisabled = !sessionActive || ["requesting", "thinking", "speaking"].includes(status);
+  const candidateInputDisabled = !sessionActive || status === "requesting";
 
   return (
     <main className={`voice-shell status-${status}`}>
@@ -766,7 +503,7 @@ export default function Home() {
           <div><input id="candidate-reply" value={typedReply} onChange={(event) => setTypedReply(event.target.value)} placeholder={sessionActive ? "Type an answer or just speak…" : "Start a screening first"} disabled={candidateInputDisabled} /><button type="submit" disabled={candidateInputDisabled || !typedReply.trim()}>Send</button></div>
         </form>
         {errorMessage && sessionActive && <p className="error-banner conversation-error" role="alert">{errorMessage}</p>}
-        <div className="panel-footer"><span>Natural OpenAI voice</span><span>One question at a time</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>
+        <div className="panel-footer"><span>Realtime OpenAI voice</span><span>Natural interruption</span><span>JD-grounded answers</span><span>No candidate scoring</span></div>
       </section>
 
       <footer className="site-footer"><p>Model-first recruitment screening prototype. Phone connectivity comes later.</p><span>Private prototype · 2026</span></footer>

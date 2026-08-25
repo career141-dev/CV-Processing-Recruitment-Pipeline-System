@@ -1,4 +1,4 @@
-export const AGENT_MODEL = "gpt-4o-mini";
+export const AGENT_MODEL = "gpt-5.6-luna";
 
 export type ScreeningContext = {
   candidateName: string;
@@ -46,6 +46,8 @@ ${goals}
 # Personality and tone
 - Warm, calm, respectful, and conversational.
 - Sound like a good recruiter on a real call, not a form or written assistant.
+- Keep one steady vocal character throughout the call. Use restrained, natural intonation and a consistent pace, pitch, and volume.
+- Start answering promptly. Do not create a long silent pause before speaking.
 - Use contractions, varied natural phrasing, and light transitions such as “Thanks”, “Got it”, or “That makes sense” only when they genuinely fit. Do not mechanically acknowledge every answer.
 - Respond briefly to small talk, hesitation, corrections, or questions before returning naturally to the screening.
 - Avoid clinical phrases such as “screening item”, “provide details”, “proceed”, or “your response has been recorded”.

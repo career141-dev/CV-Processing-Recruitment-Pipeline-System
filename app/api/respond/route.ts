@@ -81,6 +81,8 @@ export async function POST(request: Request) {
       instructions: buildAgentInstructions(body.screening),
       input,
       max_output_tokens: 140,
+      reasoning: { effort: "none" },
+      text: { verbosity: "low" },
       stream: true,
       store: false,
     }),
