@@ -1107,8 +1107,20 @@ export async function runCvExtraction(
       : trimmed;
 
     const tWrite1Start = Date.now();
+    // 1. Upload raw text to Cloudflare R2 object storage (0 RAM/SQLite cost in Convex)
+    let rawTextKey: string | undefined = undefined;
+    try {
+      rawTextKey = await ctx.runAction(internal.storage.r2.uploadCvRawTextToR2, {
+        candidateId: cvUploadId,
+        cvUploadId,
+        rawText: cappedRawText,
+      });
+    } catch (r2Err: any) {
+      console.warn(`[CvExtraction] R2 raw text upload error for upload ${cvUploadId}:`, r2Err?.message || r2Err);
+    }
+
     candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
-      rawText: cappedRawText,
+      rawTextKey,
       sourceChannel: sourceChannel ?? undefined,
       fileHash,
       cvUploadId,
@@ -1253,7 +1265,7 @@ export async function runCvExtraction(
 
       const updateRes: any = await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
-        rawText: cappedRawText,
+        rawTextKey,
         ...safeExtractedWithoutReferees,
         locationStructured,
         cvUploadId,
@@ -1270,7 +1282,7 @@ export async function runCvExtraction(
         skills: formattedSkills,
         parsingConfidence,
         isParsed: true,
-        embedding,
+        hasEmbedding: true,
         extractionModel: extractionModel || OPENROUTER_PRIMARY_MODEL,
       });
 
@@ -1299,10 +1311,11 @@ export async function runCvExtraction(
         }
       }
 
-      // Always schedule embedding as a background task — saves ~1 000ms per CV extraction
-      console.log(`[CvExtraction] Scheduling background embedding for candidate ${candidateId}...`);
+      // Always schedule embedding as a background task — directly upserts to Qdrant without saving vector arrays in Convex
+      console.log(`[CvExtraction] Scheduling background Qdrant embedding for candidate ${candidateId}...`);
       await ctx.scheduler.runAfter(0, internal.matching.agent2.generateAndStoreEmbedding, {
         candidateId,
+        rawText: cappedRawText,
       });
     }
 

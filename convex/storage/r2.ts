@@ -141,3 +141,71 @@ export const uploadLogoToR2 = action({
     return args.key;
   },
 });
+
+/**
+ * Uploads extracted CV raw text to Cloudflare R2 object storage.
+ * Saves memory by not storing multi-page string blobs in Convex SQLite/RAM.
+ */
+export const uploadCvRawTextToR2 = internalAction({
+  args: {
+    candidateId: v.string(),
+    cvUploadId: v.string(),
+    rawText: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const s3 = getS3Client();
+    const key = `cv-rawtext/${args.candidateId}/${args.cvUploadId}.txt`;
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(args.rawText);
+
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME!,
+      Key: key,
+      ContentType: "text/plain; charset=utf-8",
+      Body: bytes,
+    });
+
+    let attempts = 0;
+    while (attempts < 3) {
+      try {
+        attempts++;
+        await s3.send(command);
+        return key;
+      } catch (err: any) {
+        if (attempts >= 3) throw err;
+        console.warn(`[R2 RawText Upload] Flicker on key ${key} (attempt ${attempts}/3), retrying in ${attempts * 1000}ms...`, err?.message || err);
+        await new Promise((r) => setTimeout(r, attempts * 1000));
+      }
+    }
+    return key;
+  },
+});
+
+/**
+ * Fetches raw CV text from Cloudflare R2 object storage by rawTextKey.
+ */
+export const getResumeRawText = action({
+  args: {
+    rawTextKey: v.string(),
+  },
+  handler: async (ctx, args): Promise<string | null> => {
+    try {
+      const s3 = getS3Client();
+      const command = new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME!,
+        Key: args.rawTextKey,
+      });
+
+      const response = await s3.send(command);
+      if (!response.Body) return null;
+
+      // Convert body stream to string
+      const str = await response.Body.transformToString("utf-8");
+      return str;
+    } catch (err: any) {
+      console.warn(`[getResumeRawText] Failed to fetch R2 raw text for key ${args.rawTextKey}:`, err?.message || err);
+      return null;
+    }
+  },
+});
+

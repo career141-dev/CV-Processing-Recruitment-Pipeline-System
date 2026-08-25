@@ -365,6 +365,7 @@ export const updateCandidateFields = mutation({
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     rawText: v.optional(v.string()),
+    rawTextKey: v.optional(v.string()),
     sector: v.optional(v.string()),
     jobHistory: v.optional(
       v.array(
@@ -385,10 +386,11 @@ export const updateCandidateFields = mutation({
     isParsed: v.optional(v.boolean()),
     parsingConfidence: v.optional(v.any()),
     embedding: v.optional(v.array(v.float64())),
+    hasEmbedding: v.optional(v.boolean()),
     extractionModel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { candidateId, rawText, jobHistory, embedding, ...candidateArgs } = args;
+    const { candidateId, rawText, rawTextKey, jobHistory, embedding, hasEmbedding, ...candidateArgs } = args;
 
     let pastJobTitles: string[] | undefined = undefined;
     if (jobHistory && jobHistory.length > 0) {
@@ -460,6 +462,8 @@ export const updateCandidateFields = mutation({
     if (pastJobTitles !== undefined) patches.pastJobTitles = pastJobTitles;
     if (phoneClean !== undefined) patches.phoneClean = phoneClean;
     if (candidateArgs.currentTitle !== undefined) patches.currentJobTitle = candidateArgs.currentTitle;
+    if (rawTextKey !== undefined) patches.rawTextKey = rawTextKey;
+    if (hasEmbedding !== undefined) patches.hasEmbedding = hasEmbedding;
 
     // Filter out undefined values to only update provided fields
     const definedPatches = Object.fromEntries(
@@ -469,7 +473,7 @@ export const updateCandidateFields = mutation({
     await ctx.db.patch(targetId, definedPatches);
 
     // Sync to candidateResumes table
-    if (rawText || jobHistory || embedding) {
+    if (rawText !== undefined || rawTextKey !== undefined || jobHistory || embedding || hasEmbedding !== undefined) {
       const existingResume = await ctx.db
         .query("candidateResumes")
         .withIndex("by_candidateId", (q) => q.eq("candidateId", targetId))
@@ -479,19 +483,25 @@ export const updateCandidateFields = mutation({
         const updatedEmbedding = embedding ?? existingResume.embedding;
         const resumeUpdates: Record<string, any> = {};
         if (rawText !== undefined) resumeUpdates.rawText = rawText;
+        if (rawTextKey !== undefined) resumeUpdates.rawTextKey = rawTextKey;
         if (jobHistory !== undefined) resumeUpdates.jobHistory = jobHistory;
         if (updatedEmbedding !== undefined) {
           resumeUpdates.embedding = updatedEmbedding;
+        }
+        if (hasEmbedding !== undefined) {
+          resumeUpdates.hasEmbedding = hasEmbedding;
+        } else if (updatedEmbedding !== undefined) {
           resumeUpdates.hasEmbedding = !!(updatedEmbedding && updatedEmbedding.length > 0);
         }
         await ctx.db.patch(existingResume._id, resumeUpdates);
       } else {
         await ctx.db.insert("candidateResumes", {
           candidateId: targetId,
-          rawText: rawText ?? "",
+          rawText: rawText ?? undefined,
+          rawTextKey: rawTextKey ?? undefined,
           jobHistory,
           embedding,
-          hasEmbedding: !!(embedding && embedding.length > 0),
+          hasEmbedding: hasEmbedding ?? !!(embedding && embedding.length > 0),
         });
       }
     }
@@ -549,6 +559,7 @@ export const createCandidate = mutation({
     summary: v.optional(v.string()),
     cvUploadId: v.optional(v.id("cvUploads")),
     rawText: v.optional(v.string()),
+    rawTextKey: v.optional(v.string()),
     sector: v.optional(v.string()),
     jobHistory: v.optional(
       v.array(
@@ -570,6 +581,7 @@ export const createCandidate = mutation({
     isParsed: v.optional(v.boolean()),
     parsingConfidence: v.optional(v.any()),
     embedding: v.optional(v.array(v.float64())),
+    hasEmbedding: v.optional(v.boolean()),
     extractionModel: v.optional(v.string()),
     firstSeenAt: v.optional(v.number()),
     lastUpdatedAt: v.optional(v.number()),
@@ -633,7 +645,7 @@ export const createCandidate = mutation({
         return existingCandidateId;
       }
 
-      const { rawText, jobHistory, embedding, ...candidateArgs } = args;
+      const { rawText, rawTextKey, jobHistory, embedding, hasEmbedding, ...candidateArgs } = args;
       
       let pastJobTitles: string[] | undefined = undefined;
       if (jobHistory && jobHistory.length > 0) {
@@ -652,6 +664,8 @@ export const createCandidate = mutation({
           ...candidateArgs,
           pastJobTitles,
           phoneClean,
+          rawTextKey,
+          hasEmbedding,
           status: "new",
           lastUpdatedAt: now,
           firstSeenAt: candidateArgs.firstSeenAt ?? existingCandidateId ? undefined : now,
@@ -660,23 +674,31 @@ export const createCandidate = mutation({
 
       await ctx.db.patch(existingCandidateId, definedUpdates);
 
-      if (rawText || jobHistory || embedding) {
+      if (rawText !== undefined || rawTextKey !== undefined || jobHistory || embedding || hasEmbedding !== undefined) {
         const existingResume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q: any) => q.eq("candidateId", existingCandidateId as any)).first();
         if (existingResume) {
           const updatedEmbedding = embedding ?? existingResume.embedding;
-          await ctx.db.patch(existingResume._id, { 
-            rawText: rawText ?? existingResume.rawText, 
-            jobHistory: jobHistory ?? existingResume.jobHistory,
-            embedding: updatedEmbedding,
-            hasEmbedding: !!(updatedEmbedding && updatedEmbedding.length > 0)
-          });
+          const resumeUpdates: Record<string, any> = {};
+          if (rawText !== undefined) resumeUpdates.rawText = rawText;
+          if (rawTextKey !== undefined) resumeUpdates.rawTextKey = rawTextKey;
+          if (jobHistory !== undefined) resumeUpdates.jobHistory = jobHistory;
+          if (updatedEmbedding !== undefined) {
+            resumeUpdates.embedding = updatedEmbedding;
+          }
+          if (hasEmbedding !== undefined) {
+            resumeUpdates.hasEmbedding = hasEmbedding;
+          } else if (updatedEmbedding !== undefined) {
+            resumeUpdates.hasEmbedding = !!(updatedEmbedding && updatedEmbedding.length > 0);
+          }
+          await ctx.db.patch(existingResume._id, resumeUpdates);
         } else {
           await ctx.db.insert("candidateResumes", { 
             candidateId: existingCandidateId, 
-            rawText: rawText ?? "", 
+            rawText: rawText ?? undefined, 
+            rawTextKey: rawTextKey ?? undefined,
             jobHistory,
             embedding,
-            hasEmbedding: !!(embedding && embedding.length > 0)
+            hasEmbedding: hasEmbedding ?? !!(embedding && embedding.length > 0)
           });
         }
       }
@@ -693,7 +715,7 @@ export const createCandidate = mutation({
       return existingCandidateId;
     }
 
-    const { rawText, jobHistory, embedding, ...candidateArgs } = args;
+    const { rawText, rawTextKey, jobHistory, embedding, hasEmbedding, ...candidateArgs } = args;
 
     let pastJobTitles: string[] | undefined = undefined;
     if (jobHistory && jobHistory.length > 0) {
@@ -712,16 +734,19 @@ export const createCandidate = mutation({
       lastUpdatedAt: now,
       pastJobTitles,
       phoneClean,
+      rawTextKey,
+      hasEmbedding,
       status: "new",
     });
 
-    if (rawText || jobHistory || embedding) {
+    if (rawText !== undefined || rawTextKey !== undefined || jobHistory || embedding || hasEmbedding !== undefined) {
       await ctx.db.insert("candidateResumes", {
         candidateId: newId,
-        rawText: rawText ?? "",
+        rawText: rawText ?? undefined,
+        rawTextKey: rawTextKey ?? undefined,
         jobHistory,
         embedding,
-        hasEmbedding: !!(embedding && embedding.length > 0)
+        hasEmbedding: hasEmbedding ?? !!(embedding && embedding.length > 0)
       });
     }
 

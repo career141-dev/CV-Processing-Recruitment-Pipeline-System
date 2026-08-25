@@ -69,47 +69,54 @@ export async function embedText(
  * Internal action to embed a candidate's full text and save it to the DB.
  */
 export const generateAndStoreEmbedding = internalAction({
-  args: { candidateId: v.id("candidates") },
+  args: { 
+    candidateId: v.id("candidates"),
+    rawText: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const candidate = await ctx.runQuery(internal.matching.queries.getCandidate, { candidateId: args.candidateId });
     if (!candidate) return;
 
-    const resume = await ctx.runQuery(internal.matching.queries.getCandidateResume, { candidateId: args.candidateId });
-    if (!resume || !resume.rawText) return;
+    let rawText = args.rawText;
+    if (!rawText) {
+      const resume = await ctx.runQuery(internal.matching.queries.getCandidateResume, { candidateId: args.candidateId });
+      if (resume?.rawText) {
+        rawText = resume.rawText;
+      } else if (resume?.rawTextKey) {
+        rawText = (await ctx.runAction(api.storage.r2.getResumeRawText, { rawTextKey: resume.rawTextKey })) ?? undefined;
+      }
+    }
+    if (!rawText || !rawText.trim()) return;
 
-    const textToEmbed = resume.rawText.slice(0, 15000); 
+    const textToEmbed = rawText.slice(0, 15000); 
     try {
-      const { embedding, usage } = await embedText(textToEmbed, "passage");
+      const { embedding } = await embedText(textToEmbed, "passage");
 
-      await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
+      // 1. Direct upsert to Qdrant Vector Engine (SSD MMAP)
+      await upsertCandidateVector({
         candidateId: args.candidateId,
-        embedding,
+        vector: embedding,
+        payload: {
+          candidateId: args.candidateId,
+          fullName: candidate.fullName || "Candidate",
+          currentJobTitle: candidate.currentJobTitle,
+          skills: candidate.skills || [],
+          totalExperienceYears: candidate.totalExperienceYears,
+          seniorityLevel: candidate.seniorityLevel,
+          locationCity: candidate.locationCity,
+          locationCountry: candidate.locationCountry,
+          sourceChannel: candidate.firstSourceChannel || candidate.sourceChannel,
+          overallStatus: candidate.overallStatus,
+          updatedAt: Date.now(),
+        },
       });
 
-      // Asynchronous non-blocking sync to Qdrant Vector Engine
-      try {
-        await upsertCandidateVector({
-          candidateId: args.candidateId,
-          vector: embedding,
-          payload: {
-            candidateId: args.candidateId,
-            fullName: candidate.fullName || "Candidate",
-            currentJobTitle: candidate.currentJobTitle,
-            skills: candidate.skills || [],
-            totalExperienceYears: candidate.totalExperienceYears,
-            seniorityLevel: candidate.seniorityLevel,
-            locationCity: candidate.locationCity,
-            locationCountry: candidate.locationCountry,
-            sourceChannel: candidate.firstSourceChannel || candidate.sourceChannel,
-            overallStatus: candidate.overallStatus,
-            updatedAt: Date.now(),
-          },
-        });
-      } catch (qdrantErr: any) {
-        console.warn(`[Agent2] Non-blocking Qdrant sync warning for candidate ${args.candidateId}:`, qdrantErr?.message);
-      }
+      // 2. Mark hasEmbedding: true in Convex (lightweight flag, 0 float arrays)
+      await ctx.runMutation(internal.matching.queries.markCandidateHasEmbedding, {
+        candidateId: args.candidateId,
+      });
     } catch (err) {
-      console.warn(`[Agent2] Embedding generation error for candidate ${args.candidateId}:`, err);
+      console.warn(`[Agent2] Embedding generation / Qdrant upsert error for candidate ${args.candidateId}:`, err);
       throw err;
     }
   },
