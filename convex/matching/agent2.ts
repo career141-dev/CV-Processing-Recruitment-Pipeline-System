@@ -29,13 +29,13 @@ export async function embedText(
     throw new Error("Text is empty after sanitization");
   }
 
-  // 1. Primary: OpenRouter openai/text-embedding-3-small
+  // 1. Primary: OpenRouter liquid/lfm-2.5-embedding-350m:free
   const openRouterKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
   if (openRouterKey) {
     const candidateModels = [
-      "openai/text-embedding-3-small",
-      "baai/bge-m3",
       "liquid/lfm-2.5-embedding-350m:free",
+      "liquid/lfm-2.5-embedding-350m",
+      "baai/bge-m3",
     ];
 
     for (const model of candidateModels) {
@@ -73,10 +73,14 @@ export async function embedText(
     }
   }
 
-  // 2. Secondary Fallback: NVIDIA NIM API
+  // 2. Fallback: NVIDIA NIM nemotron-3-embed-1b
   const nvidiaKey = process.env.NVIDIA_API_KEY;
   if (nvidiaKey) {
-    const nvidiaModels = ["baai/bge-m3", "snowflake/arctic-embed-l"];
+    const nvidiaModels = [
+      "nvidia/nemotron-3-embed-1b",
+      "baai/bge-m3",
+      "snowflake/arctic-embed-l",
+    ];
     for (const model of nvidiaModels) {
       try {
         const response = await fetch("https://integrate.api.nvidia.com/v1/embeddings", {
