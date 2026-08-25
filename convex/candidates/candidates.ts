@@ -98,13 +98,18 @@ export const listCandidatesPaginated = query({
       } else if (overallStatus) {
         return ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
       } else {
-        return ctx.db.query("candidates").withIndex("by_firstSeenAt", q => q.gt("firstSeenAt", 0)).order("desc");
+        return ctx.db.query("candidates").withIndex("by_firstSeenAt");
       }
+    };
+
+    const paginationOpts = {
+      ...args.paginationOpts,
+      numItems: Math.min(args.paginationOpts?.numItems ?? 10, 10),
     };
 
     let page;
     try {
-      page = await buildQuery().paginate(args.paginationOpts);
+      page = await buildQuery().paginate(paginationOpts);
     } catch (err: any) {
       console.warn("[listCandidatesPaginated] Stale cursor detected, auto-resetting to page 1:", err?.message || err);
       page = await buildQuery().paginate({ numItems: 10, cursor: null });
