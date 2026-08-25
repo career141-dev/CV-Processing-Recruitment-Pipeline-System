@@ -5,122 +5,56 @@ import { api, internal } from "../_generated/api";
 
 export const getSystemStats = query({
   args: {},
-  handler: async (ctx) => {
-    const sysStat = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
-
+  handler: async () => {
     return {
-      candidatesCount: sysStat?.totalCandidates || 0,
-      cvUploadsCount: sysStat?.totalCvUploads || 0,
+      candidatesCount: 0,
+      cvUploadsCount: 0,
     };
   },
 });
 
 export const getIngestionStats = query({
   args: {},
-  handler: async (ctx) => {
-    try {
-      const todayStr = new Date().toISOString().split("T")[0];
-      const dailyStat = await ctx.db.query("dailyStats")
-        .withIndex("by_dateStr", q => q.eq("dateStr", todayStr))
-        .first();
-
-      const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {
+  handler: async () => {
+    return {
+      statsBySource: {
         WhatsApp: { todayCount: 0, lastReceived: null },
         Email: { todayCount: 0, lastReceived: null },
         LinkedIn: { todayCount: 0, lastReceived: null },
-      };
-
-      if (dailyStat && dailyStat.cvsBySource) {
-        for (const [source, count] of Object.entries(dailyStat.cvsBySource)) {
-          statsBySource[source] = { todayCount: count, lastReceived: null };
-        }
-      }
-
-      // Small bounded reads (max 5 items) via status index
-      const [processing, queued, uploaded, failed] = await Promise.all([
-        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processing")).take(5),
-        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "queued")).take(5),
-        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).take(5),
-        ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).take(5),
-      ]);
-
-      const activeUploads = [...processing, ...queued, ...uploaded];
-
-      return {
-        statsBySource,
-        activeUploads,
-        failedUploads: failed,
-        failedRetryUploads: [],
-        recentDone: []
-      };
-    } catch {
-      return {
-        statsBySource: {
-          WhatsApp: { todayCount: 0, lastReceived: null },
-          Email: { todayCount: 0, lastReceived: null },
-          LinkedIn: { todayCount: 0, lastReceived: null },
-        },
-        activeUploads: [],
-        failedUploads: [],
-        failedRetryUploads: [],
-        recentDone: []
-      };
-    }
+      },
+      activeUploads: [],
+      failedUploads: [],
+      failedRetryUploads: [],
+      recentDone: []
+    };
   },
 });
 
 export const getRecentChannelLogs = query({
   args: { channelType: v.string() },
-  handler: async (ctx, args) => {
-    const logs = await ctx.db.query("ingestionLog")
-      .withIndex("by_channel_time", q => q.eq("channelType", args.channelType as any))
-      .order("desc")
-      .take(20);
-
-    return logs.map(l => ({
-      _id: l._id,
-      candidateName: l.candidateName,
-      rawSender: l.rawSender,
-      stage: l.stage || l.routingStatus,
-      errorMessage: l.errorMessage,
-      receivedAt: l.receivedAt || l._creationTime,
-    }));
+  handler: async () => {
+    return [];
   }
 });
 
 /**
- * ONE-TIME BACKFILL — call once from an admin action to seed systemStats
- * with the real historical counts from all existing documents.
- *
- * After this runs, future inserts/deletes are tracked incrementally by
- * adjustGlobalStat(), so this only needs to run once.
+ * ONE-TIME BACKFILL — disabled
  */
-// Internal — no auth check, called by CLI or cron
 export const backfillSystemStatsInternal = internalMutation({
   args: {},
-  handler: async (ctx) => {
-    // TEMPORARILY DISABLED to reduce DB load
+  handler: async () => {
     return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
   },
 });
 
-/**
- * Public version — admin only, callable from the dashboard Settings UI.
- * Inlines the same paginated counting logic as the internal mutation to avoid
- * circular type reference issues with ctx.runMutation(internal...).
- */
 export const backfillSystemStats = mutation({
   args: {},
-  handler: async (ctx): Promise<{
+  handler: async (): Promise<{
     totalCandidates: number;
     totalCvUploads: number;
     totalApplications: number;
     activeJobsCount: number;
   }> => {
-    await requireRole(ctx, ["admin"]);
-    // TEMPORARILY DISABLED to reduce DB load
     return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
   },
 });
@@ -130,124 +64,22 @@ export const getDashboardStats = query({
     dateRange: v.optional(v.string()),
     jobFilter: v.optional(v.string()),
   },
-  handler: async (ctx) => {
-    try {
-      // 1. Try instant O(1) read from cached precalculated stats
-      const cached = await ctx.db
-        .query("dashboardStatsCache")
-        .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
-        .first();
-
-      if (cached?.data) {
-        return cached.data;
-      }
-
-      // 2. Fallback to O(1) read from systemStats singleton
-      const sysStat = await ctx.db
-        .query("systemStats")
-        .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-        .first();
-
-      return {
-        candidates: {
-          total: sysStat?.totalCandidates ?? 0,
-          trendText: "Live total",
-          trendType: "up" as const,
-        },
-        cvsToday: {
-          total: 0,
-          trendText: "0 vs yesterday",
-          trendType: "neutral" as const,
-        },
-        activeJobs: {
-          total: sysStat?.activeJobsCount ?? 0,
-          trendText: "Active jobs",
-          trendType: "neutral" as const,
-        },
-        placedThisMonth: {
-          total: 0,
-          trendText: "0 this month",
-          trendType: "neutral" as const,
-        },
-      };
-    } catch {
-      return {
-        candidates: { total: 0, trendText: "0", trendType: "neutral" as const },
-        cvsToday: { total: 0, trendText: "0", trendType: "neutral" as const },
-        activeJobs: { total: 0, trendText: "0", trendType: "neutral" as const },
-        placedThisMonth: { total: 0, trendText: "0", trendType: "neutral" as const },
-      };
-    }
+  handler: async () => {
+    return {
+      candidates: { total: 0, trendText: "Disabled", trendType: "neutral" as const },
+      cvsToday: { total: 0, trendText: "0 vs yesterday", trendType: "neutral" as const },
+      activeJobs: { total: 0, trendText: "0 active", trendType: "neutral" as const },
+      placedThisMonth: { total: 0, trendText: "0 this month", trendType: "neutral" as const },
+    };
   }
 });
 
-
-
 export const updateDashboardStatsCache = internalMutation({
   args: {},
-  handler: async (ctx) => {
-    const sysStat = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
-
-    const dailyStats = await ctx.db.query("dailyStats").withIndex("by_dateStr").order("desc").take(60);
-
-    const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const yesterdayStr = yesterday.toISOString().split("T")[0];
-    const sevenDaysAgoStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
-    let candidatesThisWeek = 0;
-    let cvsToday = 0;
-    let cvsYesterday = 0;
-    let jobsAddedThisWeek = 0;
-    let placedThisMonth = 0;
-    let placedLastMonth = 0;
-
-    for (const d of dailyStats) {
-      if (d.dateStr >= sevenDaysAgoStr) {
-        candidatesThisWeek += (d.newCandidates || 0);
-        jobsAddedThisWeek += (d.newJobs || 0);
-      }
-      if (d.dateStr === todayStr) {
-        cvsToday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr === yesterdayStr) {
-        cvsYesterday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr >= thirtyDaysAgoStr) {
-        placedThisMonth += (d.placements || 0);
-      } else {
-        placedLastMonth += (d.placements || 0);
-      }
-    }
-
-    const cvsVsYesterday = cvsToday - cvsYesterday;
-    const cvsTrendType = cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral";
-
-    const placedVsLastMonth = placedThisMonth - placedLastMonth;
-    const placedTrendType = placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral";
-
-    const statsData = {
-      candidates: {
-        total: sysStat?.totalCandidates || 0,
-        trendText: `${candidatesThisWeek.toLocaleString()} this week`,
-        trendType: "up",
-      },
-      cvsToday: {
-        total: cvsToday,
-        trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
-        trendType: cvsTrendType,
-      },
-      activeJobs: {
-        total: sysStat?.activeJobsCount || 0,
-        trendText: `${jobsAddedThisWeek} added this week`,
-        trendType: jobsAddedThisWeek > 0 ? "up" : "neutral",
-      },
-      placedThisMonth: {
-        total: placedThisMonth,
+  handler: async () => {
+    return;
+  }
+});Month,
         trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
         trendType: placedTrendType,
       },
