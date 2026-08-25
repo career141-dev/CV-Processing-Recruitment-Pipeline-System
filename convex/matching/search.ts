@@ -27,12 +27,14 @@ export const searchCandidates = query({
       }).take(limit);
 
     let titleResults: Doc<"candidates">[] = [];
+    let skillsResults: Doc<"candidates">[] = [];
     let summaryResults: Doc<"candidates">[] = [];
     let resumeResults: Doc<"candidateResumes">[] = [];
 
     try {
-      [titleResults, summaryResults, resumeResults] = await Promise.all([
+      [titleResults, skillsResults, summaryResults, resumeResults] = await Promise.all([
         searchWithFilters("search_title", "currentJobTitle"),
+        searchWithFilters("search_skills", "skills"),
         searchWithFilters("search_summary", "summary"),
         ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
       ]);
@@ -45,15 +47,22 @@ export const searchCandidates = query({
       resumeCandidateIds.push({ candidateId: res.candidateId, resumeId: res._id });
     }
 
-    // Weighted scoring: title match > text match > summary match
+    // Weighted scoring: title match > skills match > text match > summary match
     const weight = new Map<Id<"candidates">, number>();
     for (const cv of titleResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 100);
+    for (const cv of skillsResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 90);
     for (const r of resumeCandidateIds) weight.set(r.candidateId, (weight.get(r.candidateId) ?? 0) + 50);
     for (const cv of summaryResults) weight.set(cv._id, (weight.get(cv._id) ?? 0) + 30);
 
     const seen = new Set<Id<"candidates">>();
     const merged: { candidateId: Id<"candidates"> }[] = [];
     for (const cv of titleResults) {
+      if (!seen.has(cv._id)) {
+        seen.add(cv._id);
+        merged.push({ candidateId: cv._id });
+      }
+    }
+    for (const cv of skillsResults) {
       if (!seen.has(cv._id)) {
         seen.add(cv._id);
         merged.push({ candidateId: cv._id });
@@ -192,7 +201,7 @@ export const aiSearch = action({
         queryEmbedding = null;
         tokenLogs.push({
           taskType: "embedding",
-          model: "nvidia/nv-embedqa-e5-v5",
+          model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
           promptTokens: 0,
           completionTokens: 0,
           success: false,
@@ -261,18 +270,30 @@ export const aiSearch = action({
     type KeywordSearchResult = { candidateId: Id<"candidates">; score: number };
     let searchBatches: KeywordSearchResult[][] = [];
     if (!isQueryEmpty) {
+      const primaryTitle = effectiveReq.title && effectiveReq.title.length > 2 ? effectiveReq.title : args.query;
       const searchTerms = buildSearchTerms(effectiveReq, args.query);
-      const batchQueries: Promise<KeywordSearchResult[]>[] = [
-        ctx.runQuery(api.matching.search.searchCandidates, { query: args.query, industry: interp.industry, seniority: interp.seniority, limit: fetchLimit }),
-      ];
-      // Add at most 2 additional keyword term queries
-      for (const term of searchTerms.slice(0, 2).filter((t) => t !== args.query)) {
+      const queryList = new Set<string>();
+      if (primaryTitle) queryList.add(primaryTitle);
+      for (const alt of (effectiveReq.alternativeTitles ?? []).slice(0, 3)) if (alt) queryList.add(alt);
+      for (const sk of (effectiveReq.requiredSkills ?? []).slice(0, 4)) if (sk) queryList.add(sk);
+      for (const t of searchTerms.slice(0, 4)) if (t) queryList.add(t);
+
+      const batchQueries: Promise<KeywordSearchResult[]>[] = [];
+      for (const qStr of queryList) {
         batchQueries.push(
-          ctx.runQuery(api.matching.search.searchCandidates, { query: term, industry: interp.industry, seniority: interp.seniority, limit: 40 })
+          ctx.runQuery(api.matching.search.searchCandidates, {
+            query: qStr,
+            industry: interp.industry,
+            seniority: interp.seniority,
+            limit: fetchLimit,
+          })
         );
       }
       try {
-        searchBatches = await Promise.all(batchQueries);
+        const settled = await Promise.allSettled(batchQueries);
+        searchBatches = settled
+          .filter((res): res is PromiseFulfilledResult<KeywordSearchResult[]> => res.status === "fulfilled")
+          .map((res) => res.value);
       } catch (kwErr: any) {
         console.warn("[aiSearch] Keyword batch search notice:", kwErr?.message);
         searchBatches = [];
@@ -495,15 +516,14 @@ export const aiSearch = action({
       filteredResults = rawResults;
     }
 
-    const topCandidates = filteredResults.slice(0, 30);
-
-    const ranked = topCandidates
+    // Score all candidate matches across title, skills, experience, and domain
+    const ranked = filteredResults
       .map((cv: ScoredCandidateDoc, index: number) => scoreCandidateAgainstRequirements(cv as any, effectiveReq, index))
       .sort((a: ScoredCandidate, b: ScoredCandidate) =>
+        (b.overallScore - a.overallScore) ||
         (b.titleScore - a.titleScore) ||
         (b.skillScore - a.skillScore) ||
-        (b.experienceScore - a.experienceScore) ||
-        (b.overallScore - a.overallScore)
+        (b.experienceScore - a.experienceScore)
       );
 
     // LLM-based re-scoring for candidates (skip if query is empty)
@@ -603,37 +623,28 @@ export const aiSearch = action({
     }
 
     const results = finalRanked
+      .filter((item) => {
+        const sc = item.llmScore?.score !== undefined ? Number(item.llmScore.score) : item.overallScore;
+        return sc > 0;
+      })
       .slice(0, args.limit ?? 20)
-      .filter((item) => item.overallScore >= 20 || item.titleScore >= 40)
       .map((item) => {
-        // Calculate breakdown categories
-        const titleMatch = item.titleScore >= 90 ? "strong match" : item.titleScore >= 70 ? "partial match" : "loose match";
-        const skillsMatch = item.skillScore >= 80 ? "strong match" : item.skillScore >= 50 ? "partial match" : "loose match";
-        
-        let expMatch = "not specified";
-        if (effectiveReq.minYearsExperience != null) {
-          const exp = (item.cv as any).yearsOfExperience ?? (item.cv as any).totalExperienceYears;
-          if (exp == null) expMatch = "not specified";
-          else if (exp >= effectiveReq.minYearsExperience) expMatch = "meets target";
-          else expMatch = "below range";
-        }
-        
-        const locMatch = item.locationStatus === "match" ? "match" 
-          : item.locationStatus === "different" ? "different" 
-          : "not specified";
-          
-        const indMatch = item.industryScore === 100 ? "match" : "different";
+        const displayScore = item.llmScore?.score ? Math.round(Number(item.llmScore.score)) : Math.round(item.overallScore);
+        const displayReason = item.llmScore?.reason || item.reason || buildDeterministicTaReason(item, effectiveReq);
 
         return {
           candidateId: item.cv._id,
-          score: item.overallScore,
-          reason: item.reason,
+          score: displayScore,
+          reason: displayReason,
           breakdown: {
-            title: titleMatch,
-            skills: skillsMatch,
-            experience: expMatch,
-            location: locMatch,
-            industry: indMatch
+            title: item.titleScore >= 90 ? "strong match" : item.titleScore >= 70 ? "partial match" : "loose match",
+            skills: item.skillScore >= 80 ? "strong match" : item.skillScore >= 50 ? "partial match" : "loose match",
+            experience: effectiveReq.minYearsExperience != null ? (
+              ((item.cv as any).yearsOfExperience ?? (item.cv as any).totalExperienceYears ?? 0) >= effectiveReq.minYearsExperience
+                ? "meets target" : "below range"
+            ) : "not specified",
+            location: item.locationStatus === "match" ? "match" : item.locationStatus === "different" ? "different" : "not specified",
+            industry: item.industryScore === 100 ? "match" : "different",
           }
         };
       });
@@ -714,7 +725,7 @@ export const semanticSearch = action({
         logs: [
           {
             taskType: "embedding",
-            model: "nvidia/nv-embedqa-e5-v5",
+            model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
             promptTokens: 0,
             completionTokens: 0,
             success: false,

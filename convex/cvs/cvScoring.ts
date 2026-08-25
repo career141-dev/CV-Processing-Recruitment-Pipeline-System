@@ -203,10 +203,30 @@ export function checkSeniorityConflict(
   return false;
 }
 
+export function canonicalizeRoleTitle(title: string): string {
+  let s = normalizeText(title);
+  // Full-Stack variations
+  s = s.replace(/\bfull\s*stack\b|\bfull-stack\b|\bfullstack\b/g, "fullstack");
+  // Front-End variations
+  s = s.replace(/\bfront\s*end\b|\bfront-end\b|\bfrontend\b/g, "frontend");
+  // Back-End variations
+  s = s.replace(/\bback\s*end\b|\bback-end\b|\bbackend\b/g, "backend");
+  // Developer / Software Engineer equivalence
+  s = s.replace(/\b(software engineer|software developer|software development|developer|programmer|coder|swe)\b/g, "software_engineer");
+  // Web / Mobile
+  s = s.replace(/\b(web developer|web development|web engineer)\b/g, "web_developer");
+  s = s.replace(/\b(mobile developer|mobile engineer|app developer|ios developer|android developer)\b/g, "mobile_developer");
+  // DevOps / SRE
+  s = s.replace(/\b(devops engineer|dev ops|devops|sre|site reliability engineer)\b/g, "devops");
+  // QA / Test
+  s = s.replace(/\b(qa engineer|quality assurance|sqa|software test engineer|test engineer|qa)\b/g, "qa_engineer");
+  return s.trim();
+}
+
 function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): number {
   const cleanedCandidate = stripSeniorityWords(candidateTitleText);
-  const candidateNorm = normalizeText(cleanedCandidate);
-  if (!candidateNorm) return 55;
+  const candidateNorm = canonicalizeRoleTitle(cleanedCandidate);
+  if (!candidateNorm) return 0;
 
   const candSeniorityToken = extractTitleSeniorityToken(candidateTitleText);
 
@@ -214,14 +234,14 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
   for (const jobTitle of jobTitles) {
     const jobSeniorityToken = extractTitleSeniorityToken(jobTitle);
     const cleanedJob = stripSeniorityWords(jobTitle);
-    const jobNorm = normalizeText(cleanedJob);
+    const jobNorm = canonicalizeRoleTitle(cleanedJob);
     if (!jobNorm) continue;
 
-    let baseScore = 55;
+    let baseScore = 0;
     if (candidateNorm === jobNorm) {
       baseScore = 100;
     } else if (textContainsEither(candidateNorm, jobNorm)) {
-      baseScore = 92;
+      baseScore = 95;
     } else {
       const jobTokens = titleTokens(cleanedJob);
       const candidateTokens = titleTokens(cleanedCandidate);
@@ -229,15 +249,19 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
         const jobTokenSet = new Set(jobTokens);
         const candidateTokenSet = new Set(candidateTokens);
         const overlap = [...jobTokenSet].filter((token) => candidateTokenSet.has(token)).length;
-        const coverage = overlap / jobTokenSet.size;
-        const reciprocal = overlap / candidateTokenSet.size;
-        const blended = (coverage * 0.7) + (reciprocal * 0.3);
-        baseScore = 55 + Math.round(blended * 40);
+        if (overlap > 0) {
+          const coverage = overlap / jobTokenSet.size;
+          const reciprocal = overlap / candidateTokenSet.size;
+          const blended = (coverage * 0.7) + (reciprocal * 0.3);
+          baseScore = Math.round(blended * 90);
+        } else {
+          baseScore = 0;
+        }
       }
     }
 
     // Fix title-stripping overlap bug: if candidate and job titles explicitly specify conflicting seniority levels, apply adjustment factor
-    if (jobSeniorityToken && candSeniorityToken && jobSeniorityToken !== candSeniorityToken) {
+    if (jobSeniorityToken && candSeniorityToken && jobSeniorityToken !== candSeniorityToken && baseScore > 0) {
       const jRank = seniorityRank(jobSeniorityToken);
       const cRank = seniorityRank(candSeniorityToken);
       if (jRank >= 0 && cRank >= 0 && cRank > jRank) {
@@ -248,7 +272,7 @@ function scoreTitleMatchImpl(jobTitles: string[], candidateTitleText: string): n
     best = Math.max(best, baseScore);
   }
 
-  return Math.max(45, Math.min(100, Math.round(best || 55)));
+  return best;
 }
 
 function skillMatches(requiredSkill: string, candidateSkills: string[]): string | null {
@@ -303,10 +327,18 @@ export function scoreSkills(requiredSkills: string[], preferredSkills: string[],
   const matchedPreferred: string[] = [];
 
   // Deduplicate by normalized value to avoid counting same candidate skill multiple times
-  // e.g. "C" programming language matching against multiple job requirements
+  const GENERIC_FILLER_SKILLS = new Set([
+    "engineering team", "team", "environment", "development", "full-stack", "full stack",
+    "software engineer", "skilled", "candidate", "role", "requirements", "experience",
+    "collaborative", "collaborative environment"
+  ]);
+
+  const cleanRequired = distinct(requiredSkills).filter(s => !GENERIC_FILLER_SKILLS.has(s.toLowerCase().trim()));
+  const cleanPreferred = distinct(preferredSkills).filter(s => !GENERIC_FILLER_SKILLS.has(s.toLowerCase().trim()));
+
   const matchedNormalizedSet = new Set<string>();
 
-  for (const skill of distinct(requiredSkills)) {
+  for (const skill of cleanRequired) {
     const match = skillMatches(skill, candidateSkills);
     if (match) {
       const matchNorm = normalizeSkillForComparison(match);
@@ -314,7 +346,6 @@ export function scoreSkills(requiredSkills: string[], preferredSkills: string[],
         matchedRequired.push(match);
         matchedNormalizedSet.add(matchNorm);
       } else {
-        // Same candidate skill matched against a different requirement — count the requirement as missing
         missingRequired.push(skill);
       }
     } else {
@@ -322,13 +353,13 @@ export function scoreSkills(requiredSkills: string[], preferredSkills: string[],
     }
   }
 
-  for (const skill of distinct(preferredSkills)) {
+  for (const skill of cleanPreferred) {
     const match = skillMatches(skill, candidateSkills);
     if (match) matchedPreferred.push(match);
   }
 
-  const requiredCount = distinct(requiredSkills).length;
-  const preferredCount = distinct(preferredSkills).length;
+  const requiredCount = cleanRequired.length;
+  const preferredCount = cleanPreferred.length;
   if (requiredCount === 0 && preferredCount === 0) {
     return {
       score: 75,
@@ -340,12 +371,16 @@ export function scoreSkills(requiredSkills: string[], preferredSkills: string[],
   const requiredCoverage = requiredCount === 0 ? 1 : matchedRequired.length / requiredCount;
   const preferredCoverage = preferredCount === 0 ? 0 : matchedPreferred.length / preferredCount;
 
-  const score = Math.round(
-    Math.min(
-      100,
-      (requiredCoverage * 70) + (preferredCoverage * 30)
-    )
-  );
+  // If candidate matched 2+ core tech skills or >= 50% coverage, award generous tech competence score
+  let baseTechScore = (requiredCoverage * 80) + (preferredCoverage * 20);
+  if (matchedRequired.length >= 2) {
+    baseTechScore = Math.max(baseTechScore, 75);
+  }
+  if (matchedRequired.length >= 3) {
+    baseTechScore = Math.max(baseTechScore, 90);
+  }
+
+  const score = Math.round(Math.min(100, baseTechScore));
 
   return {
     score,
@@ -1045,7 +1080,7 @@ export function scoreCandidateAgainstRequirements(
   if (req.roleFamilyMatch === "adjacent") roleFamilyMultiplier = 0.65;
   else if (req.roleFamilyMatch === "unrelated") roleFamilyMultiplier = 0.15;
 
-  const titleScore = Math.round(roleFamilyMultiplier * Math.max(baseTitleScore, 70));
+  const titleScore = Math.round(roleFamilyMultiplier * baseTitleScore);
 
   const seniorityScore = calculateAsymmetricSeniorityScore(jobSeniority, candidateSeniority);
   const experienceScore = yearsScore(cv.yearsOfExperience ?? null, req.minYearsExperience, effectiveMaxYears);
@@ -1062,7 +1097,10 @@ export function scoreCandidateAgainstRequirements(
   const locationPenalty = locEval.penalty;
 
   let overallScore: number;
-  if (normalizedJobSeniority === "intern" || normalizedJobSeniority === "entry_level" || req.title?.toLowerCase().includes("intern")) {
+  if (titleScore === 0 && skillScore === 0) {
+    // Hard domain isolation: Zero title match + Zero skill match = 0 score
+    overallScore = 0;
+  } else if (normalizedJobSeniority === "intern" || normalizedJobSeniority === "entry_level" || req.title?.toLowerCase().includes("intern")) {
     // For Intern / Entry Level roles, give higher weight to Seniority & Experience alignment
     overallScore = Math.round(
       (seniorityScore * 0.35) +

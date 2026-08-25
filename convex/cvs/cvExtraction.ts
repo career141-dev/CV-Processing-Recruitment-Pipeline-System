@@ -1700,27 +1700,29 @@ Respond ONLY with a valid JSON object in this exact format:
 });
 
 // ──────────────────────────────────────────────────
-// Background Queue Cron Worker — High-reliability paced extraction at 25 CVs/min
+// Background Queue Cron Worker — paced extraction at 10 CVs per 2-minute run.
+// Previously 25 CVs at concurrency 2 on a 1-minute cron: when a batch ran past
+// 60s the next run started on top of it and the overlap exhausted backend RAM.
 // ──────────────────────────────────────────────────
 
 export const processUnextractedQueueCron = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
-    // 1. Claim up to 25 'uploaded' records per 1-minute run
+    // 1. Claim up to 10 'uploaded' records per run
     let claimed: any[] = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-      limit: 25,
+      limit: 10,
     });
 
     // 2. If no 'uploaded' records left, auto-recover stuck/failed/cancelled records into 'uploaded'
     if (!claimed || claimed.length === 0) {
       const recovery = await ctx.runMutation(internal.cvs.cvUploads.requeueAllStuckUploads, {
-        limit: 50,
+        limit: 20,
       });
 
       if (recovery.requeuedCount > 0) {
         console.log(`[processUnextractedQueueCron] Auto-recovered ${recovery.requeuedCount} stuck/failed CVs back into active extraction queue.`);
         claimed = await ctx.runMutation(internal.cvs.cvUploads.claimUploadedBatch, {
-          limit: 25,
+          limit: 10,
         });
       }
     }
@@ -1729,10 +1731,10 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs/min through AI LLM extraction pipeline...`);
+    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs through AI LLM extraction pipeline...`);
 
     let count = 0;
-    const CONCURRENCY = 2;
+    const CONCURRENCY = 1;
     for (let i = 0; i < claimed.length; i += CONCURRENCY) {
       const chunk = claimed.slice(i, i + CONCURRENCY);
       await Promise.all(

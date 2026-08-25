@@ -32,6 +32,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ── Step 3.1: Stability invariants ─────────────────────────────────
+      # Runs before anything touches the VPS. dab19e7 silently reverted three
+      # backend stability settings and caused a multi-day crash loop that
+      # nothing in this pipeline detected. A commit that reintroduces a
+      # known-fatal setting now fails here instead of on production.
+      - name: Verify stability invariants
+        run: node scripts/check-stability-invariants.mjs
+
       # ── Step 3.5: Ensure Convex Database is Online ─────────────────────
       # We must ensure the self-hosted database is running before we can push code to it
       - name: Ensure Convex is Online
@@ -40,7 +48,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
-          command_timeout: 5m
+          command_timeout: 10m
           script: |
             set -e
             cd ~/career141
@@ -57,7 +65,7 @@ jobs:
             echo "Waiting for Convex backend to finish bootstrapping indexes (up to 3 minutes)..."
             CONVEX_READY=0
             for ATTEMPT in $(seq 1 36); do
-              HTTP_STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3210/version || echo '000')
+              HTTP_STATUS=$(docker exec career141-backend-1 curl -s -o /dev/null -w '%{http_code}' http://localhost:3210/version 2>/dev/null || curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3210/version 2>/dev/null || echo '000')
               echo "  Attempt ${ATTEMPT}/36: Convex /version returned HTTP ${HTTP_STATUS}"
               if [ "${HTTP_STATUS}" = "200" ]; then
                 CONVEX_READY=1
@@ -79,7 +87,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
-          command_timeout: 5m
+          command_timeout: 10m
           script: |
             set -e
             cd ~/career141

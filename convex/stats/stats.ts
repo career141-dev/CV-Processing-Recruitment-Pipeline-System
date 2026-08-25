@@ -5,117 +5,56 @@ import { api, internal } from "../_generated/api";
 
 export const getSystemStats = query({
   args: {},
-  handler: async (ctx) => {
-    const sysStat = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
-
+  handler: async () => {
     return {
-      candidatesCount: sysStat?.totalCandidates || 0,
-      cvUploadsCount: sysStat?.totalCvUploads || 0,
+      candidatesCount: 0,
+      cvUploadsCount: 0,
     };
   },
 });
 
 export const getIngestionStats = query({
   args: {},
-  handler: async (ctx) => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    const dailyStat = await ctx.db.query("dailyStats")
-      .withIndex("by_dateStr", q => q.eq("dateStr", todayStr))
-      .first();
-
-    // Query bounded lists via by_status index in parallel with Promise.all — instant O(1) reads
-    const [activeUploads, queuedUploads, uploadedList, failedUploads, failedRetryUploads, recentDone] = await Promise.all([
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processing")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "queued")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "uploaded")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "failed_retry")).order("desc").take(20),
-      ctx.db.query("cvUploads").withIndex("by_status", q => q.eq("status", "processed")).take(20),
-    ]);
-
-    const activeCombined = [...activeUploads, ...queuedUploads, ...uploadedList];
-
-    const statsBySource: Record<string, { todayCount: number; lastReceived: number | null }> = {};
-
-    if (dailyStat && dailyStat.cvsBySource) {
-      for (const [source, count] of Object.entries(dailyStat.cvsBySource)) {
-        statsBySource[source] = { todayCount: count, lastReceived: null };
-      }
-    }
-
-    const allRecent = [...activeCombined, ...failedUploads, ...failedRetryUploads, ...recentDone];
-    for (const upload of allRecent) {
-      const source = upload.source || "Manual";
-      if (!statsBySource[source]) {
-        statsBySource[source] = { todayCount: 0, lastReceived: null };
-      }
-      if (statsBySource[source].lastReceived === null) {
-        statsBySource[source].lastReceived = upload._creationTime;
-      }
-    }
-
+  handler: async () => {
     return {
-      statsBySource,
-      activeUploads: activeCombined,
-      failedUploads,
-      failedRetryUploads,
-      recentDone
+      statsBySource: {
+        WhatsApp: { todayCount: 0, lastReceived: null },
+        Email: { todayCount: 0, lastReceived: null },
+        LinkedIn: { todayCount: 0, lastReceived: null },
+      },
+      activeUploads: [],
+      failedUploads: [],
+      failedRetryUploads: [],
+      recentDone: []
     };
   },
 });
 
 export const getRecentChannelLogs = query({
   args: { channelType: v.string() },
-  handler: async (ctx, args) => {
-    const logs = await ctx.db.query("ingestionLog")
-      .withIndex("by_channel_time", q => q.eq("channelType", args.channelType as any))
-      .order("desc")
-      .take(20);
-
-    return logs.map(l => ({
-      _id: l._id,
-      candidateName: l.candidateName,
-      rawSender: l.rawSender,
-      stage: l.stage || l.routingStatus,
-      errorMessage: l.errorMessage,
-      receivedAt: l.receivedAt || l._creationTime,
-    }));
+  handler: async () => {
+    return [];
   }
 });
 
 /**
- * ONE-TIME BACKFILL — call once from an admin action to seed systemStats
- * with the real historical counts from all existing documents.
- *
- * After this runs, future inserts/deletes are tracked incrementally by
- * adjustGlobalStat(), so this only needs to run once.
+ * ONE-TIME BACKFILL — disabled
  */
-// Internal — no auth check, called by CLI or cron
 export const backfillSystemStatsInternal = internalMutation({
   args: {},
-  handler: async (ctx) => {
-    // TEMPORARILY DISABLED to reduce DB load
+  handler: async () => {
     return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
   },
 });
 
-/**
- * Public version — admin only, callable from the dashboard Settings UI.
- * Inlines the same paginated counting logic as the internal mutation to avoid
- * circular type reference issues with ctx.runMutation(internal...).
- */
 export const backfillSystemStats = mutation({
   args: {},
-  handler: async (ctx): Promise<{
+  handler: async (): Promise<{
     totalCandidates: number;
     totalCvUploads: number;
     totalApplications: number;
     activeJobsCount: number;
   }> => {
-    await requireRole(ctx, ["admin"]);
-    // TEMPORARILY DISABLED to reduce DB load
     return { totalCandidates: 0, totalCvUploads: 0, totalApplications: 0, activeJobsCount: 0 };
   },
 });
@@ -125,197 +64,20 @@ export const getDashboardStats = query({
     dateRange: v.optional(v.string()),
     jobFilter: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-    const currentOffset = 5.5 * 60 * 60 * 1000; // IST offset
-
-    // ── 1. TRUE TOTALS — O(1) singleton read, zero table scan ──────────
-    const sysStat = await ctx.db
-      .query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
-
-    const totalCandidates  = sysStat?.totalCandidates  ?? 0;
-    const totalCvUploads   = sysStat?.totalCvUploads   ?? 0;
-    const activeJobsCount  = sysStat?.activeJobsCount  ?? 0;
-
-    // ── 2. DAILY STATS — read last 60 days from dailyStats cache ───────
-    // dailyStats is a small table (max 365 rows/year) — safe to take(60)
-    const dailyStats = await ctx.db.query("dailyStats").order("desc").take(60);
-
-    const localTime = new Date(now + currentOffset);
-    localTime.setUTCHours(0, 0, 0, 0);
-    const todayStr     = new Date(localTime.getTime()).toISOString().split("T")[0];
-    const yesterdayStr = new Date(localTime.getTime() - oneDay).toISOString().split("T")[0];
-    const sevenDaysAgoStr  = new Date(localTime.getTime() - 7 * oneDay).toISOString().split("T")[0];
-    const startOfMonthStr  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      .toISOString().split("T")[0];
-    const startOfLastMonthStr = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
-      .toISOString().split("T")[0];
-
-    let cvsToday          = 0;
-    let cvsYesterday      = 0;
-    let candidatesInPeriod = 0;
-    let jobsAddedThisWeek = 0;
-    let placedThisMonth   = 0;
-    let placedLastMonth   = 0;
-
-    for (const d of dailyStats) {
-      // CVs today / yesterday
-      if (d.dateStr === todayStr)     cvsToday     += (d.newCvUploads  || 0);
-      if (d.dateStr === yesterdayStr) cvsYesterday += (d.newCvUploads  || 0);
-
-      // Period candidates (based on dateRange filter)
-      let periodCutoff = "";
-      if (args.dateRange === "This Week")      periodCutoff = sevenDaysAgoStr;
-      else if (args.dateRange === "Last 30 Days") periodCutoff = new Date(now - 30 * oneDay).toISOString().split("T")[0];
-      else if (args.dateRange === "This Month")   periodCutoff = startOfMonthStr;
-
-      if (!periodCutoff || d.dateStr >= periodCutoff) {
-        candidatesInPeriod += (d.newCandidates || 0);
-      }
-
-      // Jobs added this week
-      if (d.dateStr >= sevenDaysAgoStr) {
-        jobsAddedThisWeek += (d.newJobs || 0);
-      }
-
-      // Placements this month vs last month
-      if (d.dateStr >= startOfMonthStr) {
-        placedThisMonth += (d.placements || 0);
-      } else if (d.dateStr >= startOfLastMonthStr) {
-        placedLastMonth += (d.placements || 0);
-      }
-    }
-
-    // ── 3. ACTIVE JOBS — indexed read, not a full scan ──────────────────
-    // Use cached count first; fall back to a bounded index read
-    let activeJobs = activeJobsCount;
-    if (activeJobs === 0) {
-      // Only do this if cache is stale/zero — bounded to 500 jobs max
-      const jobRows = await ctx.db.query("jobs")
-        .withIndex("by_status", q => q.eq("status", "active"))
-        .take(500);
-      activeJobs = jobRows.length;
-    }
-
-    const cvsVsYesterday    = cvsToday - cvsYesterday;
-    const placedVsLastMonth = placedThisMonth - placedLastMonth;
-
+  handler: async () => {
     return {
-      candidates: {
-        total: totalCandidates,
-        trendText: `${candidatesInPeriod.toLocaleString()} this period`,
-        trendType: "up" as const,
-      },
-      cvsToday: {
-        total: cvsToday,
-        trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
-        trendType: (cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral") as "up" | "down" | "neutral",
-      },
-      activeJobs: {
-        total: activeJobs,
-        trendText: `${jobsAddedThisWeek} added this period`,
-        trendType: (jobsAddedThisWeek > 0 ? "up" : "neutral") as "up" | "neutral",
-      },
-      placedThisMonth: {
-        total: placedThisMonth,
-        trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
-        trendType: (placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral") as "up" | "down" | "neutral",
-      },
+      candidates: { total: 0, trendText: "Disabled", trendType: "neutral" as const },
+      cvsToday: { total: 0, trendText: "0 vs yesterday", trendType: "neutral" as const },
+      activeJobs: { total: 0, trendText: "0 active", trendType: "neutral" as const },
+      placedThisMonth: { total: 0, trendText: "0 this month", trendType: "neutral" as const },
     };
   }
 });
 
-
-
 export const updateDashboardStatsCache = internalMutation({
   args: {},
-  handler: async (ctx) => {
-    const sysStat = await ctx.db.query("systemStats")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_stats"))
-      .first();
-
-    const dailyStats = await ctx.db.query("dailyStats").withIndex("by_dateStr").order("desc").take(60);
-
-    const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const yesterdayStr = yesterday.toISOString().split("T")[0];
-    const sevenDaysAgoStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
-    let candidatesThisWeek = 0;
-    let cvsToday = 0;
-    let cvsYesterday = 0;
-    let jobsAddedThisWeek = 0;
-    let placedThisMonth = 0;
-    let placedLastMonth = 0;
-
-    for (const d of dailyStats) {
-      if (d.dateStr >= sevenDaysAgoStr) {
-        candidatesThisWeek += (d.newCandidates || 0);
-        jobsAddedThisWeek += (d.newJobs || 0);
-      }
-      if (d.dateStr === todayStr) {
-        cvsToday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr === yesterdayStr) {
-        cvsYesterday += (d.newCvUploads || 0);
-      }
-      if (d.dateStr >= thirtyDaysAgoStr) {
-        placedThisMonth += (d.placements || 0);
-      } else {
-        placedLastMonth += (d.placements || 0);
-      }
-    }
-
-    const cvsVsYesterday = cvsToday - cvsYesterday;
-    const cvsTrendType = cvsVsYesterday > 0 ? "up" : cvsVsYesterday < 0 ? "down" : "neutral";
-
-    const placedVsLastMonth = placedThisMonth - placedLastMonth;
-    const placedTrendType = placedVsLastMonth > 0 ? "up" : placedVsLastMonth < 0 ? "down" : "neutral";
-
-    const statsData = {
-      candidates: {
-        total: sysStat?.totalCandidates || 0,
-        trendText: `${candidatesThisWeek.toLocaleString()} this week`,
-        trendType: "up",
-      },
-      cvsToday: {
-        total: cvsToday,
-        trendText: `${Math.abs(cvsVsYesterday)} vs yesterday`,
-        trendType: cvsTrendType,
-      },
-      activeJobs: {
-        total: sysStat?.activeJobsCount || 0,
-        trendText: `${jobsAddedThisWeek} added this week`,
-        trendType: jobsAddedThisWeek > 0 ? "up" : "neutral",
-      },
-      placedThisMonth: {
-        total: placedThisMonth,
-        trendText: `${Math.abs(placedVsLastMonth)} vs last month`,
-        trendType: placedTrendType,
-      },
-    };
-
-    const existing = await ctx.db.query("dashboardStatsCache")
-      .withIndex("by_singletonKey", q => q.eq("singletonKey", "global_dashboard_stats"))
-      .first();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        data: statsData,
-        updatedAt: Date.now(),
-      });
-    } else {
-      await ctx.db.insert("dashboardStatsCache", {
-        singletonKey: "global_dashboard_stats",
-        data: statsData,
-        updatedAt: Date.now(),
-      });
-    }
+  handler: async () => {
+    return;
   }
 });
 

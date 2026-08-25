@@ -13,11 +13,11 @@ import { upsertCandidateVector } from "../lib/qdrant";
  */
 export async function embedText(
   text: string,
-  inputType: "query" | "passage" = "query"
+  _inputType: "query" | "passage" = "query"
 ): Promise<{ embedding: number[]; usage: { promptTokens: number; model: string } }> {
-  const apiKey = process.env.NVIDIA_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("NVIDIA_API_KEY environment variable not set.");
+    throw new Error("OPENROUTER_API_KEY environment variable not set.");
   }
 
   const sanitized = text
@@ -29,40 +29,136 @@ export async function embedText(
     throw new Error("Text is empty after sanitization");
   }
 
-  const response = await fetch("https://integrate.api.nvidia.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-    },
-    body: JSON.stringify({
-      input: [sanitized],
-      model: "nvidia/nv-embedqa-e5-v5",
-      input_type: inputType,
-      encoding_format: "float",
-      truncate: "END"
-    })
-  });
+  // 1. #1 Primary: Direct OpenAI API text-embedding-3-small
+  const openAiKey = process.env.OPENAI_API_KEY;
+  if (openAiKey) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openAiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: sanitized,
+          model: "text-embedding-3-small",
+          dimensions: 1024,
+        }),
+      });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`NVIDIA API Error: ${response.status} ${errorText}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data && data.data[0] && data.data[0].embedding) {
+          const rawEmbedding = data.data[0].embedding;
+          const embedding = rawEmbedding.length > 1024 ? rawEmbedding.slice(0, 1024) : rawEmbedding;
+          const promptTokens = data.usage?.prompt_tokens ?? 0;
+          return {
+            embedding,
+            usage: { promptTokens, model: "openai/text-embedding-3-small" },
+          };
+        }
+      } else {
+        const errText = await response.text();
+        console.warn(`[embedText] Direct OpenAI API error (${response.status}):`, errText);
+      }
+    } catch (openAiErr: any) {
+      console.warn(`[embedText] Direct OpenAI API network error:`, openAiErr?.message || openAiErr);
+    }
   }
 
-  const data = await response.json();
-  if (!data.data || !data.data[0] || !data.data[0].embedding) {
-    throw new Error("Invalid response format from NVIDIA Embedding API");
+  // 2. Secondary: OpenRouter
+  const openRouterKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
+  if (openRouterKey) {
+    const candidateModels = [
+      "openai/text-embedding-3-small",
+      "liquid/lfm-2.5-embedding-350m:free",
+      "baai/bge-m3",
+    ];
+
+    for (const model of candidateModels) {
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openRouterKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://career141.com",
+            "X-Title": "Career141 System",
+          },
+          body: JSON.stringify({
+            input: sanitized,
+            model,
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.data && data.data[0] && data.data[0].embedding) {
+            const rawEmbedding = data.data[0].embedding;
+            const embedding = rawEmbedding.length > 1024 ? rawEmbedding.slice(0, 1024) : rawEmbedding;
+            const promptTokens = data.usage?.prompt_tokens ?? 0;
+            return {
+              embedding,
+              usage: { promptTokens, model },
+            };
+          }
+        } else {
+          const errText = await response.text();
+          console.warn(`[embedText] OpenRouter ${model} error (${response.status}):`, errText);
+        }
+      } catch (fetchErr: any) {
+        console.warn(`[embedText] OpenRouter ${model} network error:`, fetchErr?.message || fetchErr);
+      }
+    }
   }
 
-  const promptTokens = data.usage?.prompt_tokens ?? 0;
-  return {
-    embedding: data.data[0].embedding,
-    usage: {
-      promptTokens,
-      model: "nvidia/nv-embedqa-e5-v5",
-    },
-  };
+  // 2. Fallback: NVIDIA NIM nemotron-3-embed-1b
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
+  if (nvidiaKey) {
+    const nvidiaModels = [
+      "nvidia/nemotron-3-embed-1b",
+      "baai/bge-m3",
+      "snowflake/arctic-embed-l",
+    ];
+    for (const model of nvidiaModels) {
+      try {
+        const response = await fetch("https://integrate.api.nvidia.com/v1/embeddings", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${nvidiaKey}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({
+            input: [sanitized],
+            model,
+            encoding_format: "float",
+            truncate: "END",
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.data && data.data[0] && data.data[0].embedding) {
+            const rawEmbedding = data.data[0].embedding;
+            const embedding = rawEmbedding.length > 1024 ? rawEmbedding.slice(0, 1024) : rawEmbedding;
+            const promptTokens = data.usage?.prompt_tokens ?? 0;
+            return {
+              embedding,
+              usage: { promptTokens, model },
+            };
+          }
+        } else {
+          const errText = await response.text();
+          console.warn(`[embedText] NVIDIA ${model} error (${response.status}):`, errText);
+        }
+      } catch (e: any) {
+        console.warn(`[embedText] NVIDIA ${model} network error:`, e?.message || e);
+      }
+    }
+  }
+
+  throw new Error("Failed to generate embedding across all configured providers (OpenRouter & NVIDIA NIM)");
 }
 
 /**
@@ -160,7 +256,7 @@ export const generateJobEmbedding = action({
         logs: [
           {
             taskType: "embedding",
-            model: "nvidia/nv-embedqa-e5-v5",
+            model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
             promptTokens: 0,
             completionTokens: 0,
             success: false,
@@ -349,7 +445,7 @@ Return ONLY valid JSON matching this schema:
         } catch (err) {
           tokenLogs.push({
             taskType: "embedding",
-            model: "nvidia/nv-embedqa-e5-v5",
+            model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
             promptTokens: 0,
             completionTokens: 0,
             success: false,
@@ -1010,7 +1106,7 @@ export const backfillCandidateEmbeddings = action({
         console.error(`Failed to backfill embedding for candidate ${resume.candidateId}:`, err);
         tokenLogs.push({
           taskType: "embedding",
-          model: "nvidia/nv-embedqa-e5-v5",
+          model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
           promptTokens: 0,
           completionTokens: 0,
           success: false,

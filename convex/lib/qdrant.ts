@@ -320,27 +320,43 @@ export async function queryCandidateVectors(
 
   const filter = mustConditions.length > 0 ? { must: mustConditions } : undefined;
 
-  const searchResult = await client.query(QDRANT_CANDIDATE_COLLECTION, {
-    query: queryVector,
-    filter,
-    limit,
-    with_payload: true,
-  });
+  let points: any[] = [];
+  try {
+    if (typeof (client as any).search === "function") {
+      points = await (client as any).search(QDRANT_CANDIDATE_COLLECTION, {
+        vector: queryVector,
+        filter,
+        limit,
+        with_payload: true,
+      });
+    } else if (typeof (client as any).query === "function") {
+      const searchResult = await (client as any).query(QDRANT_CANDIDATE_COLLECTION, {
+        query: queryVector,
+        filter,
+        limit,
+        with_payload: true,
+      });
+      points = Array.isArray(searchResult) ? searchResult : (searchResult?.points || []);
+    }
+  } catch (searchErr: any) {
+    console.warn("[Qdrant] Search execution error:", searchErr?.message);
+    throw searchErr;
+  }
 
   const matches: QdrantMatchResult[] = [];
-  const points = searchResult?.points || [];
-
   for (const p of points) {
-    const payload = p.payload as unknown as CandidateVectorPayload;
-    if (payload && payload.candidateId) {
+    const payload = (p.payload || p) as unknown as CandidateVectorPayload;
+    const candId = payload?.candidateId || p.id;
+    if (candId) {
       matches.push({
-        candidateId: payload.candidateId,
+        candidateId: String(candId),
         score: p.score ?? 0,
         payload,
       });
     }
   }
 
+  console.log(`[Qdrant] Query returned ${matches.length} vector matches (limit: ${limit})`);
   return matches;
 }
 

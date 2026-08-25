@@ -34,16 +34,16 @@ export const evaluateFollowUpStage = internalMutation({
     );
     const followUpJobIds = new Set(followUpJobs.map((j) => j._id));
 
-    // 2. Fetch applications ONLY for active follow-up jobs (Capped to 50 per stage to prevent cron lock)
+    // 2. Fetch applications ONLY for active follow-up jobs (Capped to 10 per stage to prevent cron lock)
     const followUpApps = await ctx.db
       .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "follow_up"))
-      .take(50);
+      .take(10);
 
     const taShortlistApps = await ctx.db
       .query("applications")
       .withIndex("by_stage", (q) => q.eq("currentStage", "ta_shortlist"))
-      .take(50);
+      .take(10);
 
     const appsToEvaluate = [
       ...followUpApps.filter((a) => followUpJobIds.has(a.jobId)),
@@ -637,15 +637,20 @@ export const evaluateFollowUpStage = internalMutation({
   },
 });
 
+// ── CRON STAGGERING ──────────────────────────────────────────────────────────
+// crons.interval anchors every job to the same deploy timestamp, so jobs sharing
+// an interval fire on the same tick forever. Ten jobs previously shared 1/2/5/10
+// minute intervals and collided constantly, saturating the backend. Each
+// recurring job now uses a distinct prime interval, so no two ever re-align.
 crons.interval(
   "evaluate-follow-up",
-  { minutes: 5 },
+  { minutes: 7 },
   internal.crons.evaluateFollowUpStage
 );
 
 crons.interval(
   "fail-stale-voice-sessions",
-  { minutes: 5 },
+  { minutes: 23 },
   internal.aiCalls.voiceCalls.failStaleVoiceCallSessions,
 );
 
@@ -655,35 +660,36 @@ crons.daily(
   internal.communications.graphSubscriptions.renewExpiringSubscriptions
 );
 
-// Poll linkedin's inbox every 5 minutes
+// Poll linkedin's inbox every 13 minutes
 crons.interval(
   "poll-linkedin-inbox",
-  { minutes: 5 },
+  { minutes: 13 },
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "linkedin@career141.com" }
 );
 
-// Poll general CV inbox every 5 minutes
+// Poll general CV inbox every 11 minutes
 crons.interval(
   "poll-cv-inbox",
-  { minutes: 5 },
+  { minutes: 11 },
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "cv@career141.com" }
 );
 
-// Poll job sender mailbox every 2 minutes for candidate email follow-up replies
+// Poll job sender mailbox every 3 minutes for candidate email follow-up replies.
+// Kept the shortest of the email polls — this is the candidate-facing reply path.
 crons.interval(
   "poll-jobs-sender-inbox",
-  { minutes: 2 },
+  { minutes: 3 },
   api.communications.emailAgent.pollEmailInbox,
   { inboxEmail: "job@career141.com" }
 );
 
-// Poll per-job dedicated email inboxes (configured via job channel settings) every 5 minutes.
+// Poll per-job dedicated email inboxes (configured via job channel settings) every 17 minutes.
 // System inboxes (linkedin@, cv@, job@) are excluded from this run — they have their own cron entries above.
 crons.interval(
   "poll-per-job-email-inboxes",
-  { minutes: 5 },
+  { minutes: 17 },
   internal.communications.emailAgent.scheduleEmailPolling,
   {}
 );
@@ -789,25 +795,25 @@ crons.daily(
 
 crons.interval(
   "update-dashboard-stats-cache",
-  { minutes: 5 },
+  { minutes: 19 },
   internal.stats.stats.updateDashboardStatsCache
 );
 
 crons.interval(
   "recover-stuck-uploads",
-  { minutes: 10 },
+  { minutes: 29 },
   internal.cvs.cvUploads.recoverStuckUploads
 );
 
 crons.interval(
   "process-unextracted-cv-queue",
-  { minutes: 1 },
+  { minutes: 2 },
   internal.cvs.cvExtraction.processUnextractedQueueCron
 );
 
 crons.interval(
   "bg-healer-cv-extractor",
-  { minutes: 2 },
+  { minutes: 5 },
   internal.cvs.healerActions.healNextUnparsedCandidate
 );
 

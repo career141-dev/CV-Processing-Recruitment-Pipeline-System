@@ -16,7 +16,7 @@ export const listCandidates = query({
     sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const apps = await ctx.db.query("candidates").order("desc").take(50);
+    const apps = await ctx.db.query("candidates").take(50);
     return { page: apps, isDone: true, continueCursor: "" };
   },
 });
@@ -81,25 +81,38 @@ export const listCandidatesPaginated = query({
   handler: async (ctx, args) => {
     await requireFullAccess(ctx);
     let q;
+    
     const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;
     const sourceChannel = args.sourceChannel && args.sourceChannel !== "all" ? args.sourceChannel : undefined;
-    
+
     if (args.searchQuery) {
       const sq = args.searchQuery.trim();
       if (sq.includes("@")) {
-        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq)).order("desc");
+        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
       } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
-        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, ""))).order("desc");
+        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
       } else {
         q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
       }
-    } else if (sourceChannel) {
-      q = ctx.db.query("candidates").withIndex("by_firstSourceChannel", q => q.eq("firstSourceChannel", sourceChannel as any)).order("desc");
     } else if (overallStatus) {
-      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any)).order("desc");
+      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
+    } else if (sourceChannel) {
+      q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel));
     } else {
-      // Direct primary B-tree traversal: O(1) instantaneous 2ms load across 115K records
       q = ctx.db.query("candidates").order("desc");
+    }
+
+    if (sourceChannel && (args.searchQuery || overallStatus)) {
+      q = q.filter(q => 
+        q.or(
+          q.eq(q.field("firstSourceChannel"), sourceChannel as any),
+          q.eq(q.field("sourceChannel"), sourceChannel)
+        )
+      );
+    }
+
+    if (args.searchQuery && overallStatus) {
+      q = q.filter(q => q.eq(q.field("overallStatus"), overallStatus as any));
     }
 
     let page;
@@ -109,7 +122,10 @@ export const listCandidatesPaginated = query({
       const errStr = String(err?.message || err);
       if (errStr.includes("InvalidCursor") || errStr.includes("cursor")) {
         console.warn("[listCandidatesPaginated] Invalid cursor detected, resetting pagination to page 1");
-        page = await q.paginate({ ...args.paginationOpts, cursor: null });
+        const freshQ = overallStatus
+          ? ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any))
+          : ctx.db.query("candidates").order("desc");
+        page = await freshQ.paginate({ ...args.paginationOpts, cursor: null });
       } else {
         throw err;
       }
@@ -126,8 +142,6 @@ export const listCandidatesPaginated = query({
           if (Array.isArray(activeApplicationsSummary)) {
             activeApplications = activeApplicationsSummary;
           }
-          // Fallback omitted: backfill confirmed all candidates have activeApplicationsSummary.
-          // Using [] is safe — summary self-heals on next candidate write.
 
           return {
             ...safeCandidate,

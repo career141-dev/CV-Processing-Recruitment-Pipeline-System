@@ -35,7 +35,9 @@ services:
       - DATABASE_URL
       - DISABLE_BEACON
       - DISABLE_METRICS_ENDPOINT=${DISABLE_METRICS_ENDPOINT:-true}
-      - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-3600}
+      # Retention GC at 1h churned the 4.6GB SQLite DB continuously and held the
+      # write lock long enough to stall the whole backend. Restored to 48h.
+      - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-172800}
       - DO_NOT_REQUIRE_SSL
       - HTTP_SERVER_TIMEOUT_SECONDS
       - INSTANCE_NAME
@@ -65,11 +67,13 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3210/version || exit 1"]
       interval: 10s
-      start_period: 150s
+      # Index bootstrap on the 4.6GB DB regularly exceeds 150s; a short window
+      # marks the container unhealthy mid-bootstrap and fails the deploy gate.
+      start_period: 5m
       timeout: 10s
       retries: 18
-    # ── SCALE & STABILITY FIX: 7.5g limit provides safe headroom for 4.6GB SQLite DB ──
-    mem_limit: 7.5g
+    # ── SCALE & STABILITY FIX: 8.5g limit provides ample headroom on 11GB VPS ──
+    mem_limit: 8.5g
     mem_reservation: 2g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
