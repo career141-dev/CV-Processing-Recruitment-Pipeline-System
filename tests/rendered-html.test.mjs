@@ -49,7 +49,13 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(page, /Say the company exactly as/);
   assert.match(page, /Say the position exactly as/);
   assert.match(page, /what the position involves/);
-  assert.match(page, /Never say the information is unavailable without checking the full brief first/);
+  assert.match(page, /recruiter-supplied job context for this call/);
+  assert.match(page, /clearPreviousRehearsal/);
+  assert.match(page, /setStatus\("idle"\)/);
+  assert.match(page, /setConversationBrief\(screening\)/);
+  assert.match(page, /Brief used for this rehearsal/);
+  assert.match(page, /if \(instructions\) response\.instructions = instructions/);
+  assert.doesNotMatch(page, /instructions: instructions \?\?/);
   assert.match(page, /noiseSuppression: true/);
   assert.doesNotMatch(page, /SpeechRecognition|speechSynthesis|MediaRecorder|AudioContext/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);

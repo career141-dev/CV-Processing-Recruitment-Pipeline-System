@@ -277,6 +277,18 @@ input::placeholder, textarea::placeholder { color: #aaaDA5; }
 .conversation-controls { display: flex; align-items: center; gap: 9px; }
 .interrupt-button, .end-button { min-height: 38px; border: 1px solid var(--line); padding: 0 14px; background: rgba(255,255,255,.7); color: var(--ink); font-size: .72rem; }
 .interrupt-button { background: var(--lime); }
+.conversation-brief {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 30px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(212,250,103,.13);
+  color: #55594d;
+  font-size: .75rem;
+}
+.conversation-brief span { color: #7c8173; text-transform: uppercase; letter-spacing: .09em; font-size: .62rem; font-weight: 800; }
+.conversation-brief strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .message-list {
   min-height: 260px;
   max-height: 500px;
@@ -336,7 +348,7 @@ input::placeholder, textarea::placeholder { color: #aaaDA5; }
   .setup-actions { align-items: stretch; flex-direction: column; }
   .upload-button { max-width: none; justify-content: center; }
   .start-button { width: 100%; min-width: 0; }
-  .panel-header, .call-status, .message-list, .typed-reply { padding-left: 18px; padding-right: 18px; }
+  .panel-header, .call-status, .conversation-brief, .message-list, .typed-reply { padding-left: 18px; padding-right: 18px; }
   .session-status { display: none; }
   .call-status { grid-template-columns: auto 1fr; }
   .conversation-controls { grid-column: 1 / -1; justify-content: flex-end; }

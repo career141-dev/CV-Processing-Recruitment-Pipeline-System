@@ -64,13 +64,16 @@ const buildOpeningInstructions = (screening: ScreeningContext) => {
   const candidateInstruction = screening.candidateName.trim()
     ? `Start with the candidate's supplied name: ${JSON.stringify(screening.candidateName.trim())}.`
     : "No candidate name was supplied, so use a simple natural greeting without inventing a name.";
+  const jobContext = screening.jobDescription.replace(/\s+/g, " ").trim().slice(0, 3_000);
 
   return [
-    "Begin the call now using the authoritative session brief.",
+    "You are Aura, an automated recruitment assistant. Begin the call now.",
+    "Speak warmly and naturally in one steady vocal character. Keep the whole opening concise and complete.",
     candidateInstruction,
     `Say the company exactly as ${JSON.stringify(screening.companyName.trim())}.`,
     `Say the position exactly as ${JSON.stringify(screening.jobTitle.trim())}.`,
-    "Add one short, concrete and accurate sentence explaining what the position involves, using only the supplied job description.",
+    `The recruiter-supplied job context for this call is ${JSON.stringify(jobContext)}.`,
+    "Add one short, concrete and accurate sentence explaining what the position involves, using only that job context.",
     "Explain that the call concerns the candidate's application.",
     "Then ask whether now is a good time for a quick chat.",
     "Do not ask a screening question yet, and do not omit any of the required opening details.",
@@ -91,6 +94,7 @@ export default function Home() {
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [preparingFile, setPreparingFile] = useState(false);
   const [typedReply, setTypedReply] = useState("");
+  const [conversationBrief, setConversationBrief] = useState<ScreeningContext | null>(null);
 
   const messagesRef = useRef<Message[]>([]);
   const sessionActiveRef = useRef(false);
@@ -119,6 +123,16 @@ export default function Home() {
     updateMessages(messagesRef.current.map((message) => message.id === id ? { ...message, text } : message));
   }, [updateMessages]);
 
+  const clearPreviousRehearsal = useCallback(() => {
+    if (sessionActiveRef.current) return;
+    updateMessages([]);
+    setConversationBrief(null);
+    setInterimText("");
+    setTypedReply("");
+    setErrorMessage("");
+    setStatus("idle");
+  }, [updateMessages]);
+
   const sendRealtimeEvent = useCallback((event: Record<string, unknown>) => {
     const channel = dataChannelRef.current;
     if (!channel || channel.readyState !== "open") throw new Error("The live voice connection is not ready yet.");
@@ -134,12 +148,11 @@ export default function Home() {
     pendingCandidateResponseRef.current = false;
     responseActiveRef.current = true;
     setStatus("thinking");
+    const response: Record<string, unknown> = { output_modalities: ["audio"] };
+    if (instructions) response.instructions = instructions;
     sendRealtimeEvent({
       type: "response.create",
-      response: {
-        output_modalities: ["audio"],
-        instructions: instructions ?? "Use the recruiter-provided candidate name, company, exact position, and full job description in the session brief as the authoritative source. When the candidate asks about the role, answer from that brief before returning naturally to the screening. Never say the information is unavailable without checking the full brief first.",
-      },
+      response,
     });
   }, [sendRealtimeEvent]);
 
@@ -296,7 +309,11 @@ export default function Home() {
   });
 
   const startConversation = async () => {
-    const screening = getScreeningContext();
+    const draft = getScreeningContext();
+    const screening: ScreeningContext = {
+      ...draft,
+      detailsToCollect: [...draft.detailsToCollect],
+    };
     if (screening.jobDescription.length < 40) {
       setErrorMessage("Add or upload the job description before starting the screening.");
       return;
@@ -319,6 +336,7 @@ export default function Home() {
     setErrorMessage("");
     setInterimText("");
     updateMessages([]);
+    setConversationBrief(screening);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -396,6 +414,7 @@ export default function Home() {
       closeRealtimeSession();
       sessionActiveRef.current = false;
       setSessionActive(false);
+      setConversationBrief(null);
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : "Aura could not access the microphone or start the call.");
     }
@@ -449,6 +468,7 @@ export default function Home() {
       setErrorMessage("Please choose a job description smaller than 8 MB.");
       return;
     }
+    clearPreviousRehearsal();
     setPreparingFile(true);
     setErrorMessage("");
     setUploadedFileName(file.name);
@@ -519,19 +539,19 @@ export default function Home() {
             <span className="step-chip">01 · Brief</span>
           </div>
           <div className="field-grid">
-            <label><span>Candidate name <em>optional</em></span><input value={candidateName} onChange={(event) => setCandidateName(event.target.value)} placeholder="e.g. Sam" /></label>
-            <label><span>Company</span><input required value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="e.g. Northstar" /></label>
-            <label><span>Job title</span><input required value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="e.g. Product Designer" /></label>
+            <label><span>Candidate name <em>optional</em></span><input value={candidateName} onChange={(event) => { clearPreviousRehearsal(); setCandidateName(event.target.value); }} placeholder="e.g. Sam" /></label>
+            <label><span>Company</span><input required value={companyName} onChange={(event) => { clearPreviousRehearsal(); setCompanyName(event.target.value); }} placeholder="e.g. Northstar" /></label>
+            <label><span>Job title</span><input required value={jobTitle} onChange={(event) => { clearPreviousRehearsal(); setJobTitle(event.target.value); }} placeholder="e.g. Product Designer" /></label>
           </div>
           <div className="context-grid">
             <label className="textarea-field">
               <span>Job description</span>
-              <textarea value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="Paste the JD here, or upload it below…" rows={10} />
+              <textarea value={jobDescription} onChange={(event) => { clearPreviousRehearsal(); setUploadedFileName(""); setJobDescription(event.target.value); }} placeholder="Paste the JD here, or upload it below…" rows={10} />
               <span className="field-note">The model uses this as reference context, not as instructions.</span>
             </label>
             <label className="textarea-field goals-field">
               <span>Details to collect <em>one per line</em></span>
-              <textarea value={detailsText} onChange={(event) => setDetailsText(event.target.value)} rows={10} />
+              <textarea value={detailsText} onChange={(event) => { clearPreviousRehearsal(); setDetailsText(event.target.value); }} rows={10} />
               <span className="field-note">Edit these to match the real screening. Aura asks only for missing items.</span>
             </label>
           </div>
@@ -563,13 +583,20 @@ export default function Home() {
           </div>
         </div>
 
+        {conversationBrief && (
+          <div className="conversation-brief" aria-label="Brief used for this rehearsal">
+            <span>Call brief</span>
+            <strong>{conversationBrief.candidateName || "Candidate"} · {conversationBrief.companyName} · {conversationBrief.jobTitle}</strong>
+          </div>
+        )}
+
         <div className="message-list" aria-live="polite">
           {messages.length === 0 && <div className="empty-transcript"><strong>No rehearsal yet</strong><span>Aura will open the call after you start the screening.</span></div>}
           {messages.map((message) => (
             <article className={`message ${message.role}-message`} key={message.id}>
               <div className="avatar" aria-hidden="true">{message.role === "assistant" ? "A" : "C"}</div>
               <div className="message-body">
-                <div className="message-meta"><strong>{message.role === "assistant" ? "Aura" : candidateName || "Candidate"}</strong><span>{message.time}</span></div>
+                <div className="message-meta"><strong>{message.role === "assistant" ? "Aura" : conversationBrief?.candidateName || "Candidate"}</strong><span>{message.time}</span></div>
                 <p>{message.text}</p>
               </div>
             </article>
