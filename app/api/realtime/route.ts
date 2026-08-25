@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     model: REALTIME_MODEL,
     output_modalities: ["audio"],
     instructions: buildAgentInstructions(screening),
-    max_output_tokens: 180,
+    max_output_tokens: 800,
     audio: {
       input: {
         noise_reduction: { type: "near_field" },
@@ -66,9 +66,9 @@ export async function POST(request: Request) {
         },
         turn_detection: {
           type: "semantic_vad",
-          eagerness: "high",
-          create_response: true,
-          interrupt_response: true,
+          eagerness: "medium",
+          create_response: false,
+          interrupt_response: false,
         },
       },
       output: { voice: "marin" },

@@ -27,7 +27,7 @@ test("server-renders the Aura voice-agent experience", async () => {
   assert.doesNotMatch(html, /OPENAI_API_KEY/);
 });
 
-test("uses one secure Realtime voice session with accurate transcription and barge-in", async () => {
+test("uses one secure Realtime voice session with grounded replies and confirmed barge-in", async () => {
   const [page, realtimeRoute, config] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/realtime/route.ts", import.meta.url), "utf8"),
@@ -41,6 +41,9 @@ test("uses one secure Realtime voice session with accurate transcription and bar
   assert.match(page, /conversation\.item\.input_audio_transcription\.completed/);
   assert.match(page, /response\.output_audio_transcript\.delta/);
   assert.match(page, /output_audio_buffer\.clear/);
+  assert.match(page, /BARGE_IN_CONFIRMATION_MS = 380/);
+  assert.match(page, /pendingCandidateResponseRef/);
+  assert.match(page, /response_cancel_not_active/);
   assert.match(page, /noiseSuppression: true/);
   assert.doesNotMatch(page, /SpeechRecognition|speechSynthesis|MediaRecorder|AudioContext/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
@@ -50,10 +53,14 @@ test("uses one secure Realtime voice session with accurate transcription and bar
   assert.match(realtimeRoute, /voice: "marin"/);
   assert.match(realtimeRoute, /gpt-4o-transcribe/);
   assert.match(realtimeRoute, /type: "semantic_vad"/);
-  assert.match(realtimeRoute, /eagerness: "high"/);
-  assert.match(realtimeRoute, /interrupt_response: true/);
+  assert.match(realtimeRoute, /max_output_tokens: 800/);
+  assert.match(realtimeRoute, /eagerness: "medium"/);
+  assert.match(realtimeRoute, /create_response: false/);
+  assert.match(realtimeRoute, /interrupt_response: false/);
   assert.match(config, /Sound like a good recruiter on a real call/);
   assert.match(config, /Keep one steady vocal character throughout the call/);
+  assert.match(config, /authoritative recruiter-provided call brief/);
+  assert.match(config, /silently find the supporting fact/);
   assert.match(config, /usually under 35 words/);
   assert.doesNotMatch(`${page}\n${realtimeRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);
 });

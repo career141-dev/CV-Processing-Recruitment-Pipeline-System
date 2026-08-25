@@ -11,13 +11,15 @@ type RealtimeEvent = {
   item_id?: string;
   delta?: string;
   transcript?: string;
-  error?: { message?: string };
+  error?: { code?: string; message?: string };
   response?: {
     status?: string;
     status_details?: { error?: { message?: string } };
     output?: Array<{ content?: Array<{ transcript?: string; text?: string }> }>;
   };
 };
+
+const BARGE_IN_CONFIRMATION_MS = 380;
 
 const DEFAULT_GOALS = `Confirm continued interest in the role
 Understand the candidate's most relevant recent experience
@@ -81,6 +83,9 @@ export default function Home() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const connectionAbortRef = useRef<AbortController | null>(null);
   const assistantDraftRef = useRef<{ itemId: string; messageId: string; text: string } | null>(null);
+  const responseActiveRef = useRef(false);
+  const pendingCandidateResponseRef = useRef(false);
+  const bargeInTimerRef = useRef<number | null>(null);
 
   const updateMessages = useCallback((next: Message[]) => {
     messagesRef.current = next;
@@ -103,7 +108,32 @@ export default function Home() {
     channel.send(JSON.stringify(event));
   }, []);
 
+  const clearBargeInTimer = useCallback(() => {
+    if (bargeInTimerRef.current !== null) window.clearTimeout(bargeInTimerRef.current);
+    bargeInTimerRef.current = null;
+  }, []);
+
+  const beginAgentResponse = useCallback((instructions?: string) => {
+    pendingCandidateResponseRef.current = false;
+    responseActiveRef.current = true;
+    setStatus("thinking");
+    sendRealtimeEvent({
+      type: "response.create",
+      response: {
+        output_modalities: ["audio"],
+        ...(instructions ? { instructions } : {}),
+      },
+    });
+  }, [sendRealtimeEvent]);
+
+  const cancelActiveResponse = useCallback(() => {
+    if (!responseActiveRef.current) return;
+    sendRealtimeEvent({ type: "response.cancel" });
+    sendRealtimeEvent({ type: "output_audio_buffer.clear" });
+  }, [sendRealtimeEvent]);
+
   const closeRealtimeSession = useCallback(() => {
+    clearBargeInTimer();
     connectionAbortRef.current?.abort();
     connectionAbortRef.current = null;
     const channel = dataChannelRef.current;
@@ -120,18 +150,33 @@ export default function Home() {
     }
     remoteAudioRef.current = null;
     assistantDraftRef.current = null;
-  }, []);
+    responseActiveRef.current = false;
+    pendingCandidateResponseRef.current = false;
+  }, [clearBargeInTimer]);
 
   const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
     if (!sessionActiveRef.current) return;
 
     if (event.type === "input_audio_buffer.speech_started") {
       setInterimText("");
-      setStatus("listening");
+      if (!responseActiveRef.current) {
+        setStatus("listening");
+      } else {
+        clearBargeInTimer();
+        bargeInTimerRef.current = window.setTimeout(() => {
+          bargeInTimerRef.current = null;
+          try {
+            cancelActiveResponse();
+          } catch {
+            // The response may have completed while the candidate began speaking.
+          }
+        }, BARGE_IN_CONFIRMATION_MS);
+      }
       return;
     }
     if (event.type === "input_audio_buffer.speech_stopped") {
-      setStatus("thinking");
+      clearBargeInTimer();
+      if (!responseActiveRef.current) setStatus("thinking");
       return;
     }
     if (event.type === "conversation.item.input_audio_transcription.delta" && event.delta) {
@@ -141,10 +186,22 @@ export default function Home() {
     if (event.type === "conversation.item.input_audio_transcription.completed") {
       const transcript = event.transcript?.trim();
       setInterimText("");
-      if (transcript) addMessage("user", transcript);
+      if (transcript) {
+        addMessage("user", transcript);
+        pendingCandidateResponseRef.current = true;
+        try {
+          if (responseActiveRef.current) cancelActiveResponse();
+          else beginAgentResponse();
+        } catch (error) {
+          pendingCandidateResponseRef.current = false;
+          setErrorMessage(error instanceof Error ? error.message : "Aura could not respond to that answer.");
+          setStatus("error");
+        }
+      }
       return;
     }
     if (event.type === "response.created") {
+      responseActiveRef.current = true;
       setStatus("thinking");
       return;
     }
@@ -171,10 +228,22 @@ export default function Home() {
       return;
     }
     if (event.type === "response.done") {
+      responseActiveRef.current = false;
+      clearBargeInTimer();
       const failure = event.response?.status_details?.error?.message;
       if (event.response?.status === "failed") {
         setErrorMessage(failure || "Aura could not complete that response.");
         setStatus("error");
+        return;
+      }
+      if (pendingCandidateResponseRef.current) {
+        try {
+          beginAgentResponse();
+        } catch (error) {
+          pendingCandidateResponseRef.current = false;
+          setErrorMessage(error instanceof Error ? error.message : "Aura could not continue the conversation.");
+          setStatus("error");
+        }
         return;
       }
       if (event.response?.status === "cancelled" || event.response?.status === "incomplete") {
@@ -192,10 +261,11 @@ export default function Home() {
       return;
     }
     if (event.type === "error") {
+      if (event.error?.code === "response_cancel_not_active") return;
       setErrorMessage(event.error?.message || "The live voice connection was interrupted.");
       setStatus("error");
     }
-  }, [addMessage, replaceMessage]);
+  }, [addMessage, beginAgentResponse, cancelActiveResponse, clearBargeInTimer, replaceMessage]);
 
   const getScreeningContext = (): ScreeningContext => ({
     candidateName: candidateName.trim(),
@@ -304,14 +374,7 @@ export default function Home() {
 
       sessionActiveRef.current = true;
       setSessionActive(true);
-      setStatus("thinking");
-      sendRealtimeEvent({
-        type: "response.create",
-        response: {
-          output_modalities: ["audio"],
-          instructions: "Begin the call now. Give only a natural introduction, clearly name the company and exact position, explain that this is about the candidate's application, then ask whether now is a good time for a quick chat. Do not ask a screening question yet.",
-        },
-      });
+      beginAgentResponse("Begin the call now. Use the authoritative company and position from the session brief. Give only a natural introduction, clearly name the company and exact position, explain that this is about the candidate's application, then ask whether now is a good time for a quick chat. Do not ask a screening question yet.");
     } catch (error) {
       closeRealtimeSession();
       sessionActiveRef.current = false;
@@ -332,8 +395,7 @@ export default function Home() {
 
   const interruptReply = () => {
     try {
-      sendRealtimeEvent({ type: "response.cancel" });
-      sendRealtimeEvent({ type: "output_audio_buffer.clear" });
+      cancelActiveResponse();
     } catch {
       // Speaking into the microphone still triggers automatic WebRTC barge-in.
     }
@@ -346,18 +408,18 @@ export default function Home() {
     const text = typedReply.trim();
     if (!text || !sessionActiveRef.current) return;
     try {
-      if (status === "speaking") {
-        sendRealtimeEvent({ type: "response.cancel" });
-        sendRealtimeEvent({ type: "output_audio_buffer.clear" });
+      if (responseActiveRef.current) {
+        pendingCandidateResponseRef.current = true;
+        cancelActiveResponse();
       }
       addMessage("user", text);
       setTypedReply("");
-      setStatus("thinking");
       sendRealtimeEvent({
         type: "conversation.item.create",
         item: { type: "message", role: "user", content: [{ type: "input_text", text }] },
       });
-      sendRealtimeEvent({ type: "response.create", response: { output_modalities: ["audio"] } });
+      pendingCandidateResponseRef.current = true;
+      if (!responseActiveRef.current) beginAgentResponse();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Aura could not send that reply.");
       setStatus("error");
