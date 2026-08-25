@@ -19,7 +19,12 @@ type RealtimeEvent = {
   };
 };
 
-const BARGE_IN_MIN_TRANSCRIPT_CHARS = 2;
+const BARGE_IN_MIN_TRANSCRIPT_CHARS = 4;
+const TRANSCRIPTION_SETUP_LEAK_PREFIXES = [
+  "recruitment screening for",
+  "candidate name",
+  "preserve names dates numbers companies job titles",
+];
 
 const DEFAULT_GOALS = `Confirm continued interest in the role
 Understand the candidate's most relevant recent experience
@@ -49,6 +54,23 @@ const fileAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
 const headingValue = (text: string, label: string) => {
   const match = text.match(new RegExp(`(?:^|\\n)${label}\\s*:\\s*([^\\n]+)`, "i"));
   return match?.[1]?.trim() ?? "";
+};
+
+const normalizedSpeechText = (text: string) => text.toLowerCase()
+  .replace(/[^a-z0-9]+/g, " ")
+  .trim();
+
+const isPossibleTranscriptionSetupLeak = (text: string) => {
+  const normalized = normalizedSpeechText(text);
+  if (!normalized) return false;
+  return TRANSCRIPTION_SETUP_LEAK_PREFIXES.some((prefix) => (
+    prefix.startsWith(normalized) || normalized.startsWith(prefix)
+  ));
+};
+
+const isTranscriptionSetupLeak = (text: string) => {
+  const normalized = normalizedSpeechText(text);
+  return TRANSCRIPTION_SETUP_LEAK_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 };
 
 const eventTranscript = (event: RealtimeEvent) => {
@@ -226,6 +248,7 @@ export default function Home() {
       interimTranscriptRef.current = transcript;
       setInterimText(transcript);
       if (responseActiveRef.current && !bargeInConfirmedRef.current
+        && !isPossibleTranscriptionSetupLeak(transcript)
         && transcript.replace(/\s/g, "").length >= BARGE_IN_MIN_TRANSCRIPT_CHARS) {
         bargeInConfirmedRef.current = true;
         try {
@@ -240,6 +263,11 @@ export default function Home() {
       const transcript = event.transcript?.trim();
       interimTranscriptRef.current = "";
       setInterimText("");
+      if (transcript && isTranscriptionSetupLeak(transcript)) {
+        bargeInConfirmedRef.current = false;
+        setStatus(responseActiveRef.current ? "speaking" : "listening");
+        return;
+      }
       if (transcript) {
         addMessage("user", transcript);
         pendingCandidateResponseRef.current = true;

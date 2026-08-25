@@ -41,8 +41,12 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(page, /conversation\.item\.input_audio_transcription\.completed/);
   assert.match(page, /response\.output_audio_transcript\.delta/);
   assert.match(page, /output_audio_buffer\.clear/);
-  assert.match(page, /BARGE_IN_MIN_TRANSCRIPT_CHARS = 2/);
+  assert.match(page, /BARGE_IN_MIN_TRANSCRIPT_CHARS = 4/);
   assert.match(page, /transcript\.replace\(\/\\s\/g, ""\)\.length >= BARGE_IN_MIN_TRANSCRIPT_CHARS/);
+  assert.match(page, /isPossibleTranscriptionSetupLeak/);
+  assert.match(page, /isTranscriptionSetupLeak/);
+  assert.match(page, /recruitment screening for/);
+  assert.match(page, /preserve names dates numbers companies job titles/);
   assert.match(page, /bargeInConfirmedRef/);
   assert.doesNotMatch(page, /setTimeout\([\s\S]{0,240}cancelActiveResponse/);
   assert.match(page, /pendingCandidateResponseRef/);
@@ -70,9 +74,12 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(realtimeRoute, /v1\/realtime\/calls/);
   assert.match(realtimeRoute, /voice: "marin"/);
   assert.match(realtimeRoute, /gpt-4o-transcribe/);
-  assert.match(realtimeRoute, /type: "semantic_vad"/);
+  assert.match(realtimeRoute, /type: "server_vad"/);
+  assert.match(realtimeRoute, /threshold: 0\.72/);
+  assert.match(realtimeRoute, /prefix_padding_ms: 300/);
+  assert.match(realtimeRoute, /silence_duration_ms: 650/);
+  assert.doesNotMatch(realtimeRoute, /transcriptionPrompt|prompt: transcriptionPrompt/);
   assert.match(realtimeRoute, /max_output_tokens: 800/);
-  assert.match(realtimeRoute, /eagerness: "medium"/);
   assert.match(realtimeRoute, /create_response: false/);
   assert.match(realtimeRoute, /interrupt_response: false/);
   assert.match(config, /Sound like a good recruiter on a real call/);
