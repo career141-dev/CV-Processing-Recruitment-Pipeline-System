@@ -1131,6 +1131,12 @@ export function scoreCandidateAgainstRequirements(
     );
   }
 
+  // Universal Domain Compatibility Scaling (Applies to ALL industries):
+  // If specific skills are required and candidate has 0 matching skills with weak title overlap, downrank cleanly
+  if (requiredSkills.length > 0 && skillScore === 0 && titleScore < 70) {
+    overallScore = Math.round(overallScore * 0.25);
+  }
+
   // Apply Location Penalty (e.g. -40 points for strict location mismatch like Kegalle vs Colombo)
   if (locationPenalty < 0) {
     overallScore = Math.max(0, overallScore + locationPenalty);
