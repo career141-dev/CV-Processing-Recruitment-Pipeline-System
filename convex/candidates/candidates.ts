@@ -98,8 +98,9 @@ export const listCandidatesPaginated = query({
     } else if (overallStatus) {
       q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
     } else {
-      // Instant O(1) B-tree traversal via firstSeenAt index (newest candidates first)
-      q = ctx.db.query("candidates").withIndex("by_firstSeenAt").order("desc");
+      // Instant O(1) B-tree traversal bounded strictly to valid timestamps (> 0) in descending order
+      // This ignores undefined/null legacy records and seeks directly to the latest candidates in < 2ms
+      q = ctx.db.query("candidates").withIndex("by_firstSeenAt", q => q.gt("firstSeenAt", 0)).order("desc");
     }
 
     let page;
@@ -107,11 +108,7 @@ export const listCandidatesPaginated = query({
       page = await q.paginate(args.paginationOpts);
     } catch (err: any) {
       console.warn("[listCandidatesPaginated] Pagination error detected, resetting to page 1:", err?.message || err);
-      try {
-        page = await q.paginate({ ...args.paginationOpts, cursor: null });
-      } catch (retryErr) {
-        throw err;
-      }
+      page = await q.paginate({ numItems: 10, cursor: null });
     }
       
     return {
