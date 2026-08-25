@@ -41,7 +41,10 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(page, /conversation\.item\.input_audio_transcription\.completed/);
   assert.match(page, /response\.output_audio_transcript\.delta/);
   assert.match(page, /output_audio_buffer\.clear/);
-  assert.match(page, /BARGE_IN_CONFIRMATION_MS = 380/);
+  assert.match(page, /BARGE_IN_MIN_TRANSCRIPT_CHARS = 2/);
+  assert.match(page, /transcript\.replace\(\/\\s\/g, ""\)\.length >= BARGE_IN_MIN_TRANSCRIPT_CHARS/);
+  assert.match(page, /bargeInConfirmedRef/);
+  assert.doesNotMatch(page, /setTimeout\([\s\S]{0,240}cancelActiveResponse/);
   assert.match(page, /pendingCandidateResponseRef/);
   assert.match(page, /response_cancel_not_active/);
   assert.match(page, /buildOpeningInstructions/);
@@ -56,6 +59,9 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(page, /Brief used for this rehearsal/);
   assert.match(page, /if \(instructions\) response\.instructions = instructions/);
   assert.doesNotMatch(page, /instructions: instructions \?\?/);
+  assert.match(page, /type: "session\.update"/);
+  assert.match(page, /buildInProgressInstructions/);
+  assert.match(page, /Never introduce yourself or restart the call again/);
   assert.match(page, /noiseSuppression: true/);
   assert.doesNotMatch(page, /SpeechRecognition|speechSynthesis|MediaRecorder|AudioContext/);
   assert.doesNotMatch(page, /OPENAI_API_KEY/);
@@ -76,5 +82,7 @@ test("uses one secure Realtime voice session with grounded replies and confirmed
   assert.match(config, /Address .* by name when a name was supplied/);
   assert.match(config, /one short, concrete and accurate sentence explaining what the position involves/);
   assert.match(config, /usually under 35 words/);
+  assert.match(config, /The introduction happens exactly once/);
+  assert.match(config, /no more than two short sentences and 45 spoken words/);
   assert.doesNotMatch(`${page}\n${realtimeRoute}\n${config}`, /Sinhala|Tamil|Sri Lankan|pronunciation guide/i);
 });

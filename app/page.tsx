@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import type { ScreeningContext } from "../lib/agent-config";
+import { buildAgentInstructions, type ScreeningContext } from "../lib/agent-config";
 
 type AgentStatus = "idle" | "requesting" | "listening" | "thinking" | "speaking" | "error";
 type MessageRole = "user" | "assistant";
@@ -19,7 +19,7 @@ type RealtimeEvent = {
   };
 };
 
-const BARGE_IN_CONFIRMATION_MS = 380;
+const BARGE_IN_MIN_TRANSCRIPT_CHARS = 2;
 
 const DEFAULT_GOALS = `Confirm continued interest in the role
 Understand the candidate's most relevant recent experience
@@ -80,6 +80,13 @@ const buildOpeningInstructions = (screening: ScreeningContext) => {
   ].join(" ");
 };
 
+const buildInProgressInstructions = (screening: ScreeningContext) => `${buildAgentInstructions(screening)}
+
+# Live call state
+The opening introduction has already happened. Never introduce yourself or restart the call again unless the candidate explicitly asks who is calling.
+If the candidate says only “hello”, “hi”, “are you there”, or something similar later, treat it as a connection check. Briefly confirm you are still there, then continue from the interrupted thought or the next unanswered screening goal. Do not repeat the company, position, or opening.
+If your previous reply was interrupted, do not repeat it from the beginning. Continue only the unfinished point, briefly and naturally.`;
+
 export default function Home() {
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -106,7 +113,11 @@ export default function Home() {
   const assistantDraftRef = useRef<{ itemId: string; messageId: string; text: string } | null>(null);
   const responseActiveRef = useRef(false);
   const pendingCandidateResponseRef = useRef(false);
-  const bargeInTimerRef = useRef<number | null>(null);
+  const interimTranscriptRef = useRef("");
+  const bargeInConfirmedRef = useRef(false);
+  const assistantHasSpokenRef = useRef(false);
+  const inProgressInstructionsAppliedRef = useRef(false);
+  const sessionBriefRef = useRef<ScreeningContext | null>(null);
 
   const updateMessages = useCallback((next: Message[]) => {
     messagesRef.current = next;
@@ -139,11 +150,6 @@ export default function Home() {
     channel.send(JSON.stringify(event));
   }, []);
 
-  const clearBargeInTimer = useCallback(() => {
-    if (bargeInTimerRef.current !== null) window.clearTimeout(bargeInTimerRef.current);
-    bargeInTimerRef.current = null;
-  }, []);
-
   const beginAgentResponse = useCallback((instructions?: string) => {
     pendingCandidateResponseRef.current = false;
     responseActiveRef.current = true;
@@ -162,8 +168,20 @@ export default function Home() {
     sendRealtimeEvent({ type: "output_audio_buffer.clear" });
   }, [sendRealtimeEvent]);
 
+  const advanceSessionPastOpening = useCallback(() => {
+    const screening = sessionBriefRef.current;
+    if (!screening || inProgressInstructionsAppliedRef.current) return;
+    sendRealtimeEvent({
+      type: "session.update",
+      session: {
+        type: "realtime",
+        instructions: buildInProgressInstructions(screening),
+      },
+    });
+    inProgressInstructionsAppliedRef.current = true;
+  }, [sendRealtimeEvent]);
+
   const closeRealtimeSession = useCallback(() => {
-    clearBargeInTimer();
     connectionAbortRef.current?.abort();
     connectionAbortRef.current = null;
     const channel = dataChannelRef.current;
@@ -182,46 +200,56 @@ export default function Home() {
     assistantDraftRef.current = null;
     responseActiveRef.current = false;
     pendingCandidateResponseRef.current = false;
-  }, [clearBargeInTimer]);
+    interimTranscriptRef.current = "";
+    bargeInConfirmedRef.current = false;
+    assistantHasSpokenRef.current = false;
+    inProgressInstructionsAppliedRef.current = false;
+    sessionBriefRef.current = null;
+  }, []);
 
   const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
     if (!sessionActiveRef.current) return;
 
     if (event.type === "input_audio_buffer.speech_started") {
+      interimTranscriptRef.current = "";
+      bargeInConfirmedRef.current = false;
       setInterimText("");
-      if (!responseActiveRef.current) {
-        setStatus("listening");
-      } else {
-        clearBargeInTimer();
-        bargeInTimerRef.current = window.setTimeout(() => {
-          bargeInTimerRef.current = null;
-          try {
-            cancelActiveResponse();
-          } catch {
-            // The response may have completed while the candidate began speaking.
-          }
-        }, BARGE_IN_CONFIRMATION_MS);
-      }
+      if (!responseActiveRef.current) setStatus("listening");
       return;
     }
     if (event.type === "input_audio_buffer.speech_stopped") {
-      clearBargeInTimer();
       if (!responseActiveRef.current) setStatus("thinking");
       return;
     }
     if (event.type === "conversation.item.input_audio_transcription.delta" && event.delta) {
-      setInterimText((current) => `${current}${event.delta}`.replace(/\s+/g, " ").trimStart());
+      const transcript = `${interimTranscriptRef.current}${event.delta}`.replace(/\s+/g, " ").trimStart();
+      interimTranscriptRef.current = transcript;
+      setInterimText(transcript);
+      if (responseActiveRef.current && !bargeInConfirmedRef.current
+        && transcript.replace(/\s/g, "").length >= BARGE_IN_MIN_TRANSCRIPT_CHARS) {
+        bargeInConfirmedRef.current = true;
+        try {
+          cancelActiveResponse();
+        } catch {
+          // The response may have completed while the candidate began speaking.
+        }
+      }
       return;
     }
     if (event.type === "conversation.item.input_audio_transcription.completed") {
       const transcript = event.transcript?.trim();
+      interimTranscriptRef.current = "";
       setInterimText("");
       if (transcript) {
         addMessage("user", transcript);
         pendingCandidateResponseRef.current = true;
         try {
-          if (responseActiveRef.current) cancelActiveResponse();
-          else beginAgentResponse();
+          if (responseActiveRef.current) {
+            if (!bargeInConfirmedRef.current) {
+              bargeInConfirmedRef.current = true;
+              cancelActiveResponse();
+            }
+          } else beginAgentResponse();
         } catch (error) {
           pendingCandidateResponseRef.current = false;
           setErrorMessage(error instanceof Error ? error.message : "Aura could not respond to that answer.");
@@ -238,6 +266,7 @@ export default function Home() {
     if (event.type === "response.output_audio.delta" || event.type === "response.output_audio_transcript.delta") {
       setStatus("speaking");
       if (event.type !== "response.output_audio_transcript.delta" || !event.delta) return;
+      assistantHasSpokenRef.current = true;
       const itemId = event.item_id ?? "assistant-current";
       let draft = assistantDraftRef.current;
       if (!draft || draft.itemId !== itemId) {
@@ -259,12 +288,21 @@ export default function Home() {
     }
     if (event.type === "response.done") {
       responseActiveRef.current = false;
-      clearBargeInTimer();
+      bargeInConfirmedRef.current = false;
       const failure = event.response?.status_details?.error?.message;
       if (event.response?.status === "failed") {
         setErrorMessage(failure || "Aura could not complete that response.");
         setStatus("error");
         return;
+      }
+      if (assistantHasSpokenRef.current && !inProgressInstructionsAppliedRef.current) {
+        try {
+          advanceSessionPastOpening();
+        } catch (error) {
+          setErrorMessage(error instanceof Error ? error.message : "Aura could not preserve the call state.");
+          setStatus("error");
+          return;
+        }
       }
       if (pendingCandidateResponseRef.current) {
         try {
@@ -295,7 +333,7 @@ export default function Home() {
       setErrorMessage(event.error?.message || "The live voice connection was interrupted.");
       setStatus("error");
     }
-  }, [addMessage, beginAgentResponse, cancelActiveResponse, clearBargeInTimer, replaceMessage]);
+  }, [addMessage, advanceSessionPastOpening, beginAgentResponse, cancelActiveResponse, replaceMessage]);
 
   const getScreeningContext = (): ScreeningContext => ({
     candidateName: candidateName.trim(),
@@ -337,6 +375,7 @@ export default function Home() {
     setInterimText("");
     updateMessages([]);
     setConversationBrief(screening);
+    sessionBriefRef.current = screening;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
