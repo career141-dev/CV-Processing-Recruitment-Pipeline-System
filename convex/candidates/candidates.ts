@@ -80,39 +80,55 @@ export const listCandidatesPaginated = query({
   },
   handler: async (ctx, args) => {
     await requireFullAccess(ctx);
+    let q;
+    
     const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;
     const sourceChannel = args.sourceChannel && args.sourceChannel !== "all" ? args.sourceChannel : undefined;
 
-    const buildQuery = () => {
-      if (args.searchQuery) {
-        const sq = args.searchQuery.trim();
-        if (sq.includes("@")) {
-          return ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
-        } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
-          return ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
-        } else {
-          return ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
-        }
-      } else if (sourceChannel) {
-        return ctx.db.query("candidates").withIndex("by_firstSourceChannel", q => q.eq("firstSourceChannel", sourceChannel as any));
-      } else if (overallStatus) {
-        return ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
+    if (args.searchQuery) {
+      const sq = args.searchQuery.trim();
+      if (sq.includes("@")) {
+        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
+      } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
+        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
       } else {
-        return ctx.db.query("candidates").withIndex("by_firstSeenAt");
+        q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
       }
-    };
+    } else if (overallStatus) {
+      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
+    } else if (sourceChannel) {
+      q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel));
+    } else {
+      q = ctx.db.query("candidates").order("desc");
+    }
 
-    const paginationOpts = {
-      ...args.paginationOpts,
-      numItems: Math.min(args.paginationOpts?.numItems ?? 10, 10),
-    };
+    if (sourceChannel && (args.searchQuery || overallStatus)) {
+      q = q.filter(q => 
+        q.or(
+          q.eq(q.field("firstSourceChannel"), sourceChannel as any),
+          q.eq(q.field("sourceChannel"), sourceChannel)
+        )
+      );
+    }
+
+    if (args.searchQuery && overallStatus) {
+      q = q.filter(q => q.eq(q.field("overallStatus"), overallStatus as any));
+    }
 
     let page;
     try {
-      page = await buildQuery().paginate(paginationOpts);
+      page = await q.paginate(args.paginationOpts);
     } catch (err: any) {
-      console.warn("[listCandidatesPaginated] Stale cursor detected, auto-resetting to page 1:", err?.message || err);
-      page = await buildQuery().paginate({ numItems: 10, cursor: null });
+      const errStr = String(err?.message || err);
+      if (errStr.includes("InvalidCursor") || errStr.includes("cursor")) {
+        console.warn("[listCandidatesPaginated] Invalid cursor detected, resetting pagination to page 1");
+        const freshQ = overallStatus
+          ? ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any))
+          : ctx.db.query("candidates").order("desc");
+        page = await freshQ.paginate({ ...args.paginationOpts, cursor: null });
+      } else {
+        throw err;
+      }
     }
       
     return {
@@ -126,8 +142,6 @@ export const listCandidatesPaginated = query({
           if (Array.isArray(activeApplicationsSummary)) {
             activeApplications = activeApplicationsSummary;
           }
-          // Fallback omitted: backfill confirmed all candidates have activeApplicationsSummary.
-          // Using [] is safe — summary self-heals on next candidate write.
 
           return {
             ...safeCandidate,
