@@ -272,7 +272,10 @@ export const aiSearch = action({
         );
       }
       try {
-        searchBatches = await Promise.all(batchQueries);
+        const settled = await Promise.allSettled(batchQueries);
+        searchBatches = settled
+          .filter((res): res is PromiseFulfilledResult<KeywordSearchResult[]> => res.status === "fulfilled")
+          .map((res) => res.value);
       } catch (kwErr: any) {
         console.warn("[aiSearch] Keyword batch search notice:", kwErr?.message);
         searchBatches = [];
