@@ -205,21 +205,27 @@ export function checkSeniorityConflict(
 
 export function canonicalizeRoleTitle(title: string): string {
   let s = normalizeText(title);
-  // Full-Stack variations
-  s = s.replace(/\bfull\s*stack\b|\bfull-stack\b|\bfullstack\b/g, "fullstack");
-  // Front-End variations
-  s = s.replace(/\bfront\s*end\b|\bfront-end\b|\bfrontend\b/g, "frontend");
-  // Back-End variations
-  s = s.replace(/\bback\s*end\b|\bback-end\b|\bbackend\b/g, "backend");
-  // Developer / Software Engineer equivalence
-  s = s.replace(/\b(software engineer|software developer|software development|developer|programmer|coder|swe)\b/g, "software_engineer");
-  // Web / Mobile
+
+  // 1. Non-Software "Developer" phrases (MUST come first to prevent false SWE mapping)
+  s = s.replace(/\b(business developer|business development manager|business development executive|business development|bdm)\b/g, "business_development");
+  s = s.replace(/\b(property developer|real estate developer|land developer)\b/g, "real_estate");
+
+  // 2. Specific Tech Specialties (Mobile, Fullstack, Frontend, Backend, DevOps, QA, Data)
+  s = s.replace(/\b(mobile application developer|mobile app developer|mobile developer|mobile engineer|ios developer|android developer|flutter developer|react native developer)\b/g, "mobile_developer");
+  s = s.replace(/\b(full\s*stack developer|full\s*stack engineer|full\s*stack software engineer|full-stack|fullstack)\b/g, "fullstack_engineer");
+  s = s.replace(/\b(front\s*end developer|front\s*end engineer|front\s*end software engineer|front-end|frontend)\b/g, "frontend_engineer");
+  s = s.replace(/\b(back\s*end developer|back\s*end engineer|back\s*end software engineer|back-end|backend)\b/g, "backend_engineer");
   s = s.replace(/\b(web developer|web development|web engineer)\b/g, "web_developer");
-  s = s.replace(/\b(mobile developer|mobile engineer|app developer|ios developer|android developer)\b/g, "mobile_developer");
-  // DevOps / SRE
-  s = s.replace(/\b(devops engineer|dev ops|devops|sre|site reliability engineer)\b/g, "devops");
-  // QA / Test
+  s = s.replace(/\b(devops engineer|dev ops|devops|sre|site reliability engineer|cloud engineer|infrastructure engineer)\b/g, "devops");
   s = s.replace(/\b(qa engineer|quality assurance|sqa|software test engineer|test engineer|qa)\b/g, "qa_engineer");
+  s = s.replace(/\b(data scientist|data engineer|ai engineer|machine learning engineer|ml engineer)\b/g, "data_engineer");
+
+  // 3. General Software Engineer / Developer
+  s = s.replace(/\b(software engineer|software developer|software development|programmer|coder|swe)\b/g, "software_engineer");
+  
+  // 4. Standalone generic "developer"
+  s = s.replace(/\bdeveloper\b/g, "software_engineer");
+
   return s.trim();
 }
 
