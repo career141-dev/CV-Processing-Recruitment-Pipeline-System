@@ -342,10 +342,10 @@ export const aiSearch = action({
       }
     }
 
-    // 6. Batch fetch full candidate documents in a single query
-    let candidates: Doc<"candidates">[] = [];
+    // 6. Batch fetch lightweight candidate summary projections in a single query
+    let candidates: any[] = [];
     if (allCandidateIds.length > 0) {
-      candidates = await ctx.runQuery(internal.matching.queries.getCandidatesBatch, {
+      candidates = await ctx.runQuery(internal.matching.queries.getCandidatesSummaryBatch, {
         candidateIds: allCandidateIds,
       });
     }
