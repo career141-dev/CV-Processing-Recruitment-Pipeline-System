@@ -32,49 +32,11 @@ export async function embedText(
     throw new Error("Text is empty after sanitization");
   }
 
-  // 1. #1 Primary: Direct OpenAI API text-embedding-3-small
-  const openAiKey = process.env.OPENAI_API_KEY;
-  if (openAiKey) {
-    try {
-      const response = await fetch("https://api.openai.com/v1/embeddings", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${openAiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          input: sanitized,
-          model: "text-embedding-3-small",
-          dimensions: 1024,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data && data.data[0] && data.data[0].embedding) {
-          const rawEmbedding = data.data[0].embedding;
-          const embedding = rawEmbedding.length > 1024 ? rawEmbedding.slice(0, 1024) : rawEmbedding;
-          const promptTokens = data.usage?.prompt_tokens ?? 0;
-          return {
-            embedding,
-            usage: { promptTokens, model: "openai/text-embedding-3-small" },
-          };
-        }
-      } else {
-        const errText = await response.text();
-        console.warn(`[embedText] Direct OpenAI API error (${response.status}):`, errText);
-      }
-    } catch (openAiErr: any) {
-      console.warn(`[embedText] Direct OpenAI API network error:`, openAiErr?.message || openAiErr);
-    }
-  }
-
-  // 2. Secondary: OpenRouter
+  // 1. #1 Primary: OpenRouter API for openai/text-embedding-3-small
   const openRouterKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
   if (openRouterKey) {
     const candidateModels = [
       "openai/text-embedding-3-small",
-      "liquid/lfm-2.5-embedding-350m:free",
       "baai/bge-m3",
     ];
 
@@ -91,7 +53,7 @@ export async function embedText(
           body: JSON.stringify({
             input: sanitized,
             model,
-          })
+          }),
         });
 
         if (response.ok) {
