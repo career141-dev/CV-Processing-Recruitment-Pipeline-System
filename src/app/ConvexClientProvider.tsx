@@ -28,12 +28,25 @@ function AuthSync({ children }: { children: ReactNode }) {
       }
       if (!displayName) displayName = "Team Member";
 
-      syncCurrentUser({
-        email: email,
-        name: displayName || user.username || "Team Member",
-        avatarUrl: user.imageUrl,
-        invitedRole: (user.publicMetadata?.role as string) || undefined,
-      }).catch(console.error);
+      const syncKey = `user_synced_${user.id}_${email}`;
+      const lastSynced = typeof window !== "undefined" ? sessionStorage.getItem(syncKey) : null;
+      const now = Date.now();
+
+      // Only run syncCurrentUser DB mutation if not synced in the last 5 minutes
+      if (!lastSynced || now - Number(lastSynced) > 300000) {
+        syncCurrentUser({
+          email: email,
+          name: displayName || user.username || "Team Member",
+          avatarUrl: user.imageUrl,
+          invitedRole: (user.publicMetadata?.role as string) || undefined,
+        })
+          .then(() => {
+            if (typeof window !== "undefined") {
+              sessionStorage.setItem(syncKey, String(Date.now()));
+            }
+          })
+          .catch(console.error);
+      }
     }
   }, [isLoaded, isSignedIn, user, syncCurrentUser]);
 
