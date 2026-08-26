@@ -76,7 +76,7 @@ export function getQdrantClient(targetUrl?: string): QdrantClient {
     url,
     apiKey,
     checkCompatibility: false,
-    timeout: 1500,
+    timeout: 10000,
     maxConnections: 10,
   });
 
@@ -111,7 +111,7 @@ export async function ensureCandidateCollection(): Promise<boolean> {
         url,
         apiKey: process.env.QDRANT_API_KEY || undefined,
         checkCompatibility: false,
-        timeout: 1500,
+        timeout: 10000,
         maxConnections: 10,
       });
 
