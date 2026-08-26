@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getOpenAI, getModelForTask } from "../lib/llm";
+import { getOpenAI, getModelForTask, executeLLMWithNvidiaFallback } from "../lib/llm";
 import type { SearchRequirements } from "../lib/jdParser";
 
 function normalizeText(value: string): string {
@@ -1432,20 +1432,40 @@ export async function scoreBatchWithLLM(
 }`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
-      temperature: 0.1,
-      max_tokens: 800,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: promptText },
-      ],
-      response_format: { type: "json_object" },
-    });
+    let content = "{}";
+    let usedModel = model;
 
-    const content = response.choices[0]?.message?.content ?? '{"evaluations":[]}';
-    const inputTokens = response.usage?.prompt_tokens || 0;
-    const outputTokens = response.usage?.completion_tokens || 0;
+    try {
+      const response = await openai.chat.completions.create({
+        model,
+        temperature: 0.1,
+        max_tokens: 800,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: promptText },
+        ],
+        response_format: { type: "json_object" },
+      });
+      content = response.choices[0]?.message?.content ?? '{"evaluations":[]}';
+    } catch (primaryErr: any) {
+      console.warn("[scoreBatchWithLLM] Primary model call failed, trying OpenRouter fallback:", primaryErr?.message || primaryErr);
+      const fallbackClient = getOpenAI("cv_structuring");
+      const fallbackResponse = await fallbackClient.chat.completions.create({
+        model: "deepseek/deepseek-v4-flash",
+        temperature: 0.1,
+        max_tokens: 800,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: promptText },
+        ],
+        response_format: { type: "json_object" },
+      });
+      content = fallbackResponse.choices[0]?.message?.content ?? '{"evaluations":[]}';
+      usedModel = "deepseek/deepseek-v4-flash";
+    }
+
+    // Clean any markdown formatting if present
+    content = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
     const resultMap = new Map<number, { score: number; reason: string }>();
 
@@ -1467,9 +1487,9 @@ export async function scoreBatchWithLLM(
     return {
       evaluations: resultMap,
       usage: {
-        promptTokens: inputTokens,
-        completionTokens: outputTokens,
-        model,
+        promptTokens: 0,
+        completionTokens: 0,
+        model: usedModel,
       },
     };
   } catch (err) {

@@ -42,8 +42,8 @@ export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_VISION_FALLBACK_MODELS = [
   OPENROUTER_VISION_MODEL,
 ];
-export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.1-70b-instruct";
-export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
+export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.3-70b-instruct";
+export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.3-70b-instruct";
 
 export function getModelForTask(taskType: TaskType | string): string {
   if (taskType === "cv_vision_ocr") {

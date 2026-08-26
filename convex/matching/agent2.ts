@@ -15,9 +15,12 @@ export async function embedText(
   text: string,
   _inputType: "query" | "passage" = "query"
 ): Promise<{ embedding: number[]; usage: { promptTokens: number; model: string } }> {
-  const apiKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY environment variable not set.");
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  const openRouterApiKey = process.env.OPENROUTER_API_KEYS?.split(",")[0]?.trim() || process.env.OPENROUTER_API_KEY;
+  const nvidiaApiKey = process.env.NVIDIA_API_KEY;
+
+  if (!openAiApiKey && !openRouterApiKey && !nvidiaApiKey) {
+    throw new Error("No API key configured for vector embeddings (OPENAI_API_KEY / OPENROUTER_API_KEY / NVIDIA_API_KEY).");
   }
 
   const sanitized = text
