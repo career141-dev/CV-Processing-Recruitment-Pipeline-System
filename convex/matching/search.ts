@@ -637,7 +637,7 @@ export const aiSearch = action({
         const sc = item.llmScore?.score !== undefined ? Number(item.llmScore.score) : item.overallScore;
         return sc > 0;
       })
-      .slice(0, args.limit ?? 20)
+      .slice(0, args.limit ?? 40)
       .map((item) => {
         const displayScore = item.llmScore?.score ? Math.round(Number(item.llmScore.score)) : Math.round(item.overallScore);
         const displayReason = item.llmScore?.reason || item.reason || buildDeterministicTaReason(item, effectiveReq);

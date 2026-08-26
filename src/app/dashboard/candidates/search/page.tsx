@@ -215,6 +215,7 @@ export default function CandidatesSearchPage() {
       sources,
       customFilters: customFiltersParam,
       location: loc || undefined,
+      limit: 40,
     });
   };
 
