@@ -104,6 +104,7 @@ import type * as lib_voiceAgentWebhook from "../lib/voiceAgentWebhook.js";
 import type * as lib_webhookSecurity from "../lib/webhookSecurity.js";
 import type * as matching_agent2 from "../matching/agent2.js";
 import type * as matching_queries from "../matching/queries.js";
+import type * as matching_reindexVectors from "../matching/reindexVectors.js";
 import type * as matching_search from "../matching/search.js";
 import type * as meta_conversions from "../meta/conversions.js";
 import type * as meta_trigger from "../meta/trigger.js";
@@ -225,6 +226,7 @@ declare const fullApi: ApiFromModules<{
   "lib/webhookSecurity": typeof lib_webhookSecurity;
   "matching/agent2": typeof matching_agent2;
   "matching/queries": typeof matching_queries;
+  "matching/reindexVectors": typeof matching_reindexVectors;
   "matching/search": typeof matching_search;
   "meta/conversions": typeof meta_conversions;
   "meta/trigger": typeof meta_trigger;
