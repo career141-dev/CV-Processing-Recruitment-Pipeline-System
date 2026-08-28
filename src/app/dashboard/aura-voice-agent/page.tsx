@@ -258,16 +258,6 @@ export default function AuraVoiceAgentPage() {
 
       setSessionActive(true);
       setStatus("listening");
-
-      // Initial opening greeting in UI
-      setMessages([
-        {
-          id: makeId(),
-          role: "assistant",
-          text: `Hello ${context.candidateName || "there"}, this is Aura calling on behalf of ${context.companyName} regarding the ${context.jobTitle} position. Do you have a few minutes for a quick initial conversation?`,
-          time: nowLabel(),
-        },
-      ]);
     } catch (error: any) {
       console.error("[LiveKit Voice Error]:", error);
       disconnectRoom();
