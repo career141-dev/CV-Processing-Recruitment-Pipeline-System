@@ -44,31 +44,27 @@ export async function POST(request: Request) {
   }
 
   const screening = body.screening;
-  const transcriptionPrompt = [
-    `Recruitment screening for the ${screening.jobTitle.trim()} role at ${screening.companyName.trim()}.`,
-    screening.candidateName.trim() ? `Candidate name: ${screening.candidateName.trim()}.` : "",
-    "Preserve names, dates, numbers, companies, job titles, notice periods, and availability accurately.",
-  ].filter(Boolean).join(" ");
 
   const session = {
     type: "realtime",
     model: REALTIME_MODEL,
     output_modalities: ["audio"],
     instructions: buildAgentInstructions(screening),
-    max_output_tokens: 180,
+    max_output_tokens: 800,
     audio: {
       input: {
         noise_reduction: { type: "near_field" },
         transcription: {
           model: "gpt-4o-transcribe",
           language: "en",
-          prompt: transcriptionPrompt,
         },
         turn_detection: {
-          type: "semantic_vad",
-          eagerness: "high",
-          create_response: true,
-          interrupt_response: true,
+          type: "server_vad",
+          threshold: 0.72,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 650,
+          create_response: false,
+          interrupt_response: false,
         },
       },
       output: { voice: "marin" },
