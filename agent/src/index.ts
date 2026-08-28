@@ -182,10 +182,11 @@ export default defineAgent<ProcessUserData>({
     });
 
     let resourcesClosing = false;
-    const textToSpeech = new openai.TTS({
-      apiKey: config.openaiApiKey,
-      model: "tts-1",
-      voice: "nova",
+    const textToSpeech = new deepgram.TTS({
+      apiKey: config.deepgramApiKey,
+      model: "aura-2-asteria-en",
+      sampleRate: 24_000,
+      mipOptOut: true,
     });
 
     const goals = detailsToCollect
@@ -255,13 +256,14 @@ ${goals}
     const turnHandlingConfig = {
       turnDetection: "vad" as const,
       endpointing: {
-        minDelay: 250,
-        maxDelay: 1000,
+        minDelay: 300,
+        maxDelay: 1200,
       },
       interruption: {
         enabled: true,
-        mode: "adaptive" as const,
-        minWords: 1,
+        mode: "vad" as const,
+        minWords: 2,
+        falseInterruptionTimeout: 500,
       },
       preemptiveGeneration: {
         enabled: true,
