@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js start",
-    "dev": "tsx src/index.ts dev",
+    "dev": "tsx watch src/index.ts dev",
     "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
