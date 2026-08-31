@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getOpenAI, getModelForTask } from "../lib/llm";
+import { getOpenAI, getModelForTask, executeLLMWithNvidiaFallback } from "../lib/llm";
 import type { SearchRequirements } from "../lib/jdParser";
 
 function normalizeText(value: string): string {
@@ -1432,20 +1432,44 @@ export async function scoreBatchWithLLM(
 }`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
-      temperature: 0.1,
-      max_tokens: 800,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: promptText },
-      ],
-      response_format: { type: "json_object" },
-    });
+    let content = "{}";
+    let usedModel = model;
 
-    const content = response.choices[0]?.message?.content ?? '{"evaluations":[]}';
-    const inputTokens = response.usage?.prompt_tokens || 0;
-    const outputTokens = response.usage?.completion_tokens || 0;
+    try {
+      const response = await openai.chat.completions.create({
+        model,
+        temperature: 0.1,
+        max_tokens: 4000,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: promptText },
+        ],
+        response_format: { type: "json_object" },
+      });
+      content = response.choices[0]?.message?.content ?? '{"evaluations":[]}';
+    } catch (primaryErr: any) {
+      console.warn("[scoreBatchWithLLM] Primary model call failed, trying OpenRouter fallback:", primaryErr?.message || primaryErr);
+      const fallbackClient = getOpenAI("cv_structuring");
+      const fallbackResponse = await fallbackClient.chat.completions.create({
+        model: "deepseek/deepseek-v4-flash",
+        temperature: 0.1,
+        max_tokens: 4000,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: promptText },
+        ],
+        response_format: { type: "json_object" },
+      });
+      content = fallbackResponse.choices[0]?.message?.content ?? '{"evaluations":[]}';
+      usedModel = "deepseek/deepseek-v4-flash";
+    }
+
+    // Clean any markdown formatting and control characters if present
+    content = content
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F]/g, " ")
+      .trim();
 
     const resultMap = new Map<number, { score: number; reason: string }>();
 
@@ -1461,15 +1485,25 @@ export async function scoreBatchWithLLM(
         }
       }
     } catch (parseError) {
-      console.error("[scoreBatchWithLLM] Error parsing JSON output:", parseError);
+      console.warn("[scoreBatchWithLLM] Standard JSON parse failed, attempting regex chunk extraction:", parseError);
+      
+      // Fallback regex extraction if JSON was truncated or had unescaped string syntax
+      const itemRegex = /\{\s*"id"\s*:\s*(\d+)[\s\S]*?"score"\s*:\s*(\d+)(?:[\s\S]*?"reason"\s*:\s*"([^"]*)")?/g;
+      let match: RegExpExecArray | null;
+      while ((match = itemRegex.exec(content)) !== null) {
+        const id = parseInt(match[1], 10);
+        const score = Math.min(100, Math.max(0, parseInt(match[2], 10)));
+        const reason = match[3] || "Evaluated by AI matching engine against job requirements.";
+        resultMap.set(id, { score, reason });
+      }
     }
 
     return {
       evaluations: resultMap,
       usage: {
-        promptTokens: inputTokens,
-        completionTokens: outputTokens,
-        model,
+        promptTokens: 0,
+        completionTokens: 0,
+        model: usedModel,
       },
     };
   } catch (err) {

@@ -42,59 +42,51 @@ export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_VISION_FALLBACK_MODELS = [
   OPENROUTER_VISION_MODEL,
 ];
-export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.1-70b-instruct";
-export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct";
+export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.3-70b-instruct";
+export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.3-70b-instruct";
 
 export function getModelForTask(taskType: TaskType | string): string {
   if (taskType === "cv_vision_ocr") {
     return OPENROUTER_VISION_MODEL;
   }
-  if (IS_CV_EXTRACTION_TASK(taskType)) {
-    return OPENROUTER_CV_EXTRACTION_MODEL;
-  }
-  return NVIDIA_PRIMARY_MODEL;
+  return OPENROUTER_CV_EXTRACTION_MODEL;
 }
 
 let openRouterKeyIndex = 0;
 
-export function getOpenAI(taskType: TaskType | string): OpenAI {
-  if (IS_CV_EXTRACTION_TASK(taskType)) {
-    // Collect all available OpenRouter API keys from environment variables for round-robin rotation
-    const keysFromEnv = [
-      process.env.OPENROUTER_API_KEY,
-      process.env.OPENROUTER_API_KEY_1,
-      process.env.OPENROUTER_API_KEY_2,
-      process.env.OPENROUTER_API_KEY_3,
-      process.env.OPENROUTER_API_KEY_4,
-      process.env.OPENROUTER_API_KEYS, // Comma-separated list option
-    ]
-      .filter(Boolean)
-      .flatMap((val) => (val ? val.split(",") : []))
-      .map((k) => k.trim())
-      .filter((k) => k.length > 10);
+export function getOpenAI(_taskType?: TaskType | string): OpenAI {
+  // Collect all available OpenRouter API keys from environment variables for round-robin rotation
+  const keysFromEnv = [
+    process.env.OPENROUTER_API_KEY,
+    process.env.OPENROUTER_API_KEY_1,
+    process.env.OPENROUTER_API_KEY_2,
+    process.env.OPENROUTER_API_KEY_3,
+    process.env.OPENROUTER_API_KEY_4,
+    process.env.OPENROUTER_API_KEYS, // Comma-separated list option
+  ]
+    .filter(Boolean)
+    .flatMap((val) => (val ? val.split(",") : []))
+    .map((k) => k.trim())
+    .filter((k) => k.length > 10);
 
-    if (keysFromEnv.length === 0) {
-      console.warn("[getOpenAI] OPENROUTER_API_KEY is not set in environment variables, falling back to NVIDIA NIM API");
-      return getNvidiaOpenAI();
-    }
-
-    // Select key using round-robin index
-    const apiKey = keysFromEnv[openRouterKeyIndex++ % keysFromEnv.length];
-
-    return new OpenAI({
-      baseURL: "https://openrouter.ai/api/v1",
-      apiKey,
-      defaultHeaders: {
-        "HTTP-Referer": "https://career141.com",
-        "X-Title": "Career141 System",
-      },
-      timeout: 45000,
-      maxRetries: 0,
-    });
+  if (keysFromEnv.length === 0) {
+    console.warn("[getOpenAI] OPENROUTER_API_KEY is not set in environment variables, falling back to NVIDIA NIM API");
+    return getNvidiaOpenAI();
   }
 
-  // Non-CV extractions use NVIDIA NIM API to preserve OpenRouter credits
-  return getNvidiaOpenAI();
+  // Select key using round-robin index
+  const apiKey = keysFromEnv[openRouterKeyIndex++ % keysFromEnv.length];
+
+  return new OpenAI({
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey,
+    defaultHeaders: {
+      "HTTP-Referer": "https://career141.com",
+      "X-Title": "Career141 System",
+    },
+    timeout: 45000,
+    maxRetries: 0,
+  });
 }
 
 export function getNvidiaOpenAI(): OpenAI {

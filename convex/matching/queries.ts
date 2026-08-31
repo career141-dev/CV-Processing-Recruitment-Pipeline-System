@@ -24,6 +24,41 @@ export const getCandidatesBatch = internalQuery({
   },
 });
 
+export const getCandidatesSummaryBatch = internalQuery({
+  args: { candidateIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const validCandidateIds = args.candidateIds
+      .map((id) => ctx.db.normalizeId("candidates", id))
+      .filter((id): id is Id<"candidates"> => id !== null);
+
+    const docs = await Promise.all(
+      validCandidateIds.map((id) => ctx.db.get(id))
+    );
+    return docs.filter((c): c is Doc<"candidates"> => c !== null).map((c) => ({
+      _id: c._id,
+      _creationTime: c._creationTime,
+      fullName: c.fullName,
+      email: c.email,
+      phone: c.phone,
+      currentJobTitle: c.currentJobTitle || c.currentTitle,
+      currentEmployer: c.currentEmployer,
+      totalExperienceYears: c.totalExperienceYears ?? c.yearsOfExperience,
+      yearsOfExperience: c.yearsOfExperience ?? c.totalExperienceYears,
+      seniorityLevel: c.seniorityLevel,
+      location: c.location,
+      industry: (c.industries && c.industries.length > 0) ? c.industries[0] : c.sector,
+      industries: c.industries,
+      skills: c.skills,
+      pastJobTitles: c.pastJobTitles,
+      education: c.education,
+      educationDegree: c.educationDegree,
+      summary: c.summary,
+      source: c.firstSourceChannel || c.sourceChannel,
+      sourceChannel: c.sourceChannel || c.firstSourceChannel,
+    }));
+  },
+});
+
 export const getCandidatesBatchPublic = query({
   args: { candidateIds: v.array(v.string()) },
   handler: async (ctx, args) => {
