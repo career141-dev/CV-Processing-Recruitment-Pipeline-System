@@ -43,7 +43,7 @@ services:
       - INSTANCE_NAME
       - INSTANCE_SECRET
       - MYSQL_URL
-      - POSTGRES_URL=${POSTGRES_URL:-postgresql://convex:career141_postgres_pass_2026@postgres:5432/convex}
+      - POSTGRES_URL=${POSTGRES_URL:-postgresql://convex:career141_postgres_pass_2026@postgres:5432}
       - REDACT_LOGS_TO_CLIENT
       - RUST_BACKTRACE
       - RUST_LOG=${RUST_LOG:-info}
