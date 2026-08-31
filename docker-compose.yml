@@ -43,7 +43,7 @@ services:
       - INSTANCE_NAME
       - INSTANCE_SECRET
       - MYSQL_URL
-      - POSTGRES_URL
+      - POSTGRES_URL=${POSTGRES_URL:-postgresql://convex:career141_postgres_pass_2026@postgres:5432/convex}
       - REDACT_LOGS_TO_CLIENT
       - RUST_BACKTRACE
       - RUST_LOG=${RUST_LOG:-info}
@@ -81,6 +81,23 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-convex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-career141_postgres_pass_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-convex}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 1.5g
+    mem_reservation: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   dashboard:
     # Change this to :${REV} if you want to pin to a specific version
@@ -146,3 +163,4 @@ services:
 volumes:
   data:
   qdrant_storage:
+  postgres_data:
