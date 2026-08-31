@@ -1423,6 +1423,44 @@ export default defineSchema({
     errorMessage: v.optional(v.string()),
   }).index("by_user", ["userId"]),
 
+  mailboxScanJobs: defineTable({
+    mailboxEmail: v.string(),
+    folder: v.string(), // "inbox" | "sentitems" | "all"
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("done"),
+      v.literal("error"),
+      v.literal("stopped")
+    ),
+    totalMessages: v.number(),
+    scannedMessages: v.number(),
+    totalAttachments: v.number(),
+    classifiedHighConfidence: v.number(),
+    flaggedNeedsReview: v.number(),
+    skippedLowConfidence: v.number(),
+    llmCallsCount: v.number(),
+    currentStage: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    dryRun: v.boolean(),
+    userId: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    recentLogs: v.optional(
+      v.array(
+        v.object({
+          timestamp: v.number(),
+          message: v.string(),
+          type: v.string(), // "info" | "success" | "warning" | "error"
+        })
+      )
+    ),
+  })
+    .index("by_mailbox", ["mailboxEmail"])
+    .index("by_status", ["status"])
+    .index("by_startedAt", ["startedAt"]),
+
   // ─── Hercules Tables Merged Below ───
 
   cvs: defineTable({

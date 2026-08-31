@@ -255,7 +255,7 @@ export const dispatchManualVoiceCall = internalAction({
       customScript: "",
       customQuestions: callContext.customQuestions
         .slice(0, 8)
-        .map((question) => truncate(question, 300)),
+        .map((question: string) => truncate(question, 300)),
       callScriptUsed: callContext.callScriptUsed,
       companyHidden: callContext.companyHidden,
       maxCallDurationSeconds: MAX_CALL_DURATION_SECONDS,
