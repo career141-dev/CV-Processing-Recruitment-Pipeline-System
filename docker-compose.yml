@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     # Change this to :${REV} if you want to pin to a specific version
