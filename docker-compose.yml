@@ -94,9 +94,20 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-convex}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-career141_postgres_pass_2026}
       POSTGRES_DB: ${POSTGRES_DB:-convex}
+    command: >
+      postgres
+        -c shared_buffers=1024MB
+        -c effective_cache_size=3072MB
+        -c work_mem=32MB
+        -c maintenance_work_mem=256MB
+        -c autovacuum_vacuum_scale_factor=0.05
+        -c max_worker_processes=6
+        -c max_parallel_workers_per_gather=3
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    mem_limit: 1.5g
+    mem_limit: 1.8g
     mem_reservation: 512m
     logging:
       driver: "json-file"
