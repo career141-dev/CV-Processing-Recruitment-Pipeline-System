@@ -60,7 +60,7 @@ jobs:
             # Voice services are owned by docker-compose.prod.yml. Starting
             # named services here prevents the legacy base LiveKit service from
             # being launched with its local-only configuration.
-            docker compose --env-file .env.production -f docker-compose.yml up -d backend dashboard qdrant
+            docker compose --env-file .env.production -f docker-compose.yml up -d postgres backend dashboard qdrant
 
             echo "Waiting for Convex backend to finish bootstrapping indexes (up to 3 minutes)..."
             CONVEX_READY=0
@@ -232,7 +232,7 @@ jobs:
             
             # Ensure the self-hosted Convex database is running!
             echo "Starting Convex Database (if not already running)..."
-            docker compose --env-file .env.production -f docker-compose.yml up -d backend dashboard qdrant
+            docker compose --env-file .env.production -f docker-compose.yml up -d postgres backend dashboard qdrant
 
             echo "Waiting for Convex to be ready before building (up to 3 minutes)..."
             CONVEX_READY=0
