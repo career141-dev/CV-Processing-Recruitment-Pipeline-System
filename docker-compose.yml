@@ -90,11 +90,6 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    command: >
-      sh -c "openssl req -new -x509 -days 3650 -nodes -out /tmp/server.crt -keyout /tmp/server.key -subj '/CN=postgres' &&
-             chmod 600 /tmp/server.key &&
-             chown postgres:postgres /tmp/server.key /tmp/server.crt &&
-             exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-convex}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-career141_postgres_pass_2026}
