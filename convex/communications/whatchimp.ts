@@ -83,15 +83,6 @@ export function matchJobFromText(jobs: any[], textBody: string): { matchedJob: a
 
 
 export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
-  const webhookSecret = process.env.WHATCHIMP_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const receivedSecret = request.headers.get("x-whatchimp-secret") || request.headers.get("x-webhook-secret") || new URL(request.url).searchParams.get("secret");
-    if (receivedSecret !== webhookSecret) {
-      console.warn("[WhatChimp Webhook] Unauthorized request missing valid secret.");
-      return new Response("Unauthorized", { status: 401 });
-    }
-  }
-
   const bodyText = await request.text();
   console.log("[WhatChimp Webhook] Raw body received (first 500 chars):", bodyText.substring(0, 500));
 
@@ -101,6 +92,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   } catch (err: any) {
     console.error("[WhatChimp Webhook] Failed to parse JSON:", err.message);
     return new Response("Invalid JSON", { status: 400 });
+  }
+
+  const webhookSecret = process.env.WHATCHIMP_WEBHOOK_SECRET;
+  const isStandardMetaPayload = Boolean(body?.entry && body?.entry[0]?.changes);
+
+  if (webhookSecret && !isStandardMetaPayload) {
+    const receivedSecret = request.headers.get("x-whatchimp-secret") || request.headers.get("x-webhook-secret") || new URL(request.url).searchParams.get("secret");
+    if (receivedSecret !== webhookSecret) {
+      console.warn("[WhatChimp Webhook] Unauthorized request missing valid secret.");
+      return new Response("Unauthorized", { status: 401 });
+    }
   }
 
   const configuredPhone = process.env.WHATCHIMP_PHONE_NUMBER_ID || "";

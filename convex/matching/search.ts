@@ -224,11 +224,11 @@ export const aiSearch = action({
     let vectorCandidateIds: { candidateId: Id<"candidates">; vectorScore: number }[] = [];
 
     if (queryEmbedding) {
-      // Try Stage 1 High-Throughput Scan in Qdrant (top 1,000 vectors)
+      // Try Stage 1 High-Throughput Scan in Qdrant (top 200 vectors — capped to prevent DB timeout)
       try {
         const { queryCandidateVectors } = await import("../lib/qdrant.js");
         const qdrantMatches = await queryCandidateVectors(queryEmbedding, {
-          limit: 1000,
+          limit: 200,
           minExperience: args.minExperience,
           locationCity: args.location,
           seniorityLevel: args.seniority,
@@ -343,10 +343,12 @@ export const aiSearch = action({
     }
 
     // 6. Batch fetch lightweight candidate summary projections in a single query
+    // Cap to 200 to prevent Convex system operation timeouts on large result sets
+    const batchedCandidateIds = allCandidateIds.slice(0, 200);
     let candidates: any[] = [];
-    if (allCandidateIds.length > 0) {
+    if (batchedCandidateIds.length > 0) {
       candidates = await ctx.runQuery(internal.matching.queries.getCandidatesSummaryBatch, {
-        candidateIds: allCandidateIds,
+        candidateIds: batchedCandidateIds,
       });
     }
 
