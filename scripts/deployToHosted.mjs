@@ -2,10 +2,12 @@ import fs from 'fs';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 
+dotenv.config({ path: '.env.local' });
 dotenv.config({ path: '.env.hosted' });
+dotenv.config({ path: '.env' });
 
-const adminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY || process.env.CONVEX_DEPLOY_KEY;
-const url = process.env.CONVEX_URL || process.env.CONVEX_SELF_HOSTED_URL || "https://api.career141.com";
+const adminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY || process.env.CONVEX_DEPLOY_KEY || process.env.CONVEX_ADMIN_KEY;
+const url = process.env.CONVEX_SELF_HOSTED_URL || process.env.CONVEX_URL || "https://api.career141.com";
 
 console.log(`[Deploy] Syncing latest Convex backend code to ${url}...`);
 
