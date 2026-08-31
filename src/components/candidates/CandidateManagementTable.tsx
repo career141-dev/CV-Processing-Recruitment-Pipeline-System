@@ -86,12 +86,12 @@ export function CandidateManagementTable({
     status,
     loadMore,
   } = usePaginatedQuery(api.candidates.candidates.listCandidatesPaginated, {
-    searchQuery: debouncedNameSearch || undefined,
-    overallStatus: statusFilter || undefined,
-    sourceChannel: sourceFilter || undefined,
-    location: debouncedLocation || undefined,
-    roleTitle: debouncedRole || undefined,
-    dateFilter: dateFilter || undefined,
+    searchQuery: debouncedNameSearch?.trim() ? debouncedNameSearch.trim() : undefined,
+    overallStatus: statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
+    sourceChannel: sourceFilter && sourceFilter !== 'all' ? sourceFilter : undefined,
+    location: debouncedLocation?.trim() ? debouncedLocation.trim() : undefined,
+    roleTitle: debouncedRole?.trim() ? debouncedRole.trim() : undefined,
+    dateFilter: dateFilter && dateFilter !== 'all' ? dateFilter : undefined,
   }, { initialNumItems: 20 });
 
   const filteredResults = rawResults;
