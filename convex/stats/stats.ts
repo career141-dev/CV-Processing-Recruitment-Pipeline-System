@@ -94,17 +94,17 @@ export const getDashboardStats = query({
       candidates: { 
         total: totalCandidates, 
         trendText: totalCandidates > 0 ? `${totalCandidates.toLocaleString()} in database` : "0 in database", 
-        trendType: (totalCandidates > 0 ? "positive" : "neutral") as const 
+        trendType: totalCandidates > 0 ? ("positive" as const) : ("neutral" as const)
       },
       cvsToday: { 
         total: cvsToday, 
         trendText: cvsToday > 0 ? `${cvsToday} today` : "0 today", 
-        trendType: (cvsToday > 0 ? "positive" : "neutral") as const 
+        trendType: cvsToday > 0 ? ("positive" as const) : ("neutral" as const)
       },
       activeJobs: { 
         total: activeJobsCount, 
         trendText: `${activeJobsCount} active`, 
-        trendType: (activeJobsCount > 0 ? "positive" : "neutral") as const 
+        trendType: activeJobsCount > 0 ? ("positive" as const) : ("neutral" as const)
       },
       placedThisMonth: { 
         total: placedThisMonth, 
