@@ -8,6 +8,9 @@ services:
     stop_signal: SIGINT
     # ── CRASH FIX 1: Auto-restart if the container crashes for any reason ──
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
     ports:
       - "${PORT:-3210}:3210"
       - "${SITE_PROXY_PORT:-3211}:3211"
