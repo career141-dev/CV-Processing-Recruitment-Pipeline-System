@@ -77,7 +77,9 @@ export function CandidateManagementTable({
   const [statusFilter, setStatusFilter] = React.useState('all');
   const [dateFilter, setDateFilter] = React.useState('all');
   const [locationFilter, setLocationFilter] = React.useState('');
+  const [debouncedLocation] = useDebounce(locationFilter, 350);
   const [roleFilter, setRoleFilter] = React.useState('');
+  const [debouncedRole] = useDebounce(roleFilter, 350);
 
   const {
     results: rawResults,
@@ -87,43 +89,17 @@ export function CandidateManagementTable({
     searchQuery: debouncedNameSearch || undefined,
     overallStatus: statusFilter || undefined,
     sourceChannel: sourceFilter || undefined,
-  }, { initialNumItems: 10 });
+    location: debouncedLocation || undefined,
+    roleTitle: debouncedRole || undefined,
+    dateFilter: dateFilter || undefined,
+  }, { initialNumItems: 20 });
 
-  // Filter candidates locally in memory for secondary filters
-  const filteredResults = React.useMemo(() => {
-    let list = rawResults;
-
-    if (locationFilter.trim()) {
-      const loc = locationFilter.toLowerCase();
-      list = list.filter(c => c.location?.toLowerCase().includes(loc));
-    }
-
-    if (roleFilter.trim()) {
-      const role = roleFilter.toLowerCase();
-      list = list.filter(c => 
-        (c.currentTitle || c.currentJobTitle || "").toLowerCase().includes(role)
-      );
-    }
-
-    if (dateFilter !== 'all') {
-      const now = Date.now();
-      list = list.filter(c => {
-        const date = c.firstSeenAt || c._creationTime;
-        const diff = now - date;
-        if (dateFilter === 'today') return diff <= 24 * 60 * 60 * 1000;
-        if (dateFilter === 'week') return diff <= 7 * 24 * 60 * 60 * 1000;
-        if (dateFilter === 'month') return diff <= 30 * 24 * 60 * 60 * 1000;
-        return true;
-      });
-    }
-
-    return list;
-  }, [rawResults, nameSearch, sourceFilter, statusFilter, locationFilter, roleFilter, dateFilter]);
+  const filteredResults = rawResults;
 
   // Reset to page 1 when search/filters change
   React.useEffect(() => { 
     setCurrentPage(1); 
-  }, [nameSearch, sourceFilter, statusFilter, locationFilter, roleFilter, dateFilter]);
+  }, [debouncedNameSearch, sourceFilter, statusFilter, debouncedLocation, debouncedRole, dateFilter]);
 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
