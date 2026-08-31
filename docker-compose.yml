@@ -44,6 +44,8 @@ services:
       - INSTANCE_SECRET
       - MYSQL_URL
       - POSTGRES_URL=postgresql://convex:career141_postgres_pass_2026@postgres:5432?sslmode=disable
+      - PGSSLMODE=disable
+      - POSTGRES_SSLMODE=disable
       - REDACT_LOGS_TO_CLIENT
       - RUST_BACKTRACE
       - RUST_LOG=${RUST_LOG:-info}
