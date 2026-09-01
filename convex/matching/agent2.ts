@@ -6,7 +6,7 @@ import type { Id } from "../_generated/dataModel.d.ts";
 import { mapJobSeniorityTo10LevelRank, checkSeniorityConflict, scoreCandidateAgainstRequirements, getSkillDomain } from "../cvs/cvScoring";
 import { classifyJobRoleFamily, classifyCurrentRolesBatch } from "../lib/currentRoleClassifier";
 import { synthesizeJobRequirements } from "../lib/jobSynthesizer";
-import { upsertCandidateVector } from "../lib/qdrant";
+import { upsertCandidateVector, queryCandidateVectors } from "../lib/qdrant";
 
 /**
  * Helper to get vector embeddings from NVIDIA API
@@ -466,11 +466,9 @@ Return ONLY valid JSON matching this schema:
       // 3. Perform Vector Search across all candidates using Qdrant (top 1,000 vectors with Convex fail-open fallback)
       const vectorResultsMap = new Map<string, number>();
       try {
-        const { queryCandidateVectors } = await import("../lib/qdrant.js");
+        // Pure Cosine vector search across candidate embeddings (soft weighted scoring applied downstream)
         const qdrantMatches = await queryCandidateVectors(jobEmbedding, {
           limit: 1000,
-          locationCity: job.location,
-          seniorityLevel: job.seniorityLevel,
         });
 
         for (const m of qdrantMatches) {
@@ -487,12 +485,12 @@ Return ONLY valid JSON matching this schema:
         try {
           const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
             vector: jobEmbedding,
-            limit: 256,
+            limit: 64,
           });
 
           if (results.length > 0) {
             const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
-              resumeIds: results.map((r) => r._id),
+              resumeIds: results.slice(0, 64).map((r) => r._id),
             });
             const resumeIdToCandidateId = new Map(mappedResumes.map((item) => [item.resumeId, item.candidateId]));
             for (const r of results) {
