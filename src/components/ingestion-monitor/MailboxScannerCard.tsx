@@ -26,14 +26,13 @@ import {
 import { toast } from "sonner";
 
 const QUICK_MAILBOXES = [
-  "azeem@career141.com",
   "cv@career141.com",
   "careers@career141.com",
   "info@career141.com",
 ];
 
 export default function MailboxScannerCard() {
-  const [mailboxEmail, setMailboxEmail] = useState("azeem@career141.com");
+  const [mailboxEmail, setMailboxEmail] = useState("cv@career141.com");
   const [folder, setFolder] = useState<"inbox" | "sentitems" | "all">("inbox");
   const [dryRun, setDryRun] = useState(false);
   const [maxMessages, setMaxMessages] = useState<number>(150);
