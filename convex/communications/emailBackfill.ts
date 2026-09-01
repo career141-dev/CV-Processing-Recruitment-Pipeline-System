@@ -248,17 +248,17 @@ async function safeGraphFetch(
   return null;
 }
 
-// ── 3. MAIN BACKFILL & SCANNING ACTION ────────────────────────────────────────
+// ── 3. MAIN BACKFILL & SCANNING ACTIONS ───────────────────────────────────────
 
 /**
- * Public action: Starts a mailbox scan in the background.
+ * Public action: Starts a mailbox scan by launching Phase 1 (Discovery) in the background.
  */
 export const startMailboxScan = action({
   args: {
     mailboxEmail: v.string(),
     folder: v.optional(v.string()), // "inbox" | "sentitems" | "all"
     dryRun: v.optional(v.boolean()),
-    maxMessages: v.optional(v.number()),
+    maxMessages: v.optional(v.number()), // -1 for All, or 50, 150, 300, 500
     userId: v.optional(v.string()),
   },
   handler: async (
@@ -268,13 +268,13 @@ export const startMailboxScan = action({
     const targetEmail = args.mailboxEmail.toLowerCase().trim();
     const folder = args.folder || "inbox";
     const isDryRun = args.dryRun ?? false;
-    const maxMessages = args.maxMessages || 250;
+    const maxMessages = args.maxMessages || 150;
 
     console.log(
-      `[startMailboxScan] Starting background scan for ${targetEmail} (folder: ${folder}, dryRun: ${isDryRun})...`
+      `[startMailboxScan] Starting discovery scan for ${targetEmail} (folder: ${folder}, target depth: ${maxMessages}, dryRun: ${isDryRun})...`
     );
 
-    // 1. Create scan job record in database
+    // 1. Create scan job record in database in discovery phase
     const jobId: Id<"mailboxScanJobs"> = await ctx.runMutation(
       (internal as any).communications.emailBackfillMutations.createScanJob,
       {
@@ -286,10 +286,10 @@ export const startMailboxScan = action({
       }
     );
 
-    // 2. Schedule async execution runner
+    // 2. Schedule Phase 1: Fast folder discovery
     await ctx.scheduler.runAfter(
       0,
-      (internal as any).communications.emailBackfill.executeMailboxScanBackground,
+      (internal as any).communications.emailBackfill.executeMailboxDiscoveryPhase,
       {
         jobId,
         mailboxEmail: targetEmail,
@@ -304,10 +304,11 @@ export const startMailboxScan = action({
 });
 
 /**
- * Internal background action: Traverses Graph API, inspects attachments, runs classification,
- * uploads to R2, and queues into Agent 1 ingestion pipeline.
+ * Phase 1 (Discovery): Fast-scans the target folder(s) using Graph API header-only queries,
+ * discovers total attachment-bearing emails to set the true extraction goal, then automatically
+ * transitions into Phase 2 extraction.
  */
-export const executeMailboxScanBackground = internalAction({
+export const executeMailboxDiscoveryPhase = internalAction({
   args: {
     jobId: v.id("mailboxScanJobs"),
     mailboxEmail: v.string(),
@@ -316,7 +317,6 @@ export const executeMailboxScanBackground = internalAction({
     maxMessages: v.number(),
   },
   handler: async (ctx, args) => {
-    const startTime = Date.now();
     const { jobId, mailboxEmail, folder, dryRun, maxMessages } = args;
 
     try {
@@ -327,51 +327,253 @@ export const executeMailboxScanBackground = internalAction({
         );
       }
 
-      await ctx.runMutation((internal as any).communications.emailBackfillMutations.updateScanProgress, {
-        jobId,
-        currentStage: "Connecting to Microsoft Graph API...",
-        logMessage: {
-          message: `Authenticated with Microsoft Graph. Preparing to scan mailbox: ${mailboxEmail}`,
-          type: "info",
-        },
-      });
+      await ctx.runMutation(
+        (internal as any).communications.emailBackfillMutations.updateScanProgress,
+        {
+          jobId,
+          phase: "discovery",
+          currentStage: `Phase 1: Discovering attachment-bearing emails in ${folder.toUpperCase()}...`,
+          logMessage: {
+            message: `Starting discovery pass across mailbox: ${mailboxEmail} (folder: ${folder})`,
+            type: "info",
+          },
+        }
+      );
+
+      const foldersToScan = folder === "all" ? ["inbox", "sentitems"] : [folder];
+
+      let totalEmailsDiscovered = 0;
+      let totalAttachmentEmailsDiscovered = 0;
+
+      for (const currentFolder of foldersToScan) {
+        let url: string | null = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+          mailboxEmail
+        )}/mailFolders/${currentFolder}/messages?$select=id,hasAttachments,receivedDateTime,subject,from&$top=100&$filter=hasAttachments eq true`;
+
+        while (url) {
+          const status = await ctx.runQuery(
+            (internal as any).communications.emailBackfillMutations.checkJobStatus,
+            { jobId }
+          );
+          if (status === "stopped" || status === "paused") return;
+
+          let res = await safeGraphFetch(url, token);
+
+          // Fallback if tenant filter is constrained
+          if (!res || !res.ok) {
+            const fallbackUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+              mailboxEmail
+            )}/mailFolders/${currentFolder}/messages?$select=id,hasAttachments,receivedDateTime,subject,from&$top=100`;
+            res = await safeGraphFetch(fallbackUrl, token);
+          }
+
+          if (!res || !res.ok) {
+            console.warn(`[MailboxDiscovery] Could not fetch folder ${currentFolder}`);
+            break;
+          }
+
+          const data = (await res.json()) as any;
+          const messages = data.value || [];
+          if (messages.length === 0) break;
+
+          for (const msg of messages) {
+            totalEmailsDiscovered++;
+            if (msg.hasAttachments) {
+              totalAttachmentEmailsDiscovered++;
+            }
+          }
+
+          await ctx.runMutation(
+            (internal as any).communications.emailBackfillMutations.updateScanProgress,
+            {
+              jobId,
+              discoveredTotalEmails: totalEmailsDiscovered,
+              discoveredAttachmentEmails: totalAttachmentEmailsDiscovered,
+              currentStage: `Phase 1: Found ${totalAttachmentEmailsDiscovered} attachment emails in ${currentFolder.toUpperCase()}...`,
+            }
+          );
+
+          url = data["@odata.nextLink"] || null;
+        }
+      }
+
+      if (totalAttachmentEmailsDiscovered === 0) {
+        await ctx.runMutation(
+          (internal as any).communications.emailBackfillMutations.setScanJobStatus,
+          {
+            jobId,
+            status: "done",
+            phase: "done",
+            discoveredTotalEmails: totalEmailsDiscovered,
+            discoveredAttachmentEmails: 0,
+            targetAttachmentEmails: 0,
+            currentStage: "No emails with attachments found in the selected folder(s).",
+            logMessage: {
+              message: `Discovery complete: Evaluated ${totalEmailsDiscovered} messages. 0 attachment-bearing emails found.`,
+              type: "info",
+            },
+          }
+        );
+        return;
+      }
+
+      // Calculate extraction target goal
+      const targetAttachmentEmails =
+        maxMessages === -1
+          ? totalAttachmentEmailsDiscovered
+          : Math.min(maxMessages, totalAttachmentEmailsDiscovered);
+
+      await ctx.runMutation(
+        (internal as any).communications.emailBackfillMutations.updateScanProgress,
+        {
+          jobId,
+          phase: "extracting",
+          totalMessages: targetAttachmentEmails,
+          targetAttachmentEmails,
+          discoveredTotalEmails: totalEmailsDiscovered,
+          discoveredAttachmentEmails: totalAttachmentEmailsDiscovered,
+          currentStage: `Discovery complete: ${totalAttachmentEmailsDiscovered} attachment emails found. Starting extraction goal of ${targetAttachmentEmails}...`,
+          logMessage: {
+            message: `Discovery complete: Found ${totalAttachmentEmailsDiscovered} attachment emails across ${totalEmailsDiscovered} messages. Target set to ${targetAttachmentEmails}.`,
+            type: "success",
+          },
+        }
+      );
+
+      // Automatically transition to Phase 2 (Extraction)
+      await ctx.scheduler.runAfter(
+        0,
+        (internal as any).communications.emailBackfill.executeMailboxScanBackground,
+        {
+          jobId,
+          mailboxEmail,
+          folder,
+          dryRun,
+          maxMessages: targetAttachmentEmails,
+          targetAttachmentEmails,
+          processedAttachmentEmails: 0,
+          folderIndex: 0,
+          scannedMessages: 0,
+          totalAttachments: 0,
+          classifiedHighConfidence: 0,
+          flaggedNeedsReview: 0,
+          skippedLowConfidence: 0,
+          llmCallsCount: 0,
+        }
+      );
+    } catch (err: any) {
+      console.error("[MailboxDiscovery Critical Error]:", err);
+      await ctx.runMutation(
+        (internal as any).communications.emailBackfillMutations.setScanJobStatus,
+        {
+          jobId,
+          status: "error",
+          phase: "error",
+          errorMessage: err?.message || String(err),
+          currentStage: "Discovery pass failed with error.",
+          logMessage: {
+            message: `Discovery failed: ${err?.message || err}`,
+            type: "error",
+          },
+        }
+      );
+    }
+  },
+});
+
+/**
+ * Phase 2 (Extraction): Traverses Graph API attachment-bearing messages in time-sliced batches
+ * (yielding every ~30s to prevent Convex action timeouts), inspects attachments, executes
+ * multi-signal heuristics + DeepSeek confirmation, uploads to R2, and ingests CVs into Agent 1.
+ */
+export const executeMailboxScanBackground = internalAction({
+  args: {
+    jobId: v.id("mailboxScanJobs"),
+    mailboxEmail: v.string(),
+    folder: v.string(),
+    dryRun: v.boolean(),
+    maxMessages: v.number(),
+    targetAttachmentEmails: v.optional(v.number()),
+    processedAttachmentEmails: v.optional(v.number()),
+    folderIndex: v.optional(v.number()),
+    nextCursorUrl: v.optional(v.string()),
+    scannedMessages: v.optional(v.number()),
+    totalAttachments: v.optional(v.number()),
+    classifiedHighConfidence: v.optional(v.number()),
+    flaggedNeedsReview: v.optional(v.number()),
+    skippedLowConfidence: v.optional(v.number()),
+    llmCallsCount: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const startTime = Date.now();
+    const MAX_ACTION_DURATION_MS = 30000; // 30s yield threshold to prevent Convex 120s action timeouts
+
+    const { jobId, mailboxEmail, folder, dryRun } = args;
+    const targetGoal = args.targetAttachmentEmails || args.maxMessages || 150;
+    let processedAttachmentEmails = args.processedAttachmentEmails ?? 0;
+    let totalAttachmentsInspected = args.totalAttachments ?? 0;
+    let classifiedHighConfidence = args.classifiedHighConfidence ?? 0;
+    let flaggedNeedsReview = args.flaggedNeedsReview ?? 0;
+    let skippedLowConfidence = args.skippedLowConfidence ?? 0;
+    let llmCallsCount = args.llmCallsCount ?? 0;
+    const startFolderIndex = args.folderIndex ?? 0;
+
+    try {
+      // Check for cancellation / pause before starting batch
+      const initialStatus = await ctx.runQuery(
+        (internal as any).communications.emailBackfillMutations.checkJobStatus,
+        { jobId }
+      );
+      if (initialStatus === "stopped" || initialStatus === "paused") {
+        console.log(`[MailboxScan] Job ${jobId} was marked as ${initialStatus}. Halting execution.`);
+        return;
+      }
+
+      const token = await getGraphToken();
+      if (!token) {
+        throw new Error(
+          "Failed to acquire Microsoft Graph access token. Verify MS_TENANT_ID, MS_CLIENT_ID, and MS_CLIENT_SECRET."
+        );
+      }
 
       // Determine folders to scan
       const foldersToScan: string[] =
         folder === "all" ? ["inbox", "sentitems"] : [folder];
 
-      let totalMessagesScanned = 0;
-      let totalAttachmentsInspected = 0;
-      let classifiedHighConfidence = 0;
-      let flaggedNeedsReview = 0;
-      let skippedLowConfidence = 0;
-      let llmCallsCount = 0;
+      for (let fIdx = startFolderIndex; fIdx < foldersToScan.length; fIdx++) {
+        const currentFolder = foldersToScan[fIdx];
 
-      for (const currentFolder of foldersToScan) {
         // Check for cancellation / pause before each folder
         const status = await ctx.runQuery(
           (internal as any).communications.emailBackfillMutations.checkJobStatus,
           { jobId }
         );
         if (status === "stopped" || status === "paused") {
-          console.log(`[MailboxScan] Job ${jobId} was marked as ${status}. Halting execution.`);
           return;
         }
 
-        let url: string | null = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
-          mailboxEmail
-        )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=50`;
+        // Determine starting URL for this folder (use nextCursorUrl if resuming current folder)
+        let url: string | null =
+          fIdx === startFolderIndex && args.nextCursorUrl
+            ? args.nextCursorUrl
+            : `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+                mailboxEmail
+              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15&$filter=hasAttachments eq true`;
 
-        await ctx.runMutation((internal as any).communications.emailBackfillMutations.updateScanProgress, {
-          jobId,
-          currentStage: `Scanning folder: ${currentFolder.toUpperCase()}...`,
-          logMessage: {
-            message: `Traversing folder: ${currentFolder}...`,
-            type: "info",
-          },
-        });
+        if (!args.nextCursorUrl || fIdx > startFolderIndex) {
+          await ctx.runMutation((internal as any).communications.emailBackfillMutations.updateScanProgress, {
+            jobId,
+            phase: "extracting",
+            currentFolderIndex: fIdx,
+            currentStage: `Phase 2: Extracting from ${currentFolder.toUpperCase()} (${processedAttachmentEmails}/${targetGoal} emails)...`,
+            logMessage: {
+              message: `Extracting attachment emails from folder: ${currentFolder}...`,
+              type: "info",
+            },
+          });
+        }
 
-        while (url && totalMessagesScanned < maxMessages) {
+        while (url && processedAttachmentEmails < targetGoal) {
           // Check for job cancellation
           const currentStatus = await ctx.runQuery(
             (internal as any).communications.emailBackfillMutations.checkJobStatus,
@@ -381,7 +583,16 @@ export const executeMailboxScanBackground = internalAction({
             return;
           }
 
-          const res = await safeGraphFetch(url, token);
+          let res = await safeGraphFetch(url, token);
+
+          // Fallback if tenant filter is constrained
+          if (!res || !res.ok) {
+            const fallbackUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+              mailboxEmail
+            )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15`;
+            res = await safeGraphFetch(fallbackUrl, token);
+          }
+
           if (!res || !res.ok) {
             const errText = res ? await res.text() : "Network unreachable";
             console.error(`[MailboxScan] Failed to fetch messages for ${currentFolder}:`, errText);
@@ -397,12 +608,15 @@ export const executeMailboxScanBackground = internalAction({
 
           const data = (await res.json()) as any;
           const messages = data.value || [];
+          const nextLink: string | null = data["@odata.nextLink"] || null;
+
           if (messages.length === 0) break;
 
           for (const message of messages) {
-            totalMessagesScanned++;
+            if (processedAttachmentEmails >= targetGoal) break;
 
             if (!message.hasAttachments) continue;
+            processedAttachmentEmails++;
 
             const senderEmail =
               message.from?.emailAddress?.address || "unknown@career141.com";
@@ -523,7 +737,10 @@ export const executeMailboxScanBackground = internalAction({
                   (internal as any).communications.emailBackfillMutations.updateScanProgress,
                   {
                     jobId,
-                    scannedMessages: totalMessagesScanned,
+                    phase: "extracting",
+                    scannedMessages: processedAttachmentEmails,
+                    processedAttachmentEmails,
+                    targetAttachmentEmails: targetGoal,
                     totalAttachments: totalAttachmentsInspected,
                     classifiedHighConfidence,
                     flaggedNeedsReview,
@@ -542,7 +759,10 @@ export const executeMailboxScanBackground = internalAction({
                   (internal as any).communications.emailBackfillMutations.updateScanProgress,
                   {
                     jobId,
-                    scannedMessages: totalMessagesScanned,
+                    phase: "extracting",
+                    scannedMessages: processedAttachmentEmails,
+                    processedAttachmentEmails,
+                    targetAttachmentEmails: targetGoal,
                     totalAttachments: totalAttachmentsInspected,
                     classifiedHighConfidence,
                     flaggedNeedsReview,
@@ -561,7 +781,10 @@ export const executeMailboxScanBackground = internalAction({
                   (internal as any).communications.emailBackfillMutations.updateScanProgress,
                   {
                     jobId,
-                    scannedMessages: totalMessagesScanned,
+                    phase: "extracting",
+                    scannedMessages: processedAttachmentEmails,
+                    processedAttachmentEmails,
+                    targetAttachmentEmails: targetGoal,
                     totalAttachments: totalAttachmentsInspected,
                     classifiedHighConfidence,
                     flaggedNeedsReview,
@@ -573,8 +796,63 @@ export const executeMailboxScanBackground = internalAction({
             }
           }
 
-          // Advance pagination
-          url = data["@odata.nextLink"] || null;
+          url = nextLink;
+
+          // Check if time threshold reached to yield and self-schedule next batch
+          const elapsed = Date.now() - startTime;
+          const hasMoreInFolder = url !== null && processedAttachmentEmails < targetGoal;
+          const hasMoreFolders = fIdx < foldersToScan.length - 1 && processedAttachmentEmails < targetGoal;
+
+          if (elapsed >= MAX_ACTION_DURATION_MS && (hasMoreInFolder || hasMoreFolders)) {
+            const nextFolderIdx = url ? fIdx : fIdx + 1;
+            const nextUrl = url ? url : undefined;
+
+            console.log(
+              `[MailboxScan] Yielding action chunk at ${processedAttachmentEmails}/${targetGoal} attachment emails (${(elapsed / 1000).toFixed(1)}s elapsed). Scheduling next batch...`
+            );
+
+            await ctx.runMutation(
+              (internal as any).communications.emailBackfillMutations.updateScanProgress,
+              {
+                jobId,
+                phase: "extracting",
+                scannedMessages: processedAttachmentEmails,
+                processedAttachmentEmails,
+                targetAttachmentEmails: targetGoal,
+                totalAttachments: totalAttachmentsInspected,
+                classifiedHighConfidence,
+                flaggedNeedsReview,
+                skippedLowConfidence,
+                llmCallsCount,
+                currentFolderIndex: nextFolderIdx,
+                nextCursorUrl: nextUrl,
+                currentStage: `Phase 2: Extracting batch (${processedAttachmentEmails}/${targetGoal} attachment emails processed)...`,
+              }
+            );
+
+            await ctx.scheduler.runAfter(
+              0,
+              (internal as any).communications.emailBackfill.executeMailboxScanBackground,
+              {
+                jobId,
+                mailboxEmail,
+                folder,
+                dryRun,
+                maxMessages: targetGoal,
+                targetAttachmentEmails: targetGoal,
+                processedAttachmentEmails,
+                folderIndex: nextFolderIdx,
+                nextCursorUrl: nextUrl,
+                scannedMessages: processedAttachmentEmails,
+                totalAttachments: totalAttachmentsInspected,
+                classifiedHighConfidence,
+                flaggedNeedsReview,
+                skippedLowConfidence,
+                llmCallsCount,
+              }
+            );
+            return;
+          }
         }
       }
 
@@ -583,9 +861,13 @@ export const executeMailboxScanBackground = internalAction({
       await ctx.runMutation((internal as any).communications.emailBackfillMutations.setScanJobStatus, {
         jobId,
         status: "done",
-        currentStage: `Scan completed in ${elapsedSec}s.`,
+        phase: "done",
+        scannedMessages: processedAttachmentEmails,
+        processedAttachmentEmails,
+        targetAttachmentEmails: targetGoal,
+        currentStage: `Scan completed successfully (${processedAttachmentEmails} attachment emails extracted).`,
         logMessage: {
-          message: `Scan finished: ${totalMessagesScanned} messages scanned, ${totalAttachmentsInspected} attachments evaluated (${classifiedHighConfidence} high confidence, ${flaggedNeedsReview} needs review, ${skippedLowConfidence} skipped, ${llmCallsCount} LLM calls).`,
+          message: `Scan finished: ${processedAttachmentEmails} attachment emails extracted, ${totalAttachmentsInspected} attachments evaluated (${classifiedHighConfidence} high confidence, ${flaggedNeedsReview} needs review, ${skippedLowConfidence} skipped, ${llmCallsCount} LLM calls).`,
           type: "success",
         },
       });
@@ -594,6 +876,7 @@ export const executeMailboxScanBackground = internalAction({
       await ctx.runMutation((internal as any).communications.emailBackfillMutations.setScanJobStatus, {
         jobId,
         status: "error",
+        phase: "error",
         errorMessage: err?.message || String(err),
         currentStage: "Scan failed with error.",
         logMessage: {

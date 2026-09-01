@@ -1442,7 +1442,24 @@ export default defineSchema({
     skippedLowConfidence: v.number(),
     llmCallsCount: v.number(),
     currentStage: v.optional(v.string()),
+    phase: v.optional(
+      v.union(
+        v.literal("discovery"),
+        v.literal("extracting"),
+        v.literal("done"),
+        v.literal("error"),
+        v.literal("stopped"),
+        v.literal("paused")
+      )
+    ),
+    discoveredTotalEmails: v.optional(v.number()),
+    discoveredAttachmentEmails: v.optional(v.number()),
+    targetAttachmentEmails: v.optional(v.number()),
+    processedAttachmentEmails: v.optional(v.number()),
     errorMessage: v.optional(v.string()),
+    nextCursorUrl: v.optional(v.string()),
+    currentFolderIndex: v.optional(v.number()),
+    lastHeartbeatAt: v.optional(v.number()),
     dryRun: v.boolean(),
     userId: v.optional(v.string()),
     startedAt: v.number(),
