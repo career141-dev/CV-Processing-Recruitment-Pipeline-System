@@ -48,6 +48,11 @@ if (action === 'dev') {
   console.log(`[Convex Runner] Connecting to ${url}...`);
   execSync(`npx convex dev --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit' });
 
+} else if (action === 'deploy') {
+  const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
+  const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
+  console.log(`[Convex Runner] Deploying to ${url}...`);
+  execSync(`npx convex deploy --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit' });
 } else if (action === 'run') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;

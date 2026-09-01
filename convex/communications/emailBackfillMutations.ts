@@ -55,6 +55,9 @@ export const updateScanProgress = internalMutation({
     skippedLowConfidence: v.optional(v.number()),
     llmCallsCount: v.optional(v.number()),
     currentStage: v.optional(v.string()),
+    phase: v.optional(v.string()),
+    targetAttachmentEmails: v.optional(v.number()),
+    processedAttachmentEmails: v.optional(v.number()),
     logMessage: v.optional(
       v.object({
         message: v.string(),
@@ -75,6 +78,9 @@ export const updateScanProgress = internalMutation({
     if (args.skippedLowConfidence !== undefined) patch.skippedLowConfidence = args.skippedLowConfidence;
     if (args.llmCallsCount !== undefined) patch.llmCallsCount = args.llmCallsCount;
     if (args.currentStage !== undefined) patch.currentStage = args.currentStage;
+    if (args.phase !== undefined) patch.phase = args.phase;
+    if (args.targetAttachmentEmails !== undefined) patch.targetAttachmentEmails = args.targetAttachmentEmails;
+    if (args.processedAttachmentEmails !== undefined) patch.processedAttachmentEmails = args.processedAttachmentEmails;
 
     if (args.logMessage) {
       const currentLogs = job.recentLogs || [];
@@ -109,6 +115,7 @@ export const setScanJobStatus = internalMutation({
     ),
     errorMessage: v.optional(v.string()),
     currentStage: v.optional(v.string()),
+    phase: v.optional(v.string()),
     logMessage: v.optional(
       v.object({
         message: v.string(),
