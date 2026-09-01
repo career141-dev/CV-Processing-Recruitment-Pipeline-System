@@ -98,16 +98,20 @@ export const getByJobId = query({
       const cvUploadId = dbCandidate?.cvUploadId || app.candidateCvUploadId;
 
       let candidateObj: any = dbCandidate ? {
-        ...dbCandidate,
+        _id: dbCandidate._id,
         fullName: dbCandidate.fullName || app.candidateName || "Unknown Candidate",
         email: dbCandidate.email || app.candidateEmail,
         phone: dbCandidate.phone || app.candidatePhone,
         currentTitle: dbCandidate.currentJobTitle || dbCandidate.currentTitle || app.candidateTitle,
         totalExperienceYears: dbCandidate.totalExperienceYears ?? app.candidateExperience,
         cvUploadId: cvUploadId,
+        location: dbCandidate.location,
+        skills: dbCandidate.skills,
+        seniorityLevel: dbCandidate.seniorityLevel,
         currentSalary: dbCandidate.currentSalary ?? app.candidateCurrentSalary,
         expectedSalary: dbCandidate.expectedSalary ?? app.candidateExpectedSalary,
         noticePeriodDays: dbCandidate.noticePeriodDays ?? app.candidateNoticePeriodDays,
+        overallStatus: dbCandidate.overallStatus,
       } : {
         _id: app.candidateId,
         fullName: app.candidateName ?? "Unknown Candidate",
@@ -127,8 +131,6 @@ export const getByJobId = query({
         cv: app.cvFileName ? { fileName: app.cvFileName } : (cvUploadId ? { storageId: cvUploadId } : null),
       };
     }).filter(Boolean);
-
-    return enriched;
 
     return enriched;
   },
