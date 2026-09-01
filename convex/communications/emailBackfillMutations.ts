@@ -287,7 +287,7 @@ export const getUnextractedCandidatesCount = query({
   handler: async (ctx) => {
     const unextracted = await ctx.db
       .query("cvUploads")
-      .filter((q) => q.eq(q.field("status"), "uploaded"))
+      .withIndex("by_status", (q) => q.eq("status", "uploaded"))
       .take(1000);
     return unextracted.length;
   },
