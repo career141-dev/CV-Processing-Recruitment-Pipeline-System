@@ -2391,6 +2391,7 @@ export default function JobDetailPage() {
     const matchesPerPage = 6;
     const startIndex = (matchesPage - 1) * matchesPerPage;
     const currentMatches = filteredMatches.slice(startIndex, startIndex + matchesPerPage);
+    const isScanningActive = isScanning || job?.reverseMatchStatus === "running";
 
     return (
       <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col mb-0">
@@ -2403,6 +2404,11 @@ export default function JobDetailPage() {
                 <Sparkles className="w-3 h-3" /> Custom TA Criteria Active
               </span>
             )}
+            {isScanningActive && (
+              <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin" /> Scanning Active
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -2410,7 +2416,7 @@ export default function JobDetailPage() {
                 setCustomPreferencesText(job?.taPreferences || "");
                 setIsPreferenceModalOpen(true);
               }}
-              disabled={isScanning}
+              disabled={isScanningActive}
               className="bg-surface text-text-secondary border border-border px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-surface-bright transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
               title="Add custom preferences or required skills before rescanning"
             >
@@ -2418,14 +2424,45 @@ export default function JobDetailPage() {
             </button>
             <button 
               onClick={() => handleScanDatabase()}
-              disabled={isScanning}
+              disabled={isScanningActive}
               className="bg-primary text-on-primary px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
               title="Rescan database with standard job description"
             >
-              <Bot className="w-4 h-4" /> {isScanning ? "Scanning..." : "Scan Database"}
+              {isScanningActive ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" /> Scanning Database...
+                </>
+              ) : (
+                <>
+                  <Bot className="w-4 h-4" /> Scan Database
+                </>
+              )}
             </button>
           </div>
         </div>
+
+        {/* Live Scanning Progress Banner */}
+        {isScanningActive && (
+          <div className="bg-primary/10 border-b border-primary/20 px-4 py-3 flex items-center justify-between animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary shrink-0">
+                <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+              </div>
+              <div>
+                <div className="font-semibold text-text-primary text-[13px] flex items-center gap-2">
+                  AI Reverse Match Scan in Progress
+                  <span className="inline-block w-2 h-2 rounded-full bg-primary animate-ping" />
+                </div>
+                <p className="text-[11px] text-text-secondary">
+                  Scanning 47,000 candidate profiles in Qdrant Vector DB & scoring alignment against job requirements. Results will appear automatically below.
+                </p>
+              </div>
+            </div>
+            <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20 shrink-0">
+              Processing...
+            </span>
+          </div>
+        )}
 
         {/* Active Preferences Banner */}
         {job?.taPreferences && (
@@ -2462,34 +2499,49 @@ export default function JobDetailPage() {
               {(filteredMatches.length === 0) ? (
                 <tr>
                   <td colSpan={7} className="p-0">
-                    <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface-bright/30">
-                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                        <Bot className="w-8 h-8 text-primary" />
+                    {isScanningActive ? (
+                      <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface-bright/30">
+                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 text-primary">
+                          <RefreshCw className="w-8 h-8 animate-spin" />
+                        </div>
+                        <h4 className="text-[16px] font-semibold text-text-primary mb-1">Scanning Candidate Database...</h4>
+                        <p className="text-[13px] text-text-secondary max-w-[420px] mb-4 leading-relaxed">
+                          AI is actively analyzing 47,000 candidate profiles in Qdrant Vector DB to find the best matches. Matching candidates will appear here automatically.
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-primary font-medium bg-primary/10 px-3 py-1.5 rounded-full border border-primary/20">
+                          <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Evaluating skills, experience, and domain relevance...
+                        </div>
                       </div>
-                      <h4 className="text-[16px] font-semibold text-text-primary mb-2">No Candidates Found</h4>
-                      <p className="text-[13px] text-text-secondary max-w-[420px] mb-6 leading-relaxed">
-                        We couldn't find any matching candidates in your database. You can scan with standard requirements or add custom TA preferences & skills.
-                      </p>
-                      <div className="flex items-center gap-3">
-                        <button 
-                          onClick={() => handleScanDatabase()}
-                          disabled={isScanning}
-                          className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
-                        >
-                          <Bot className="w-4 h-4" /> {isScanning ? "Scanning Database..." : "Scan Database Now"}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCustomPreferencesText(job?.taPreferences || "");
-                            setIsPreferenceModalOpen(true);
-                          }}
-                          disabled={isScanning}
-                          className="border border-primary text-primary px-4 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                        >
-                          <MessageSquarePlus className="w-4 h-4" /> Add Preferences & Rescan <ChevronDown className="w-3.5 h-3.5" />
-                        </button>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface-bright/30">
+                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                          <Bot className="w-8 h-8 text-primary" />
+                        </div>
+                        <h4 className="text-[16px] font-semibold text-text-primary mb-2">No Candidates Found</h4>
+                        <p className="text-[13px] text-text-secondary max-w-[420px] mb-6 leading-relaxed">
+                          We couldn't find any matching candidates in your database. You can scan with standard requirements or add custom TA preferences & skills.
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => handleScanDatabase()}
+                            disabled={isScanningActive}
+                            className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
+                          >
+                            <Bot className="w-4 h-4" /> Scan Database Now
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCustomPreferencesText(job?.taPreferences || "");
+                              setIsPreferenceModalOpen(true);
+                            }}
+                            disabled={isScanningActive}
+                            className="border border-primary text-primary px-4 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/10 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <MessageSquarePlus className="w-4 h-4" /> Add Preferences & Rescan <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </td>
                 </tr>
               ) : (
