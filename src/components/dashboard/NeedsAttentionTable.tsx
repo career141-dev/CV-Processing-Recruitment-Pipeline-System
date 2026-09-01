@@ -7,14 +7,17 @@ import { AvatarBadge } from '@/components/ui/Badge';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { AlertCircle, Clock, Briefcase, CheckCircle2, ChevronRight, User } from 'lucide-react';
+import { AlertCircle, Clock, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, User } from 'lucide-react';
 
 interface NeedsAttentionTableProps {
   jobFilter?: string;
 }
 
+const ITEMS_PER_PAGE = 8;
+
 export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTableProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'jobs' | 'candidates'>('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Live Convex Query
   const items = useQuery(api.jobs.stats.getNeedsAttention, { jobFilter });
@@ -28,6 +31,16 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
       : activeTab === 'candidates'
       ? stalledCandidates
       : items || [];
+
+  const totalItems = displayItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedItems = displayItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+  const handleTabChange = (tab: 'all' | 'jobs' | 'candidates') => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
 
   return (
     <Card noPadding className="p-[1px] border border-border/80 shadow-sm bg-surface">
@@ -53,7 +66,7 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
           {/* Filter Sub-Tabs */}
           <div className="flex items-center gap-1 bg-surface-container-high p-1 rounded-lg border border-border/60 self-start sm:self-auto">
             <button
-              onClick={() => setActiveTab('all')}
+              onClick={() => handleTabChange('all')}
               className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
                 activeTab === 'all'
                   ? 'bg-surface shadow-xs text-text-primary font-semibold'
@@ -63,7 +76,7 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
               All ({items?.length ?? 0})
             </button>
             <button
-              onClick={() => setActiveTab('jobs')}
+              onClick={() => handleTabChange('jobs')}
               className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
                 activeTab === 'jobs'
                   ? 'bg-surface shadow-xs text-amber-600 dark:text-amber-400 font-semibold'
@@ -74,7 +87,7 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
               Aging Jobs ({agingJobs.length})
             </button>
             <button
-              onClick={() => setActiveTab('candidates')}
+              onClick={() => handleTabChange('candidates')}
               className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
                 activeTab === 'candidates'
                   ? 'bg-surface shadow-xs text-blue-600 dark:text-blue-400 font-semibold'
@@ -123,12 +136,12 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
                   </div>
                 </td>
               </tr>
-            ) : displayItems.length > 0 ? (
-              displayItems.map((row, idx) => (
+            ) : paginatedItems.length > 0 ? (
+              paginatedItems.map((row, idx) => (
                 <tr
                   key={row.id}
                   className={`${
-                    idx !== displayItems.length - 1 ? 'border-b border-border' : ''
+                    idx !== paginatedItems.length - 1 ? 'border-b border-border' : ''
                   } hover:bg-surface-container-high/60 transition-colors group`}
                 >
                   {/* Position / Title */}
@@ -235,6 +248,67 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Footer */}
+      {totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 border-t border-border bg-surface-container-lowest text-xs text-text-secondary">
+          <div>
+            Showing <span className="font-semibold text-text-primary">{startIndex + 1}</span>–
+            <span className="font-semibold text-text-primary">
+              {Math.min(startIndex + ITEMS_PER_PAGE, totalItems)}
+            </span>{' '}
+            of <span className="font-semibold text-text-primary">{totalItems}</span> alerts
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="h-7 px-2 text-xs gap-1"
+            >
+              <ChevronLeft size={14} />
+              Prev
+            </Button>
+
+            <div className="flex items-center gap-1 px-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                .map((p, idx, arr) => {
+                  const prev = arr[idx - 1];
+                  const showEllipsis = prev && p - prev > 1;
+                  return (
+                    <React.Fragment key={p}>
+                      {showEllipsis && <span className="px-1 text-text-tertiary">...</span>}
+                      <button
+                        onClick={() => setCurrentPage(p)}
+                        className={`w-7 h-7 rounded-md text-xs font-medium transition-all ${
+                          currentPage === p
+                            ? 'bg-primary text-on-primary font-bold shadow-xs'
+                            : 'hover:bg-surface-container-high text-text-secondary hover:text-text-primary'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+            </div>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="h-7 px-2 text-xs gap-1"
+            >
+              Next
+              <ChevronRight size={14} />
+            </Button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
