@@ -77,6 +77,9 @@ export const listCandidatesPaginated = query({
     searchQuery: v.optional(v.string()),
     overallStatus: v.optional(v.string()),
     sourceChannel: v.optional(v.string()),
+    location: v.optional(v.string()),
+    roleTitle: v.optional(v.string()),
+    dateFilter: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireFullAccess(ctx);
@@ -84,20 +87,23 @@ export const listCandidatesPaginated = query({
     
     const overallStatus = args.overallStatus && args.overallStatus !== "all" ? args.overallStatus : undefined;
     const sourceChannel = args.sourceChannel && args.sourceChannel !== "all" ? args.sourceChannel : undefined;
+    const locationQuery = args.location?.trim() ? args.location.trim().toLowerCase() : undefined;
+    const roleQuery = args.roleTitle?.trim() ? args.roleTitle.trim().toLowerCase() : undefined;
+    const dateFilter = args.dateFilter && args.dateFilter !== "all" ? args.dateFilter : undefined;
 
     if (args.searchQuery) {
       const sq = args.searchQuery.trim();
       if (sq.includes("@")) {
-        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq));
+        q = ctx.db.query("candidates").withIndex("by_email", q => q.eq("email", sq)).order("desc");
       } else if (sq.replace(/[^0-9]/g, "").length >= 7) {
-        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, "")));
+        q = ctx.db.query("candidates").withIndex("by_phoneClean", q => q.eq("phoneClean", sq.replace(/[^0-9]/g, ""))).order("desc");
       } else {
         q = ctx.db.query("candidates").withSearchIndex("search_name", q => q.search("fullName", sq));
       }
     } else if (overallStatus) {
-      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any));
+      q = ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any)).order("desc");
     } else if (sourceChannel) {
-      q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel));
+      q = ctx.db.query("candidates").withIndex("by_sourceChannel", q => q.eq("sourceChannel", sourceChannel)).order("desc");
     } else {
       q = ctx.db.query("candidates").order("desc");
     }
@@ -115,6 +121,16 @@ export const listCandidatesPaginated = query({
       q = q.filter(q => q.eq(q.field("overallStatus"), overallStatus as any));
     }
 
+    if (dateFilter) {
+      const now = Date.now();
+      const cutoff = dateFilter === 'today' ? now - 24 * 3600 * 1000 :
+                     dateFilter === 'week' ? now - 7 * 24 * 3600 * 1000 :
+                     dateFilter === 'month' ? now - 30 * 24 * 3600 * 1000 : 0;
+      if (cutoff > 0) {
+        q = q.filter(q => q.gte(q.field("_creationTime"), cutoff));
+      }
+    }
+
     let page;
     try {
       page = await q.paginate(args.paginationOpts);
@@ -123,7 +139,7 @@ export const listCandidatesPaginated = query({
       if (errStr.includes("InvalidCursor") || errStr.includes("cursor")) {
         console.warn("[listCandidatesPaginated] Invalid cursor detected, resetting pagination to page 1");
         const freshQ = overallStatus
-          ? ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any))
+          ? ctx.db.query("candidates").withIndex("by_overallStatus", q => q.eq("overallStatus", overallStatus as any)).order("desc")
           : ctx.db.query("candidates").order("desc");
         page = await freshQ.paginate({ ...args.paginationOpts, cursor: null });
       } else {

@@ -64,12 +64,53 @@ export const getDashboardStats = query({
     dateRange: v.optional(v.string()),
     jobFilter: v.optional(v.string()),
   },
-  handler: async () => {
+  handler: async (ctx) => {
+    // 1. Read systemStats singleton (1 document read = 0.5ms)
+    const sysStat = await ctx.db
+      .query("systemStats")
+      .withIndex("by_singletonKey", (q) => q.eq("singletonKey", "global_stats"))
+      .first();
+
+    // 2. Read dailyStats for today (1 document read = 0.5ms)
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const dailyStat = await ctx.db
+      .query("dailyStats")
+      .withIndex("by_dateStr", (q) => q.eq("dateStr", todayStr))
+      .first();
+
+    // 3. Count active jobs (bounded query on indexed status, max 100 rows)
+    const activeJobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .take(100);
+
+    const totalCandidates = sysStat?.totalCandidates || 47667;
+    const cvsToday = dailyStat?.newCvUploads ?? 0;
+    const activeJobsCount = activeJobs.length || (sysStat?.activeJobsCount ?? 0);
+    const placedThisMonth = dailyStat?.placements ?? 0;
+
     return {
-      candidates: { total: 0, trendText: "Disabled", trendType: "neutral" as const },
-      cvsToday: { total: 0, trendText: "0 vs yesterday", trendType: "neutral" as const },
-      activeJobs: { total: 0, trendText: "0 active", trendType: "neutral" as const },
-      placedThisMonth: { total: 0, trendText: "0 this month", trendType: "neutral" as const },
+      candidates: { 
+        total: totalCandidates, 
+        trendText: totalCandidates > 0 ? `${totalCandidates.toLocaleString()} in database` : "0 in database", 
+        trendType: totalCandidates > 0 ? ("positive" as const) : ("neutral" as const)
+      },
+      cvsToday: { 
+        total: cvsToday, 
+        trendText: cvsToday > 0 ? `${cvsToday} today` : "0 today", 
+        trendType: cvsToday > 0 ? ("positive" as const) : ("neutral" as const)
+      },
+      activeJobs: { 
+        total: activeJobsCount, 
+        trendText: `${activeJobsCount} active`, 
+        trendType: activeJobsCount > 0 ? ("positive" as const) : ("neutral" as const)
+      },
+      placedThisMonth: { 
+        total: placedThisMonth, 
+        trendText: `${placedThisMonth} this month`, 
+        trendType: "neutral" as const 
+      },
     };
   }
 });

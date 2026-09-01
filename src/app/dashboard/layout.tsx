@@ -16,7 +16,7 @@ export default function DashboardLayout({
       <AccessDeniedModal />
       <div className="flex h-screen w-screen bg-background overflow-hidden">
         <Sidebar />
-        <main className="flex-1 h-screen overflow-y-auto pb-10 min-w-0 pr-6 pl-5 pt-5 relative">
+        <main className="flex-1 h-screen overflow-y-auto pb-10 min-w-0 pr-6 pl-5 relative">
           <RouteGuard>{children}</RouteGuard>
         </main>
       </div>

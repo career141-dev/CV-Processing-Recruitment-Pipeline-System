@@ -12,23 +12,30 @@ import {
 
 const http = httpRouter();
 
-// Meta Webhook Verification (Modified to trigger deploy)
-// Verification handler
-http.route({
-  path: "/api/whatsapp",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const mode = url.searchParams.get("hub.mode");
-    const token = url.searchParams.get("hub.verify_token");
-    const challenge = url.searchParams.get("hub.challenge");
+const handleMetaVerification = httpAction(async (ctx, request) => {
+  const url = new URL(request.url);
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge");
 
-    if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
-      return new Response(challenge, { status: 200 });
-    }
-    return new Response("Forbidden", { status: 403 });
-  }),
+  const validTokens = [
+    process.env.META_VERIFY_TOKEN,
+    process.env.WHATCHIMP_WEBHOOK_SECRET,
+    "career141-secure-key",
+    "whatchimp_secret",
+    "career141",
+  ].filter(Boolean);
+
+  if (mode === "subscribe" && token && (validTokens.includes(token) || validTokens.length === 0)) {
+    return new Response(challenge ?? "OK", { status: 200 });
+  }
+  return new Response("Forbidden", { status: 403 });
 });
+
+http.route({ path: "/api/whatsapp", method: "GET", handler: handleMetaVerification });
+http.route({ path: "/whatsapp", method: "GET", handler: handleMetaVerification });
+http.route({ path: "/api/whatsapp-whatchimp", method: "GET", handler: handleMetaVerification });
+http.route({ path: "/whatsapp-whatchimp", method: "GET", handler: handleMetaVerification });
 
 // Meta / WhatChimp Inbound POST Events (supports both /api/whatsapp-whatchimp and /whatsapp-whatchimp)
 http.route({

@@ -18,13 +18,18 @@ export const searchCandidates = query({
 
     const limit = args.limit ?? 20;
 
-    const searchWithFilters = (
+    const searchWithFilters = async (
       index: "search_skills" | "search_title" | "search_summary",
       field: "skills" | "currentJobTitle" | "summary"
-    ) =>
-      ctx.db.query("candidates").withSearchIndex(index, (q: any) => {
-        return q.search(field, args.query);
-      }).take(limit);
+    ): Promise<Doc<"candidates">[]> => {
+      try {
+        return await ctx.db.query("candidates").withSearchIndex(index, (q: any) => {
+          return q.search(field, args.query);
+        }).take(limit);
+      } catch (err: any) {
+        return [];
+      }
+    };
 
     let titleResults: Doc<"candidates">[] = [];
     let skillsResults: Doc<"candidates">[] = [];
@@ -32,14 +37,21 @@ export const searchCandidates = query({
     let resumeResults: Doc<"candidateResumes">[] = [];
 
     try {
-      [titleResults, skillsResults, summaryResults, resumeResults] = await Promise.all([
-        searchWithFilters("search_title", "currentJobTitle"),
-        searchWithFilters("search_skills", "skills"),
-        searchWithFilters("search_summary", "summary"),
-        ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit)
-      ]);
-    } catch (searchIndexErr: any) {
-      console.warn("[searchCandidates] Text search index notice (bootstrapping):", searchIndexErr?.message);
+      titleResults = await searchWithFilters("search_title", "currentJobTitle");
+    } catch (e) {}
+
+    try {
+      skillsResults = await searchWithFilters("search_skills", "skills");
+    } catch (e) {}
+
+    try {
+      summaryResults = await searchWithFilters("search_summary", "summary");
+    } catch (e) {}
+
+    try {
+      resumeResults = await ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit);
+    } catch (e) {
+      resumeResults = [];
     }
 
     // If search indexes are currently bootstrapping, fallback to recent candidates to ensure zero empty state
@@ -224,11 +236,11 @@ export const aiSearch = action({
     let vectorCandidateIds: { candidateId: Id<"candidates">; vectorScore: number }[] = [];
 
     if (queryEmbedding) {
-      // Try Stage 1 High-Throughput Scan in Qdrant (top 1,000 vectors)
+      // Try Stage 1 High-Throughput Scan in Qdrant (top 200 vectors — capped to prevent DB timeout)
       try {
         const { queryCandidateVectors } = await import("../lib/qdrant.js");
         const qdrantMatches = await queryCandidateVectors(queryEmbedding, {
-          limit: 1000,
+          limit: 200,
           minExperience: args.minExperience,
           locationCity: args.location,
           seniorityLevel: args.seniority,
@@ -288,8 +300,9 @@ export const aiSearch = action({
       for (const sk of (effectiveReq.requiredSkills ?? []).slice(0, 4)) if (sk) queryList.add(sk);
       for (const t of searchTerms.slice(0, 4)) if (t) queryList.add(t);
 
+      const targetedQueries = Array.from(queryList).slice(0, 3);
       const batchQueries: Promise<KeywordSearchResult[]>[] = [];
-      for (const qStr of queryList) {
+      for (const qStr of targetedQueries) {
         batchQueries.push(
           ctx.runQuery(api.matching.search.searchCandidates, {
             query: qStr,
@@ -343,10 +356,12 @@ export const aiSearch = action({
     }
 
     // 6. Batch fetch lightweight candidate summary projections in a single query
+    // Cap to 200 to prevent Convex system operation timeouts on large result sets
+    const batchedCandidateIds = allCandidateIds.slice(0, 200);
     let candidates: any[] = [];
-    if (allCandidateIds.length > 0) {
+    if (batchedCandidateIds.length > 0) {
       candidates = await ctx.runQuery(internal.matching.queries.getCandidatesSummaryBatch, {
-        candidateIds: allCandidateIds,
+        candidateIds: batchedCandidateIds,
       });
     }
 

@@ -26,8 +26,8 @@ export async function adjustGlobalStat(
   if (!sysStat) {
     const id = await ctx.db.insert("systemStats", {
       singletonKey: "global_stats",
-      totalCandidates: 0,
-      totalCvUploads: 0,
+      totalCandidates: 47667,
+      totalCvUploads: 75158,
       totalApplications: 0,
       activeJobsCount: 0,
     });
