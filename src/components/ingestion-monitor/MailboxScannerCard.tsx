@@ -38,10 +38,13 @@ export default function MailboxScannerCard() {
   const [dryRun, setDryRun] = useState(false);
   const [maxMessages, setMaxMessages] = useState<number>(150);
   const [isStarting, setIsStarting] = useState(false);
+  const [isReparsing, setIsReparsing] = useState(false);
 
   // Convex Hooks
   const startScanAction = useAction(api.communications.emailBackfill.startMailboxScan);
   const requestControl = useMutation(api.communications.emailBackfillMutations.requestJobControl);
+  const unextractedCount = useQuery(api.candidates.candidates.getUnextractedCandidatesCount, {}) ?? 0;
+  const reparseAllUnextracted = useMutation(api.candidates.candidates.reparseAllUnextractedCandidates);
   
   // Reactive query for the latest scan job for the selected mailbox
   const latestJob = useQuery(api.communications.emailBackfillMutations.getLatestScanJob, {
@@ -51,6 +54,18 @@ export default function MailboxScannerCard() {
   const isRunning = latestJob?.status === "running";
   const isPaused = latestJob?.status === "paused";
 
+  const handleReparseUnextracted = async () => {
+    try {
+      setIsReparsing(true);
+      const res = await reparseAllUnextracted();
+      toast.success(`Queued re-extraction for ${res.requeuedCount} unparsed candidate CV(s)!`);
+    } catch (err: any) {
+      toast.error(`Failed to trigger re-extraction: ${err?.message || err}`);
+    } finally {
+      setIsReparsing(false);
+    }
+  };
+
   const handleStartScan = async () => {
     if (!mailboxEmail || !mailboxEmail.includes("@")) {
       toast.error("Please enter a valid email address.");
@@ -59,34 +74,33 @@ export default function MailboxScannerCard() {
 
     try {
       setIsStarting(true);
-      const res = await startScanAction({
-        mailboxEmail: mailboxEmail.trim().toLowerCase(),
+      const jobId = await startScanAction({
+        mailboxEmail,
         folder,
-        dryRun,
         maxMessages,
+        dryRun,
       });
 
-      if (res?.success) {
-        toast.success(`Mailbox scan started for ${mailboxEmail}`);
+      if (jobId) {
+        toast.success(`Mailbox scan started for ${mailboxEmail}!`);
       }
-    } catch (err: any) {
-      console.error("Start scan error:", err);
-      toast.error(err?.message || "Failed to start mailbox scan.");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to start mailbox scan.");
     } finally {
       setIsStarting(false);
     }
   };
 
-  const handleControlAction = async (action: "pause" | "resume" | "stop") => {
-    if (!latestJob?._id) return;
+  const handleControlAction = async (actionType: "pause" | "resume" | "stop") => {
+    if (!latestJob) return;
     try {
       await requestControl({
         jobId: latestJob._id,
-        action,
+        action: actionType,
       });
-      toast.info(`Scan ${action}d.`);
-    } catch (err: any) {
-      toast.error(`Failed to ${action} scan: ${err.message}`);
+      toast.info(`Requested scan ${actionType}.`);
+    } catch (error: any) {
+      toast.error(error.message || `Failed to ${actionType} scan.`);
     }
   };
 
@@ -100,6 +114,38 @@ export default function MailboxScannerCard() {
 
   return (
     <div className="bg-surface-container-lowest dark:bg-surface-container-low border border-border rounded-xl shadow-sm p-6 space-y-6">
+      {/* UNPARSED CANDIDATES HEALING BANNER */}
+      {unextractedCount > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-amber-700 dark:text-amber-300">
+                {unextractedCount} Candidate Profile{unextractedCount > 1 ? "s" : ""} Pending AI Extraction
+              </p>
+              <p className="text-[11px] text-amber-600/90 dark:text-amber-400/90">
+                Found unparsed candidate stubs (Unknown / No contact) with uploaded CVs in storage.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleReparseUnextracted}
+            disabled={isReparsing}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-semibold text-xs shadow-xs transition disabled:opacity-50 shrink-0"
+          >
+            {isReparsing ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Scheduling...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" /> Re-Extract Unparsed Candidates
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div className="flex items-center gap-3">
