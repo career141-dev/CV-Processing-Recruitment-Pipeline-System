@@ -13,7 +13,7 @@ interface NeedsAttentionTableProps {
   jobFilter?: string;
 }
 
-const ITEMS_PER_PAGE = 8;
+const ITEMS_PER_PAGE = 5;
 
 export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTableProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'jobs' | 'candidates'>('all');
