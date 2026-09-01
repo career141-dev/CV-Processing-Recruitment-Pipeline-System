@@ -1731,32 +1731,22 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs through AI LLM extraction pipeline...`);
+    console.log(`[processUnextractedQueueCron] Dispathing ${claimed.length} CVs to async AI extraction workers...`);
 
-    let count = 0;
-    const CONCURRENCY = 1;
-    for (let i = 0; i < claimed.length; i += CONCURRENCY) {
-      const chunk = claimed.slice(i, i + CONCURRENCY);
-      await Promise.all(
-        chunk.map(async (upload) => {
-          try {
-            await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
-              cvUploadId: upload._id,
-              storageId: upload.storageId,
-              s3Key: upload.s3Key,
-              storageProvider: upload.storageProvider || (upload.s3Key ? "r2" : "convex"),
-              fileType: upload.fileType || "pdf",
-              sourceChannel: upload.source || "Manual Directory Import",
-              uploadedBy: upload.uploadedBy || "System Worker",
-            });
-            count++;
-          } catch (err: any) {
-            console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
-          }
-        })
-      );
+    // Stagger individual extractions by 2.5 seconds to prevent rate limits and run each in an independent execution sandbox
+    for (let i = 0; i < claimed.length; i++) {
+      const upload = claimed[i];
+      await ctx.scheduler.runAfter(i * 2500, api.cvs.cvExtraction.processCvExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || (upload.s3Key ? "r2" : "convex"),
+        fileType: upload.fileType || "pdf",
+        sourceChannel: upload.source || "Manual Directory Import",
+        uploadedBy: upload.uploadedBy || "System Worker",
+      });
     }
 
-    return { processed: count };
+    return { processed: claimed.length };
   },
 });
