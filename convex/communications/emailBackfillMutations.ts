@@ -311,3 +311,31 @@ export const getMailboxCheckpoint = query({
     return checkpoint || null;
   },
 });
+
+/**
+ * Public mutation: Saves or updates a mailbox checkpoint during backfill scan.
+ */
+export const saveMailboxCheckpoint = mutation({
+  args: {
+    mailboxEmail: v.string(),
+    folder: v.optional(v.string()),
+    checkpoint: v.optional(v.any()),
+    lastProcessedReceivedAt: v.optional(v.number()),
+    lastProcessedMessageId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const cleanEmail = args.mailboxEmail.toLowerCase().trim();
+    const existing = await ctx.db
+      .query("mailboxScanJobs")
+      .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", cleanEmail))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        currentStage: "Checkpoint saved",
+      });
+      return existing._id;
+    }
+    return null;
+  },
+});
