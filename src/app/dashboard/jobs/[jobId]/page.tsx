@@ -65,27 +65,74 @@ const TABS = [
 ];
 
 const ScoreRing = ({ score }: { score: number | string }) => {
-  if (score === 'Pending' || score === null || score === undefined) {
+  const isPending = score === 'Pending' || score === null || score === undefined;
+  const targetScore = isPending ? 0 : (typeof score === 'number' ? score : parseInt(String(score).replace('%', '')) || 0);
+  const [animatedScore, setAnimatedScore] = useState<number>(0);
+
+  useEffect(() => {
+    if (isPending) return;
+    let startTimestamp: number | null = null;
+    const duration = 900; // 900ms smooth count-up animation
+    let animationFrame: number;
+
+    const step = (timestamp: number) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      // Ease out cubic easing function
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+      setAnimatedScore(Math.round(easeProgress * targetScore));
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(step);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [targetScore, isPending]);
+
+  if (isPending) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-text-disabled bg-surface-container px-2 py-1 rounded-full">
-        Pending
-      </span>
+      <div className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20 animate-pulse">
+        <Sparkles className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
+        <span>Scoring...</span>
+      </div>
     );
   }
-  
-  const numScore = typeof score === 'number' ? score : parseInt(String(score).replace('%', ''));
-  const colorClass = numScore >= 80 ? 'text-green-500' : numScore >= 60 ? 'text-yellow-500' : 'text-red-500';
-  const strokeDasharray = `${numScore}, 100`;
+
+  const colorClass = targetScore >= 80 ? 'text-emerald-600 dark:text-emerald-400' : targetScore >= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400';
+  const strokeClass = targetScore >= 80 ? 'stroke-emerald-500' : targetScore >= 60 ? 'stroke-amber-500' : 'stroke-rose-500';
+  const strokeDasharray = `${animatedScore}, 100`;
 
   return (
-    <div className="flex items-center gap-3">
-      <div className="relative inline-flex items-center justify-center w-8 h-8 shrink-0">
+    <div className="flex items-center gap-2">
+      <div className="relative inline-flex items-center justify-center w-8 h-8 shrink-0 group/score">
         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-          <path className="text-border" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-          <path className={`${colorClass} transition-all duration-1000 ease-out`} strokeDasharray={strokeDasharray} strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          <path
+            className="text-border/60"
+            strokeWidth="3.2"
+            stroke="currentColor"
+            fill="none"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          />
+          <path
+            className={`${strokeClass} transition-all duration-300 ease-out`}
+            strokeDasharray={strokeDasharray}
+            strokeWidth="3.2"
+            strokeLinecap="round"
+            fill="none"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          />
         </svg>
-        <span className={`absolute text-[10px] font-bold ${colorClass}`}>{numScore}</span>
+        <span className={`absolute text-[10px] font-bold ${colorClass}`}>
+          {animatedScore}
+        </span>
       </div>
+      {targetScore >= 80 && (
+        <span className="inline-flex items-center text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded shrink-0">
+          Top
+        </span>
+      )}
     </div>
   );
 };
