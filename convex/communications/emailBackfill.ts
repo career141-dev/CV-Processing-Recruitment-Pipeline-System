@@ -368,16 +368,15 @@ export const executeMailboxDiscoveryPhase = internalAction({
           }
 
           if (!res || !res.ok) {
-            console.warn(`[MailboxDiscovery] Could not fetch folder ${currentFolder}`);
+            console.warn(`[Discovery] Graph fetch issue for ${currentFolder}`);
             break;
           }
 
           const data = (await res.json()) as any;
           const messages = data.value || [];
-          if (messages.length === 0) break;
+          totalEmailsDiscovered += messages.length;
 
           for (const msg of messages) {
-            totalEmailsDiscovered++;
             if (msg.hasAttachments) {
               totalAttachmentEmailsDiscovered++;
             }
@@ -389,7 +388,7 @@ export const executeMailboxDiscoveryPhase = internalAction({
               jobId,
               discoveredTotalEmails: totalEmailsDiscovered,
               discoveredAttachmentEmails: totalAttachmentEmailsDiscovered,
-              currentStage: `Phase 1: Found ${totalAttachmentEmailsDiscovered} attachment emails in ${currentFolder.toUpperCase()}...`,
+              currentStage: `Discovered ${totalAttachmentEmailsDiscovered} attachment emails (${totalEmailsDiscovered} scanned in ${currentFolder.toUpperCase()})...`,
             }
           );
 
@@ -397,28 +396,8 @@ export const executeMailboxDiscoveryPhase = internalAction({
         }
       }
 
-      if (totalAttachmentEmailsDiscovered === 0) {
-        await ctx.runMutation(
-          (internal as any).communications.emailBackfillMutations.setScanJobStatus,
-          {
-            jobId,
-            status: "done",
-            phase: "done",
-            discoveredTotalEmails: totalEmailsDiscovered,
-            discoveredAttachmentEmails: 0,
-            targetAttachmentEmails: 0,
-            currentStage: "No emails with attachments found in the selected folder(s).",
-            logMessage: {
-              message: `Discovery complete: Evaluated ${totalEmailsDiscovered} messages. 0 attachment-bearing emails found.`,
-              type: "info",
-            },
-          }
-        );
-        return;
-      }
-
-      // Calculate extraction target goal
-      const targetAttachmentEmails =
+      // Calculate extraction target based on scan depth
+      const targetGoal =
         maxMessages === -1
           ? totalAttachmentEmailsDiscovered
           : Math.min(maxMessages, totalAttachmentEmailsDiscovered);
@@ -428,19 +407,19 @@ export const executeMailboxDiscoveryPhase = internalAction({
         {
           jobId,
           phase: "extracting",
-          totalMessages: targetAttachmentEmails,
-          targetAttachmentEmails,
+          totalMessages: targetGoal,
+          targetAttachmentEmails: targetGoal,
           discoveredTotalEmails: totalEmailsDiscovered,
           discoveredAttachmentEmails: totalAttachmentEmailsDiscovered,
-          currentStage: `Discovery complete: ${totalAttachmentEmailsDiscovered} attachment emails found. Starting extraction goal of ${targetAttachmentEmails}...`,
+          currentStage: `Discovery complete! Found ${totalAttachmentEmailsDiscovered} attachment-bearing emails. Target goal: ${targetGoal}. Transitioning to Phase 2 extraction...`,
           logMessage: {
-            message: `Discovery complete: Found ${totalAttachmentEmailsDiscovered} attachment emails across ${totalEmailsDiscovered} messages. Target set to ${targetAttachmentEmails}.`,
+            message: `Discovery complete: Found ${totalAttachmentEmailsDiscovered} attachment emails. Target extraction goal: ${targetGoal}. Starting Phase 2 extraction...`,
             type: "success",
           },
         }
       );
 
-      // Automatically transition to Phase 2 (Extraction)
+      // Launch Phase 2 extraction runner
       await ctx.scheduler.runAfter(
         0,
         (internal as any).communications.emailBackfill.executeMailboxScanBackground,
@@ -449,20 +428,14 @@ export const executeMailboxDiscoveryPhase = internalAction({
           mailboxEmail,
           folder,
           dryRun,
-          maxMessages: targetAttachmentEmails,
-          targetAttachmentEmails,
+          maxMessages: targetGoal,
+          targetAttachmentEmails: targetGoal,
           processedAttachmentEmails: 0,
           folderIndex: 0,
-          scannedMessages: 0,
-          totalAttachments: 0,
-          classifiedHighConfidence: 0,
-          flaggedNeedsReview: 0,
-          skippedLowConfidence: 0,
-          llmCallsCount: 0,
         }
       );
     } catch (err: any) {
-      console.error("[MailboxDiscovery Critical Error]:", err);
+      console.error("[MailboxDiscovery Phase Error]:", err);
       await ctx.runMutation(
         (internal as any).communications.emailBackfillMutations.setScanJobStatus,
         {
@@ -470,9 +443,9 @@ export const executeMailboxDiscoveryPhase = internalAction({
           status: "error",
           phase: "error",
           errorMessage: err?.message || String(err),
-          currentStage: "Discovery pass failed with error.",
+          currentStage: "Discovery phase failed.",
           logMessage: {
-            message: `Discovery failed: ${err?.message || err}`,
+            message: `Discovery failed with error: ${err?.message || err}`,
             type: "error",
           },
         }
@@ -482,9 +455,9 @@ export const executeMailboxDiscoveryPhase = internalAction({
 });
 
 /**
- * Phase 2 (Extraction): Traverses Graph API attachment-bearing messages in time-sliced batches
- * (yielding every ~30s to prevent Convex action timeouts), inspects attachments, executes
- * multi-signal heuristics + DeepSeek confirmation, uploads to R2, and ingests CVs into Agent 1.
+ * Phase 2 (Extraction): Time-sliced extraction runner that yields every ~30 seconds to prevent
+ * the 120s Convex Action timeout, extracting text, calculating multi-signal heuristic + DeepSeek V4 Flash,
+ * uploading to R2, and calling Agent 1 ingestion.
  */
 export const executeMailboxScanBackground = internalAction({
   args: {
@@ -506,29 +479,20 @@ export const executeMailboxScanBackground = internalAction({
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
-    const MAX_ACTION_DURATION_MS = 30000; // 30s yield threshold to prevent Convex 120s action timeouts
+    const MAX_ACTION_DURATION_MS = 30000; // 30s yield threshold (well below 120s Convex limit)
 
-    const { jobId, mailboxEmail, folder, dryRun } = args;
-    const targetGoal = args.targetAttachmentEmails || args.maxMessages || 150;
-    let processedAttachmentEmails = args.processedAttachmentEmails ?? 0;
-    let totalAttachmentsInspected = args.totalAttachments ?? 0;
-    let classifiedHighConfidence = args.classifiedHighConfidence ?? 0;
-    let flaggedNeedsReview = args.flaggedNeedsReview ?? 0;
-    let skippedLowConfidence = args.skippedLowConfidence ?? 0;
-    let llmCallsCount = args.llmCallsCount ?? 0;
+    const { jobId, mailboxEmail, folder, dryRun, maxMessages } = args;
+    const targetGoal = args.targetAttachmentEmails || maxMessages || 150;
+    let processedAttachmentEmails = args.processedAttachmentEmails || 0;
     const startFolderIndex = args.folderIndex ?? 0;
 
-    try {
-      // Check for cancellation / pause before starting batch
-      const initialStatus = await ctx.runQuery(
-        (internal as any).communications.emailBackfillMutations.checkJobStatus,
-        { jobId }
-      );
-      if (initialStatus === "stopped" || initialStatus === "paused") {
-        console.log(`[MailboxScan] Job ${jobId} was marked as ${initialStatus}. Halting execution.`);
-        return;
-      }
+    let totalAttachmentsInspected = args.totalAttachments || 0;
+    let classifiedHighConfidence = args.classifiedHighConfidence || 0;
+    let flaggedNeedsReview = args.flaggedNeedsReview || 0;
+    let skippedLowConfidence = args.skippedLowConfidence || 0;
+    let llmCallsCount = args.llmCallsCount || 0;
 
+    try {
       const token = await getGraphToken();
       if (!token) {
         throw new Error(
@@ -536,7 +500,6 @@ export const executeMailboxScanBackground = internalAction({
         );
       }
 
-      // Determine folders to scan
       const foldersToScan: string[] =
         folder === "all" ? ["inbox", "sentitems"] : [folder];
 
@@ -857,7 +820,6 @@ export const executeMailboxScanBackground = internalAction({
       }
 
       // Mark Job as Completed
-      const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
       await ctx.runMutation((internal as any).communications.emailBackfillMutations.setScanJobStatus, {
         jobId,
         status: "done",

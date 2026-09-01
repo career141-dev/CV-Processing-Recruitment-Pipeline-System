@@ -1,23 +1,42 @@
 import { v } from "convex/values";
 import { query, mutation, action, internalQuery, internalMutation } from "../_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
 import { requireFullAccess } from "../lib/permissions";
 
-
-
-
 export const listCandidates = query({
   args: {
-    paginationOpts: v.optional(v.any()),
+    paginationOpts: v.optional(paginationOptsValidator),
     searchQuery: v.optional(v.string()),
     overallStatus: v.optional(v.string()),
     sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const apps = await ctx.db.query("candidates").take(50);
-    return { page: apps, isDone: true, continueCursor: "" };
+    let q;
+    if (args.overallStatus) {
+      q = ctx.db
+        .query("candidates")
+        .withIndex("by_overallStatus", (idx) =>
+          idx.eq("overallStatus", args.overallStatus as any)
+        );
+    } else if (args.sourceChannel) {
+      q = ctx.db
+        .query("candidates")
+        .withIndex("by_sourceChannel", (idx) =>
+          idx.eq("sourceChannel", args.sourceChannel)
+        );
+    } else {
+      q = ctx.db.query("candidates");
+    }
+
+    if (args.paginationOpts) {
+      return await q.order("desc").paginate(args.paginationOpts);
+    }
+
+    const docs = await q.order("desc").take(50);
+    return { page: docs, isDone: false, continueCursor: "" };
   },
 });
 

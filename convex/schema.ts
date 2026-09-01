@@ -1900,4 +1900,3 @@ export default defineSchema({
   }).index("by_scanJobId", ["scanJobId"]),
 
 }, { schemaValidation: false });
-

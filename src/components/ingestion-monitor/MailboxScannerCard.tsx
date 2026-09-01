@@ -75,7 +75,7 @@ export default function MailboxScannerCard() {
     try {
       setIsStarting(true);
       const jobId = await startScanAction({
-        mailboxEmail,
+        mailboxEmail: mailboxEmail.trim().toLowerCase(),
         folder,
         maxMessages,
         dryRun,
@@ -85,6 +85,7 @@ export default function MailboxScannerCard() {
         toast.success(`Mailbox scan started for ${mailboxEmail}!`);
       }
     } catch (error: any) {
+      console.error("Start scan error:", error);
       toast.error(error.message || "Failed to start mailbox scan.");
     } finally {
       setIsStarting(false);
@@ -92,7 +93,7 @@ export default function MailboxScannerCard() {
   };
 
   const handleControlAction = async (actionType: "pause" | "resume" | "stop") => {
-    if (!latestJob) return;
+    if (!latestJob?._id) return;
     try {
       await requestControl({
         jobId: latestJob._id,
@@ -193,15 +194,17 @@ export default function MailboxScannerCard() {
               onChange={(e) => setMailboxEmail(e.target.value)}
               placeholder="e.g. azeem@career141.com"
               disabled={isRunning}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-surface-container-low dark:bg-surface-container border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+              className="w-full py-2 px-3 pl-9 text-sm bg-surface-container-low dark:bg-surface-container border border-border rounded-lg text-text-primary placeholder:text-text-disabled focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             />
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-text-disabled" />
+            <Mail className="w-4 h-4 text-text-disabled absolute left-3 top-2.5" />
           </div>
-          {/* Quick Mailbox Pickers */}
+
+          {/* Quick Select Buttons */}
           <div className="flex flex-wrap gap-1.5 pt-1">
             {QUICK_MAILBOXES.map((em) => (
               <button
                 key={em}
+                type="button"
                 onClick={() => setMailboxEmail(em)}
                 disabled={isRunning}
                 className={`text-[11px] px-2 py-0.5 rounded transition border ${
