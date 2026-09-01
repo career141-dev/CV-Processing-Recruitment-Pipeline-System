@@ -278,3 +278,36 @@ export const checkJobStatus = internalQuery({
     return job?.status || "stopped";
   },
 });
+
+/**
+ * Public query: Gets count of unextracted CV uploads.
+ */
+export const getUnextractedCandidatesCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const unextracted = await ctx.db
+      .query("cvUploads")
+      .filter((q) => q.eq(q.field("status"), "uploaded"))
+      .take(1000);
+    return unextracted.length;
+  },
+});
+
+/**
+ * Public query: Gets mailbox checkpoint for backfill progress tracking.
+ */
+export const getMailboxCheckpoint = query({
+  args: {
+    mailboxEmail: v.string(),
+    folder: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const cleanEmail = args.mailboxEmail.toLowerCase().trim();
+    const checkpoint = await ctx.db
+      .query("mailboxScanJobs")
+      .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", cleanEmail))
+      .order("desc")
+      .first();
+    return checkpoint || null;
+  },
+});
