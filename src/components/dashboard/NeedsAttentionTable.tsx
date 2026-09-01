@@ -20,7 +20,7 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Live Convex Query
-  const items = useQuery(api.stats.stats.getNeedsAttention, { jobFilter });
+  const items = useQuery(api.jobs.stats.getNeedsAttention, { jobFilter });
 
   const agingJobs = items?.filter((item) => item.type === 'aging_job') || [];
   const stalledCandidates = items?.filter((item) => item.type === 'stalled_candidate') || [];
