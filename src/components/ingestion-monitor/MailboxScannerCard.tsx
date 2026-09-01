@@ -40,11 +40,11 @@ export default function MailboxScannerCard() {
   const [isStarting, setIsStarting] = useState(false);
 
   // Convex Hooks
-  const startScanAction = useAction((api as any).communications.emailBackfill.startMailboxScan);
-  const requestControl = useMutation((api as any).communications.emailBackfillMutations.requestJobControl);
+  const startScanAction = useAction(api.communications.emailBackfill.startMailboxScan);
+  const requestControl = useMutation(api.communications.emailBackfillMutations.requestJobControl);
   
   // Reactive query for the latest scan job for the selected mailbox
-  const latestJob = useQuery((api as any).communications.emailBackfillMutations.getLatestScanJob, {
+  const latestJob = useQuery(api.communications.emailBackfillMutations.getLatestScanJob, {
     mailboxEmail: mailboxEmail || undefined,
   });
 

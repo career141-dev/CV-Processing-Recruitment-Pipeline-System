@@ -1870,4 +1870,17 @@ export default defineSchema({
     .index("by_scanId_matchScore", ["scanId", "matchScore"])
     .index("by_status", ["status"]),
 
-});
+  mailboxScanJobResults: defineTable({
+    scanJobId: v.id("mailboxScanJobs"),
+    messageId: v.string(),
+    subject: v.string(),
+    senderEmail: v.string(),
+    receivedAt: v.number(),
+    hasAttachments: v.boolean(),
+    attachmentsCount: v.number(),
+    status: v.string(), // "processed" | "skipped" | "flagged"
+    cvUploaded: v.boolean(),
+  }).index("by_scanJobId", ["scanJobId"]),
+
+}, { schemaValidation: false });
+
