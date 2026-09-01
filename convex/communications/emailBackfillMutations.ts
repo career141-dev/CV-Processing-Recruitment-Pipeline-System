@@ -363,3 +363,102 @@ export const checkJobStatus = internalQuery({
     return job?.status || "stopped";
   },
 });
+
+/**
+ * Public query: Gets persistent scan checkpoint for a mailbox + folder.
+ */
+export const getMailboxCheckpoint = query({
+  args: {
+    mailboxEmail: v.string(),
+    folder: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const cleanEmail = args.mailboxEmail.toLowerCase().trim();
+    return await ctx.db
+      .query("mailboxCheckpoints")
+      .withIndex("by_mailbox_folder", (q) =>
+        q.eq("mailboxEmail", cleanEmail).eq("folder", args.folder)
+      )
+      .first();
+  },
+});
+
+/**
+ * Internal mutation: Saves/updates persistent checkpoint with discovered counts and pagination cursor.
+ */
+export const saveMailboxCheckpoint = internalMutation({
+  args: {
+    mailboxEmail: v.string(),
+    folder: v.string(),
+    totalDiscoveredAttachmentEmails: v.optional(v.number()),
+    totalDiscoveredEmails: v.optional(v.number()),
+    totalExtractedCount: v.optional(v.number()),
+    nextCursorUrl: v.optional(v.string()),
+    currentFolderIndex: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const cleanEmail = args.mailboxEmail.toLowerCase().trim();
+    const existing = await ctx.db
+      .query("mailboxCheckpoints")
+      .withIndex("by_mailbox_folder", (q) =>
+        q.eq("mailboxEmail", cleanEmail).eq("folder", args.folder)
+      )
+      .first();
+
+    const now = Date.now();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        totalDiscoveredAttachmentEmails:
+          args.totalDiscoveredAttachmentEmails ?? existing.totalDiscoveredAttachmentEmails,
+        totalDiscoveredEmails:
+          args.totalDiscoveredEmails ?? existing.totalDiscoveredEmails,
+        totalExtractedCount:
+          args.totalExtractedCount ?? existing.totalExtractedCount,
+        nextCursorUrl: args.nextCursorUrl !== undefined ? args.nextCursorUrl : existing.nextCursorUrl,
+        currentFolderIndex:
+          args.currentFolderIndex !== undefined ? args.currentFolderIndex : existing.currentFolderIndex,
+        lastExtractedAt: now,
+        updatedAt: now,
+      });
+      return existing._id;
+    } else {
+      return await ctx.db.insert("mailboxCheckpoints", {
+        mailboxEmail: cleanEmail,
+        folder: args.folder,
+        totalDiscoveredAttachmentEmails: args.totalDiscoveredAttachmentEmails ?? 0,
+        totalDiscoveredEmails: args.totalDiscoveredEmails ?? 0,
+        totalExtractedCount: args.totalExtractedCount ?? 0,
+        nextCursorUrl: args.nextCursorUrl,
+        currentFolderIndex: args.currentFolderIndex ?? 0,
+        lastDiscoveredAt: now,
+        lastExtractedAt: now,
+        updatedAt: now,
+      });
+    }
+  },
+});
+
+/**
+ * Public mutation: Resets persistent checkpoint to start scan over from the beginning.
+ */
+export const resetMailboxCheckpoint = mutation({
+  args: {
+    mailboxEmail: v.string(),
+    folder: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const cleanEmail = args.mailboxEmail.toLowerCase().trim();
+    const existing = await ctx.db
+      .query("mailboxCheckpoints")
+      .withIndex("by_mailbox_folder", (q) =>
+        q.eq("mailboxEmail", cleanEmail).eq("folder", args.folder)
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.delete(existing._id);
+      return { success: true, reset: true };
+    }
+    return { success: true, reset: false };
+  },
+});

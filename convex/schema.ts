@@ -1899,4 +1899,20 @@ export default defineSchema({
     cvUploaded: v.boolean(),
   }).index("by_scanJobId", ["scanJobId"]),
 
+  // ■■ MAILBOX_CHECKPOINTS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  // Persists total discovered attachment counts and extraction pointers (cursors)
+  // across sessions so multi-day scans seamlessly continue from where they left off.
+  mailboxCheckpoints: defineTable({
+    mailboxEmail: v.string(),
+    folder: v.string(), // "inbox" | "sentitems" | "all"
+    totalDiscoveredAttachmentEmails: v.number(),
+    totalDiscoveredEmails: v.number(),
+    totalExtractedCount: v.number(), // Cumulative count of extracted attachment emails
+    nextCursorUrl: v.optional(v.string()), // Microsoft Graph API pagination continuation URL
+    currentFolderIndex: v.optional(v.number()), // Folder index for "all" scope
+    lastDiscoveredAt: v.number(),
+    lastExtractedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_mailbox_folder", ["mailboxEmail", "folder"]),
+
 }, { schemaValidation: false });

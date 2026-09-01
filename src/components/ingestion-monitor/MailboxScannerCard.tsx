@@ -39,6 +39,7 @@ export default function MailboxScannerCard() {
   const [maxMessages, setMaxMessages] = useState<number>(150);
   const [isStarting, setIsStarting] = useState(false);
   const [isReparsing, setIsReparsing] = useState(false);
+  const [isResettingCheckpoint, setIsResettingCheckpoint] = useState(false);
 
   // Convex Hooks
   const startScanAction = useAction(api.communications.emailBackfill.startMailboxScan);
@@ -46,6 +47,13 @@ export default function MailboxScannerCard() {
   const unextractedCount = useQuery(api.candidates.candidates.getUnextractedCandidatesCount, {}) ?? 0;
   const reparseAllUnextracted = useMutation(api.candidates.candidates.reparseAllUnextractedCandidates);
   
+  // Persistent Checkpoint for current mailbox + folder
+  const checkpoint = useQuery(api.communications.emailBackfillMutations.getMailboxCheckpoint, {
+    mailboxEmail: mailboxEmail.trim().toLowerCase(),
+    folder,
+  });
+  const resetCheckpointMutation = useMutation(api.communications.emailBackfillMutations.resetMailboxCheckpoint);
+
   // Reactive query for the latest scan job for the selected mailbox
   const latestJob = useQuery(api.communications.emailBackfillMutations.getLatestScanJob, {
     mailboxEmail: mailboxEmail || undefined,
@@ -66,7 +74,7 @@ export default function MailboxScannerCard() {
     }
   };
 
-  const handleStartScan = async () => {
+  const handleStartScan = async (forceRediscovery = false) => {
     if (!mailboxEmail || !mailboxEmail.includes("@")) {
       toast.error("Please enter a valid email address.");
       return;
@@ -74,21 +82,41 @@ export default function MailboxScannerCard() {
 
     try {
       setIsStarting(true);
-      const jobId = await startScanAction({
+      const res = await startScanAction({
         mailboxEmail: mailboxEmail.trim().toLowerCase(),
         folder,
         maxMessages,
         dryRun,
+        forceRediscovery,
       });
 
-      if (jobId) {
-        toast.success(`Mailbox scan started for ${mailboxEmail}!`);
+      if (res?.success) {
+        if (res.resumed) {
+          toast.success(`Resumed mailbox scan for ${mailboxEmail} from where it left off!`);
+        } else {
+          toast.success(`Started discovery scan for ${mailboxEmail}!`);
+        }
       }
     } catch (error: any) {
       console.error("Start scan error:", error);
       toast.error(error.message || "Failed to start mailbox scan.");
     } finally {
       setIsStarting(false);
+    }
+  };
+
+  const handleResetCheckpoint = async () => {
+    try {
+      setIsResettingCheckpoint(true);
+      await resetCheckpointMutation({
+        mailboxEmail: mailboxEmail.trim().toLowerCase(),
+        folder,
+      });
+      toast.info(`Reset checkpoint for ${mailboxEmail} (${folder}). Next scan will start from the beginning.`);
+    } catch (err: any) {
+      toast.error(`Failed to reset checkpoint: ${err?.message || err}`);
+    } finally {
+      setIsResettingCheckpoint(false);
     }
   };
 
@@ -115,6 +143,7 @@ export default function MailboxScannerCard() {
 
   return (
     <div className="bg-surface-container-lowest dark:bg-surface-container-low border border-border rounded-xl shadow-sm p-6 space-y-6">
+
       {/* UNPARSED CANDIDATES HEALING BANNER */}
       {unextractedCount > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
@@ -147,6 +176,49 @@ export default function MailboxScannerCard() {
         </div>
       )}
 
+      {/* PERSISTENT CHECKPOINT RESUMPTION BANNER */}
+      {checkpoint && checkpoint.totalDiscoveredAttachmentEmails > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                Persistent Checkpoint Active
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-800 dark:text-blue-200">
+                  {checkpoint.totalExtractedCount} / {checkpoint.totalDiscoveredAttachmentEmails} Extracted
+                </span>
+              </p>
+              <p className="text-[11px] text-blue-600/90 dark:text-blue-400/90 mt-0.5">
+                {checkpoint.totalDiscoveredAttachmentEmails - checkpoint.totalExtractedCount > 0
+                  ? `${checkpoint.totalDiscoveredAttachmentEmails - checkpoint.totalExtractedCount} attachment emails remaining in ${folder.toUpperCase()}. Scanning will automatically continue from #${checkpoint.totalExtractedCount + 1}.`
+                  : `All ${checkpoint.totalDiscoveredAttachmentEmails} attachment emails extracted!`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {checkpoint.totalDiscoveredAttachmentEmails - checkpoint.totalExtractedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => handleStartScan(false)}
+                disabled={isRunning || isStarting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs shadow-xs transition disabled:opacity-50"
+              >
+                <Play className="w-3.5 h-3.5 fill-white" /> Continue from #{checkpoint.totalExtractedCount + 1}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleResetCheckpoint}
+              disabled={isRunning || isResettingCheckpoint}
+              className="px-2.5 py-1.5 rounded-lg bg-surface-container-high border border-border text-text-secondary hover:text-text-primary text-xs transition"
+              title="Reset checkpoint to start over from beginning"
+            >
+              {isResettingCheckpoint ? "Resetting..." : "Reset"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div className="flex items-center gap-3">
@@ -161,7 +233,7 @@ export default function MailboxScannerCard() {
               </span>
             </h2>
             <p className="text-xs text-text-secondary mt-0.5">
-              Inspect historical mailbox folders via Microsoft Graph API, classify attachments with weighted scoring + DeepSeek V4 Flash, and ingest CVs directly into Agent 1 & Agent 6.
+              Inspect historical mailbox folders via Microsoft Graph API, strictly target files with CV / Resume naming, classify content with weighted scoring + DeepSeek V4 Flash, and ingest confirmed candidate CVs into Agent 1 & Agent 6.
             </p>
           </div>
         </div>
@@ -264,7 +336,7 @@ export default function MailboxScannerCard() {
         {/* Mode & Max Messages */}
         <div className="lg:col-span-2 space-y-2">
           <label className="text-xs font-bold text-text-secondary uppercase tracking-wider block">
-            Scan Depth
+            Batch Depth
           </label>
           <select
             value={maxMessages}
@@ -273,13 +345,13 @@ export default function MailboxScannerCard() {
             className="w-full py-2 px-3 text-sm bg-surface-container-low dark:bg-surface-container border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
           >
             <option value={150}>150 Emails (Test Batch)</option>
-            <option value={-1}>All Emails (Full Mailbox Scan)</option>
-            <option value={50}>50 Emails (Quick Sample)</option>
-            <option value={300}>300 Emails (Medium Batch)</option>
-            <option value={500}>500 Emails (Large Batch)</option>
+            <option value={500}>500 Emails (Medium Batch)</option>
+            <option value={1000}>1,000 Emails (Daily Run)</option>
+            <option value={-1}>All Remaining Emails</option>
+            <option value={50}>50 Emails (Sample)</option>
           </select>
           {/* Quick preset chips */}
-          <div className="flex gap-1.5 pt-0.5">
+          <div className="flex flex-wrap gap-1 pt-0.5">
             <button
               type="button"
               onClick={() => setMaxMessages(150)}
@@ -290,7 +362,31 @@ export default function MailboxScannerCard() {
                   : "bg-surface-container border-border text-text-secondary hover:bg-surface-container-high"
               } disabled:opacity-50`}
             >
-              150 Test Batch
+              150
+            </button>
+            <button
+              type="button"
+              onClick={() => setMaxMessages(500)}
+              disabled={isRunning}
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded transition border ${
+                maxMessages === 500
+                  ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30"
+                  : "bg-surface-container border-border text-text-secondary hover:bg-surface-container-high"
+              } disabled:opacity-50`}
+            >
+              500
+            </button>
+            <button
+              type="button"
+              onClick={() => setMaxMessages(1000)}
+              disabled={isRunning}
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded transition border ${
+                maxMessages === 1000
+                  ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30"
+                  : "bg-surface-container border-border text-text-secondary hover:bg-surface-container-high"
+              } disabled:opacity-50`}
+            >
+              1,000
             </button>
             <button
               type="button"
@@ -302,7 +398,7 @@ export default function MailboxScannerCard() {
                   : "bg-surface-container border-border text-text-secondary hover:bg-surface-container-high"
               } disabled:opacity-50`}
             >
-              All Emails
+              All
             </button>
           </div>
         </div>
@@ -323,7 +419,7 @@ export default function MailboxScannerCard() {
             </label>
           </div>
           <button
-            onClick={handleStartScan}
+            onClick={() => handleStartScan(false)}
             disabled={isRunning || isStarting}
             className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white font-semibold text-xs shadow-sm transition disabled:opacity-50"
           >
@@ -334,6 +430,10 @@ export default function MailboxScannerCard() {
             ) : isRunning ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" /> {latestJob?.phase === "discovery" ? "Discovering..." : "Extracting..."}
+              </>
+            ) : checkpoint && checkpoint.totalExtractedCount > 0 && checkpoint.totalExtractedCount < checkpoint.totalDiscoveredAttachmentEmails ? (
+              <>
+                <Play className="w-4 h-4 fill-white" /> Continue (#{checkpoint.totalExtractedCount + 1})
               </>
             ) : (
               <>

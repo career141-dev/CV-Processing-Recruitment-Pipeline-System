@@ -57,7 +57,7 @@ if (action === 'dev') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
   const funcName = process.argv[4];
-  const extraArgs = process.argv.slice(5).join(' ');
+  const extraArgs = process.argv.slice(5).map(a => `"${a.replace(/"/g, '\\"')}"`).join(' ');
 
   if (!funcName) {
     console.error('[ERROR] Please specify a function name to run. Example: node scripts/convex-env-run.js hosted run candidates/refereeActions:reparseAllHostedReferees');

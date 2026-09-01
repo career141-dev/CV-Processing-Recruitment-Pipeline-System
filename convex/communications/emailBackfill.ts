@@ -162,6 +162,42 @@ function calculateAttachmentHeuristicScore(
 }
 
 /**
+ * Strict CV / Resume Filename Detector.
+ * Only accepts files with explicit "cv", "resume", "curriculum vitae", or "biodata" in their filename.
+ * Automatically excludes invoices, receipts, payslips, scoop decks, agreements, and agency rebranded files.
+ */
+export function isCvOrResumeFilename(fileName: string): boolean {
+  if (!fileName) return false;
+  const lower = fileName.toLowerCase().trim();
+
+  // 1. Must have valid document extension
+  const extMatch = lower.match(/\.[a-z0-9]+$/);
+  const ext = extMatch ? extMatch[0] : "";
+  if (!CV_FILE_EXTENSIONS.has(ext)) return false;
+
+  // 2. Negative checks: Exclude invoices, statements, payslips, scoop decks, etc.
+  if (
+    /(?:invoice|receipt|bill|tax|statement|payslip|salary|contract|agreement|nda|offer[_\s-]?letter|timesheet|bank|payment|quotation|purchase[_\s-]?order|po[_\s-]?\d|challan|scoop)/i.test(
+      lower
+    )
+  ) {
+    return false;
+  }
+
+  // 3. Exclude internal agency rebranded profile format: "[Name] - CAREER141.pdf"
+  if (/-\s*career141(?:\s*\(\d+\))?\.[a-z0-9]+$/i.test(lower)) {
+    return false;
+  }
+
+  // 4. Positive check: Must contain cv, resume, curriculum vitae, or biodata
+  const hasCvOrResume =
+    /\b(?:cv|resume|resumes|curriculum[_\s-]?vitae|biodata|bio[_\s-]?data)\b/i.test(lower) ||
+    /(?:^|[\s_\-.\(\)\[\]])(?:cv|resume|curriculum[_\s-]?vitae|biodata)(?:$|[\s_\-.\(\)\[\]\d])/i.test(lower);
+
+  return hasCvOrResume;
+}
+
+/**
  * DeepSeek V4 Flash LLM Confirmation on Ambiguous Score Band (0.40 - 0.69).
  */
 async function callDeepSeekCvConfirmation(
@@ -173,7 +209,7 @@ async function callDeepSeekCvConfirmation(
     const snippet = rawText.slice(0, 2500);
 
     const prompt = `You are an automated document classifier for a talent recruitment pipeline.
-Analyze the following document filename and text snippet, and determine whether this document is a Candidate CV / Resume / Curriculum Vitae.
+Analyze the following document filename and text snippet, and determine whether this document is an original Candidate CV / Resume / Curriculum Vitae.
 
 Filename: "${fileName}"
 Document Text Snippet:
@@ -182,8 +218,8 @@ ${snippet}
 """
 
 Classification Rules:
-- Return isCv: true if the document describes an individual's career history, education, skills, employment background, or bio-data for employment.
-- Return isCv: false if the document is an invoice, payslip, financial statement, legal contract, NDA, certificate of attendance, company brochure, or vendor quotation.
+- Return isCv: true ONLY if the document is an original candidate CV, resume, bio-data, or employment application describing an individual's career history, education, skills, and background.
+- Return isCv: false if the document is an agency scoop sheet, candidate pitch deck, client submission summary, invoice, payslip, financial statement, legal contract, NDA, certificate of attendance, or vendor quotation.
 - Provide a confidence score between 0.0 and 1.0.
 
 Respond strictly in JSON format:
@@ -251,27 +287,109 @@ async function safeGraphFetch(
 // ── 3. MAIN BACKFILL & SCANNING ACTIONS ───────────────────────────────────────
 
 /**
- * Public action: Starts a mailbox scan by launching Phase 1 (Discovery) in the background.
+ * Public action: Starts a mailbox scan by launching Phase 1 (Discovery) or resuming from persistent checkpoint.
  */
 export const startMailboxScan = action({
   args: {
     mailboxEmail: v.string(),
     folder: v.optional(v.string()), // "inbox" | "sentitems" | "all"
     dryRun: v.optional(v.boolean()),
-    maxMessages: v.optional(v.number()), // -1 for All, or 50, 150, 300, 500
+    maxMessages: v.optional(v.number()), // -1 for All remaining, or 50, 150, 300, 500, 1000
     userId: v.optional(v.string()),
+    forceRediscovery: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
     args
-  ): Promise<{ success: boolean; jobId: Id<"mailboxScanJobs"> }> => {
+  ): Promise<{ success: boolean; jobId: Id<"mailboxScanJobs">; resumed: boolean }> => {
     const targetEmail = args.mailboxEmail.toLowerCase().trim();
     const folder = args.folder || "inbox";
     const isDryRun = args.dryRun ?? false;
     const maxMessages = args.maxMessages || 150;
 
+    // Check if a persistent checkpoint exists for this mailbox + folder
+    let checkpoint = null;
+    if (!args.forceRediscovery) {
+      checkpoint = await ctx.runQuery(
+        (api as any).communications.emailBackfillMutations.getMailboxCheckpoint,
+        {
+          mailboxEmail: targetEmail,
+          folder,
+        }
+      );
+    }
+
+    const canResume =
+      checkpoint &&
+      checkpoint.totalDiscoveredAttachmentEmails > 0 &&
+      checkpoint.totalExtractedCount < checkpoint.totalDiscoveredAttachmentEmails;
+
+    if (canResume) {
+      const currentExtracted = checkpoint.totalExtractedCount || 0;
+      const totalDiscovered = checkpoint.totalDiscoveredAttachmentEmails;
+      const remaining = Math.max(0, totalDiscovered - currentExtracted);
+      const batchSize = maxMessages === -1 ? remaining : Math.min(maxMessages, remaining);
+      const targetGoal = currentExtracted + batchSize;
+
+      console.log(
+        `[startMailboxScan] Resuming from checkpoint for ${targetEmail} (#${currentExtracted}/${totalDiscovered} extracted). Extracting next batch of ${batchSize}...`
+      );
+
+      // Create scan job directly in extracting phase with resumption context
+      const jobId: Id<"mailboxScanJobs"> = await ctx.runMutation(
+        (internal as any).communications.emailBackfillMutations.createScanJob,
+        {
+          mailboxEmail: targetEmail,
+          folder,
+          dryRun: isDryRun,
+          userId: args.userId,
+          totalMessages: targetGoal,
+        }
+      );
+
+      await ctx.runMutation(
+        (internal as any).communications.emailBackfillMutations.updateScanProgress,
+        {
+          jobId,
+          phase: "extracting",
+          discoveredTotalEmails: checkpoint.totalDiscoveredEmails || totalDiscovered,
+          discoveredAttachmentEmails: totalDiscovered,
+          targetAttachmentEmails: targetGoal,
+          processedAttachmentEmails: currentExtracted,
+          scannedMessages: currentExtracted,
+          currentFolderIndex: checkpoint.currentFolderIndex ?? 0,
+          nextCursorUrl: checkpoint.nextCursorUrl,
+          currentStage: `Resuming from checkpoint: Extracting #${currentExtracted + 1} to #${targetGoal} of ${totalDiscovered} attachment emails...`,
+          logMessage: {
+            message: `Resumed from checkpoint: Previously extracted ${currentExtracted}/${totalDiscovered}. Extracting next batch of ${batchSize} attachment emails.`,
+            type: "info",
+          },
+        }
+      );
+
+      // Schedule Phase 2 extraction starting directly from cursor
+      await ctx.scheduler.runAfter(
+        0,
+        (internal as any).communications.emailBackfill.executeMailboxScanBackground,
+        {
+          jobId,
+          mailboxEmail: targetEmail,
+          folder,
+          dryRun: isDryRun,
+          maxMessages: targetGoal,
+          targetAttachmentEmails: targetGoal,
+          processedAttachmentEmails: currentExtracted,
+          folderIndex: checkpoint.currentFolderIndex ?? 0,
+          nextCursorUrl: checkpoint.nextCursorUrl,
+          scannedMessages: currentExtracted,
+        }
+      );
+
+      return { success: true, jobId, resumed: true };
+    }
+
     console.log(
-      `[startMailboxScan] Starting discovery scan for ${targetEmail} (folder: ${folder}, target depth: ${maxMessages}, dryRun: ${isDryRun})...`
+      `[startMailboxScan] Starting fresh discovery scan for ${targetEmail} (folder: ${folder}, target depth: ${maxMessages}, dryRun: ${isDryRun})...`
     );
 
     // 1. Create scan job record in database in discovery phase
@@ -299,14 +417,14 @@ export const startMailboxScan = action({
       }
     );
 
-    return { success: true, jobId };
+    return { success: true, jobId, resumed: false };
   },
 });
 
 /**
  * Phase 1 (Discovery): Fast-scans the target folder(s) using Graph API header-only queries,
- * discovers total attachment-bearing emails to set the true extraction goal, then automatically
- * transitions into Phase 2 extraction.
+ * discovers total attachment-bearing emails to set the true extraction goal, saves persistent
+ * checkpoint in database, then automatically transitions into Phase 2 extraction.
  */
 export const executeMailboxDiscoveryPhase = internalAction({
   args: {
@@ -401,6 +519,18 @@ export const executeMailboxDiscoveryPhase = internalAction({
         maxMessages === -1
           ? totalAttachmentEmailsDiscovered
           : Math.min(maxMessages, totalAttachmentEmailsDiscovered);
+
+      // Persist discovered count in mailboxCheckpoints table
+      await ctx.runMutation(
+        (internal as any).communications.emailBackfillMutations.saveMailboxCheckpoint,
+        {
+          mailboxEmail,
+          folder,
+          totalDiscoveredAttachmentEmails: totalAttachmentEmailsDiscovered,
+          totalDiscoveredEmails: totalEmailsDiscovered,
+          totalExtractedCount: 0,
+        }
+      );
 
       await ctx.runMutation(
         (internal as any).communications.emailBackfillMutations.updateScanProgress,
@@ -503,6 +633,8 @@ export const executeMailboxScanBackground = internalAction({
       const foldersToScan: string[] =
         folder === "all" ? ["inbox", "sentitems"] : [folder];
 
+      let currentFolderCursor: string | null = null;
+
       for (let fIdx = startFolderIndex; fIdx < foldersToScan.length; fIdx++) {
         const currentFolder = foldersToScan[fIdx];
 
@@ -537,6 +669,7 @@ export const executeMailboxScanBackground = internalAction({
         }
 
         while (url && processedAttachmentEmails < targetGoal) {
+          currentFolderCursor = url;
           // Check for job cancellation
           const currentStatus = await ctx.runQuery(
             (internal as any).communications.emailBackfillMutations.checkJobStatus,
@@ -600,6 +733,12 @@ export const executeMailboxScanBackground = internalAction({
               totalAttachmentsInspected++;
               const attachName = att.name || "attachment.dat";
               const contentType = att.contentType || "application/octet-stream";
+
+              // 1. Strict Filename Pre-Filter: Only process files with CV/Resume in their name
+              if (!isCvOrResumeFilename(attachName)) {
+                skippedLowConfidence++;
+                continue;
+              }
 
               // Fetch attachment binary bytes
               const contentUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
@@ -760,6 +899,7 @@ export const executeMailboxScanBackground = internalAction({
           }
 
           url = nextLink;
+          currentFolderCursor = nextLink;
 
           // Check if time threshold reached to yield and self-schedule next batch
           const elapsed = Date.now() - startTime;
@@ -770,8 +910,16 @@ export const executeMailboxScanBackground = internalAction({
             const nextFolderIdx = url ? fIdx : fIdx + 1;
             const nextUrl = url ? url : undefined;
 
-            console.log(
-              `[MailboxScan] Yielding action chunk at ${processedAttachmentEmails}/${targetGoal} attachment emails (${(elapsed / 1000).toFixed(1)}s elapsed). Scheduling next batch...`
+            // Save checkpoint upon yielding so progress and next pagination cursor are persistent
+            await ctx.runMutation(
+              (internal as any).communications.emailBackfillMutations.saveMailboxCheckpoint,
+              {
+                mailboxEmail,
+                folder,
+                totalExtractedCount: processedAttachmentEmails,
+                nextCursorUrl: nextUrl,
+                currentFolderIndex: nextFolderIdx,
+              }
             );
 
             await ctx.runMutation(
@@ -818,6 +966,17 @@ export const executeMailboxScanBackground = internalAction({
           }
         }
       }
+
+      // Save persistent checkpoint on completion
+      await ctx.runMutation(
+        (internal as any).communications.emailBackfillMutations.saveMailboxCheckpoint,
+        {
+          mailboxEmail,
+          folder,
+          totalExtractedCount: processedAttachmentEmails,
+          nextCursorUrl: currentFolderCursor || undefined,
+        }
+      );
 
       // Mark Job as Completed
       await ctx.runMutation((internal as any).communications.emailBackfillMutations.setScanJobStatus, {
