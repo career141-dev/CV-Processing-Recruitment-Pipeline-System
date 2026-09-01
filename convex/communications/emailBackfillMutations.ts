@@ -319,9 +319,12 @@ export const saveMailboxCheckpoint = mutation({
   args: {
     mailboxEmail: v.string(),
     folder: v.optional(v.string()),
-    checkpoint: v.optional(v.any()),
+    currentFolderIndex: v.optional(v.number()),
+    nextCursorUrl: v.optional(v.string()),
+    totalExtractedCount: v.optional(v.number()),
     lastProcessedReceivedAt: v.optional(v.number()),
     lastProcessedMessageId: v.optional(v.string()),
+    checkpoint: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const cleanEmail = args.mailboxEmail.toLowerCase().trim();
@@ -332,7 +335,7 @@ export const saveMailboxCheckpoint = mutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        currentStage: "Checkpoint saved",
+        currentStage: `Processed ${args.totalExtractedCount || 0} messages in ${args.folder || "inbox"}`,
       });
       return existing._id;
     }
