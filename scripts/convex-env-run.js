@@ -57,7 +57,7 @@ if (action === 'dev') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
   const funcName = process.argv[4];
-  const extraArgs = process.argv.slice(5).join(' ');
+  const extraArgs = process.argv.slice(5);
 
   if (!funcName) {
     console.error('[ERROR] Please specify a function name to run. Example: node scripts/convex-env-run.js hosted run candidates/refereeActions:reparseAllHostedReferees');
@@ -65,7 +65,9 @@ if (action === 'dev') {
   }
 
   console.log(`[Convex Runner] Running ${funcName} against ${url}...`);
-  execSync(`npx convex run --url "${url}" --admin-key "${adminKey}" ${funcName} ${extraArgs}`, { stdio: 'inherit' });
+  const { spawnSync } = require('child_process');
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', adminKey, funcName, ...extraArgs], { stdio: 'inherit' });
 
 } else if (action === 'sync-from-hosted') {
   const hostedEnv = getEnvMap('.env.hosted');

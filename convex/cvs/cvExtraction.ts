@@ -263,13 +263,13 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
   try {
     const str = Buffer.from(safeSliceBuffer(buffer)).toString("latin1");
     const textMatches: string[] = [];
-    
+
     // Match text within BT (Begin Text) and ET (End Text) operators
     const btBlocks = str.split("BT");
     for (const block of btBlocks) {
       if (!block.includes("ET")) continue;
       const etContent = block.split("ET")[0];
-      
+
       // Match string literals (text)
       const matches = etContent.match(/\(([^()]+)\)/g);
       if (matches) {
@@ -281,7 +281,7 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
         }
       }
     }
-    
+
     return textMatches.join(" ");
   } catch (err) {
     console.warn("[PDF Raw Stream Fallback] Failed to extract raw text streams:", err);
@@ -1015,7 +1015,7 @@ export async function runCvExtraction(
     const existingCandidate = await ctx.runQuery(internal.candidates.candidates.findCandidateByHash, { fileHash });
     if (existingCandidate) {
       console.log(`[CvExtraction] Duplicate CV detected (hash: ${fileHash}). Candidate ID: ${existingCandidate._id}. Skipping extraction.`);
-      
+
       const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
         cvUploadId,
         status: "processed",
@@ -1210,7 +1210,7 @@ export async function runCvExtraction(
           cappedRawText = cleanedTesseract.length > MAX_RAW_TEXT_LENGTH
             ? cleanedTesseract.slice(0, MAX_RAW_TEXT_LENGTH)
             : cleanedTesseract;
-            
+
           console.log(`[CvExtraction] Tesseract OCR extracted ${cappedRawText.length} characters (>= 50 threshold). Passing text to OpenRouter DeepSeek...`);
           extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
             console.error("[CvExtraction] OpenRouter DeepSeek call on Tesseract OCR text failed:", err.message || err);
@@ -1403,10 +1403,10 @@ export async function runCvExtraction(
 
     // NEVER delete the candidate stub. Preserve the candidate and application in New CVs so no applicant is lost!
     if (candidateId) {
-      const fallbackName = cvUpload?.fileName 
-        ? cvUpload.fileName.replace(/\.[^/.]+$/, "").replace(/[_\-]/g, " ") 
+      const fallbackName = cvUpload?.fileName
+        ? cvUpload.fileName.replace(/\.[^/.]+$/, "").replace(/[_\-]/g, " ")
         : "Applicant";
-        
+
       await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
         fullName: fallbackName,
@@ -1591,7 +1591,7 @@ export const processNextBatch = internalAction({
     const cvUploadIds = [];
     for (const upload of uploads) {
       cvUploadIds.push(upload._id);
-      
+
       // Update status to "queued" and schedule extraction with a 2-second stagger
       await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
         cvUploadId: upload._id,
