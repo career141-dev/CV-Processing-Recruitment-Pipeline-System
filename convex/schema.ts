@@ -741,6 +741,7 @@ export default defineSchema({
     .index("by_sourceChannel", ["sourceChannel"])
     .index("by_firstSourceChannel", ["firstSourceChannel"])
     .index("by_isHealAttempted", ["isHealAttempted"])
+    .index("by_isParsed", ["isParsed"])
     .searchIndex("search_skills", {
       searchField: "skills",
     })
@@ -1461,6 +1462,8 @@ export default defineSchema({
     currentFolderIndex: v.optional(v.number()),
     lastHeartbeatAt: v.optional(v.number()),
     dryRun: v.boolean(),
+    mode: v.optional(v.union(v.literal("manual"), v.literal("background"))),
+    deduplicatedCount: v.optional(v.number()),
     userId: v.optional(v.string()),
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
