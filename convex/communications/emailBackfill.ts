@@ -6,6 +6,8 @@ import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { getGraphToken } from "../lib/graphClient";
 import { extractText } from "../cvs/cvExtraction";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getS3Client } from "../storage/r2";
 
 // ── 1. TWO-STAGE CV DETECTION ENGINE ──────────────────────────────────────────
 
@@ -329,6 +331,9 @@ export const executeMailboxScanBackground = internalAction({
     targetAttachmentEmails: v.optional(v.number()),
     processedAttachmentEmails: v.optional(v.number()),
     folderIndex: v.optional(v.number()),
+    currentFolderId: v.optional(v.string()),
+    lastProcessedMessageId: v.optional(v.string()),
+    lastProcessedReceivedAt: v.optional(v.number()),
     nextCursorUrl: v.optional(v.string()),
     scannedMessages: v.optional(v.number()),
     totalAttachments: v.optional(v.number()),
@@ -337,6 +342,7 @@ export const executeMailboxScanBackground = internalAction({
     skippedLowConfidence: v.optional(v.number()),
     deduplicatedCount: v.optional(v.number()),
     llmCallsCount: v.optional(v.number()),
+    retryCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
@@ -354,6 +360,12 @@ export const executeMailboxScanBackground = internalAction({
     let deduplicatedCount = args.deduplicatedCount || 0;
     let llmCallsCount = args.llmCallsCount || 0;
 
+    let currentFolderId: string | undefined = args.currentFolderId;
+    let lastProcessedMessageId: string | undefined = args.lastProcessedMessageId;
+    let lastProcessedReceivedAt: number | undefined = args.lastProcessedReceivedAt;
+    let currentFolderCursor: string | null = null;
+    let fIdx = startFolderIndex;
+
     try {
       const token = await getGraphToken();
       if (!token) {
@@ -367,10 +379,17 @@ export const executeMailboxScanBackground = internalAction({
           ? await getAvailableMailboxFolders(mailboxEmail, token)
           : [folder];
 
-      let currentFolderCursor: string | null = null;
+      // If resuming with a recorded currentFolderId in "all" mode, align fIdx to match that folder ID
+      if (args.currentFolderId && folder === "all") {
+        const foundIdx = foldersToScan.indexOf(args.currentFolderId);
+        if (foundIdx !== -1) {
+          fIdx = foundIdx;
+        }
+      }
 
-      for (let fIdx = startFolderIndex; fIdx < foldersToScan.length; fIdx++) {
+      for (; fIdx < foldersToScan.length; fIdx++) {
         const currentFolder = foldersToScan[fIdx];
+        currentFolderId = currentFolder;
 
         // Check for cancellation / pause before each folder
         const status = await ctx.runQuery(
@@ -394,6 +413,7 @@ export const executeMailboxScanBackground = internalAction({
             jobId,
             phase: "extracting",
             currentFolderIndex: fIdx,
+            currentFolderId,
             currentStage: `Phase 2: Extracting from ${currentFolder.toUpperCase()} (${processedAttachmentEmails}/${targetGoal} emails)...`,
             logMessage: {
               message: `Extracting attachment emails from folder: ${currentFolder}...`,
@@ -415,11 +435,19 @@ export const executeMailboxScanBackground = internalAction({
 
           let res = await safeGraphFetch(url, token);
 
-          // Fallback if tenant filter is constrained
+          // Fallback if tenant filter is constrained or if nextLink cursor expired
           if (!res || !res.ok) {
-            const fallbackUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
-              mailboxEmail
-            )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15`;
+            let fallbackUrl: string;
+            if (lastProcessedReceivedAt) {
+              // Resilient resumption: Query messages up to the last processed timestamp
+              fallbackUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+                mailboxEmail
+              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15&$filter=hasAttachments eq true and receivedDateTime le ${new Date(lastProcessedReceivedAt).toISOString()}&$orderby=receivedDateTime desc`;
+            } else {
+              fallbackUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+                mailboxEmail
+              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15`;
+            }
             res = await safeGraphFetch(fallbackUrl, token);
           }
 
@@ -445,6 +473,12 @@ export const executeMailboxScanBackground = internalAction({
           for (const message of messages) {
             if (processedAttachmentEmails >= targetGoal) break;
 
+            // Track message metadata for robust pointer resumption
+            lastProcessedMessageId = message.id;
+            if (message.receivedDateTime) {
+              lastProcessedReceivedAt = new Date(message.receivedDateTime).getTime();
+            }
+
             // Check for job cancellation on each message for instant stop responsiveness
             const loopStatus = await ctx.runQuery(
               api.communications.emailBackfillMutations.checkJobStatus,
@@ -459,6 +493,10 @@ export const executeMailboxScanBackground = internalAction({
                   folder,
                   totalExtractedCount: processedAttachmentEmails,
                   nextCursorUrl: currentFolderCursor || undefined,
+                  currentFolderIndex: fIdx,
+                  currentFolderId,
+                  lastProcessedMessageId,
+                  lastProcessedReceivedAt,
                 }
               );
               return;
@@ -496,6 +534,10 @@ export const executeMailboxScanBackground = internalAction({
                     folder,
                     totalExtractedCount: processedAttachmentEmails,
                     nextCursorUrl: currentFolderCursor || undefined,
+                    currentFolderIndex: fIdx,
+                    currentFolderId,
+                    lastProcessedMessageId,
+                    lastProcessedReceivedAt,
                   }
                 );
                 return;
@@ -511,134 +553,186 @@ export const executeMailboxScanBackground = internalAction({
                 continue;
               }
 
-              // Fetch attachment binary bytes
-              const contentUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
-                mailboxEmail
-              )}/messages/${message.id}/attachments/${att.id}`;
-
-              const contentRes = await safeGraphFetch(contentUrl, token);
-              if (!contentRes || !contentRes.ok) continue;
-
-              const contentData = (await contentRes.json()) as any;
-              const contentBytes = contentData.contentBytes;
-              if (!contentBytes) continue;
-
-              // Convert base64 to ArrayBuffer
-              const binaryString = atob(contentBytes);
-              const fileBuffer = new Uint8Array(binaryString.length);
-              for (let i = 0; i < binaryString.length; i++) {
-                fileBuffer[i] = binaryString.charCodeAt(i);
-              }
-
-              // Compute SHA-256 hash
-              const hashBuffer = await crypto.subtle.digest(
-                "SHA-256",
-                fileBuffer.buffer as ArrayBuffer
-              );
-              const fileHash = Array.from(new Uint8Array(hashBuffer))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("");
-
-              // Pre-upload Deduplication Check: Check if this file already exists in cvUploads
-              const isDuplicate = await ctx.runQuery(
-                api.communications.emailBackfillMutations.checkCvDuplicateByHash,
-                { fileHash }
-              );
-
-              if (isDuplicate) {
-                deduplicatedCount++;
-                await ctx.runMutation(
-                  (internal as any).communications.emailBackfillMutations.updateScanProgress,
-                  {
-                    jobId,
-                    phase: "extracting",
-                    scannedMessages: processedAttachmentEmails,
-                    processedAttachmentEmails,
-                    targetAttachmentEmails: targetGoal,
-                    totalAttachments: totalAttachmentsInspected,
-                    classifiedHighConfidence,
-                    flaggedNeedsReview,
-                    skippedLowConfidence,
-                    deduplicatedCount,
-                    llmCallsCount,
-                    logMessage: {
-                      message: `[DUPLICATE CV SKIPPED] ${attachName} already exists in database (SHA-256 match). Skipping re-upload.`,
-                      type: "info",
-                    },
-                  }
-                );
+              // Pre-check attachment size from Graph API metadata (skip oversized non-CV files > 25MB)
+              if (att.size && att.size > 25 * 1024 * 1024) {
+                skippedLowConfidence++;
+                console.warn(`[MailboxScan] Skipping oversized attachment ${attachName} (${Math.round(att.size / (1024 * 1024))}MB)`);
                 continue;
               }
 
-              // Extract text using existing extractText pipeline
-              let rawText = "";
               try {
-                const extracted = await extractText(
-                  fileBuffer.buffer as ArrayBuffer,
-                  contentType,
-                  true,
-                  ctx
-                );
-                rawText = extracted.text || "";
-              } catch (extractErr: any) {
-                console.warn(
-                  `[MailboxScan] Text extraction failed for ${attachName}:`,
-                  extractErr.message
-                );
-              }
+                // Fetch attachment binary bytes
+                const contentUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+                  mailboxEmail
+                )}/messages/${message.id}/attachments/${att.id}`;
 
-              // Stage 2: 23-Keyword Check (at least 3 keywords required)
-              const keywordResult = checkCvKeywords(rawText);
+                const contentRes = await safeGraphFetch(contentUrl, token);
+                if (!contentRes || !contentRes.ok) continue;
 
-              if (keywordResult.isCv) {
-                // Accepted as genuine CV (>= 3 keywords found)
-                classifiedHighConfidence++;
+                const contentData = (await contentRes.json()) as any;
+                const contentBytes = contentData.contentBytes;
+                if (!contentBytes) continue;
 
-                if (!dryRun) {
-                  // Upload to R2
-                  const s3Key = await ctx.runAction(internal.storage.r2.uploadBufferToR2, {
-                    fileName: attachName,
-                    contentType: contentType || "application/pdf",
-                    base64Data: contentBytes,
-                  });
-
-                  // Trigger Agent 1 -> Agent 6 Ingestion Pipeline
-                  await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
-                    sourceChannel: "email",
-                    rawSender: senderEmail,
-                    s3Key,
-                    storageProvider: "r2",
-                    fileHash,
-                    fileName: attachName,
-                    fileType: contentType || "application/pdf",
-                    fileSizeBytes: fileBuffer.length,
-                    metaCampaignId: `Email — Backfill — ${mailboxEmail}/${currentFolder}`,
-                  });
+                // Convert base64 to ArrayBuffer
+                const binaryString = atob(contentBytes);
+                const fileBuffer = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  fileBuffer[i] = binaryString.charCodeAt(i);
                 }
 
-                await ctx.runMutation(
-                  (internal as any).communications.emailBackfillMutations.updateScanProgress,
-                  {
-                    jobId,
-                    phase: "extracting",
-                    scannedMessages: processedAttachmentEmails,
-                    processedAttachmentEmails,
-                    targetAttachmentEmails: targetGoal,
-                    totalAttachments: totalAttachmentsInspected,
-                    classifiedHighConfidence,
-                    flaggedNeedsReview,
-                    skippedLowConfidence,
-                    deduplicatedCount,
-                    llmCallsCount,
-                    logMessage: {
-                      message: `[MATCH CV] ${attachName} (${keywordResult.matchedCount} keywords matched: ${keywordResult.matchedKeywords.slice(0, 4).join(", ")}${keywordResult.matchedKeywords.length > 4 ? "..." : ""}) from "${subject.slice(0, 30)}..." -> ${dryRun ? "Dry Run (Queued)" : "Ingested to Agent 1"}`,
-                      type: "success",
-                    },
-                  }
+                // Compute SHA-256 hash
+                const hashBuffer = await crypto.subtle.digest(
+                  "SHA-256",
+                  fileBuffer.buffer as ArrayBuffer
                 );
-              } else {
-                // Rejected: not a CV (< 3 keywords) -> notACv: true
-                skippedLowConfidence++;
+                const fileHash = Array.from(new Uint8Array(hashBuffer))
+                  .map((b) => b.toString(16).padStart(2, "0"))
+                  .join("");
+
+                // Pre-upload Deduplication Check: Check if this file already exists in cvUploads
+                const isDuplicate = await ctx.runQuery(
+                  api.communications.emailBackfillMutations.checkCvDuplicateByHash,
+                  { fileHash }
+                );
+
+                if (isDuplicate) {
+                  deduplicatedCount++;
+                  await ctx.runMutation(
+                    (internal as any).communications.emailBackfillMutations.updateScanProgress,
+                    {
+                      jobId,
+                      phase: "extracting",
+                      scannedMessages: processedAttachmentEmails,
+                      processedAttachmentEmails,
+                      targetAttachmentEmails: targetGoal,
+                      totalAttachments: totalAttachmentsInspected,
+                      classifiedHighConfidence,
+                      flaggedNeedsReview,
+                      skippedLowConfidence,
+                      deduplicatedCount,
+                      llmCallsCount,
+                      currentFolderIndex: fIdx,
+                      currentFolderId,
+                      lastProcessedMessageId,
+                      lastProcessedReceivedAt,
+                      logMessage: {
+                        message: `[DUPLICATE CV SKIPPED] ${attachName} already exists in database (SHA-256 match). Skipping re-upload.`,
+                        type: "info",
+                      },
+                    }
+                  );
+                  continue;
+                }
+
+                // Extract text using existing extractText pipeline
+                let rawText = "";
+                try {
+                  const extracted = await extractText(
+                    fileBuffer.buffer as ArrayBuffer,
+                    contentType,
+                    true,
+                    ctx
+                  );
+                  rawText = extracted.text || "";
+                } catch (extractErr: any) {
+                  console.warn(
+                    `[MailboxScan] Text extraction failed for ${attachName}:`,
+                    extractErr.message
+                  );
+                }
+
+                // Stage 2: 23-Keyword Check (at least 3 keywords required)
+                const keywordResult = checkCvKeywords(rawText);
+
+                if (keywordResult.isCv) {
+                  // Accepted as genuine CV (>= 3 keywords found)
+                  classifiedHighConfidence++;
+
+                  if (!dryRun) {
+                    // Direct Cloudflare R2 Upload via AWS SDK (in-memory, avoids Convex IPC body buffer limit)
+                    const s3 = getS3Client();
+                    const safeName = attachName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+                    const date = new Date();
+                    const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+                    const s3Key = `cvs/${yearMonth}/${Date.now()}-${safeName}`;
+
+                    const uploadCmd = new PutObjectCommand({
+                      Bucket: process.env.R2_BUCKET_NAME!,
+                      Key: s3Key,
+                      ContentType: contentType || "application/pdf",
+                      Body: Buffer.from(fileBuffer),
+                    });
+
+                    await s3.send(uploadCmd);
+
+                    // Trigger Agent 1 -> Agent 6 Ingestion Pipeline
+                    await ctx.runMutation(api.pipeline.ingestion.processCvIngestion, {
+                      sourceChannel: "email",
+                      rawSender: senderEmail,
+                      s3Key,
+                      storageProvider: "r2",
+                      fileHash,
+                      fileName: attachName,
+                      fileType: contentType || "application/pdf",
+                      fileSizeBytes: fileBuffer.length,
+                      metaCampaignId: `Email — Backfill — ${mailboxEmail}/${currentFolder}`,
+                    });
+                  }
+
+                  await ctx.runMutation(
+                    (internal as any).communications.emailBackfillMutations.updateScanProgress,
+                    {
+                      jobId,
+                      phase: "extracting",
+                      scannedMessages: processedAttachmentEmails,
+                      processedAttachmentEmails,
+                      targetAttachmentEmails: targetGoal,
+                      totalAttachments: totalAttachmentsInspected,
+                      classifiedHighConfidence,
+                      flaggedNeedsReview,
+                      skippedLowConfidence,
+                      deduplicatedCount,
+                      llmCallsCount,
+                      currentFolderIndex: fIdx,
+                      currentFolderId,
+                      lastProcessedMessageId,
+                      lastProcessedReceivedAt,
+                      logMessage: {
+                        message: `[MATCH CV] ${attachName} (${keywordResult.matchedCount} keywords matched: ${keywordResult.matchedKeywords.slice(0, 4).join(", ")}${keywordResult.matchedKeywords.length > 4 ? "..." : ""}) from "${subject.slice(0, 30)}..." -> ${dryRun ? "Dry Run (Queued)" : "Ingested to Agent 1"}`,
+                        type: "success",
+                      },
+                    }
+                  );
+                } else {
+                  // Rejected: not a CV (< 3 keywords) -> notACv: true
+                  skippedLowConfidence++;
+                  await ctx.runMutation(
+                    (internal as any).communications.emailBackfillMutations.updateScanProgress,
+                    {
+                      jobId,
+                      phase: "extracting",
+                      scannedMessages: processedAttachmentEmails,
+                      processedAttachmentEmails,
+                      targetAttachmentEmails: targetGoal,
+                      totalAttachments: totalAttachmentsInspected,
+                      classifiedHighConfidence,
+                      flaggedNeedsReview,
+                      skippedLowConfidence,
+                      deduplicatedCount,
+                      llmCallsCount,
+                      currentFolderIndex: fIdx,
+                      currentFolderId,
+                      lastProcessedMessageId,
+                      lastProcessedReceivedAt,
+                      logMessage: {
+                        message: `[SKIPPED non-CV] ${attachName} (${keywordResult.matchedCount}/3 keywords: ${keywordResult.matchedKeywords.join(", ") || "none"}) -> notACv: true`,
+                        type: "info",
+                      },
+                    }
+                  );
+                }
+              } catch (attErr: any) {
+                console.warn(`[MailboxScan] Error processing individual attachment ${attachName}:`, attErr?.message || attErr);
                 await ctx.runMutation(
                   (internal as any).communications.emailBackfillMutations.updateScanProgress,
                   {
@@ -653,8 +747,12 @@ export const executeMailboxScanBackground = internalAction({
                     skippedLowConfidence,
                     deduplicatedCount,
                     llmCallsCount,
+                    currentFolderIndex: fIdx,
+                    currentFolderId,
+                    lastProcessedMessageId,
+                    lastProcessedReceivedAt,
                     logMessage: {
-                      message: `[SKIPPED non-CV] ${attachName} (${keywordResult.matchedCount}/3 keywords: ${keywordResult.matchedKeywords.join(", ") || "none"}) -> notACv: true`,
+                      message: `[ATTACHMENT SKIPPED] Error processing ${attachName}: ${attErr?.message || attErr}`,
                       type: "info",
                     },
                   }
@@ -666,6 +764,21 @@ export const executeMailboxScanBackground = internalAction({
           url = nextLink;
           currentFolderCursor = nextLink;
 
+          // Continually persist checkpoint on each page transition for zero-loss resumption
+          await ctx.runMutation(
+            api.communications.emailBackfillMutations.saveMailboxCheckpoint,
+            {
+              mailboxEmail,
+              folder,
+              totalExtractedCount: processedAttachmentEmails,
+              nextCursorUrl: currentFolderCursor || undefined,
+              currentFolderIndex: fIdx,
+              currentFolderId,
+              lastProcessedMessageId,
+              lastProcessedReceivedAt,
+            }
+          );
+
           // Check if time threshold reached to yield and self-schedule next batch
           const elapsed = Date.now() - startTime;
           const hasMoreInFolder = url !== null && processedAttachmentEmails < targetGoal;
@@ -673,6 +786,7 @@ export const executeMailboxScanBackground = internalAction({
 
           if (elapsed >= MAX_ACTION_DURATION_MS && (hasMoreInFolder || hasMoreFolders)) {
             const nextFolderIdx = url ? fIdx : fIdx + 1;
+            const nextFolderId = url ? currentFolder : foldersToScan[nextFolderIdx];
             const nextUrl = url ? url : undefined;
 
             // Save checkpoint upon yielding so progress and next pagination cursor are persistent
@@ -684,6 +798,9 @@ export const executeMailboxScanBackground = internalAction({
                 totalExtractedCount: processedAttachmentEmails,
                 nextCursorUrl: nextUrl,
                 currentFolderIndex: nextFolderIdx,
+                currentFolderId: nextFolderId,
+                lastProcessedMessageId,
+                lastProcessedReceivedAt,
               }
             );
 
@@ -702,6 +819,9 @@ export const executeMailboxScanBackground = internalAction({
                 deduplicatedCount,
                 llmCallsCount,
                 currentFolderIndex: nextFolderIdx,
+                currentFolderId: nextFolderId,
+                lastProcessedMessageId,
+                lastProcessedReceivedAt,
                 nextCursorUrl: nextUrl,
                 currentStage: `Phase 2: Extracting batch (${processedAttachmentEmails}/${targetGoal} attachment emails processed)...`,
               }
@@ -719,6 +839,9 @@ export const executeMailboxScanBackground = internalAction({
                 targetAttachmentEmails: targetGoal,
                 processedAttachmentEmails,
                 folderIndex: nextFolderIdx,
+                currentFolderId: nextFolderId,
+                lastProcessedMessageId,
+                lastProcessedReceivedAt,
                 nextCursorUrl: nextUrl,
                 scannedMessages: processedAttachmentEmails,
                 totalAttachments: totalAttachmentsInspected,
@@ -727,6 +850,7 @@ export const executeMailboxScanBackground = internalAction({
                 skippedLowConfidence,
                 deduplicatedCount,
                 llmCallsCount,
+                retryCount: 0,
               }
             );
             return;
@@ -742,6 +866,10 @@ export const executeMailboxScanBackground = internalAction({
           folder,
           totalExtractedCount: processedAttachmentEmails,
           nextCursorUrl: currentFolderCursor || undefined,
+          currentFolderIndex: fIdx,
+          currentFolderId,
+          lastProcessedMessageId,
+          lastProcessedReceivedAt,
         }
       );
 
@@ -754,6 +882,10 @@ export const executeMailboxScanBackground = internalAction({
         processedAttachmentEmails,
         targetAttachmentEmails: targetGoal,
         deduplicatedCount,
+        currentFolderIndex: fIdx,
+        currentFolderId,
+        lastProcessedMessageId,
+        lastProcessedReceivedAt,
         currentStage: `Scan completed successfully (${processedAttachmentEmails} attachment emails extracted).`,
         logMessage: {
           message: `Scan finished: ${processedAttachmentEmails} attachment emails extracted, ${totalAttachmentsInspected} attachments evaluated (${classifiedHighConfidence} matched CVs, ${deduplicatedCount} duplicates skipped, ${flaggedNeedsReview} needs review, ${skippedLowConfidence} non-CV skipped).`,
@@ -761,13 +893,118 @@ export const executeMailboxScanBackground = internalAction({
         },
       });
     } catch (err: any) {
-      console.error("[MailboxScan Critical Error]:", err);
+      console.error("[MailboxScan Exception Handler]:", err);
+
+      // 1. Immediately persist whatever progress was achieved before the crash
+      try {
+        await ctx.runMutation(
+          api.communications.emailBackfillMutations.saveMailboxCheckpoint,
+          {
+            mailboxEmail,
+            folder,
+            totalExtractedCount: processedAttachmentEmails,
+            nextCursorUrl: currentFolderCursor || undefined,
+            currentFolderIndex: fIdx,
+            currentFolderId,
+            lastProcessedMessageId,
+            lastProcessedReceivedAt,
+          }
+        );
+      } catch (cpErr) {
+        console.warn("[MailboxScan] Failed to save fallback checkpoint on error:", cpErr);
+      }
+
+      // 2. Check if the job was explicitly stopped by the user from the UI
+      try {
+        const job = await ctx.runQuery(
+          (internal as any).communications.emailBackfillMutations.getScanJob,
+          { jobId }
+        );
+
+        if (job?.status === "stopped" || job?.userStopped) {
+          console.log(`[MailboxScan] Job ${jobId} was explicitly stopped by user. Skipping automatic restart.`);
+          return;
+        }
+
+        // 3. For background runs, trigger automatic restart with exponential backoff
+        if (job?.mode === "background" || !job?.mode) {
+          const currentRetry = (args.retryCount || 0) + 1;
+          const backoffMs = Math.min(60000, 5000 * Math.pow(2, Math.min(currentRetry - 1, 4)));
+
+          console.warn(
+            `[MailboxScan Auto-Recovery] Transient error encountered on job ${jobId}. Retrying in ${Math.round(
+              backoffMs / 1000
+            )}s (attempt #${currentRetry}). Error:`,
+            err?.message || err
+          );
+
+          await ctx.runMutation(
+            (internal as any).communications.emailBackfillMutations.setScanJobStatus,
+            {
+              jobId,
+              status: "retrying",
+              phase: "retrying",
+              retryCount: currentRetry,
+              errorMessage: err?.message || String(err),
+              scannedMessages: processedAttachmentEmails,
+              processedAttachmentEmails,
+              targetAttachmentEmails: targetGoal,
+              deduplicatedCount,
+              currentFolderIndex: fIdx,
+              currentFolderId,
+              lastProcessedMessageId,
+              lastProcessedReceivedAt,
+              currentStage: `[Auto-Restart #${currentRetry}] Connection error (${(err?.message || String(err)).slice(0, 60)}). Resuming in ${Math.round(backoffMs / 1000)}s from email #${processedAttachmentEmails + 1}...`,
+              logMessage: {
+                message: `[AUTO-RECOVERY] Interruption encountered: ${err?.message || err}. Automatically resuming extraction from email #${processedAttachmentEmails + 1} in ${Math.round(backoffMs / 1000)}s (attempt #${currentRetry})...`,
+                type: "warning",
+              },
+            }
+          );
+
+          await ctx.scheduler.runAfter(
+            backoffMs,
+            (internal as any).communications.emailBackfill.executeMailboxScanBackground,
+            {
+              jobId,
+              mailboxEmail,
+              folder,
+              dryRun,
+              maxMessages: targetGoal,
+              targetAttachmentEmails: targetGoal,
+              processedAttachmentEmails,
+              folderIndex: fIdx,
+              currentFolderId,
+              lastProcessedMessageId,
+              lastProcessedReceivedAt,
+              nextCursorUrl: currentFolderCursor || undefined,
+              scannedMessages: processedAttachmentEmails,
+              totalAttachments: totalAttachmentsInspected,
+              classifiedHighConfidence,
+              flaggedNeedsReview,
+              skippedLowConfidence,
+              deduplicatedCount,
+              llmCallsCount,
+              retryCount: currentRetry,
+            }
+          );
+          return;
+        }
+      } catch (recoveryErr) {
+        console.error("[MailboxScan Auto-Recovery Critical Failure]:", recoveryErr);
+      }
+
+      // 4. Default fallback: mark as error if manual mode or unrecoverable
       await ctx.runMutation((internal as any).communications.emailBackfillMutations.setScanJobStatus, {
         jobId,
         status: "error",
         phase: "error",
         errorMessage: err?.message || String(err),
         currentStage: "Scan failed with error.",
+        currentFolderIndex: fIdx,
+        currentFolderId,
+        lastProcessedMessageId,
+        lastProcessedReceivedAt,
         logMessage: {
           message: `Scan halted due to error: ${err?.message || err}`,
           type: "error",

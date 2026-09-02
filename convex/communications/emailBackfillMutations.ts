@@ -82,7 +82,8 @@ export const updateScanProgress = mutation({
         v.literal("done"),
         v.literal("error"),
         v.literal("stopped"),
-        v.literal("paused")
+        v.literal("paused"),
+        v.literal("retrying")
       )
     ),
     scannedMessages: v.optional(v.number()),
@@ -100,6 +101,11 @@ export const updateScanProgress = mutation({
     currentStage: v.optional(v.string()),
     nextCursorUrl: v.optional(v.string()),
     currentFolderIndex: v.optional(v.number()),
+    currentFolderId: v.optional(v.string()),
+    lastProcessedMessageId: v.optional(v.string()),
+    lastProcessedReceivedAt: v.optional(v.number()),
+    retryCount: v.optional(v.number()),
+    userStopped: v.optional(v.boolean()),
     logMessage: v.optional(
       v.object({
         message: v.string(),
@@ -130,6 +136,11 @@ export const updateScanProgress = mutation({
     if (args.currentStage !== undefined) patch.currentStage = args.currentStage;
     if (args.nextCursorUrl !== undefined) patch.nextCursorUrl = args.nextCursorUrl;
     if (args.currentFolderIndex !== undefined) patch.currentFolderIndex = args.currentFolderIndex;
+    if (args.currentFolderId !== undefined) patch.currentFolderId = args.currentFolderId;
+    if (args.lastProcessedMessageId !== undefined) patch.lastProcessedMessageId = args.lastProcessedMessageId;
+    if (args.lastProcessedReceivedAt !== undefined) patch.lastProcessedReceivedAt = args.lastProcessedReceivedAt;
+    if (args.retryCount !== undefined) patch.retryCount = args.retryCount;
+    if (args.userStopped !== undefined) patch.userStopped = args.userStopped;
 
     if (args.logMessage) {
       const currentLogs = job.recentLogs || [];
@@ -160,7 +171,8 @@ export const setScanJobStatus = mutation({
       v.literal("paused"),
       v.literal("done"),
       v.literal("error"),
-      v.literal("stopped")
+      v.literal("stopped"),
+      v.literal("retrying")
     ),
     phase: v.optional(
       v.union(
@@ -169,13 +181,19 @@ export const setScanJobStatus = mutation({
         v.literal("done"),
         v.literal("error"),
         v.literal("stopped"),
-        v.literal("paused")
+        v.literal("paused"),
+        v.literal("retrying")
       )
     ),
     errorMessage: v.optional(v.string()),
     currentStage: v.optional(v.string()),
     nextCursorUrl: v.optional(v.string()),
     currentFolderIndex: v.optional(v.number()),
+    currentFolderId: v.optional(v.string()),
+    lastProcessedMessageId: v.optional(v.string()),
+    lastProcessedReceivedAt: v.optional(v.number()),
+    retryCount: v.optional(v.number()),
+    userStopped: v.optional(v.boolean()),
     discoveredTotalEmails: v.optional(v.number()),
     discoveredAttachmentEmails: v.optional(v.number()),
     targetAttachmentEmails: v.optional(v.number()),
@@ -214,6 +232,11 @@ export const setScanJobStatus = mutation({
     if (args.currentStage !== undefined) patch.currentStage = args.currentStage;
     if (args.nextCursorUrl !== undefined) patch.nextCursorUrl = args.nextCursorUrl;
     if (args.currentFolderIndex !== undefined) patch.currentFolderIndex = args.currentFolderIndex;
+    if (args.currentFolderId !== undefined) patch.currentFolderId = args.currentFolderId;
+    if (args.lastProcessedMessageId !== undefined) patch.lastProcessedMessageId = args.lastProcessedMessageId;
+    if (args.lastProcessedReceivedAt !== undefined) patch.lastProcessedReceivedAt = args.lastProcessedReceivedAt;
+    if (args.retryCount !== undefined) patch.retryCount = args.retryCount;
+    if (args.userStopped !== undefined) patch.userStopped = args.userStopped;
     if (args.discoveredTotalEmails !== undefined) patch.discoveredTotalEmails = args.discoveredTotalEmails;
     if (args.discoveredAttachmentEmails !== undefined) patch.discoveredAttachmentEmails = args.discoveredAttachmentEmails;
     if (args.targetAttachmentEmails !== undefined) patch.targetAttachmentEmails = args.targetAttachmentEmails;
@@ -262,6 +285,7 @@ export const requestJobControl = mutation({
     if (args.action === "stop" || args.action === "reset") {
       await ctx.db.patch(args.jobId, {
         status: "stopped",
+        userStopped: true,
         completedAt: Date.now(),
         currentStage: "Scan stopped by user.",
         lastHeartbeatAt: Date.now(),
@@ -290,6 +314,9 @@ export const requestJobControl = mutation({
           totalExtractedCount: latestCount,
           nextCursorUrl: job.nextCursorUrl || existing.nextCursorUrl,
           currentFolderIndex: job.currentFolderIndex ?? existing.currentFolderIndex,
+          currentFolderId: job.currentFolderId || existing.currentFolderId,
+          lastProcessedMessageId: job.lastProcessedMessageId || existing.lastProcessedMessageId,
+          lastProcessedReceivedAt: job.lastProcessedReceivedAt || existing.lastProcessedReceivedAt,
           lastExtractedAt: Date.now(),
           updatedAt: Date.now(),
         });
@@ -314,6 +341,7 @@ export const requestJobControl = mutation({
     } else if (args.action === "resume") {
       await ctx.db.patch(args.jobId, {
         status: "running",
+        userStopped: false,
         currentStage: "Resuming scan...",
         lastHeartbeatAt: Date.now(),
         recentLogs: [
@@ -339,6 +367,9 @@ export const requestJobControl = mutation({
           targetAttachmentEmails: job.targetAttachmentEmails || job.totalMessages || 250,
           processedAttachmentEmails: job.processedAttachmentEmails || job.scannedMessages || 0,
           folderIndex: job.currentFolderIndex ?? 0,
+          currentFolderId: job.currentFolderId,
+          lastProcessedMessageId: job.lastProcessedMessageId,
+          lastProcessedReceivedAt: job.lastProcessedReceivedAt,
           nextCursorUrl: job.nextCursorUrl,
           scannedMessages: job.scannedMessages || 0,
           totalAttachments: job.totalAttachments || 0,
@@ -452,6 +483,7 @@ export const saveMailboxCheckpoint = mutation({
     totalExtractedCount: v.optional(v.number()),
     nextCursorUrl: v.optional(v.string()),
     currentFolderIndex: v.optional(v.number()),
+    currentFolderId: v.optional(v.string()),
     checkpoint: v.optional(v.any()),
     lastProcessedMessageId: v.optional(v.string()),
     lastProcessedReceivedAt: v.optional(v.float64()),
@@ -478,6 +510,12 @@ export const saveMailboxCheckpoint = mutation({
         nextCursorUrl: args.nextCursorUrl !== undefined ? args.nextCursorUrl : existing.nextCursorUrl,
         currentFolderIndex:
           args.currentFolderIndex !== undefined ? args.currentFolderIndex : existing.currentFolderIndex,
+        currentFolderId:
+          args.currentFolderId !== undefined ? args.currentFolderId : existing.currentFolderId,
+        lastProcessedMessageId:
+          args.lastProcessedMessageId !== undefined ? args.lastProcessedMessageId : existing.lastProcessedMessageId,
+        lastProcessedReceivedAt:
+          args.lastProcessedReceivedAt !== undefined ? args.lastProcessedReceivedAt : existing.lastProcessedReceivedAt,
         lastExtractedAt: now,
         updatedAt: now,
       });
@@ -491,6 +529,9 @@ export const saveMailboxCheckpoint = mutation({
         totalExtractedCount: args.totalExtractedCount ?? 0,
         nextCursorUrl: args.nextCursorUrl,
         currentFolderIndex: args.currentFolderIndex ?? 0,
+        currentFolderId: args.currentFolderId,
+        lastProcessedMessageId: args.lastProcessedMessageId,
+        lastProcessedReceivedAt: args.lastProcessedReceivedAt,
         lastDiscoveredAt: now,
         lastExtractedAt: now,
         updatedAt: now,
@@ -645,8 +686,13 @@ export const startMailboxScan = mutation({
         targetAttachmentEmails: targetGoal,
         processedAttachmentEmails: currentExtracted,
         currentFolderIndex: checkpoint.currentFolderIndex ?? 0,
+        currentFolderId: checkpoint.currentFolderId,
+        lastProcessedMessageId: checkpoint.lastProcessedMessageId,
+        lastProcessedReceivedAt: checkpoint.lastProcessedReceivedAt,
         nextCursorUrl: checkpoint.nextCursorUrl,
         lastHeartbeatAt: now,
+        retryCount: 0,
+        userStopped: false,
         currentStage: `Resuming from checkpoint: Extracting #${currentExtracted + 1} to #${targetGoal} of ${totalDiscovered} attachment emails...`,
         dryRun: isDryRun,
         mode: runMode,
@@ -674,8 +720,12 @@ export const startMailboxScan = mutation({
           targetAttachmentEmails: targetGoal,
           processedAttachmentEmails: currentExtracted,
           folderIndex: checkpoint.currentFolderIndex ?? 0,
+          currentFolderId: checkpoint.currentFolderId,
+          lastProcessedMessageId: checkpoint.lastProcessedMessageId,
+          lastProcessedReceivedAt: checkpoint.lastProcessedReceivedAt,
           nextCursorUrl: checkpoint.nextCursorUrl,
           scannedMessages: currentExtracted,
+          retryCount: 0,
         }
       );
 
@@ -701,6 +751,8 @@ export const startMailboxScan = mutation({
       targetAttachmentEmails: 0,
       processedAttachmentEmails: 0,
       currentFolderIndex: 0,
+      retryCount: 0,
+      userStopped: false,
       lastHeartbeatAt: now,
       currentStage: "Discovering attachment-bearing emails in mailbox...",
       dryRun: isDryRun,
@@ -747,11 +799,108 @@ export const getActiveBackgroundScan = query({
       .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", email))
       .filter((q) =>
         q.and(
-          q.eq(q.field("status"), "running"),
+          q.or(
+            q.eq(q.field("status"), "running"),
+            q.eq(q.field("status"), "retrying")
+          ),
           q.eq(q.field("mode"), "background")
         )
       )
       .first();
     return active;
+  },
+});
+
+/**
+ * Internal watchdog mutation: Recovers orphaned or stalled background scan jobs.
+ * Runs on cron or interval to ensure 24/7 self-healing of interrupted extractions.
+ */
+export const recoverStalledMailboxScans = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
+    
+    // Find background jobs that appear running or retrying but have no recent heartbeat
+    const activeJobs = await ctx.db
+      .query("mailboxScanJobs")
+      .withIndex("by_status", (q) => q.eq("status", "running"))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("mode"), "background"),
+          q.neq(q.field("userStopped"), true)
+        )
+      )
+      .collect();
+
+    const retryingJobs = await ctx.db
+      .query("mailboxScanJobs")
+      .withIndex("by_status", (q) => q.eq("status", "retrying"))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("mode"), "background"),
+          q.neq(q.field("userStopped"), true)
+        )
+      )
+      .collect();
+
+    const candidateJobs = [...activeJobs, ...retryingJobs];
+    let recoveredCount = 0;
+
+    for (const job of candidateJobs) {
+      if (job.lastHeartbeatAt && job.lastHeartbeatAt < threeMinutesAgo) {
+        console.warn(`[Watchdog] Stalled background scan detected for job ${job._id} (${job.mailboxEmail}). Last heartbeat: ${new Date(job.lastHeartbeatAt).toISOString()}`);
+
+        const checkpoint = await ctx.db
+          .query("mailboxCheckpoints")
+          .withIndex("by_mailbox_folder", (q) =>
+            q.eq("mailboxEmail", job.mailboxEmail).eq("folder", job.folder)
+          )
+          .first();
+
+        const currentExtracted = checkpoint?.totalExtractedCount ?? job.processedAttachmentEmails ?? job.scannedMessages ?? 0;
+        const nextRetryCount = (job.retryCount || 0) + 1;
+
+        await ctx.db.patch(job._id, {
+          status: "running",
+          phase: "extracting",
+          lastHeartbeatAt: Date.now(),
+          retryCount: nextRetryCount,
+          currentStage: `[Watchdog Auto-Recovery] Resuming background scan from email #${currentExtracted + 1}...`,
+          recentLogs: [
+            ...(job.recentLogs || []),
+            {
+              timestamp: Date.now(),
+              message: `[WATCHDOG AUTO-RECOVERY] Detected stalled background task (no heartbeat for >3m). Resuming extraction from email #${currentExtracted + 1} (attempt #${nextRetryCount}).`,
+              type: "warning",
+            },
+          ].slice(-50),
+        });
+
+        await ctx.scheduler.runAfter(
+          1000,
+          (internal as any).communications.emailBackfill.executeMailboxScanBackground,
+          {
+            jobId: job._id,
+            mailboxEmail: job.mailboxEmail,
+            folder: job.folder,
+            dryRun: job.dryRun,
+            maxMessages: job.totalMessages || 250,
+            targetAttachmentEmails: job.targetAttachmentEmails || job.totalMessages || 250,
+            processedAttachmentEmails: currentExtracted,
+            folderIndex: checkpoint?.currentFolderIndex ?? (job.currentFolderIndex ?? 0),
+            currentFolderId: checkpoint?.currentFolderId ?? job.currentFolderId,
+            lastProcessedMessageId: checkpoint?.lastProcessedMessageId ?? job.lastProcessedMessageId,
+            lastProcessedReceivedAt: checkpoint?.lastProcessedReceivedAt ?? job.lastProcessedReceivedAt,
+            nextCursorUrl: checkpoint?.nextCursorUrl ?? job.nextCursorUrl,
+            scannedMessages: currentExtracted,
+            retryCount: nextRetryCount,
+          }
+        );
+
+        recoveredCount++;
+      }
+    }
+
+    return { success: true, recoveredCount };
   },
 });

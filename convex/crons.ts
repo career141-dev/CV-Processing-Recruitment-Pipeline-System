@@ -817,4 +817,10 @@ crons.interval(
   internal.cvs.healerActions.healNextUnparsedCandidate
 );
 
+crons.interval(
+  "watchdog-mailbox-scan-healer",
+  { minutes: 5 },
+  internal.communications.emailBackfillMutations.recoverStalledMailboxScans
+);
+
 export default crons;

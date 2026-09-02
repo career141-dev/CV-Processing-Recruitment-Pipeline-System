@@ -245,6 +245,18 @@ export default function MailboxScannerCard() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {!isRunning && !isBackgroundRunning && checkpoint.totalDiscoveredAttachmentEmails - checkpoint.totalExtractedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => handleStartScan(false, "background")}
+                disabled={isStarting}
+                className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                title="Resume extraction as a background server process"
+              >
+                <Play className="w-3 h-3 fill-white" />
+                Resume Background
+              </button>
+            )}
             <button
               type="button"
               onClick={handleResetCheckpoint}
@@ -541,15 +553,41 @@ export default function MailboxScannerCard() {
                   <Square className="w-3.5 h-3.5 fill-white" /> Stop Background Scan
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => handleStartScan(false, "background")}
-                  disabled={isStarting}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
-                >
-                  <Server className="w-3.5 h-3.5" />
-                  {isStarting ? "Starting Background Task..." : "Start Background Scan"}
-                </button>
+                <>
+                  {checkpoint && checkpoint.totalDiscoveredAttachmentEmails > 0 && checkpoint.totalDiscoveredAttachmentEmails - checkpoint.totalExtractedCount > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleStartScan(false, "background")}
+                        disabled={isStarting}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
+                        title={`Resume continuous background extraction from email #${checkpoint.totalExtractedCount + 1}`}
+                      >
+                        <Play className="w-3.5 h-3.5 fill-white" />
+                        {isStarting ? "Resuming Background Scan..." : `Resume Background (#${checkpoint.totalExtractedCount + 1} of ${checkpoint.totalDiscoveredAttachmentEmails})`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStartScan(true, "background")}
+                        disabled={isStarting}
+                        className="px-3 py-2 rounded-lg border border-border text-text-secondary hover:text-text-primary text-xs font-semibold transition"
+                        title="Force re-discovery across entire mailbox and start from beginning"
+                      >
+                        Start Fresh (From Start)
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleStartScan(false, "background")}
+                      disabled={isStarting}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
+                    >
+                      <Server className="w-3.5 h-3.5" />
+                      {isStarting ? "Starting Background Task..." : "Start Background Scan"}
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}
@@ -568,6 +606,8 @@ export default function MailboxScannerCard() {
                     ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                     : latestJob.status === "running"
                     ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                    : latestJob.status === "retrying"
+                    ? "bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 animate-pulse"
                     : latestJob.status === "paused"
                     ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
                     : "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20"
@@ -575,6 +615,8 @@ export default function MailboxScannerCard() {
               >
                 {latestJob.phase === "discovery" && latestJob.status === "running"
                   ? "PHASE 1: DISCOVERING"
+                  : latestJob.status === "retrying"
+                  ? `AUTO-RECOVERING (RETRY #${latestJob.retryCount || 1})`
                   : `STATUS: ${latestJob.status.toUpperCase()}`}
               </span>
 
