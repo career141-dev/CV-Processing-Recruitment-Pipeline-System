@@ -64,10 +64,14 @@ if (action === 'dev') {
     process.exit(1);
   }
 
+  const env = { ...process.env, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey, CONVEX_SELF_HOSTED_URL: url };
   console.log(`[Convex Runner] Running ${funcName} against ${url}...`);
   const { spawnSync } = require('child_process');
   const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', adminKey, funcName, ...extraArgs], { stdio: 'inherit' });
+  const res = spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', adminKey, funcName, ...extraArgs], { stdio: 'inherit', env, shell: true });
+  if (res.status !== 0) {
+    process.exit(res.status || 1);
+  }
 
 } else if (action === 'sync-from-hosted') {
   const hostedEnv = getEnvMap('.env.hosted');
