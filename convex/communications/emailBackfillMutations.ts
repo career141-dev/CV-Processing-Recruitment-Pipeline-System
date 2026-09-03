@@ -458,14 +458,15 @@ export const checkJobStatus = query({
 export const getMailboxCheckpoint = query({
   args: {
     mailboxEmail: v.string(),
-    folder: v.string(),
+    folder: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const cleanEmail = args.mailboxEmail.toLowerCase().trim();
+    const folder = args.folder || "all";
     return await ctx.db
       .query("mailboxCheckpoints")
       .withIndex("by_mailbox_folder", (q) =>
-        q.eq("mailboxEmail", cleanEmail).eq("folder", args.folder)
+        q.eq("mailboxEmail", cleanEmail).eq("folder", folder)
       )
       .first();
   },
@@ -793,7 +794,7 @@ export const getActiveBackgroundScan = query({
     mailboxEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const email = (args.mailboxEmail || "azeem@career141.com").toLowerCase().trim();
+    const email = (args.mailboxEmail || "cv@career141.com").toLowerCase().trim();
     const active = await ctx.db
       .query("mailboxScanJobs")
       .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", email))

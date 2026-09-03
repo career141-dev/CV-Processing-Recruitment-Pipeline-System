@@ -161,11 +161,29 @@ Return ONLY valid JSON matching:
         { role: "user", content: prompt },
       ],
       temperature: 0.1,
-      max_tokens: 1800,
+      max_tokens: 4096,
       response_format: { type: "json_object" },
     });
 
-    const parsedObj = JSON.parse(content || "{}");
+    let cleanJson = (content || "{}").trim();
+    if (cleanJson.startsWith("```")) {
+      cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    }
+
+    let parsedObj: any = {};
+    try {
+      parsedObj = JSON.parse(cleanJson);
+    } catch {
+      // Auto-repair common LLM JSON syntax issues (trailing commas, unquoted keys)
+      const fixed = cleanJson
+        .replace(/,\s*([\]}])/g, "$1")
+        .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
+      try {
+        parsedObj = JSON.parse(fixed);
+      } catch {
+        parsedObj = {};
+      }
+    }
 
     for (const item of candidateInputs) {
       const cid = item.candidateId;

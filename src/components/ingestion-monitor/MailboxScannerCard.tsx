@@ -26,8 +26,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+const QUICK_MAILBOXES = [
+  "cv@career141.com",
+  "careers@career141.com",
+  "info@career141.com",
+];
+
 export default function MailboxScannerCard() {
-  const mailboxEmail = "azeem@career141.com"; // Fixed designated mailbox
+  const [mailboxEmail, setMailboxEmail] = useState("cv@career141.com");
   const [runMode, setRunMode] = useState<"manual" | "background">("manual");
   const [folder, setFolder] = useState<"inbox" | "sentitems" | "all">("all");
   const [dryRun, setDryRun] = useState(false);

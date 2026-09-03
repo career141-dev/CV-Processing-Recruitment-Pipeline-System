@@ -6,7 +6,7 @@ import type { Id } from "../_generated/dataModel.d.ts";
 import { mapJobSeniorityTo10LevelRank, checkSeniorityConflict, scoreCandidateAgainstRequirements, getSkillDomain } from "../cvs/cvScoring";
 import { classifyJobRoleFamily, classifyCurrentRolesBatch } from "../lib/currentRoleClassifier";
 import { synthesizeJobRequirements } from "../lib/jobSynthesizer";
-import { upsertCandidateVector } from "../lib/qdrant";
+import { upsertCandidateVector, queryCandidateVectors } from "../lib/qdrant";
 
 /**
  * Helper to get vector embeddings from NVIDIA API
@@ -439,13 +439,14 @@ Return ONLY valid JSON matching this schema:
         terms.push(...prefTerms);
       }
 
+      const termsToSearch = terms.slice(0, 3);
       const batches = await Promise.all(
-        terms.slice(0, 6).map((term) =>
+        termsToSearch.map((term) =>
           ctx.runQuery(api.matching.search.searchCandidates, {
             query: term,
             industry: job.clientIndustry ?? undefined,
             seniority: job.seniorityLevel ?? undefined,
-            limit: 100,
+            limit: 50,
           })
         )
       );
@@ -465,11 +466,9 @@ Return ONLY valid JSON matching this schema:
       // 3. Perform Vector Search across all candidates using Qdrant (top 1,000 vectors with Convex fail-open fallback)
       const vectorResultsMap = new Map<string, number>();
       try {
-        const { queryCandidateVectors } = await import("../lib/qdrant.js");
+        // Pure Cosine vector search across candidate embeddings (soft weighted scoring applied downstream)
         const qdrantMatches = await queryCandidateVectors(jobEmbedding, {
           limit: 1000,
-          locationCity: job.location,
-          seniorityLevel: job.seniorityLevel,
         });
 
         for (const m of qdrantMatches) {
@@ -486,12 +485,12 @@ Return ONLY valid JSON matching this schema:
         try {
           const results = await ctx.vectorSearch("candidateResumes", "vector_index_candidates", {
             vector: jobEmbedding,
-            limit: 256,
+            limit: 64,
           });
 
           if (results.length > 0) {
             const mappedResumes = await ctx.runQuery(internal.matching.queries.getCandidateIdsByResumeIds, {
-              resumeIds: results.map((r) => r._id),
+              resumeIds: results.slice(0, 64).map((r) => r._id),
             });
             const resumeIdToCandidateId = new Map(mappedResumes.map((item) => [item.resumeId, item.candidateId]));
             for (const r of results) {
@@ -524,7 +523,7 @@ Return ONLY valid JSON matching this schema:
         }
       }
 
-      // 6. Generate missing embeddings on the fly for keyword-matched candidates (up to 15)
+      // 6. Generate missing embeddings on the fly for keyword-matched candidates (up to 3)
       // Only check candidates not returned by vector search
       const keywordCandidateIdsMissingEmbeddings = Array.from(dedupedKeywordsMap.keys()).filter(id => !vectorResultsMap.has(id));
       const keywordResumes = await ctx.runQuery(internal.matching.queries.getCandidateResumesBatch, {
@@ -542,30 +541,26 @@ Return ONLY valid JSON matching this schema:
       );
 
       if (missingEmbeddings.length > 0) {
-        const limitToEmbed = missingEmbeddings.slice(0, 9);
-        const CHUNK_SIZE = 3;
-        for (let i = 0; i < limitToEmbed.length; i += CHUNK_SIZE) {
-          const chunk = limitToEmbed.slice(i, i + CHUNK_SIZE);
-          await Promise.all(
-            chunk.map(async (k) => {
-              try {
-                const resume: any = keywordResumeMap.get(k.candidateId);
-                if (resume && resume.rawText) {
-                  const textToEmbed = resume.rawText.slice(0, 15000);
-                  const embedResult = await embedText(textToEmbed, "passage");
-                  const embedding = embedResult.embedding;
-                  await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
-                    candidateId: k.candidateId,
-                    embedding,
-                  });
-                  resume.embedding = embedding; // Update in-memory reference
-                }
-              } catch (err) {
-                console.warn(`[ReverseMatch] Non-blocking embedding generation notice for candidate ${k.candidateId}:`, err);
+        const limitToEmbed = missingEmbeddings.slice(0, 3);
+        await Promise.allSettled(
+          limitToEmbed.map(async (k) => {
+            try {
+              const resume: any = keywordResumeMap.get(k.candidateId);
+              if (resume && resume.rawText) {
+                const textToEmbed = resume.rawText.slice(0, 15000);
+                const embedResult = await embedText(textToEmbed, "passage");
+                const embedding = embedResult.embedding;
+                await ctx.runMutation(internal.matching.queries.updateCandidateEmbedding, {
+                  candidateId: k.candidateId,
+                  embedding,
+                });
+                resume.embedding = embedding; // Update in-memory reference
               }
-            })
-          );
-        }
+            } catch (err) {
+              console.warn(`[ReverseMatch] Non-blocking embedding generation notice for candidate ${k.candidateId}:`, err);
+            }
+          })
+        );
       }
 
       // 7. Merge, enrich, and calculate similarity scores

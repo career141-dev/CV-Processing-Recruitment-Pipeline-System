@@ -83,7 +83,14 @@ Every plan or fix submission should arrive as:
 4. **Evidence attached** — real query output, real numbers, before/after where relevant.
 5. **Blocking questions** — anything Antigravity needs Binath to answer before coding starts, listed explicitly, not buried in prose.
 
-Submissions missing evidence or blocking-questions sections get sent back for resubmission before review begins — this is not a formality, it's the gate.
+## 11. Environment Isolation & VPS Resource Protection (Mandatory)
+
+- **Production VPS Capacity**: The production Contabo VPS operates near maximum memory/CPU capacity hosting the core stack (Convex DB, Postgres, LiveKit WebRTC, Qdrant Vector DB, SIP Gateway, Voice Worker, Next.js). **Never run development instances or heavy builds on the production VPS.**
+- **Local Development First**: All feature development, debugging, and UI changes must run 100% locally on developer machines via `start-local-dev.bat` (`localhost:3000` + local Convex/dev containers). VPS load for daily dev must remain at 0%.
+- **Branch & Pull Request Discipline**:
+  - Direct pushes to `main` and direct code edits via SSH on the VPS are strictly forbidden.
+  - All changes must be developed on dedicated feature branches (e.g., `feature/<name>`).
+  - Deployments to production must go exclusively through GitHub Pull Requests and the automated CI/CD pipeline (`.github/workflows/deploy.yml`) to prevent workflow collision and production downtime.
 
 ---
 
