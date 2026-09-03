@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { EditJobModal } from '@/components/jobs/EditJobModal';
+import { SkeletonTableRows, SkeletonCard } from '@/components/ui/Skeleton';
+
+
 
 type Source = { id: string, label: string, bgClass: string, textClass: string };
 
@@ -401,14 +404,17 @@ export default function JobsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border relative">
-                {filteredJobs.length === 0 ? (
+                {dbJobs === undefined || users === undefined ? (
+                  <SkeletonTableRows rows={8} cols={11} />
+                ) : filteredJobs.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="py-12 text-center text-text-secondary">
                       No jobs found in this category.
                     </td>
                   </tr>
-                ) : null}
-                {paginatedJobs.map((job) => (
+                ) : (
+                  paginatedJobs.map((job) => (
+
                   <tr key={job.id} className="hover:bg-[#F1F8E9] transition-colors group">
                     <td className="px-5 py-3"><input checked={selectedJobs.includes(job.id)} onChange={() => handleSelectJob(job.id)} className="rounded border-border text-primary-container focus:ring-[#1B5E20] w-4 h-4 cursor-pointer mt-0.5" type="checkbox" /></td>
                     <td className="px-5 py-3 font-medium text-text-primary whitespace-nowrap">
@@ -519,19 +525,27 @@ export default function JobsPage() {
                       )}
                     </td>
                   </tr>
-                ))}
-              </tbody>
+                ))
+              )}
+            </tbody>
+
+
             </table>
           </div>
         ) : (
           /* Grid View Container */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 min-h-[400px] items-start">
-            {filteredJobs.length === 0 ? (
+            {dbJobs === undefined || users === undefined ? (
+              Array.from({ length: 8 }).map((_, idx) => (
+                <SkeletonCard key={idx} />
+              ))
+            ) : filteredJobs.length === 0 ? (
               <div className="col-span-full py-12 text-center text-text-secondary bg-surface rounded-xl border border-border">
                 No jobs found in this category.
               </div>
-            ) : null}
-            {paginatedJobs.map((job) => (
+            ) : (
+              paginatedJobs.map((job) => (
+
               <div 
                 key={job.id} 
                 onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
@@ -653,8 +667,10 @@ export default function JobsPage() {
                   </div>
                 </div>
               </div>
-            ))}
+            ))
+          )}
           </div>
+
         )}
 
         {/* Pagination Footer */}

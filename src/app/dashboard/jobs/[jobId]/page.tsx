@@ -21,6 +21,8 @@ import { SendBulkFollowUpModal } from '@/components/outreach/SendBulkFollowUpMod
 import { CandidateTimelineDrawer } from '@/components/candidates/CandidateTimelineDrawer';
 import { toast } from 'sonner';
 import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
+import { Skeleton } from '@/components/ui/Skeleton';
+
 
 const PIPELINE_STAGES = [
   { id: "new_cvs", label: "New CVs" },
@@ -2254,8 +2256,50 @@ export default function JobDetailPage() {
   }, [activePipelineTab, activeMainTab]);
 
   if (job === undefined || rawApplications === undefined) {
-    return <div className="p-8">Loading...</div>;
+    return (
+      <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto animate-pulse">
+        {/* Header Skeleton */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-surface rounded-2xl border border-border">
+          <div className="space-y-2">
+            <Skeleton className="h-7 w-64" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-24 rounded-lg" />
+            <Skeleton className="h-9 w-28 rounded-lg" />
+          </div>
+        </div>
+
+        {/* Stats/Tabs Skeleton */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="p-4 bg-surface rounded-xl border border-border space-y-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-7 w-12" />
+            </div>
+          ))}
+        </div>
+
+        {/* Application Cards Skeleton */}
+        <div className="space-y-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="p-5 bg-surface rounded-xl border border-border space-y-3">
+              <div className="flex justify-between items-center">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-6 w-20 rounded-full" />
+              </div>
+              <Skeleton className="h-4 w-3/4" />
+              <div className="flex gap-2 pt-2">
+                <Skeleton className="h-5 w-24 rounded" />
+                <Skeleton className="h-5 w-24 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
+
 
   if (job === null) {
     return <div className="p-8">Job not found.</div>;

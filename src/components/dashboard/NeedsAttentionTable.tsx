@@ -8,6 +8,8 @@ import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AlertCircle, Clock, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import { SkeletonTableRows } from '@/components/ui/Skeleton';
+
 
 interface NeedsAttentionTableProps {
   jobFilter?: string;
@@ -127,16 +129,9 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
           </thead>
           <tbody>
             {items === undefined ? (
-              // Loading Skeleton
-              <tr>
-                <td colSpan={6} className="py-6 px-4 text-center">
-                  <div className="flex items-center justify-center gap-2 text-text-secondary text-xs">
-                    <Clock size={14} className="animate-spin text-primary" />
-                    Checking pipeline & aging jobs...
-                  </div>
-                </td>
-              </tr>
+              <SkeletonTableRows rows={4} cols={6} />
             ) : paginatedItems.length > 0 ? (
+
               paginatedItems.map((row, idx) => (
                 <tr
                   key={row.id}
