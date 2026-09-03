@@ -1013,3 +1013,133 @@ export const executeMailboxScanBackground = internalAction({
     }
   },
 });
+
+/**
+ * Action: Finds a candidate's CV attachment in Microsoft 365, uploads it to Cloudflare R2,
+ * and links the s3Key to the candidate profile and cvUpload record.
+ */
+export const repairAndLinkCandidateCv = action({
+  args: {
+    candidateEmail: v.string(),
+    candidateId: v.optional(v.id("candidates")),
+    cvUploadId: v.optional(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    const token = await getGraphToken();
+    if (!token) throw new Error("Could not acquire Microsoft Graph token");
+
+    const targetEmail = args.candidateEmail.toLowerCase().trim();
+    const mailboxes = ["azeem@career141.com", "job@career141.com"];
+
+    for (const mb of mailboxes) {
+      // Search for messages with attachments from this sender or referencing this email
+      let messages: any[] = [];
+      const searchUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+        mb
+      )}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15&$search="${encodeURIComponent(
+        targetEmail
+      )}"`;
+
+      const qRes = await safeGraphFetch(searchUrl, token);
+      if (qRes && qRes.ok) {
+        const qData = await qRes.json();
+        messages = (qData.value || []).filter((m: any) => m.hasAttachments);
+      }
+
+      if (messages.length === 0) {
+        // Fallback: search by filter
+        const filterUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+          mb
+        )}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15&$filter=hasAttachments eq true and from/emailAddress/address eq '${encodeURIComponent(
+          targetEmail
+        )}'`;
+        const fRes = await safeGraphFetch(filterUrl, token);
+        if (fRes && fRes.ok) {
+          const fData = await fRes.json();
+          messages = fData.value || [];
+        }
+      }
+
+      for (const msg of messages) {
+        const attachUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+          mb
+        )}/messages/${msg.id}/attachments?$select=id,name,contentType,size`;
+
+        const aRes = await safeGraphFetch(attachUrl, token);
+        if (!aRes || !aRes.ok) continue;
+
+        const aData = await aRes.json();
+        const attachments = aData.value || [];
+
+        for (const att of attachments) {
+          if (!isAllowedCvType(att.name || "", att.contentType)) continue;
+
+          // Fetch attachment binary bytes
+          const contentUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+            mb
+          )}/messages/${msg.id}/attachments/${att.id}`;
+
+          const cRes = await safeGraphFetch(contentUrl, token);
+          if (!cRes || !cRes.ok) continue;
+
+          const cData = await cRes.json();
+          const contentBytes = cData.contentBytes;
+          if (!contentBytes) continue;
+
+          const binaryString = atob(contentBytes);
+          const fileBuffer = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            fileBuffer[i] = binaryString.charCodeAt(i);
+          }
+
+          // Compute SHA-256 hash
+          const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer.buffer as ArrayBuffer);
+          const fileHash = Array.from(new Uint8Array(hashBuffer))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+
+          // Upload to R2
+          const s3 = getS3Client();
+          const safeName = (att.name || "cv.pdf").replace(/[^a-zA-Z0-9.\-_]/g, "_");
+          const date = new Date();
+          const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+          const s3Key = `cvs/${yearMonth}/${Date.now()}-${safeName}`;
+
+          const uploadCmd = new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME!,
+            Key: s3Key,
+            ContentType: att.contentType || "application/pdf",
+            Body: Buffer.from(fileBuffer),
+          });
+
+          await s3.send(uploadCmd);
+
+          // Update cvUploads
+          if (args.cvUploadId) {
+            await ctx.runMutation(api.communications.emailBackfillMutations.updateCvUploadWithR2Key, {
+              cvUploadId: args.cvUploadId,
+              candidateId: args.candidateId,
+              s3Key,
+              storageProvider: "r2",
+              fileHash,
+              fileSize: fileBuffer.length,
+              fileName: att.name,
+              fileType: att.contentType || "application/pdf",
+            });
+          }
+
+          return {
+            success: true,
+            s3Key,
+            fileName: att.name,
+            fileHash,
+            fileSize: fileBuffer.length,
+            mailbox: mb,
+          };
+        }
+      }
+    }
+
+    return { success: false, message: `No attachment found for ${targetEmail} in mailboxes.` };
+  },
+});

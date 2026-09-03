@@ -904,3 +904,58 @@ export const recoverStalledMailboxScans = internalMutation({
     return { success: true, recoveredCount };
   },
 });
+
+/**
+ * Mutation: Patches an existing cvUpload record with an R2 s3Key and metadata.
+ */
+export const updateCvUploadWithR2Key = mutation({
+  args: {
+    cvUploadId: v.id("cvUploads"),
+    candidateId: v.optional(v.id("candidates")),
+    s3Key: v.string(),
+    storageProvider: v.string(),
+    fileHash: v.optional(v.string()),
+    fileSize: v.optional(v.number()),
+    fileName: v.optional(v.string()),
+    fileType: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.cvUploadId, {
+      s3Key: args.s3Key,
+      storageProvider: args.storageProvider,
+      status: "processed",
+      ...(args.fileHash ? { fileHash: args.fileHash } : {}),
+      ...(args.fileSize ? { fileSize: args.fileSize } : {}),
+      ...(args.fileName ? { fileName: args.fileName } : {}),
+      ...(args.fileType ? { fileType: args.fileType } : {}),
+    });
+
+    if (args.candidateId) {
+      await ctx.db.patch(args.candidateId, {
+        cvUploadId: args.cvUploadId,
+        ...(args.fileHash ? { fileHash: args.fileHash } : {}),
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+/**
+ * Mutation: Schedules CV repair and R2 linking action safely in the background queue.
+ */
+export const scheduleRepairCv = mutation({
+  args: {
+    candidateEmail: v.string(),
+    candidateId: v.optional(v.id("candidates")),
+    cvUploadId: v.optional(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, (api as any).communications.emailBackfill.repairAndLinkCandidateCv, {
+      candidateEmail: args.candidateEmail,
+      candidateId: args.candidateId,
+      cvUploadId: args.cvUploadId,
+    });
+    return { success: true, scheduled: true };
+  },
+});
