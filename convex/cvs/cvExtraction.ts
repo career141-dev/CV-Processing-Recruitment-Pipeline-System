@@ -1694,22 +1694,31 @@ Respond ONLY with a valid JSON object in this exact format:
                 args.sourceChannel === "database"
               );
 
-            await ctx.runMutation(api.applications.applications.createApplication, {
-              candidateId: args.candidateId,
-              jobId: resultObj.matchedJobId as any,
-              cvFileId: args.cvUploadId,
-              sourceChannel: args.sourceChannel,
-              stage: isManualDirectory ? "matched_candidates" : undefined,
-              metaCampaignId: cvUpload?.campaignLabel,
-              metaSourceUrl: cvUpload?.metaSourceUrl,
-              metaSourceId: cvUpload?.metaSourceId,
-              metaHeadline: cvUpload?.metaHeadline,
-            });
+            if (isManualDirectory) {
+              // Manual directory / database candidates fall directly into the 'Matches' tab (reverseMatchResults)
+              // and do NOT create an active pipeline application until shortlisted by TA.
+              await ctx.runMutation(internal.jobs.jobs.addCandidateToReverseMatchResults, {
+                jobId: resultObj.matchedJobId as any,
+                candidateId: args.candidateId,
+                cvUploadId: args.cvUploadId,
+              });
+            } else {
+              await ctx.runMutation(api.applications.applications.createApplication, {
+                candidateId: args.candidateId,
+                jobId: resultObj.matchedJobId as any,
+                cvFileId: args.cvUploadId,
+                sourceChannel: args.sourceChannel,
+                metaCampaignId: cvUpload?.campaignLabel,
+                metaSourceUrl: cvUpload?.metaSourceUrl,
+                metaSourceId: cvUpload?.metaSourceId,
+                metaHeadline: cvUpload?.metaHeadline,
+              });
 
-            await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
-              candidateId: args.candidateId,
-              jobId: resultObj.matchedJobId as any,
-            });
+              await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+                candidateId: args.candidateId,
+                jobId: resultObj.matchedJobId as any,
+              });
+            }
           }
         }
       }

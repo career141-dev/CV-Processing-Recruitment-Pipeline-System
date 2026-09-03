@@ -81,7 +81,7 @@ export const migrateManualDirectoryAppsBatch = mutation({
       stageHistory.push({
         stage: "matched_candidates" as any,
         enteredAt: new Date(now).toISOString(),
-        changedBy: "system_migration",
+        changedBy: "system",
       });
 
       await ctx.db.patch(app._id, {
@@ -144,3 +144,153 @@ export const runFullManualDirectoryMigration = action({
     };
   },
 });
+
+/**
+ * Moves manual directory / database applications out of the pipeline
+ * and into the job's reverseMatchResults (the 'Matches' tab).
+ * Genuine pipeline channels (linkedin, whatsapp, headhunt, email, email_campaign, etc.) are preserved.
+ */
+export const moveJobManualAppsToMatches = mutation({
+  args: {
+    jobId: v.id("jobs"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Job not found: " + args.jobId);
+
+    const limit = args.limit ?? 50;
+
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .collect();
+
+    // Allowed genuine pipeline channels:
+    const genuinePipelineChannels = new Set([
+      "linkedin",
+      "whatsapp",
+      "headhunt",
+      "email",
+      "email_campaign",
+      "meta",
+      "job_board",
+      "portal",
+    ]);
+
+    const allManualApps = apps.filter((a) => {
+      if (!a.sourceChannel) return true;
+      const lower = a.sourceChannel.toLowerCase().trim();
+      if (genuinePipelineChannels.has(lower)) return false;
+      return (
+        lower.includes("manual") ||
+        lower.includes("directory") ||
+        lower.includes("folder") ||
+        lower === "database"
+      );
+    });
+
+    if (allManualApps.length === 0) {
+      return {
+        jobTitle: job.title,
+        jobId: args.jobId,
+        movedCount: 0,
+        remainingInJob: 0,
+        alreadyClean: true,
+      };
+    }
+
+    const batch = allManualApps.slice(0, limit);
+
+    const existingMatchResults = job.reverseMatchResults || [];
+    const existingCvIds = new Set(existingMatchResults.map((r) => String(r.cvId)));
+    const newMatches = [...existingMatchResults];
+    let addedCount = 0;
+
+    const stageCounts = { ...(job.stageCounts || {}) };
+    let totalApplications = job.totalApplications || 0;
+
+    for (const app of batch) {
+      const cvId = String(app.candidateId);
+      if (!existingCvIds.has(cvId)) {
+        newMatches.push({
+          cvId,
+          candidateName: app.candidateName || "Candidate",
+          candidateRole: app.candidateTitle || "Candidate",
+          candidateExp: app.candidateExperience,
+          overallScore: app.aiMatchScore ?? 70,
+          reason: app.aiMatchExplanation || "Matched from database / manual directory import",
+          sourceLevel1: "Database",
+          matchedSkills: [],
+          missingSkills: [],
+          breakdown: { skills: 70, experience: 70, seniority: 70, industry: 70, location: 70 },
+        });
+        existingCvIds.add(cvId);
+        addedCount++;
+      }
+
+      // Decrement stage stat in memory
+      totalApplications = Math.max(0, totalApplications - 1);
+      if (app.currentStage && stageCounts[app.currentStage]) {
+        stageCounts[app.currentStage] = Math.max(0, stageCounts[app.currentStage] - 1);
+      }
+
+      // Delete the pipeline application
+      await ctx.db.delete(app._id);
+    }
+
+    // Save updated job document ONCE per batch
+    await ctx.db.patch(args.jobId, {
+      reverseMatchResults: newMatches,
+      reverseMatchStatus: "done",
+      reverseMatchedAt: new Date().toISOString(),
+      stageCounts,
+      totalApplications,
+    });
+
+    return {
+      jobTitle: job.title,
+      jobId: args.jobId,
+      movedCount: batch.length,
+      remainingInJob: allManualApps.length - batch.length,
+      addedToMatches: addedCount,
+      totalMatchesNow: newMatches.length,
+      remainingPipelineApps: apps.length - batch.length,
+    };
+  },
+});
+
+/**
+ * Action runner to iterate across all active jobs and move all manual directory/database
+ * applications from the pipeline to each job's reverseMatchResults (the 'Matches' tab).
+ */
+export const moveAllJobsManualAppsToMatchesAction = action({
+  args: {},
+  handler: async (ctx) => {
+    const activeJobs: any = await ctx.runQuery(api.jobs.jobs.getActiveJobsBasicInfo, {});
+    const results = [];
+
+    for (const job of (activeJobs || [])) {
+      try {
+        const res: any = await ctx.runMutation(
+          api.admin.migrateManualDirectoryApps.moveJobManualAppsToMatches,
+          { jobId: job._id }
+        );
+        if (res.movedCount > 0) {
+          console.log(`[MoveToMatches] Job "${res.jobTitle}": moved ${res.movedCount} apps to Matches (total matches: ${res.totalMatchesNow}, remaining pipeline: ${res.remainingPipelineApps})`);
+          results.push(res);
+        }
+      } catch (err: any) {
+        console.error(`[MoveToMatches] Error processing job "${job.title}":`, err.message);
+      }
+    }
+
+    return {
+      totalJobsProcessed: (activeJobs || []).length,
+      affectedJobsCount: results.length,
+      totalMovedToMatches: results.reduce((sum, r) => sum + r.movedCount, 0),
+      jobDetails: results,
+    };
+  },
+});
+
