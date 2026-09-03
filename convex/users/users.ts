@@ -144,6 +144,28 @@ export const deactivate = mutation({
   },
 });
 
+export const activate = mutation({
+  args: { targetUserId: v.id("users"), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const admin = await requireRole(ctx, ["admin"]);
+    
+    await ctx.db.patch(args.targetUserId, {
+      isActive: true,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await ctx.db.insert("roleAuditLog", {
+      targetUserId: args.targetUserId,
+      changedBy: admin._id,
+      fromRole: "deactivated",
+      toRole: "active",
+      reason: args.reason,
+      occurredAt: new Date().toISOString(),
+    });
+  },
+});
+
+
 export const getTeamMembers = query({
   args: {},
   handler: async (ctx) => {
