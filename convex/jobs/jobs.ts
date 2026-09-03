@@ -1030,6 +1030,16 @@ export const triggerReverseMatch = mutation({
   },
 });
 
+export const stopReverseMatch = mutation({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      reverseMatchStatus: "done",
+    });
+  },
+});
+
+
 export const updateTaPreferencesInternal = internalMutation({
   args: {
     jobId: v.id("jobs"),
