@@ -21,6 +21,7 @@ import type * as admin_inspectComms from "../admin/inspectComms.js";
 import type * as admin_ioPerformanceMigrations from "../admin/ioPerformanceMigrations.js";
 import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
 import type * as admin_migrateGlobalStats from "../admin/migrateGlobalStats.js";
+import type * as admin_migrateManualDirectoryApps from "../admin/migrateManualDirectoryApps.js";
 import type * as admin_mute from "../admin/mute.js";
 import type * as admin_qaTests from "../admin/qaTests.js";
 import type * as admin_qdrantBackfill from "../admin/qdrantBackfill.js";
@@ -146,6 +147,7 @@ declare const fullApi: ApiFromModules<{
   "admin/ioPerformanceMigrations": typeof admin_ioPerformanceMigrations;
   "admin/migrateCandidates": typeof admin_migrateCandidates;
   "admin/migrateGlobalStats": typeof admin_migrateGlobalStats;
+  "admin/migrateManualDirectoryApps": typeof admin_migrateManualDirectoryApps;
   "admin/mute": typeof admin_mute;
   "admin/qaTests": typeof admin_qaTests;
   "admin/qdrantBackfill": typeof admin_qdrantBackfill;

@@ -1686,11 +1686,20 @@ Respond ONLY with a valid JSON object in this exact format:
           const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
           if (matchedJob) {
             console.log(`[CvExtraction] Post-extract AI matched candidate ${candidate.fullName ?? args.candidateId} to job: ${matchedJob.title} (${resultObj.matchedJobId})`);
+            const isManualDirectory = 
+              typeof args.sourceChannel === "string" && (
+                args.sourceChannel.toLowerCase().includes("manual") ||
+                args.sourceChannel.toLowerCase().includes("directory") ||
+                args.sourceChannel.toLowerCase().includes("folder") ||
+                args.sourceChannel === "database"
+              );
+
             await ctx.runMutation(api.applications.applications.createApplication, {
               candidateId: args.candidateId,
               jobId: resultObj.matchedJobId as any,
               cvFileId: args.cvUploadId,
               sourceChannel: args.sourceChannel,
+              stage: isManualDirectory ? "matched_candidates" : undefined,
               metaCampaignId: cvUpload?.campaignLabel,
               metaSourceUrl: cvUpload?.metaSourceUrl,
               metaSourceId: cvUpload?.metaSourceId,
