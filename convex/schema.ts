@@ -741,6 +741,7 @@ export default defineSchema({
     .index("by_sourceChannel", ["sourceChannel"])
     .index("by_firstSourceChannel", ["firstSourceChannel"])
     .index("by_isHealAttempted", ["isHealAttempted"])
+    .index("by_isParsed", ["isParsed"])
     .searchIndex("search_skills", {
       searchField: "skills",
     })
@@ -1423,6 +1424,63 @@ export default defineSchema({
     errorMessage: v.optional(v.string()),
   }).index("by_user", ["userId"]),
 
+  mailboxScanJobs: defineTable({
+    mailboxEmail: v.string(),
+    folder: v.string(), // "inbox" | "sentitems" | "all"
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("done"),
+      v.literal("error"),
+      v.literal("stopped")
+    ),
+    totalMessages: v.number(),
+    scannedMessages: v.number(),
+    totalAttachments: v.number(),
+    classifiedHighConfidence: v.number(),
+    flaggedNeedsReview: v.number(),
+    skippedLowConfidence: v.number(),
+    llmCallsCount: v.number(),
+    currentStage: v.optional(v.string()),
+    phase: v.optional(
+      v.union(
+        v.literal("discovery"),
+        v.literal("extracting"),
+        v.literal("done"),
+        v.literal("error"),
+        v.literal("stopped"),
+        v.literal("paused")
+      )
+    ),
+    discoveredTotalEmails: v.optional(v.number()),
+    discoveredAttachmentEmails: v.optional(v.number()),
+    targetAttachmentEmails: v.optional(v.number()),
+    processedAttachmentEmails: v.optional(v.number()),
+    errorMessage: v.optional(v.string()),
+    nextCursorUrl: v.optional(v.string()),
+    currentFolderIndex: v.optional(v.number()),
+    lastHeartbeatAt: v.optional(v.number()),
+    dryRun: v.boolean(),
+    mode: v.optional(v.union(v.literal("manual"), v.literal("background"))),
+    deduplicatedCount: v.optional(v.number()),
+    userId: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    recentLogs: v.optional(
+      v.array(
+        v.object({
+          timestamp: v.number(),
+          message: v.string(),
+          type: v.string(), // "info" | "success" | "warning" | "error"
+        })
+      )
+    ),
+  })
+    .index("by_mailbox", ["mailboxEmail"])
+    .index("by_status", ["status"])
+    .index("by_startedAt", ["startedAt"]),
+
   // ─── Hercules Tables Merged Below ───
 
   cvs: defineTable({
@@ -1832,44 +1890,6 @@ export default defineSchema({
     .index("by_scanId_matchScore", ["scanId", "matchScore"])
     .index("by_status", ["status"]),
 
-  mailboxScanJobs: defineTable({
-    mailboxEmail: v.string(),
-    folder: v.string(), // "inbox" | "sentitems" | "all"
-    status: v.union(
-      v.literal("pending"),
-      v.literal("running"),
-      v.literal("paused"),
-      v.literal("done"),
-      v.literal("error"),
-      v.literal("stopped")
-    ),
-    totalMessages: v.number(),
-    scannedMessages: v.number(),
-    totalAttachments: v.number(),
-    classifiedHighConfidence: v.number(),
-    flaggedNeedsReview: v.number(),
-    skippedLowConfidence: v.number(),
-    llmCallsCount: v.number(),
-    currentStage: v.optional(v.string()),
-    errorMessage: v.optional(v.string()),
-    dryRun: v.boolean(),
-    userId: v.optional(v.string()),
-    startedAt: v.number(),
-    completedAt: v.optional(v.number()),
-    recentLogs: v.optional(
-      v.array(
-        v.object({
-          timestamp: v.number(),
-          message: v.string(),
-          type: v.string(), // "info" | "success" | "warning" | "error"
-        })
-      )
-    ),
-  })
-    .index("by_mailbox", ["mailboxEmail"])
-    .index("by_status", ["status"])
-    .index("by_startedAt", ["startedAt"]),
-
   mailboxScanJobResults: defineTable({
     scanJobId: v.id("mailboxScanJobs"),
     messageId: v.string(),
@@ -1881,5 +1901,21 @@ export default defineSchema({
     status: v.string(), // "processed" | "skipped" | "flagged"
     cvUploaded: v.boolean(),
   }).index("by_scanJobId", ["scanJobId"]),
+
+  // ■■ MAILBOX_CHECKPOINTS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  // Persists total discovered attachment counts and extraction pointers (cursors)
+  // across sessions so multi-day scans seamlessly continue from where they left off.
+  mailboxCheckpoints: defineTable({
+    mailboxEmail: v.string(),
+    folder: v.string(), // "inbox" | "sentitems" | "all"
+    totalDiscoveredAttachmentEmails: v.number(),
+    totalDiscoveredEmails: v.number(),
+    totalExtractedCount: v.number(), // Cumulative count of extracted attachment emails
+    nextCursorUrl: v.optional(v.string()), // Microsoft Graph API pagination continuation URL
+    currentFolderIndex: v.optional(v.number()), // Folder index for "all" scope
+    lastDiscoveredAt: v.number(),
+    lastExtractedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_mailbox_folder", ["mailboxEmail", "folder"]),
 
 }, { schemaValidation: false });

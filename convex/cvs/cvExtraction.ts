@@ -960,9 +960,9 @@ export async function runCvExtraction(
   let t_embed = 0;
   let t_write = 0;
 
-  // Check if upload is still valid/running, abort if already marked failed or cancelled
+  // Check if upload is still valid/running, abort if already marked cancelled
   const cvUpload = await ctx.runQuery(internal.candidates.candidates.getCvUpload, { cvUploadId });
-  if (!cvUpload || cvUpload.status === "failed" || cvUpload.status === "failed_retry" || cvUpload.status === "cancelled") {
+  if (!cvUpload || cvUpload.status === "cancelled") {
     console.log(`[CvExtraction] Aborting extraction for upload ${cvUploadId} because status is: ${cvUpload?.status}`);
     return null;
   }
@@ -1119,15 +1119,26 @@ export async function runCvExtraction(
       console.warn(`[CvExtraction] R2 raw text upload error for upload ${cvUploadId}:`, r2Err?.message || r2Err);
     }
 
-    candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
-      rawTextKey,
-      sourceChannel: sourceChannel ?? undefined,
-      fileHash,
-      cvUploadId,
-      workableCandidateId: workableCandidateId ?? undefined,
-      isParsed: !skipLLM,
-      extractionModel,
-    });
+    if (cvUpload.candidateId) {
+      candidateId = cvUpload.candidateId;
+      await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
+        candidateId,
+        rawTextKey,
+        fileHash,
+        cvUploadId,
+        extractionModel,
+      });
+    } else {
+      candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
+        rawTextKey,
+        sourceChannel: sourceChannel ?? undefined,
+        fileHash,
+        cvUploadId,
+        workableCandidateId: workableCandidateId ?? undefined,
+        isParsed: !skipLLM,
+        extractionModel,
+      });
+    }
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
