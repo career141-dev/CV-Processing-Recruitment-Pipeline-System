@@ -459,7 +459,7 @@ function ensureDOMMatrixPolyfill() {
  */
 async function extractImagesFromPdfBuffer(
   buffer: ArrayBuffer,
-  maxPages: number = 5
+  maxPages: number = 3
 ): Promise<string[]> {
   ensureDOMMatrixPolyfill();
   const images: string[] = [];
@@ -960,6 +960,14 @@ export async function runCvExtraction(
   let t_embed = 0;
   let t_write = 0;
 
+  const CV_EXTRACTION_DEADLINE_MS = 210_000;
+  const checkDeadline = (stage: string) => {
+    const elapsed = Date.now() - tStart;
+    if (elapsed > CV_EXTRACTION_DEADLINE_MS) {
+      throw new Error(`CV extraction safety guard tripped at stage "${stage}" (${Math.round(elapsed / 1000)}s elapsed > 210s threshold). Terminating cleanly before Convex runtime kill.`);
+    }
+  };
+
   // Check if upload is still valid/running, abort if already marked cancelled
   const cvUpload = await ctx.runQuery(internal.candidates.candidates.getCvUpload, { cvUploadId });
   if (!cvUpload || cvUpload.status === "cancelled") {
@@ -1000,11 +1008,12 @@ export async function runCvExtraction(
 
     if (!url) throw new Error("File URL not found (neither R2 nor Convex storage)");
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!response.ok) throw new Error(`Failed to download file from Convex storage. Status: ${response.status}`);
 
     const buffer = await response.arrayBuffer();
     t_download = Date.now() - tDownloadStart;
+    checkDeadline("post_download");
 
     if (buffer.byteLength === 0) {
       throw new Error("The file retrieved from storage is empty (zero bytes).");
@@ -1068,6 +1077,7 @@ export async function runCvExtraction(
     const tTextStart = Date.now();
     const { text: rawText, extractionModel } = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
     t_text = Date.now() - tTextStart;
+    checkDeadline("post_text_extraction");
 
     const cleanedText = cleanRawText(rawText);
     let trimmed = cleanedText.trim();
@@ -1191,12 +1201,14 @@ export async function runCvExtraction(
       }
 
       // LLM structuring only — embedding is deferred to background scheduler below
+      checkDeadline("pre_llm");
       const tLlmStart = Date.now();
       let extractedData = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
         console.warn("[CvExtraction] First call to OpenRouter LLM failed:", err.message || err);
         return null;
       });
       t_llm = Date.now() - tLlmStart;
+      checkDeadline("post_llm");
 
       extracted = extractedData;
 

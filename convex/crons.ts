@@ -801,7 +801,7 @@ crons.interval(
 
 crons.interval(
   "recover-stuck-uploads",
-  { minutes: 29 },
+  { minutes: 5 },
   internal.cvs.cvUploads.recoverStuckUploads
 );
 

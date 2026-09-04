@@ -502,3 +502,45 @@ export const cancelStuckScheduledTasks = mutation({
   },
 });
 
+export const inspectProcessingUploads = query({
+  args: {},
+  handler: async (ctx) => {
+    const list = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(10);
+    return list.map((u) => ({
+      id: u._id,
+      fileName: u.fileName,
+      status: u.status,
+      creationTime: u._creationTime,
+      processingStartedAt: (u as any).processingStartedAt,
+      ageMinutes: Math.round((Date.now() - ((u as any).processingStartedAt ?? u._creationTime)) / 60000),
+    }));
+  },
+});
+
+export const recoverStuckUploadsDirect = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const stuck = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(50);
+
+    let count = 0;
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    for (const upload of stuck) {
+      const processingStartMs = (upload as any).processingStartedAt ?? upload._creationTime;
+      if (processingStartMs < tenMinutesAgo) {
+        await ctx.db.patch(upload._id, {
+          status: "failed",
+          errorMessage: "Process interrupted or timed out (>10m)",
+        });
+        count++;
+      }
+    }
+    return { recoveredCount: count };
+  },
+});
+

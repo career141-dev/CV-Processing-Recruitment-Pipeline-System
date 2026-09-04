@@ -84,7 +84,7 @@ export function getOpenAI(_taskType?: TaskType | string): OpenAI {
       "HTTP-Referer": "https://career141.com",
       "X-Title": "Career141 System",
     },
-    timeout: 45000,
+    timeout: 30000,
     maxRetries: 0,
   });
 }
@@ -98,7 +98,7 @@ export function getNvidiaOpenAI(): OpenAI {
   return new OpenAI({
     baseURL: "https://integrate.api.nvidia.com/v1",
     apiKey,
-    timeout: 45000,
+    timeout: 30000,
     maxRetries: 0,
   });
 }
@@ -186,13 +186,10 @@ export async function generateNvidiaEmbedding(
 
 export const NVIDIA_VISION_MODELS = [
   "meta/llama-3.2-11b-vision-instruct",
-  "meta/llama-3.2-90b-vision-instruct",
 ];
 
 export const OPENROUTER_VISION_MODELS = [
   "google/gemini-2.0-flash-lite-001",
-  "google/gemini-flash-1.5",
-  "meta-llama/llama-3.2-11b-vision-instruct",
 ];
 
 export async function callNvidiaVisionOCR(
@@ -337,7 +334,7 @@ export async function executeLLMWithNvidiaFallback(
 
     for (const model of candidateModels) {
       const isNvidiaModel = model.startsWith("meta/");
-      const maxRetries = isNvidiaModel ? 1 : 3;
+      const maxRetries = isNvidiaModel ? 1 : 2;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
