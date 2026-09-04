@@ -5,6 +5,8 @@ import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Trash2, Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useDebounce } from "use-debounce";
+import { SkeletonTableRows } from '@/components/ui/Skeleton';
+
 
 const SOURCE_COLORS: Record<string, string> = {
   linkedin: "bg-[#0A66C2] text-white",
@@ -265,7 +267,17 @@ export function CandidateManagementTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-[13px] text-text-primary">
-              {currentItems.map((candidate) => (
+              {status === "LoadingFirstPage" ? (
+                <SkeletonTableRows rows={8} cols={10} />
+              ) : currentItems.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-text-secondary">
+                    No candidates found matching your criteria.
+                  </td>
+                </tr>
+              ) : (
+                currentItems.map((candidate) => (
+
                   <tr key={candidate._id} className="hover:bg-surface-bright transition-colors group">
                     {/* Checkbox Row */}
                     <td className="px-6 py-4 w-12">
@@ -387,21 +399,11 @@ export function CandidateManagementTable({
                       </div>
                     </td>
                   </tr>
-                ))}
-              {currentItems.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="px-6 py-10 text-center">
-                    <div className="flex flex-col items-center justify-center">
-                      <Search className="w-10 h-10 text-gray-300 mb-3" />
-                      <p className="text-gray-500 font-medium">No candidates found.</p>
-                      {hasActiveFilters && (
-                        <p className="text-sm text-gray-400 mt-1">Try clearing or adjusting your filters.</p>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )}</tbody>
+                ))
+              )}
+            </tbody>
           </table>
+
         </div>
         
         {/* Pagination Controls */}
