@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { User, Users, Bot, Puzzle, Mail, CreditCard, History, Database, RefreshCw } from 'lucide-react';
 import { useUser } from '@clerk/nextjs';
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar';
@@ -70,7 +69,6 @@ export default function SettingsPage() {
 
   return (
     <div className="self-stretch bg-background min-h-screen w-full flex flex-col">
-      <PageHeader title="Settings" />
       <div className="px-6 flex flex-col lg:flex-row gap-6 pb-20">
         <SettingsSidebar activeTab={activeTab} setActiveTab={setActiveTab} tabs={tabs} />
 

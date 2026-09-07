@@ -39,11 +39,11 @@ export function CustomSelect({
   }, []);
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative w-full sm:w-auto" ref={containerRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={clsx(
-          "group relative flex items-center bg-surface/60 backdrop-blur-md border border-surface/40 shadow-[0_4px_16px_rgba(0,0,0,0.03)] rounded-full px-4 py-2 transition-all duration-300 w-[240px]",
+          "group relative flex items-center bg-surface/60 backdrop-blur-md border border-surface/40 shadow-[0_4px_16px_rgba(0,0,0,0.03)] rounded-full px-4 py-2 transition-all duration-300 w-full sm:w-[240px]",
           hoverColorClass,
           isOpen ? "bg-surface" : ""
         )}

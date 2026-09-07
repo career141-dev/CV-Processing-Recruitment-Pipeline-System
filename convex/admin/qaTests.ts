@@ -766,9 +766,13 @@ export const runRefereeExtractionTest = action({
 });
 
 export const seedFollowUpTestJob = mutation({
-  args: { userEmail: v.optional(v.string()) },
+  args: {
+    userEmail: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const targetEmail = args.userEmail || "sanjaysanjeev2000@gmail.com";
+    const targetPhone = args.phone || "+94753883167";
     const users = await ctx.db.query("users").collect();
     const user = users.find(u => u.email.toLowerCase() === targetEmail.toLowerCase()) || users.find(u => u.role === "admin") || users[0];
 
@@ -813,7 +817,8 @@ export const seedFollowUpTestJob = mutation({
     const candidateId = await ctx.db.insert("candidates", {
       fullName: "Follow-up Test Candidate",
       email: targetEmail,
-      phone: "+94742625552",
+      phone: targetPhone,
+      phoneClean: targetPhone.replace(/\D/g, ""),
       status: "active",
       overallStatus: "follow_up",
     });
@@ -829,9 +834,13 @@ export const seedFollowUpTestJob = mutation({
       isActive: true,
       createdAt: new Date().toISOString(),
       loopIteration: 0,
+      followUpCvReceived: false,
+      followUpCurrentSalary: false,
+      followUpExpectedSalary: false,
+      followUpNoticePeriod: false,
     });
 
-    return { success: true, jobId, candidateId, applicationId: appId, recruiter: user.email };
+    return { success: true, jobId, candidateId, applicationId: appId, candidatePhone: targetPhone, recruiter: user.email };
   },
 });
 

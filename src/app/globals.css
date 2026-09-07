@@ -52,7 +52,7 @@
   --tertiary-fixed: #ffd9e2;
   --text-disabled: #9E9E9E;
   --on-tertiary-fixed-variant: #7a2949;
-  --border: #E0E0E0;
+  --border: #CBD5E1;
   --primary-container: #1b5e20;
   --error: #ba1a1a;
 }
@@ -108,7 +108,7 @@
   --tertiary-fixed: #4f0022;
   --text-disabled: #717a6d;
   --on-tertiary-fixed-variant: #ffb1c8;
-  --border: #2c382c;
+  --border: #374151;
   --primary-container: #005313;
   --error: #ffb4ab;
 }
@@ -182,7 +182,8 @@
 
   --font-label-caps: var(--font-inter), sans-serif;
   --font-card-header: var(--font-inter), sans-serif;
-  --font-page-title: var(--font-inter), sans-serif;
+  --font-page-title: 'DM Sans', var(--font-inter), sans-serif;
+  --font-display: 'DM Sans', var(--font-inter), sans-serif;
   --font-nav-item: var(--font-inter), sans-serif;
   --font-body: var(--font-inter), sans-serif;
   --font-helper-text: var(--font-inter), sans-serif;
@@ -239,4 +240,141 @@ body {
    even if they use hard-coded hover:bg-gray-50 or similar light colors */
 .dark table tr:hover {
   background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Global Form Input Light Outline Borders & Focus Styling */
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="password"],
+input[type="url"],
+input[type="tel"],
+select,
+textarea {
+  border: 1px solid #CBD5E1 !important;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="number"],
+.dark input[type="password"],
+.dark input[type="url"],
+.dark input[type="tel"],
+.dark select,
+.dark textarea {
+  border: 1px solid #374151 !important;
+}
+
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="number"]:hover,
+input[type="password"]:hover,
+input[type="url"]:hover,
+input[type="tel"]:hover,
+select:hover,
+textarea:hover {
+  border-color: #94A3B8 !important;
+}
+
+.dark input[type="text"]:hover,
+.dark input[type="email"]:hover,
+.dark input[type="number"]:hover,
+.dark input[type="password"]:hover,
+.dark input[type="url"]:hover,
+.dark input[type="tel"]:hover,
+.dark select:hover,
+.dark textarea:hover {
+  border-color: #4B5563 !important;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="url"]:focus,
+input[type="tel"]:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: #006763 !important;
+  box-shadow: 0 0 0 2px rgba(0, 103, 99, 0.2) !important;
+}
+
+/* ==========================================================================
+   Modern Sleek Custom Scrollbars (Universal for Light & Dark Themes)
+   ========================================================================== */
+
+/* Firefox Standard Properties */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+.dark * {
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+
+/* WebKit (Chrome, Edge, Safari, Opera) Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.45);
+  border-radius: 9999px;
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.7);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: rgba(71, 85, 105, 0.9);
+}
+
+/* Dark Mode Scrollbars */
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.28);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.55);
+}
+
+.dark ::-webkit-scrollbar-thumb:active {
+  background-color: rgba(203, 213, 225, 0.75);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Utility to completely hide scrollbar while keeping scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Accent scrollbar utility for brand-highlighted containers */
+.accent-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-teal, #006763) transparent;
+}
+.accent-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--accent-teal, #006763);
+}
+.accent-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #004d4a;
 }

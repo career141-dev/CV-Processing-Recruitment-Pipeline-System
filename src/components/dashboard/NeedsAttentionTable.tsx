@@ -1,15 +1,20 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Card, CardHeader } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { AvatarBadge } from '@/components/ui/Badge';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { AlertCircle, Clock, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, User } from 'lucide-react';
-import { SkeletonTableRows } from '@/components/ui/Skeleton';
-
+import {
+  AlertCircle,
+  Briefcase,
+  User,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  ArrowRight,
+  Flame,
+} from 'lucide-react';
 
 interface NeedsAttentionTableProps {
   jobFilter?: string;
@@ -17,11 +22,38 @@ interface NeedsAttentionTableProps {
 
 const ITEMS_PER_PAGE = 5;
 
+function DaysBadge({ days }: { days: number }) {
+  if (days >= 60) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 shrink-0">
+        <Flame size={10} />
+        {days}d
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+      <Clock size={10} />
+      {days}d
+    </span>
+  );
+}
+
+function RecruiterAvatar({ initials, colorClass, name }: { initials: string; colorClass: string; name: string }) {
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0 ${colorClass || 'bg-slate-400'}`}>
+        {initials}
+      </div>
+      <span className="text-[11px] text-text-secondary hidden sm:block truncate max-w-[75px]">{name}</span>
+    </div>
+  );
+}
+
 export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTableProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'jobs' | 'candidates'>('all');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Live Convex Query
   const items = useQuery(api.jobs.stats.getNeedsAttention, { jobFilter });
 
   const agingJobs = items?.filter((item) => item.type === 'aging_job') || [];
@@ -44,230 +76,208 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
     setCurrentPage(1);
   };
 
+  const urgentCount = items?.filter((i) => i.days >= 60).length || 0;
+
   return (
-    <Card noPadding className="p-[1px] border border-border/80 shadow-sm bg-surface">
-      <div className="px-4 py-2.5 border-b border-border/70 bg-surface">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 w-full">
+    <div className="flex flex-col bg-surface border border-border rounded-xl overflow-hidden shadow-xs">
+      {/* Compact Header */}
+      <div className="px-4 py-2.5 border-b border-border bg-surface">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-text-primary text-[13px] font-bold flex items-center gap-1.5">
-                <AlertCircle size={15} className="text-amber-500" />
+            <div className="flex items-center gap-2 mb-0.5">
+              <span
+                className="flex items-center gap-1.5 text-[14px] font-bold text-text-primary"
+                style={{ fontFamily: "'DM Sans', sans-serif" }}
+              >
+                <AlertCircle size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                 Needs Attention
               </span>
               {items && items.length > 0 && (
-                <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-semibold px-1.5 py-0.2 rounded-full border border-amber-500/20">
-                  {items.length} alert{items.length !== 1 ? 's' : ''}
+                <span className="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full leading-none">
+                  {items.length}
+                </span>
+              )}
+              {urgentCount > 0 && (
+                <span className="bg-red-500/10 text-red-600 dark:text-red-400 text-[10px] font-bold px-1.5 py-0.2 rounded-full border border-red-500/20 leading-none flex items-center gap-0.5">
+                  <Flame size={9} />
+                  {urgentCount} urgent
                 </span>
               )}
             </div>
-            <span className="text-text-secondary text-[11px] block">
-              Long-open aging jobs (&gt; 1 month) and stalled pipeline candidates
-            </span>
+            <p className="text-[11px] text-text-secondary">
+              Aging jobs (&gt; 30 days open) and stalled pipeline candidates
+            </p>
           </div>
 
-          {/* Filter Sub-Tabs */}
-          <div className="flex items-center gap-1 bg-surface-container-high p-0.5 rounded-lg border border-border/60 self-start sm:self-auto">
-            <button
-              onClick={() => handleTabChange('all')}
-              className={`px-2 py-0.5 text-[11px] font-medium rounded-md transition-all ${
-                activeTab === 'all'
-                  ? 'bg-surface shadow-xs text-text-primary font-semibold'
-                  : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              All ({items?.length ?? 0})
-            </button>
-            <button
-              onClick={() => handleTabChange('jobs')}
-              className={`px-2 py-0.5 text-[11px] font-medium rounded-md transition-all flex items-center gap-1 ${
-                activeTab === 'jobs'
-                  ? 'bg-surface shadow-xs text-amber-600 dark:text-amber-400 font-semibold'
-                  : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <Briefcase size={11} />
-              Aging Jobs ({agingJobs.length})
-            </button>
-            <button
-              onClick={() => handleTabChange('candidates')}
-              className={`px-2 py-0.5 text-[11px] font-medium rounded-md transition-all flex items-center gap-1 ${
-                activeTab === 'candidates'
-                  ? 'bg-surface shadow-xs text-blue-600 dark:text-blue-400 font-semibold'
-                  : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <User size={11} />
-              Candidates ({stalledCandidates.length})
-            </button>
+          {/* Tab Pills */}
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/50 p-0.5 rounded-lg border border-border/60 self-start sm:self-auto">
+            {(
+              [
+                { key: 'all' as const, label: 'All', count: items?.length ?? 0, icon: null },
+                { key: 'jobs' as const, label: 'Jobs', count: agingJobs.length, icon: <Briefcase size={10} /> },
+                {
+                  key: 'candidates' as const,
+                  label: 'Candidates',
+                  count: stalledCandidates.length,
+                  icon: <User size={10} />,
+                },
+              ] as const
+            ).map(({ key, label, count, icon }) => (
+              <button
+                key={key}
+                onClick={() => handleTabChange(key)}
+                className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded-md transition-all ${
+                  activeTab === key
+                    ? 'bg-surface shadow-xs text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {icon}
+                {label}
+                <span
+                  className={`text-[9px] ml-0.5 px-1 py-px rounded-full font-bold ${
+                    activeTab === key
+                      ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      <div className="w-full overflow-x-auto pb-[1px]">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-solid border-border bg-surface-container-low/40">
-              <th className="py-2 px-3.5 text-text-secondary font-semibold text-[11px] uppercase tracking-wider">
-                Position / Candidate
-              </th>
-              <th className="py-2 px-3.5 text-text-secondary font-semibold text-[11px] uppercase tracking-wider">
-                Client / Context
-              </th>
-              <th className="py-2 px-3.5 text-text-secondary font-semibold text-[11px] uppercase tracking-wider">
-                Alert Notice
-              </th>
-              <th className="py-2 px-3 text-text-secondary font-semibold text-[11px] uppercase tracking-wider text-center">
-                Days
-              </th>
-              <th className="py-2 px-3 text-text-secondary font-semibold text-[11px] uppercase tracking-wider text-center">
-                Assigned
-              </th>
-              <th className="py-2 px-3 text-text-secondary font-semibold text-[11px] uppercase tracking-wider text-center">
-                Action
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {items === undefined ? (
-              <SkeletonTableRows rows={4} cols={6} />
-            ) : paginatedItems.length > 0 ? (
+      {/* Alert List Rows */}
+      <div className="divide-y divide-border/60">
+        {items === undefined ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-2.5 animate-pulse">
+              <div className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-800 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded w-2/5" />
+                <div className="h-2 bg-slate-100 dark:bg-slate-900 rounded w-1/3" />
+              </div>
+              <div className="w-10 h-4 bg-slate-200 dark:bg-slate-800 rounded-full" />
+              <div className="w-14 h-6 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+            </div>
+          ))
+        ) : paginatedItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-1.5 py-8 px-4">
+            <div className="w-8 h-8 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center">
+              <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <span className="text-text-primary font-semibold text-[12px]">All caught up!</span>
+            <span className="text-text-secondary text-[11px] text-center max-w-xs">
+              {activeTab === 'jobs'
+                ? 'No active jobs opened for over 30 days.'
+                : activeTab === 'candidates'
+                ? 'No candidates currently stalled or needing action.'
+                : 'No aging jobs or stalled candidates requiring attention.'}
+            </span>
+          </div>
+        ) : (
+          paginatedItems.map((row) => {
+            const isUrgent = row.days >= 60;
+            const isJob = row.type === 'aging_job';
+            const href = isJob ? `/dashboard/jobs/${row.jobId}` : `/dashboard/candidates/${row.candidateId}`;
 
-              paginatedItems.map((row, idx) => (
-                <tr
-                  key={row.id}
-                  className={`${
-                    idx !== paginatedItems.length - 1 ? 'border-b border-border/70' : ''
-                  } hover:bg-surface-container-high/50 transition-colors group`}
+            return (
+              <div
+                key={row.id}
+                className={`flex items-center gap-3 px-4 py-2 hover:bg-surface-container-low/60 transition-colors group ${
+                  isUrgent
+                    ? 'border-l-[3px] border-l-red-400 dark:border-l-red-500'
+                    : 'border-l-[3px] border-l-transparent'
+                }`}
+              >
+                {/* Type Icon (Emerald for Job, Blue for Candidate) */}
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                    isUrgent
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
+                      : isJob
+                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                      : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                  }`}
                 >
-                  {/* Position / Title */}
-                  <td className="py-2 px-3.5 text-text-primary text-[12px]">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
-                          row.type === 'aging_job'
-                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
-                            : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                        }`}
-                      >
-                        {row.type === 'aging_job' ? <Briefcase size={12} /> : <User size={12} />}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-semibold text-text-primary group-hover:text-primary transition-colors text-[12px] truncate max-w-[240px]">
-                          {row.jobTitle}
-                        </div>
-                        {row.candidateName && (
-                          <div className="text-[10px] text-text-secondary truncate max-w-[240px]">{row.candidateName}</div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
+                  {isJob ? <Briefcase size={13} /> : <User size={13} />}
+                </div>
 
-                  {/* Client / Context */}
-                  <td className="py-2 px-3.5 text-text-secondary text-[12px]">
-                    <div className="font-medium text-text-primary text-[12px]">{row.clientName}</div>
-                    <span className="text-[10px] text-text-tertiary block">{row.stage}</span>
-                  </td>
-
-                  {/* Alert Notice */}
-                  <td className="py-2 px-3.5">
-                    <div
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
-                        row.days >= 60
-                          ? 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
-                          : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
-                      }`}
+                {/* Job / Candidate Title + Client */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className="text-[12px] font-semibold text-text-primary truncate max-w-[210px] group-hover:text-accent-teal transition-colors"
+                      style={{ fontFamily: "'DM Sans', sans-serif" }}
                     >
-                      <Clock size={11} className="shrink-0" />
-                      <span>{row.alertMessage}</span>
-                    </div>
-                  </td>
-
-                  {/* Days */}
-                  <td className={`py-2 px-3 ${row.daysColor} text-[12px] font-bold text-center`}>
-                    {row.days}d
-                  </td>
-
-                  {/* Assigned Recruiter */}
-                  <td className="py-2 px-3 text-center">
-                    <div className="flex flex-col items-center justify-center">
-                      <AvatarBadge
-                        initials={row.initials}
-                        colorClass={row.avatarColor}
-                        size="w-5 h-5 text-[9px] mx-auto"
-                      />
-                      <span className="text-[9px] text-text-tertiary max-w-[70px] truncate block mt-0.5">
-                        {row.recruiterName}
+                      {row.jobTitle}
+                    </span>
+                    {isUrgent && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 shrink-0 uppercase tracking-wide">
+                        Urgent
                       </span>
-                    </div>
-                  </td>
-
-                  {/* Action Link */}
-                  <td className="py-2 px-3 text-center">
-                    <Link
-                      href={
-                        row.type === 'aging_job'
-                          ? `/dashboard/jobs/${row.jobId}`
-                          : `/dashboard/candidates/${row.candidateId}`
-                      }
-                    >
-                      <Button variant="secondary" size="sm" className="h-6 px-2 gap-1 text-[11px]">
-                        View
-                        <ChevronRight size={11} />
-                      </Button>
-                    </Link>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              // Empty State
-              <tr>
-                <td colSpan={6} className="py-8 px-4 text-center bg-surface-container-lowest">
-                  <div className="flex flex-col items-center justify-center gap-1.5">
-                    <div className="w-8 h-8 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 size={16} />
-                    </div>
-                    <span className="text-text-primary font-medium text-[12px]">
-                      All caught up!
-                    </span>
-                    <span className="text-text-secondary text-[11px] max-w-sm">
-                      {activeTab === 'jobs'
-                        ? 'No active jobs currently opened for over 30 days.'
-                        : activeTab === 'candidates'
-                        ? 'No candidates currently stalled or needing action.'
-                        : 'No aging jobs (> 30 days) or stalled candidates requiring attention.'}
-                    </span>
+                    )}
                   </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[11px] text-text-secondary truncate max-w-[150px]">{row.clientName}</span>
+                    {row.stage && (
+                      <>
+                        <span className="text-text-disabled text-[10px]">·</span>
+                        <span className="text-[11px] text-text-disabled truncate">{row.stage}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Alert Notice Details */}
+                <div className="hidden lg:block flex-1 min-w-0 max-w-[200px]">
+                  <span className="text-[11px] text-text-secondary line-clamp-1 leading-snug">
+                    {row.alertMessage}
+                  </span>
+                </div>
+
+                {/* Days Badge */}
+                <DaysBadge days={row.days} />
+
+                {/* Recruiter Avatar */}
+                <RecruiterAvatar initials={row.initials} colorClass={row.avatarColor} name={row.recruiterName} />
+
+                {/* Action Link Button */}
+                <Link href={href}>
+                  <button className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-low border border-border text-[11px] font-semibold text-text-primary hover:bg-accent-teal hover:text-white hover:border-accent-teal transition-all shrink-0">
+                    View
+                    <ArrowRight size={11} />
+                  </button>
+                </Link>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Compact Pagination Footer */}
       {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-2 border-t border-border bg-surface-container-lowest text-[11px] text-text-secondary">
-          <div>
-            Showing <span className="font-semibold text-text-primary">{startIndex + 1}</span>–
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-2 border-t border-border bg-surface-container-lowest/50">
+          <span className="text-[11px] text-text-secondary">
+            Showing{' '}
             <span className="font-semibold text-text-primary">
-              {Math.min(startIndex + ITEMS_PER_PAGE, totalItems)}
+              {startIndex + 1}–{Math.min(startIndex + ITEMS_PER_PAGE, totalItems)}
             </span>{' '}
             of <span className="font-semibold text-text-primary">{totalItems}</span> alerts
-          </div>
+          </span>
 
           <div className="flex items-center gap-1">
-            <Button
-              variant="secondary"
-              size="sm"
+            <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="h-6 px-2 text-[11px] gap-0.5"
+              className="w-6 h-6 flex items-center justify-center rounded border border-border text-text-secondary hover:bg-surface-container-high hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <ChevronLeft size={12} />
-              Prev
-            </Button>
+            </button>
 
-            <div className="flex items-center gap-0.5 px-1">
+            <div className="flex items-center gap-0.5">
               {Array.from({ length: totalPages }, (_, i) => i + 1)
                 .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
                 .map((p, idx, arr) => {
@@ -275,13 +285,13 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
                   const showEllipsis = prev && p - prev > 1;
                   return (
                     <React.Fragment key={p}>
-                      {showEllipsis && <span className="px-0.5 text-text-tertiary text-[10px]">...</span>}
+                      {showEllipsis && <span className="px-0.5 text-text-disabled text-[10px]">…</span>}
                       <button
                         onClick={() => setCurrentPage(p)}
-                        className={`w-6 h-6 rounded text-[11px] font-medium transition-all ${
+                        className={`w-6 h-6 rounded text-[10px] font-semibold transition-all ${
                           currentPage === p
-                            ? 'bg-primary text-on-primary font-bold shadow-xs'
-                            : 'hover:bg-surface-container-high text-text-secondary hover:text-text-primary'
+                            ? 'bg-accent-teal text-white shadow-xs'
+                            : 'text-text-secondary hover:bg-surface-container-high hover:text-text-primary border border-transparent'
                         }`}
                       >
                         {p}
@@ -291,19 +301,16 @@ export function NeedsAttentionTable({ jobFilter = 'All Jobs' }: NeedsAttentionTa
                 })}
             </div>
 
-            <Button
-              variant="secondary"
-              size="sm"
+            <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="h-6 px-2 text-[11px] gap-0.5"
+              className="w-6 h-6 flex items-center justify-center rounded border border-border text-text-secondary hover:bg-surface-container-high hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              Next
               <ChevronRight size={12} />
-            </Button>
+            </button>
           </div>
         </div>
       )}
-    </Card>
+    </div>
   );
 }

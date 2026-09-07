@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Loader2, ShieldAlert, Mail, MessageSquare, Sparkles, Clock, Eye, Edit3, Check } from "lucide-react";
+import { Loader2, ShieldAlert, Mail, MessageSquare, Sparkles, Clock, Eye, Edit3, Check, ChevronDown } from "lucide-react";
 import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'sonner';
 import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
@@ -61,6 +61,7 @@ export default function CreateJobWizard() {
   const [isCustomEducation, setIsCustomEducation] = useState(false);
   const [customEdValue, setCustomEdValue] = useState('');
   const [customEducationLevels, setCustomEducationLevels] = useState<string[]>([]);
+  const [isCustomLinkedinEmail, setIsCustomLinkedinEmail] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateModalTab, setTemplateModalTab] = useState<'schedule' | 'sequence'>('schedule');
   const [templateModalDay, setTemplateModalDay] = useState<'day0' | 'day2' | 'day4' | 'day7'>('day0');
@@ -103,7 +104,7 @@ export default function CreateJobWizard() {
     commonWhatsAppNumber: '',
     whatsappSaved: false,
     channels: {
-      linkedin: false,
+      linkedin: true,
       whatsapp: false,
       metaCampaign: false,
       emailCampaign: false,
@@ -142,7 +143,7 @@ export default function CreateJobWizard() {
     maxFollowUpDays: 3,
     maxFollowUpAttempts: 3,
     customFollowUpQuestions: [] as string[],
-    conversationTone: 'warm_friendly' as 'warm_friendly' | 'professional_formal' | 'casual_tech' | 'direct_concise',
+    conversationTone: 'professional_formal' as 'warm_friendly' | 'professional_formal' | 'casual_tech' | 'direct_concise',
     unresponsiveDays: '7',
     followUpSchedule: {
       day2: true, day2Channel: 'Email',
@@ -249,14 +250,14 @@ export default function CreateJobWizard() {
     ndaRequired: false,
     enablePipelineHealth: true,
     pipelineAlerts: {
-      noNewCvs: '5',
-      taReviewPending: '2',
+      noNewCvs: '1',
+      taReviewPending: '1',
       aiCallNotCompleted: '1',
-      secondShortlistPending: '2',
-      directorReviewPending: '3',
-      clientReviewPending: '5',
-      interviewNotScheduled: '3',
-      offerNotMade: '2',
+      secondShortlistPending: '1',
+      directorReviewPending: '1',
+      clientReviewPending: '1',
+      interviewNotScheduled: '1',
+      offerNotMade: '1',
     }
   });
 
@@ -634,15 +635,15 @@ export default function CreateJobWizard() {
         esaCheckEnabled: formData.reviewLevels.esaStatusCheck,
         rejectionLoopAction: formData.reviewLevels.offerRejectionLoop === "restart" ? "restart_from_new_cvs" : formData.reviewLevels.offerRejectionLoop === "clientReview" ? "return_to_client_review" : "ask_ta_each_time",
         
-        slaNoNewCvsDays: parseInt(formData.pipelineAlerts.noNewCvs) || 5,
-        slaTaReviewDays: parseInt(formData.pipelineAlerts.taReviewPending) || 2,
+        slaNoNewCvsDays: parseInt(formData.pipelineAlerts.noNewCvs) || 1,
+        slaTaReviewDays: parseInt(formData.pipelineAlerts.taReviewPending) || 1,
         slaAiCallDays: parseInt(formData.pipelineAlerts.aiCallNotCompleted) || 1,
-        slaSecondShortlistDays: parseInt(formData.pipelineAlerts.secondShortlistPending) || 2,
-        slaDirectorReviewDays: parseInt(formData.pipelineAlerts.directorReviewPending) || 3,
-        slaClientReviewDays: parseInt(formData.pipelineAlerts.clientReviewPending) || 5,
-        slaEsaDays: 3,
-        slaInterviewDays: parseInt(formData.pipelineAlerts.interviewNotScheduled) || 3,
-        slaOfferDays: parseInt(formData.pipelineAlerts.offerNotMade) || 2,
+        slaSecondShortlistDays: parseInt(formData.pipelineAlerts.secondShortlistPending) || 1,
+        slaDirectorReviewDays: parseInt(formData.pipelineAlerts.directorReviewPending) || 1,
+        slaClientReviewDays: parseInt(formData.pipelineAlerts.clientReviewPending) || 1,
+        slaEsaDays: 1,
+        slaInterviewDays: parseInt(formData.pipelineAlerts.interviewNotScheduled) || 1,
+        slaOfferDays: parseInt(formData.pipelineAlerts.offerNotMade) || 1,
       });
 
       // Step 3.5: assignTeamToJob
@@ -1133,24 +1134,6 @@ export default function CreateJobWizard() {
 
         <div className="space-y-4">
           
-          {/* Manual Upload */}
-          <div className="border border-border rounded-xl p-4 bg-surface transition-all">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-surface-variant text-text-secondary">
-                  <span className="material-symbols-outlined text-[20px]">upload</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-text-primary">Manual / Bulk Upload</p>
-                  <p className="text-xs text-text-secondary mt-0.5">Team uploads CVs directly</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-not-allowed opacity-70">
-                <input type="checkbox" className="sr-only peer" checked disabled />
-                <div className="w-9 h-5 bg-primary-container rounded-full after:absolute after:top-[2px] after:left-[18px] after:bg-white after:rounded-full after:h-4 after:w-4"></div>
-              </label>
-            </div>
-          </div>
 
           {/* WhatsApp */}
           <div className={`border rounded-xl p-4 transition-all ${formData.channels.whatsapp ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
@@ -1255,37 +1238,6 @@ export default function CreateJobWizard() {
             )}
           </div>
 
-          {/* Email Campaign */}
-          <div className={`border rounded-xl p-4 transition-all ${formData.channels.emailCampaign ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${formData.channels.emailCampaign ? 'bg-primary-container/10 text-primary-container' : 'bg-surface-variant text-text-secondary'}`}>
-                  <span className="material-symbols-outlined text-[20px]">mail</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-text-primary">Email Campaign</p>
-                  <p className="text-xs text-text-secondary mt-0.5">Monitor inbox for CV attachments</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={formData.channels.emailCampaign} onChange={e => updateNestedFormData('channels', 'emailCampaign', e.target.checked)} />
-                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
-              </label>
-            </div>
-            {formData.channels.emailCampaign && (
-              <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">Email Inbox Address</label>
-                <input type="text" className="w-64 border border-border rounded-md px-3 py-2 text-sm bg-surface mb-3" placeholder="jobs@career141.com" value={formData.emailInbox} onChange={e => updateFormData('emailInbox', e.target.value)} />
-                <div className="p-3 bg-surface-container-low border border-border rounded-lg text-sm text-text-primary flex items-start gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-text-secondary">info</span>
-                  <div className="text-xs leading-relaxed">
-                    CVs sent to this inbox will be auto-imported and routed by the Email Agent.
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* LinkedIn */}
           <div className={`border rounded-xl p-4 transition-all ${formData.channels.linkedin ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
             <div className="flex items-start justify-between gap-3">
@@ -1304,163 +1256,201 @@ export default function CreateJobWizard() {
               </label>
             </div>
             {formData.channels.linkedin && (
-              <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
-                 <p className="text-xs text-text-secondary flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">info</span> No additional config needed. CVs will be automatically collected by the Email Agent.
-                </p>
+              <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2 space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-text-primary mb-1.5">LinkedIn Email Inbox</label>
+                  <div className="flex flex-col gap-2.5 max-w-md">
+                    <div className="relative">
+                      <select
+                        className="w-full appearance-none bg-surface border border-border rounded-lg pl-3.5 pr-10 py-2.5 text-xs font-medium text-text-primary shadow-xs transition-all focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer hover:border-text-secondary/40"
+                        value={isCustomLinkedinEmail ? "custom" : (formData.linkedinEmail || "linkedin@career141.com")}
+                        onChange={e => {
+                          if (e.target.value === "custom") {
+                            setIsCustomLinkedinEmail(true);
+                            updateFormData('linkedinEmail', '');
+                          } else {
+                            setIsCustomLinkedinEmail(false);
+                            updateFormData('linkedinEmail', e.target.value);
+                          }
+                        }}
+                      >
+                        <option value="linkedin@career141.com">linkedin@career141.com (Default LinkedIn Inbox)</option>
+                        <option value="cv@career141.com">cv@career141.com (General CV Inbox)</option>
+                        <option value="job@career141.com">job@career141.com (Jobs Mailbox)</option>
+                        <option value="custom">+ Custom / Another Mailbox</option>
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-text-secondary">
+                        <ChevronDown className="w-4 h-4 text-text-secondary transition-transform duration-200" />
+                      </div>
+                    </div>
+
+                    {isCustomLinkedinEmail && (
+                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                        <input
+                          type="email"
+                          className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-xs font-medium text-text-primary shadow-xs transition-all focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-text-secondary/50"
+                          placeholder="e.g. applications@career141.com"
+                          value={formData.linkedinEmail}
+                          onChange={e => updateFormData('linkedinEmail', e.target.value)}
+                        />
+                        <p className="text-[11px] text-text-secondary mt-1">Enter the exact Microsoft 365 or company email address where LinkedIn notifications or applicant CVs arrive.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-surface-container-low border border-border rounded-lg text-xs text-text-secondary flex items-start gap-2">
+                  <span className="material-symbols-outlined text-[16px] text-text-primary shrink-0 mt-0.5">info</span>
+                  <div className="leading-relaxed">
+                    CVs received at <strong className="text-text-primary">{formData.linkedinEmail || "linkedin@career141.com"}</strong> matching this job title/keyword will be automatically routed here by the Email Agent. You can also change this anytime later in Edit Job.
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Meta Campaign */}
-          <div className={`border rounded-xl p-4 transition-all ${formData.channels.metaCampaign ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${formData.channels.metaCampaign ? 'bg-primary-container/10 text-primary-container' : 'bg-surface-variant text-text-secondary'}`}>
-                  <span className="material-symbols-outlined text-[20px]">public</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-text-primary">Meta Campaign</p>
-                  <p className="text-xs text-text-secondary mt-0.5">Facebook/Instagram ad linking to WhatsApp</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={formData.channels.metaCampaign} onChange={e => updateNestedFormData('channels', 'metaCampaign', e.target.checked)} />
-                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
-              </label>
+          {/* Marketing Team Section */}
+          <div className="pt-3 border-t border-border/60">
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px] text-primary-container">campaign</span>
+                Marketing Team Channels
+              </h3>
+              <p className="text-xs text-text-secondary">Outbound and inbound channels managed in coordination with the marketing team.</p>
             </div>
-            {formData.channels.metaCampaign && (
-              <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">WhatsApp Number for Ads</label>
-                  <div className="space-y-3">
-                    <label className={`flex items-center gap-2 ${hasWhatsAppChannel ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
-                      <input 
-                        type="radio" 
-                        disabled={!hasWhatsAppChannel}
-                        checked={!formData.useDifferentMetaNumber} 
-                        onChange={() => {
-                          if (hasWhatsAppChannel) {
-                            updateFormData('useDifferentMetaNumber', false);
-                          }
-                        }} 
-                        className="text-primary-container focus:ring-primary-container w-4 h-4 disabled:opacity-50" 
-                      />
-                      <span className="text-xs">
-                        Use same number as WhatsApp above {!hasWhatsAppChannel && "(WhatsApp channel not enabled above)"}
-                      </span>
-                    </label>
-
-                    <div className="flex flex-col gap-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input 
-                          type="radio" 
-                          checked={formData.useDifferentMetaNumber} 
-                          onChange={() => updateFormData('useDifferentMetaNumber', true)} 
-                          className="text-primary-container focus:ring-primary-container w-4 h-4" 
-                        />
-                        <span className="text-xs">Use different / dedicated number:</span>
-                      </label>
-                      {formData.useDifferentMetaNumber && (
-                        <div className="pl-6 space-y-2 animate-in fade-in slide-in-from-top-1">
-                          <select 
-                            className="w-64 border border-border rounded-md px-3 py-2 text-xs bg-surface text-text-primary"
-                            value={isCustomMetaNumber ? "custom" : (formData.metaWhatsAppNumber || "")} 
-                            onChange={e => {
-                              if (e.target.value === "custom") {
-                                setIsCustomMetaNumber(true);
-                                updateFormData('metaWhatsAppNumber', "");
-                              } else {
-                                setIsCustomMetaNumber(false);
-                                updateFormData('metaWhatsAppNumber', e.target.value);
-                              }
-                            }}
-                          >
-                            <option value="" disabled>Select a WhatChimp number...</option>
-                            {whatChimpNumbers.map(item => (
-                              <option key={item.number} value={item.number}>
-                                {item.name} ({item.number})
-                              </option>
-                            ))}
-                            <option value="custom">+ Custom / Add New</option>
-                          </select>
-
-                          {isCustomMetaNumber && (
-                            <input 
-                              type="text" 
-                              className="w-64 border border-border rounded-md px-3 py-2 text-xs bg-surface text-text-primary animate-in fade-in" 
-                              placeholder="e.g. +94 77 000 0001" 
-                              value={formData.metaWhatsAppNumber} 
-                              onChange={e => updateFormData('metaWhatsAppNumber', e.target.value)} 
-                            />
-                          )}
-                        </div>
-                      )}
+            <div className="space-y-4">
+              {/* Meta Campaign */}
+              <div className={`border rounded-xl p-4 transition-all ${formData.channels.metaCampaign ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${formData.channels.metaCampaign ? 'bg-primary-container/10 text-primary-container' : 'bg-surface-variant text-text-secondary'}`}>
+                      <span className="material-symbols-outlined text-[20px]">public</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-text-primary">Meta Campaign</p>
+                      <p className="text-xs text-text-secondary mt-0.5">Facebook/Instagram ad linking to WhatsApp</p>
                     </div>
                   </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={formData.channels.metaCampaign} onChange={e => updateNestedFormData('channels', 'metaCampaign', e.target.checked)} />
+                    <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+                  </label>
                 </div>
+                {formData.channels.metaCampaign && (
+                  <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2 space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1.5">WhatsApp Number for Ads</label>
+                      <div className="space-y-3">
+                        <label className={`flex items-center gap-2 ${hasWhatsAppChannel ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                          <input 
+                            type="radio" 
+                            disabled={!hasWhatsAppChannel}
+                            checked={!formData.useDifferentMetaNumber} 
+                            onChange={() => {
+                              if (hasWhatsAppChannel) {
+                                updateFormData('useDifferentMetaNumber', false);
+                              }
+                            }} 
+                            className="text-primary-container focus:ring-primary-container w-4 h-4 disabled:opacity-50" 
+                          />
+                          <span className="text-xs">
+                            Use same number as WhatsApp above {!hasWhatsAppChannel && "(WhatsApp channel not enabled above)"}
+                          </span>
+                        </label>
 
-                <div className="p-3 bg-surface-container-low border border-border rounded-lg">
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Ad Destination Link (Click to WhatsApp)</label>
-                  <div className="flex items-center justify-between bg-surface border border-border rounded px-3 py-1.5">
-                    <span className="text-xs font-mono text-text-secondary truncate pr-4">wa.me/{displayMetaNumber}?text={keyword}</span>
-                    <button className="text-primary-container text-xs font-medium hover:underline flex-shrink-0" onClick={(e) => { e.preventDefault(); navigator.clipboard.writeText(`wa.me/${displayMetaNumber}?text=${keyword}`); alert('Link copied!'); }}>Copy</button>
+                        <div className="flex flex-col gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input 
+                              type="radio" 
+                              checked={formData.useDifferentMetaNumber} 
+                              onChange={() => updateFormData('useDifferentMetaNumber', true)} 
+                              className="text-primary-container focus:ring-primary-container w-4 h-4" 
+                            />
+                            <span className="text-xs">Use different / dedicated number:</span>
+                          </label>
+                          {formData.useDifferentMetaNumber && (
+                            <div className="pl-6 space-y-2 animate-in fade-in slide-in-from-top-1">
+                              <select 
+                                className="w-64 border border-border rounded-md px-3 py-2 text-xs bg-surface text-text-primary"
+                                value={isCustomMetaNumber ? "custom" : (formData.metaWhatsAppNumber || "")} 
+                                onChange={e => {
+                                  if (e.target.value === "custom") {
+                                    setIsCustomMetaNumber(true);
+                                    updateFormData('metaWhatsAppNumber', "");
+                                  } else {
+                                    setIsCustomMetaNumber(false);
+                                    updateFormData('metaWhatsAppNumber', e.target.value);
+                                  }
+                                }}
+                              >
+                                <option value="" disabled>Select a WhatChimp number...</option>
+                                {whatChimpNumbers.map(item => (
+                                  <option key={item.number} value={item.number}>
+                                    {item.name} ({item.number})
+                                  </option>
+                                ))}
+                                <option value="custom">+ Custom / Add New</option>
+                              </select>
+
+                              {isCustomMetaNumber && (
+                                <input 
+                                  type="text" 
+                                  className="w-64 border border-border rounded-md px-3 py-2 text-xs bg-surface text-text-primary animate-in fade-in" 
+                                  placeholder="e.g. +94 77 000 0001" 
+                                  value={formData.metaWhatsAppNumber} 
+                                  onChange={e => updateFormData('metaWhatsAppNumber', e.target.value)} 
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-surface-container-low border border-border rounded-lg">
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Ad Destination Link (Click to WhatsApp)</label>
+                      <div className="flex items-center justify-between bg-surface border border-border rounded px-3 py-1.5">
+                        <span className="text-xs font-mono text-text-secondary truncate pr-4">wa.me/{displayMetaNumber}?text={keyword}</span>
+                        <button className="text-primary-container text-xs font-medium hover:underline flex-shrink-0" onClick={(e) => { e.preventDefault(); navigator.clipboard.writeText(`wa.me/${displayMetaNumber}?text=${keyword}`); alert('Link copied!'); }}>Copy</button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
-            )}
+
+              {/* Email Campaign */}
+              <div className={`border rounded-xl p-4 transition-all ${formData.channels.emailCampaign ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${formData.channels.emailCampaign ? 'bg-primary-container/10 text-primary-container' : 'bg-surface-variant text-text-secondary'}`}>
+                      <span className="material-symbols-outlined text-[20px]">mail</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-text-primary">Email Campaign</p>
+                      <p className="text-xs text-text-secondary mt-0.5">Monitor inbox for CV attachments</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={formData.channels.emailCampaign} onChange={e => updateNestedFormData('channels', 'emailCampaign', e.target.checked)} />
+                    <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+                  </label>
+                </div>
+                {formData.channels.emailCampaign && (
+                  <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Email Inbox Address</label>
+                    <input type="text" className="w-64 border border-border rounded-md px-3 py-2 text-sm bg-surface mb-3" placeholder="jobs@career141.com" value={formData.emailInbox} onChange={e => updateFormData('emailInbox', e.target.value)} />
+                    <div className="p-3 bg-surface-container-low border border-border rounded-lg text-sm text-text-primary flex items-start gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-text-secondary">info</span>
+                      <div className="text-xs leading-relaxed">
+                        CVs sent to this inbox will be auto-imported and routed by the Email Agent.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Workable */}
-          <div className={`border rounded-xl p-4 transition-all ${formData.channels.workable ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${formData.channels.workable ? 'bg-primary-container/10 text-primary-container' : 'bg-surface-variant text-text-secondary'}`}>
-                  <span className="material-symbols-outlined text-[20px]">search</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-text-primary">Workable ATS</p>
-                  <p className="text-xs text-text-secondary mt-0.5">Sync candidates from Workable ATS</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={formData.channels.workable} onChange={e => updateNestedFormData('channels', 'workable', e.target.checked)} />
-                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
-              </label>
-            </div>
-            {formData.channels.workable && (
-              <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">Workable Job ID</label>
-                <input type="text" className="w-64 border border-border rounded-md px-3 py-2 text-sm bg-surface" value={formData.workableJobId} onChange={e => updateFormData('workableJobId', e.target.value)} placeholder="e.g. wk-brand-mgr" />
-              </div>
-            )}
-          </div>
-
-          {/* Headhunting */}
-          <div className={`border rounded-xl p-4 transition-all ${formData.channels.headhunting ? 'border-primary-container/30 bg-primary-container/5' : 'border-border bg-surface'}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${formData.channels.headhunting ? 'bg-primary-container/10 text-primary-container' : 'bg-surface-variant text-text-secondary'}`}>
-                  <span className="material-symbols-outlined text-[20px]">headset_mic</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-text-primary">Headhunting</p>
-                  <p className="text-xs text-text-secondary mt-0.5">Direct sourcing by recruiters</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={formData.channels.headhunting} onChange={e => updateNestedFormData('channels', 'headhunting', e.target.checked)} />
-                <div className="w-9 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
-              </label>
-            </div>
-            {formData.channels.headhunting && (
-              <div className="mt-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
-                 <p className="text-xs text-text-secondary flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">info</span> Agent 2 will scan the database for existing matches immediately after this job is published.
-                </p>
-              </div>
-            )}
-          </div>
 
         </div>
       </div>
@@ -1713,65 +1703,11 @@ export default function CreateJobWizard() {
                   </div>
                 </div>
 
-                {/* 3. AI Conversation Tone */}
-                <div className="pt-4 border-t border-border">
-                  <div className="mb-3">
-                    <span className="text-sm font-bold text-text-primary block">3. AI Conversation Tone (Active WhatsApp Chat)</span>
-                    <p className="text-xs text-text-secondary mt-0.5">Select how the AI engages with the candidate once they reply on WhatsApp.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
-                    {[
-                      {
-                        id: 'warm_friendly',
-                        label: '🌟 Warm & Friendly',
-                        desc: 'Encouraging, conversational, uses friendly phrasing and emojis. Great for creative, sales, and general hiring.',
-                      },
-                      {
-                        id: 'professional_formal',
-                        label: '👔 Professional & Formal',
-                        desc: 'Polite, clear, structured, corporate, and precise. Ideal for executive, finance, and legal roles.',
-                      },
-                      {
-                        id: 'casual_tech',
-                        label: '💻 Casual & Tech-Savvy',
-                        desc: 'Direct, peer-to-peer, technical, concise. Ideal for developers and engineering roles.',
-                      },
-                      {
-                        id: 'direct_concise',
-                        label: '⚡ Direct & Concise',
-                        desc: 'Short, prompt, to-the-point with minimal extra words.',
-                      },
-                    ].map((tone) => {
-                      const isSelected = (formData.conversationTone || 'warm_friendly') === tone.id;
-                      return (
-                        <div
-                          key={tone.id}
-                          onClick={() => updateFormData('conversationTone', tone.id)}
-                          className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                            isSelected
-                              ? 'border-primary-container bg-primary-container/10 ring-1 ring-primary-container'
-                              : 'border-border bg-surface hover:border-text-secondary/40'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-bold text-text-primary">{tone.label}</span>
-                            {isSelected && (
-                              <span className="material-symbols-outlined text-[16px] text-primary-container">check_circle</span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">{tone.desc}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 4. WhatsApp Initial Outreach Preview (Meta Business Approved) */}
+                {/* 3. WhatsApp Initial Outreach Preview (Meta Business Approved) */}
                 <div className="pt-4 border-t border-border">
                   <div className="flex items-center justify-between mb-2">
                     <div>
-                      <span className="text-sm font-bold text-text-primary block">4. WhatsApp Initial Outreach Preview</span>
+                      <span className="text-sm font-bold text-text-primary block">3. WhatsApp Initial Outreach Preview</span>
                       <p className="text-xs text-text-secondary mt-0.5">This initial outreach is sent using the verified Meta Business Template.</p>
                     </div>
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-500/10 text-[#1B5E20] border border-green-500/20 rounded-full text-[10px] font-semibold">
