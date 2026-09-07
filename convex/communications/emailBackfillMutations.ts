@@ -79,6 +79,7 @@ export const updateScanProgress = mutation({
       v.union(
         v.literal("discovery"),
         v.literal("extracting"),
+        v.literal("retrying"),
         v.literal("done"),
         v.literal("error"),
         v.literal("stopped"),
@@ -100,6 +101,7 @@ export const updateScanProgress = mutation({
     processedAttachmentEmails: v.optional(v.number()),
     currentStage: v.optional(v.string()),
     nextCursorUrl: v.optional(v.string()),
+    currentFolderId: v.optional(v.string()),
     currentFolderIndex: v.optional(v.number()),
     currentFolderId: v.optional(v.string()),
     lastProcessedMessageId: v.optional(v.string()),
@@ -135,6 +137,7 @@ export const updateScanProgress = mutation({
     if (args.processedAttachmentEmails !== undefined) patch.processedAttachmentEmails = args.processedAttachmentEmails;
     if (args.currentStage !== undefined) patch.currentStage = args.currentStage;
     if (args.nextCursorUrl !== undefined) patch.nextCursorUrl = args.nextCursorUrl;
+    if (args.currentFolderId !== undefined) patch.currentFolderId = args.currentFolderId;
     if (args.currentFolderIndex !== undefined) patch.currentFolderIndex = args.currentFolderIndex;
     if (args.currentFolderId !== undefined) patch.currentFolderId = args.currentFolderId;
     if (args.lastProcessedMessageId !== undefined) patch.lastProcessedMessageId = args.lastProcessedMessageId;
@@ -178,6 +181,7 @@ export const setScanJobStatus = mutation({
       v.union(
         v.literal("discovery"),
         v.literal("extracting"),
+        v.literal("retrying"),
         v.literal("done"),
         v.literal("error"),
         v.literal("stopped"),
@@ -188,6 +192,7 @@ export const setScanJobStatus = mutation({
     errorMessage: v.optional(v.string()),
     currentStage: v.optional(v.string()),
     nextCursorUrl: v.optional(v.string()),
+    currentFolderId: v.optional(v.string()),
     currentFolderIndex: v.optional(v.number()),
     currentFolderId: v.optional(v.string()),
     lastProcessedMessageId: v.optional(v.string()),
@@ -231,6 +236,7 @@ export const setScanJobStatus = mutation({
     if (args.errorMessage !== undefined) patch.errorMessage = args.errorMessage;
     if (args.currentStage !== undefined) patch.currentStage = args.currentStage;
     if (args.nextCursorUrl !== undefined) patch.nextCursorUrl = args.nextCursorUrl;
+    if (args.currentFolderId !== undefined) patch.currentFolderId = args.currentFolderId;
     if (args.currentFolderIndex !== undefined) patch.currentFolderIndex = args.currentFolderIndex;
     if (args.currentFolderId !== undefined) patch.currentFolderId = args.currentFolderId;
     if (args.lastProcessedMessageId !== undefined) patch.lastProcessedMessageId = args.lastProcessedMessageId;

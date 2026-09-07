@@ -151,15 +151,15 @@ http.route({
         clientAccessLevel: "view_only",
         esaCheckEnabled: true,
         rejectionLoopAction: "restart_from_new_cvs",
-        slaNoNewCvsDays: 5,
-        slaTaReviewDays: 2,
+        slaNoNewCvsDays: 1,
+        slaTaReviewDays: 1,
         slaAiCallDays: 1,
-        slaSecondShortlistDays: 2,
-        slaDirectorReviewDays: 3,
-        slaClientReviewDays: 5,
-        slaEsaDays: 3,
-        slaInterviewDays: 3,
-        slaOfferDays: 2,
+        slaSecondShortlistDays: 1,
+        slaDirectorReviewDays: 1,
+        slaClientReviewDays: 1,
+        slaEsaDays: 1,
+        slaInterviewDays: 1,
+        slaOfferDays: 1,
       });
 
       // Step 4: Publish Job instantly for this test

@@ -1448,6 +1448,7 @@ export default defineSchema({
       v.union(
         v.literal("discovery"),
         v.literal("extracting"),
+        v.literal("retrying"),
         v.literal("done"),
         v.literal("error"),
         v.literal("stopped"),
@@ -1461,6 +1462,7 @@ export default defineSchema({
     processedAttachmentEmails: v.optional(v.number()),
     errorMessage: v.optional(v.string()),
     nextCursorUrl: v.optional(v.string()),
+    currentFolderId: v.optional(v.string()),
     currentFolderIndex: v.optional(v.number()),
     currentFolderId: v.optional(v.string()),
     lastProcessedMessageId: v.optional(v.string()),

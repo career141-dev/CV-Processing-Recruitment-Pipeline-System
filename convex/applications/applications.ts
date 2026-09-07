@@ -112,6 +112,8 @@ export const getByJobId = query({
         expectedSalary: dbCandidate.expectedSalary ?? app.candidateExpectedSalary,
         noticePeriodDays: dbCandidate.noticePeriodDays ?? app.candidateNoticePeriodDays,
         overallStatus: dbCandidate.overallStatus,
+        sourceChannel: dbCandidate.sourceChannel || dbCandidate.firstSourceChannel || (dbCandidate as any).source,
+        source: (dbCandidate as any).source || dbCandidate.sourceChannel || dbCandidate.firstSourceChannel,
       } : {
         _id: app.candidateId,
         fullName: app.candidateName ?? "Unknown Candidate",
@@ -123,6 +125,8 @@ export const getByJobId = query({
         currentSalary: app.candidateCurrentSalary,
         expectedSalary: app.candidateExpectedSalary,
         noticePeriodDays: app.candidateNoticePeriodDays,
+        sourceChannel: app.sourceChannel,
+        source: app.sourceChannel,
       };
 
       return {

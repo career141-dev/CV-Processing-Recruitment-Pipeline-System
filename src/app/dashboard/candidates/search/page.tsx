@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { CandidateSidebarFilters } from "@/components/candidates/CandidateSidebarFilters";
 import { CandidateCard } from "@/components/candidates/CandidateCard";
 import { FloatingActionBar } from "@/components/candidates/FloatingActionBar";
@@ -291,8 +290,6 @@ export default function CandidatesSearchPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 md:p-8 transition-colors duration-300">
       <div className="max-w-7xl mx-auto space-y-6">
-        <PageHeader title="AI Candidate Search" />
-
         <div className="flex flex-col items-start self-stretch w-full">
           {/* Header Bar with Filter Options Toggle */}
           <div className="flex flex-col md:flex-row md:items-center justify-between w-full mb-4 gap-4">

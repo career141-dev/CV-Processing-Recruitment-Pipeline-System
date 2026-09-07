@@ -66,7 +66,7 @@ export const extractDetailsFromText = internalAction({
       casual_tech: "Direct, tech-savvy, conversational, concise, and peer-to-peer.",
       direct_concise: "Short, prompt, to-the-point with minimal extra words.",
     };
-    const selectedTone = toneMap[job.conversationTone || "warm_friendly"] || (job.conversationTone ? `Custom tone: ${job.conversationTone}` : toneMap.warm_friendly);
+    const selectedTone = toneMap[job.conversationTone || "professional_formal"] || (job.conversationTone ? `Custom tone: ${job.conversationTone}` : toneMap.professional_formal);
 
     const openai = getOpenAI("email_auto_reply");
     const model = getModelForTask("email_auto_reply");

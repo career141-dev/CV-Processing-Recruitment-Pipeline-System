@@ -8,8 +8,8 @@ import {
   CheckCircle2, UserCheck, Building2, Video, 
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
-  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, MessageCircle, DollarSign, ExternalLink, HelpCircle, Square, Search
-
+  Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, MessageCircle, DollarSign, ExternalLink, HelpCircle, Square, Search,
+  Database
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -140,30 +140,90 @@ const ScoreRing = ({ score }: { score: number | string }) => {
   );
 };
 
-const AiReasonDisplay = ({ reason }: { reason?: string | null }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+const AiReasonDisplay = ({ reason, candidateName }: { reason?: string | null; candidateName?: string }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   if (!reason || reason.trim() === '') {
     return <span className="text-text-disabled italic text-[11px]">No AI match reason generated yet</span>;
   }
 
-  const isLong = reason.length > 90;
+  const isLong = reason.length > 75;
 
   return (
-    <div className="text-[12px] text-text-secondary leading-snug max-w-[280px]">
-      <div className={isExpanded ? "" : "line-clamp-2"} title={reason}>
-        {reason}
+    <>
+      <div className="text-[12px] text-text-secondary leading-snug max-w-[240px]">
+        <p className="line-clamp-2" title={reason}>
+          {reason}
+        </p>
+        {isLong && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsModalOpen(true);
+            }}
+            className="text-primary hover:underline text-[11px] font-semibold mt-1 inline-flex items-center gap-1 cursor-pointer"
+          >
+            <span>Read full reason</span>
+            <ExternalLink className="w-2.5 h-2.5" />
+          </button>
+        )}
       </div>
-      {isLong && (
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-primary hover:underline text-[11px] font-semibold mt-0.5 inline-block"
+
+      {isModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsModalOpen(false);
+          }}
         >
-          {isExpanded ? "See Less" : "See More"}
-        </button>
+          <div 
+            className="bg-surface border border-border rounded-xl shadow-2xl max-w-lg w-full p-5 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm text-text-primary">
+                    AI Match & Shortlist Reason
+                  </h3>
+                  {candidateName && (
+                    <p className="text-xs text-text-secondary">{candidateName}</p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="p-1 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-container transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-surface-bright rounded-lg p-4 border border-border/60 max-h-[60vh] overflow-y-auto">
+              <p className="text-[13px] text-text-primary leading-relaxed whitespace-pre-wrap">
+                {reason}
+              </p>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 };
 
@@ -200,6 +260,101 @@ const CandidateNameDisplay = ({ name, cvUploadId, doNotContact, candidateId }: {
   </div>
 );
 
+const LinkedInIcon = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.46 10.9v8.37H9.2V10.9H6.46M7.83 6.64c-.95 0-1.72.78-1.72 1.73s.77 1.73 1.72 1.73a1.73 1.73 0 0 0 1.73-1.73c0-.95-.78-1.73-1.73-1.73Z" />
+  </svg>
+);
+
+const WhatsAppIcon = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67M9.53 7.35C9.33 7.35 9.14 7.35 8.97 7.61C8.77 7.92 8.22 8.44 8.22 9.51C8.22 10.58 9 11.61 9.11 11.76C9.22 11.91 10.6 14.15 12.8 15C14.64 15.75 15.01 15.6 15.42 15.56C15.82 15.52 16.73 15.02 16.92 14.49C17.11 13.96 17.11 13.5 17.05 13.4C16.99 13.3 16.84 13.25 16.61 13.14C16.38 13.03 15.26 12.48 15.05 12.4C14.85 12.33 14.7 12.29 14.55 12.52C14.4 12.75 13.98 13.25 13.85 13.4C13.72 13.55 13.59 13.57 13.36 13.46C13.13 13.35 12.39 13.1 11.51 12.31C10.82 11.7 10.36 10.95 10.23 10.72C10.1 10.49 10.22 10.37 10.33 10.26C10.43 10.16 10.56 10 10.67 9.87C10.78 9.74 10.82 9.65 10.89 9.5C10.96 9.35 10.92 9.22 10.87 9.11C10.82 9 10.37 7.89 10.18 7.44C9.99 7 9.8 7.06 9.65 7.05L9.53 7.35Z" />
+  </svg>
+);
+
+type SourceFilterType = 'All Sources' | 'LinkedIn' | 'WhatsApp' | 'Direct Upload';
+
+const getCandidateSourceType = (app: any): 'linkedin' | 'whatsapp' | 'direct_upload' | 'email' => {
+  const appSrc = (app?.sourceChannel || '').toLowerCase().trim();
+  const candSrc = (
+    app?.candidate?.sourceChannel ||
+    app?.candidate?.firstSourceChannel ||
+    app?.candidate?.source ||
+    ''
+  ).toLowerCase().trim();
+
+  // 1. LinkedIn
+  if (appSrc.includes('linkedin') || candSrc.includes('linkedin')) {
+    return 'linkedin';
+  }
+
+  // 2. WhatsApp / Meta
+  if (
+    appSrc.includes('whatsapp') ||
+    appSrc.includes('meta') ||
+    candSrc.includes('whatsapp') ||
+    candSrc.includes('meta')
+  ) {
+    return 'whatsapp';
+  }
+
+  // 3. Email
+  if (
+    appSrc.includes('email') ||
+    appSrc.includes('mail') ||
+    candSrc.includes('email') ||
+    candSrc.includes('mail')
+  ) {
+    return 'email';
+  }
+
+  // 4. Direct Upload / Manual / Scanner / Headhunt / Database fallback
+  return 'direct_upload';
+};
+
+const matchesSourceFilter = (app: any, filter: SourceFilterType): boolean => {
+  if (filter === 'All Sources') return true;
+  const src = getCandidateSourceType(app);
+  if (filter === 'LinkedIn') return src === 'linkedin';
+  if (filter === 'WhatsApp') return src === 'whatsapp';
+  if (filter === 'Direct Upload') return src === 'direct_upload';
+  return true;
+};
+
+const getSourceDisplayBadge = (app: any) => {
+  const type = getCandidateSourceType(app);
+  switch (type) {
+    case 'linkedin':
+      return {
+        label: 'LinkedIn',
+        textClass: 'text-[#0A66C2]',
+        bgClass: 'bg-[#0A66C2]/10 text-[#0A66C2] border-[#0A66C2]/20',
+        icon: <LinkedInIcon className="w-3.5 h-3.5 text-[#0A66C2] shrink-0" />
+      };
+    case 'whatsapp':
+      return {
+        label: 'WhatsApp',
+        textClass: 'text-[#25D366]',
+        bgClass: 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20',
+        icon: <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366] shrink-0" />
+      };
+    case 'email':
+      return {
+        label: 'Email',
+        textClass: 'text-amber-600 dark:text-amber-400',
+        bgClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+        icon: <Mail className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+      };
+    case 'direct_upload':
+    default:
+      return {
+        label: 'Direct Upload',
+        textClass: 'text-purple-600 dark:text-purple-400',
+        bgClass: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+        icon: <Upload className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+      };
+  }
+};
 
 const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobId: Id<"jobs">, applications: any[] | undefined, onNavigate: () => void }) => {
   const { showError } = useErrorPopup();
@@ -277,7 +432,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
           <div className="text-text-secondary text-xs">{candidate?.totalExperienceYears ? `${candidate.totalExperienceYears} yrs exp` : ((candidate as any)?.experience ? `${(candidate as any).experience} yrs exp` : (match.candidateExp ? `${match.candidateExp} yrs exp` : 'Exp not specified'))}</div>
         </td>
         <td className="p-4">
-          <AiReasonDisplay reason={match.reason} />
+          <AiReasonDisplay reason={match.reason} candidateName={candidate?.fullName || match.candidateName} />
         </td>
         <td className="p-4 text-right">
           <div className="flex items-center justify-end gap-2">
@@ -601,7 +756,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
       </td>
       
       <td className="p-4 align-top">
-        <AiReasonDisplay reason={item.scoreReason} />
+        <AiReasonDisplay reason={item.scoreReason} candidateName={item.name} />
       </td>
       
       <td className="p-4 text-right align-top">
@@ -1125,7 +1280,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   if (isLoggingCall) {
     return (
       <tr className="border-b border-border bg-surface-bright/30">
-        <td colSpan={7} className="p-4">
+        <td colSpan={9} className="p-4">
           <LogManualCallCard
             candidateName={item.name}
             outcome={outcome}
@@ -1171,9 +1326,25 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
         )}
       </td>
       <td className="p-4 align-top">
-        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${isDbMatch ? 'bg-blue-500/10 text-blue-600' : 'bg-green-500/10 text-green-600'}`}>
-          {isDbMatch ? 'DB Match' : 'External'}
-        </span>
+        {isDbMatch ? (
+          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
+            DB Match
+          </span>
+        ) : (() => {
+          const badge = getSourceDisplayBadge(item);
+          return (
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 w-fit ${badge.bgClass}`}>
+              {badge.icon}
+              {badge.label}
+            </span>
+          );
+        })()}
+      </td>
+      <td className="p-4 align-top">
+        <ScoreRing score={item.score} />
+      </td>
+      <td className="p-4 align-top">
+        <AiReasonDisplay reason={item.scoreReason || (item.candidate as any)?.summary} candidateName={item.name} />
       </td>
       <td className="p-4 align-top">
         {(() => {
@@ -1998,7 +2169,7 @@ export default function JobDetailPage() {
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
   const [timelineAppId, setTimelineAppId] = useState<Id<"applications"> | null>(null);
-  const [activeSourceFilter, setActiveSourceFilter] = useState<'All Sources' | 'LinkedIn' | 'WhatsApp'>('All Sources');
+  const [activeSourceFilter, setActiveSourceFilter] = useState<SourceFilterType>('All Sources');
   const [currentPage, setCurrentPage] = useState(1);
   const [matchesPage, setMatchesPage] = useState(1);
   const [isRescoring, setIsRescoring] = useState<Record<string, boolean>>({});
@@ -2324,8 +2495,7 @@ export default function JobDetailPage() {
 
   const newCvsRaw = applications.filter(app => app.currentStage === "new_cvs");
   const newCvs = newCvsRaw.filter(app => {
-    if (activeSourceFilter === 'LinkedIn' && app.sourceChannel !== 'linkedin') return false;
-    if (activeSourceFilter === 'WhatsApp' && app.sourceChannel !== 'whatsapp') return false;
+    if (!matchesSourceFilter(app, activeSourceFilter)) return false;
     return isWithinTimeFilter(app._creationTime);
   });
   
@@ -2820,16 +2990,15 @@ export default function JobDetailPage() {
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className={`font-medium ${
-                            (app.sourceChannel === 'whatsapp') ? 'text-[#25D366]' : 
-                            (app.sourceChannel === 'linkedin') ? 'text-[#0A66C2]' : 
-                            'text-text-secondary'
-                          }`}>
-                            {app.sourceChannel === 'whatsapp' ? 'WhatsApp' : 
-                             app.sourceChannel === 'linkedin' ? 'LinkedIn' : 
-                             app.sourceChannel ? app.sourceChannel.charAt(0).toUpperCase() + app.sourceChannel.slice(1).replace('_', ' ') : 
-                             ((app.candidate as any)?.source || 'Manual')}
-                          </span>
+                          {(() => {
+                            const badge = getSourceDisplayBadge(app);
+                            return (
+                              <span className={`font-medium text-[13px] flex items-center gap-1.5 ${badge.textClass}`}>
+                                {badge.icon}
+                                <span>{badge.label}</span>
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} /></td>
                         <td className="p-4 text-[13px]">
@@ -2837,7 +3006,7 @@ export default function JobDetailPage() {
                           <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
                         </td>
                         <td className="p-4">
-                          <AiReasonDisplay reason={(app as any).aiMatchExplanation || (app.candidate as any)?.summary} />
+                          <AiReasonDisplay reason={(app as any).aiMatchExplanation || (app.candidate as any)?.summary} candidateName={app.candidate?.fullName || 'Candidate'} />
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end items-center gap-2">
@@ -2903,8 +3072,7 @@ export default function JobDetailPage() {
       }
       if (!stageMatch) return false;
       
-      if (activeSourceFilter === 'LinkedIn' && app.sourceChannel !== 'linkedin') return false;
-      if (activeSourceFilter === 'WhatsApp' && app.sourceChannel !== 'whatsapp') return false;
+      if (!matchesSourceFilter(app, activeSourceFilter)) return false;
       return isWithinTimeFilter(app._creationTime);
     });
     
@@ -3135,6 +3303,8 @@ export default function JobDetailPage() {
                       </th>
                       <th className="p-4">Candidate</th>
                       <th className="p-4">Type</th>
+                      <th className="p-4">Score</th>
+                      <th className="p-4">Shortlist Reason</th>
                       <th className="p-4">Outreach Status</th>
                       <th className="p-4">Required Details</th>
                       <th className="p-4">Time Left</th>
@@ -3143,7 +3313,7 @@ export default function JobDetailPage() {
                   </thead>
                   <tbody className="text-[13px] text-text-primary divide-y divide-border">
                     {currentItems.length === 0 ? (
-                      <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
+                      <tr><td colSpan={9} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
                     ) : currentItems.map((item: any) => (
                       <FollowUpCandidateRow 
                         key={item.id} 
@@ -3521,26 +3691,83 @@ export default function JobDetailPage() {
       <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col mb-0">
         <div className="p-4 border-b border-border flex flex-col gap-3 bg-surface">
           <div className="flex justify-between items-center">
-            <div className="flex gap-2 text-[13px]">
-              <button 
-                onClick={() => setActiveSourceFilter('All Sources')}
-                className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'All Sources' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
-              >
-                <div className="w-2 h-2 rounded-full bg-primary-container"></div> All Sources
-              </button>
-              <button 
-                onClick={() => setActiveSourceFilter('LinkedIn')}
-                className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'LinkedIn' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
-              >
-                <div className="w-2 h-2 rounded-full bg-[#0A66C2]"></div> LinkedIn
-              </button>
-              <button 
-                onClick={() => setActiveSourceFilter('WhatsApp')}
-                className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'WhatsApp' ? 'bg-surface-container text-text-primary' : 'hover:bg-surface-container text-text-secondary'}`}
-              >
-                <div className="w-2 h-2 rounded-full bg-[#25D366]"></div> WhatsApp
-              </button>
-            </div>
+            {(() => {
+              const stageBaseApps = applications.filter(app => {
+                if (activePipelineTab === 'New CVs') return app.currentStage === 'new_cvs';
+                if (activePipelineTab === 'TA Shortlist & Follow-up' || activePipelineTab === 'TA Shortlist' || activePipelineTab === 'Follow-up') {
+                  return app.currentStage === 'ta_shortlist' || app.currentStage === 'follow_up' || app.currentStage === 'matched_candidates';
+                }
+                return app.currentStage === stageMap[activePipelineTab];
+              });
+
+              const sourceCounts = {
+                all: stageBaseApps.length,
+                linkedin: stageBaseApps.filter(a => getCandidateSourceType(a) === 'linkedin').length,
+                whatsapp: stageBaseApps.filter(a => getCandidateSourceType(a) === 'whatsapp').length,
+                direct_upload: stageBaseApps.filter(a => getCandidateSourceType(a) === 'direct_upload').length,
+              };
+
+              return (
+                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                  <button 
+                    onClick={() => { setActiveSourceFilter('All Sources'); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
+                      activeSourceFilter === 'All Sources' 
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                        : 'hover:bg-surface-container text-text-secondary border border-transparent'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span>All Sources</span>
+                    <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-surface-bright text-text-secondary font-semibold">
+                      {sourceCounts.all}
+                    </span>
+                  </button>
+                  <button 
+                    onClick={() => { setActiveSourceFilter('LinkedIn'); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
+                      activeSourceFilter === 'LinkedIn' 
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                        : 'hover:bg-surface-container text-text-secondary border border-transparent'
+                    }`}
+                  >
+                    <LinkedInIcon className="w-3.5 h-3.5 text-[#0A66C2] shrink-0" />
+                    <span>LinkedIn</span>
+                    <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-surface-bright text-text-secondary font-semibold">
+                      {sourceCounts.linkedin}
+                    </span>
+                  </button>
+                  <button 
+                    onClick={() => { setActiveSourceFilter('WhatsApp'); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
+                      activeSourceFilter === 'WhatsApp' 
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                        : 'hover:bg-surface-container text-text-secondary border border-transparent'
+                    }`}
+                  >
+                    <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366] shrink-0" />
+                    <span>WhatsApp</span>
+                    <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-surface-bright text-text-secondary font-semibold">
+                      {sourceCounts.whatsapp}
+                    </span>
+                  </button>
+                  <button 
+                    onClick={() => { setActiveSourceFilter('Direct Upload'); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
+                      activeSourceFilter === 'Direct Upload' 
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                        : 'hover:bg-surface-container text-text-secondary border border-transparent'
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span>Direct Upload</span>
+                    <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-surface-bright text-text-secondary font-semibold">
+                      {sourceCounts.direct_upload}
+                    </span>
+                  </button>
+                </div>
+              );
+            })()}
           <div className="flex gap-3">
             <button 
               onClick={() => setSortOrder(prev => prev === 'score' ? 'time' : 'score')}
@@ -3929,8 +4156,8 @@ export default function JobDetailPage() {
           onClick={() => setActiveMainTab('matches')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeMainTab === 'matches' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'}`}
         >
-          <Users className="w-4 h-4" />
-          Matches ({filteredMatches.length})
+          <Database className="w-4 h-4" />
+          Database CVs ({filteredMatches.length})
         </button>
         <button
           onClick={() => setActiveMainTab('pipeline')}
