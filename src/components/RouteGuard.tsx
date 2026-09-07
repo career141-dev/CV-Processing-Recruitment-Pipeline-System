@@ -15,8 +15,7 @@ const ROUTE_PERMISSIONS: Record<string, (role: string | null) => boolean> = {
   "/dashboard/jobs": () => true,
   "/dashboard/candidates": (role) =>
     ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
-  "/dashboard/outreach": (role) =>
-    ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
+  "/dashboard/outreach": () => false, // Hidden for now per user request
   "/dashboard/analytics": (role) =>
     ["admin", "ta_manager", "senior_ta", "test_ta"].includes(role ?? ""),
   "/dashboard/inquiries": (role) =>

@@ -40,6 +40,11 @@ jobs:
       - name: Verify stability invariants
         run: node scripts/check-stability-invariants.mjs
 
+      # ── Step 3.2: Verify TypeScript compilation ────────────────────────
+      # Verify all types on the runner so the VPS does not need to run tsc
+      - name: Verify TypeScript compilation
+        run: npx tsc --noEmit
+
       # ── Step 3.5: Ensure Convex Database is Online ─────────────────────
       # We must ensure the self-hosted database is running before we can push code to it
       - name: Ensure Convex is Online
@@ -112,8 +117,23 @@ jobs:
               ADMIN_KEY="convex-self-hosted|01c7a32b0d2deae44e0fdcd9108f8b62c6c1af651cac34d644be0f3912d0ba099aa6f4369b"
             fi
             
-            echo "Deploying Convex functions and schema..."
-            npx convex deploy --url https://api.career141.com --admin-key "$ADMIN_KEY"
+            # Deploy with --typecheck disable to prevent the resource-constrained VPS
+            # from spending 35s on tsc (which causes optimistic concurrency schema collisions).
+            # Typechecking is already verified on the CI runner in Step 3.2.
+            CONVEX_DEPLOYED=0
+            for ATTEMPT in 1 2 3; do
+              echo "Deploying Convex functions and schema (attempt $ATTEMPT/3)..."
+              if npx convex deploy --url https://api.career141.com --admin-key "$ADMIN_KEY" --typecheck disable; then
+                CONVEX_DEPLOYED=1
+                break
+              fi
+              echo "WARNING: Push collision or schema lock detected. Retrying in 5s..."
+              sleep 5
+            done
+            if [ "$CONVEX_DEPLOYED" -ne 1 ]; then
+              echo "ERROR: Convex deployment failed after 3 attempts."
+              exit 1
+            fi
 
       # ── Step 5: VPS — Pre-start cleanup + Deploy ───────────────────────
       - name: Deploy to VPS via SSH
