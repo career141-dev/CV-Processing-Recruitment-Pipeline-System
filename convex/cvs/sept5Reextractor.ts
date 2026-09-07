@@ -157,7 +157,7 @@ export const claimNextSept5UnextractedBatch = internalMutation({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchLimit = Math.min(args.limit ?? 5, 8);
+    const batchLimit = Math.min(args.limit ?? 4, 8);
     const now = Date.now();
 
     // 1. Get or initialize state
@@ -195,7 +195,7 @@ export const claimNextSept5UnextractedBatch = internalMutation({
       .query("cvUploads")
       .withIndex("by_creation_time", (q) => q.gte("_creationTime", cursorTime))
       .order("asc")
-      .take(30);
+      .take(60);
 
     if (uploads.length === 0) {
       // Reached the current live edge

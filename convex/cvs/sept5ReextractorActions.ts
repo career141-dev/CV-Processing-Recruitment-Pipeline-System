@@ -14,7 +14,7 @@ export const runSept5ReextractionTick = internalAction({
     // 1. Claim next batch of unextracted records forward from cursor
     const res = await ctx.runMutation(
       internal.cvs.sept5Reextractor.claimNextSept5UnextractedBatch,
-      { limit: 5 }
+      { limit: 4 }
     );
 
     const { claimed, isDone } = res;
@@ -27,13 +27,13 @@ export const runSept5ReextractionTick = internalAction({
     }
 
     console.log(
-      `[Sept5 DeepSeek Re-Extractor] Claimed ${claimed.length} unextracted CVs. Staggering dispatches via DeepSeek (2.5s pacing)...`
+      `[Sept5 DeepSeek Re-Extractor] Claimed ${claimed.length} unextracted CVs. Staggering dispatches via DeepSeek (3.0s pacing)...`
     );
 
-    // 2. Stagger each extraction by 2,500ms to maintain smooth OpenRouter TPM and avoid VPS spikes
+    // 2. Stagger each extraction by 3,000ms to maintain max 1-2 concurrent actions, leaving 4+ free slots for R2 and live traffic
     for (let i = 0; i < claimed.length; i++) {
       const item = claimed[i];
-      const delayMs = i * 2500;
+      const delayMs = i * 3000;
 
       await ctx.scheduler.runAfter(delayMs, api.cvs.cvExtraction.processCvExtraction, {
         cvUploadId: item.cvUploadId,

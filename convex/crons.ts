@@ -825,7 +825,7 @@ crons.interval(
 
 crons.interval(
   "bg-sept5-reextractor",
-  { minutes: 4 },
+  { minutes: 1 },
   internal.cvs.sept5ReextractorActions.runSept5ReextractionTick
 );
 
