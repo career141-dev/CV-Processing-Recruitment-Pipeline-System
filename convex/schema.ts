@@ -1928,4 +1928,21 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_mailbox_folder", ["mailboxEmail", "folder"]),
 
+  sept5ReextractionState: defineTable({
+    key: v.string(), // "singleton"
+    startTimestamp: v.number(), // 1788546600000 (September 5, 2026 00:00:00 GMT+5:30)
+    lastProcessedCreationTime: v.number(),
+    lastProcessedUploadId: v.optional(v.id("cvUploads")),
+    totalScanned: v.number(),
+    totalAlreadyExtracted: v.number(),
+    totalQueued: v.number(),
+    totalHealed: v.number(),
+    totalFailed: v.number(),
+    status: v.string(), // "idle" | "running" | "paused" | "completed"
+    modelUsed: v.string(), // "deepseek/deepseek-v4-flash"
+    lastTickAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
 }, { schemaValidation: false });
+

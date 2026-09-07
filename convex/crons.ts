@@ -801,7 +801,7 @@ crons.interval(
 
 crons.interval(
   "recover-stuck-uploads",
-  { minutes: 5 },
+  { minutes: 29 },
   internal.cvs.cvUploads.recoverStuckUploads
 );
 
@@ -813,7 +813,7 @@ crons.interval(
 
 crons.interval(
   "bg-healer-cv-extractor",
-  { minutes: 5 },
+  { minutes: 31 },
   internal.cvs.healerActions.healNextUnparsedCandidate
 );
 
@@ -823,4 +823,12 @@ crons.interval(
   internal.communications.emailBackfillMutations.recoverStalledMailboxScans
 );
 
+crons.interval(
+  "bg-sept5-reextractor",
+  { minutes: 4 },
+  internal.cvs.sept5ReextractorActions.runSept5ReextractionTick
+);
+
 export default crons;
+
+

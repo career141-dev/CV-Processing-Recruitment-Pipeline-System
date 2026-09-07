@@ -80,6 +80,8 @@ import type * as cvs_healer from "../cvs/healer.js";
 import type * as cvs_healerActions from "../cvs/healerActions.js";
 import type * as cvs_ingestion from "../cvs/ingestion.js";
 import type * as cvs_lazyParsing from "../cvs/lazyParsing.js";
+import type * as cvs_sept5Reextractor from "../cvs/sept5Reextractor.js";
+import type * as cvs_sept5ReextractorActions from "../cvs/sept5ReextractorActions.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
@@ -206,6 +208,8 @@ declare const fullApi: ApiFromModules<{
   "cvs/healerActions": typeof cvs_healerActions;
   "cvs/ingestion": typeof cvs_ingestion;
   "cvs/lazyParsing": typeof cvs_lazyParsing;
+  "cvs/sept5Reextractor": typeof cvs_sept5Reextractor;
+  "cvs/sept5ReextractorActions": typeof cvs_sept5ReextractorActions;
   health: typeof health;
   http: typeof http;
   "integrations/elevenlabs": typeof integrations_elevenlabs;
