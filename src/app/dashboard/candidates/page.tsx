@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from 'react';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { CandidateManagementTable } from '@/components/candidates/CandidateManagementTable';
 import { FloatingActionBar } from '@/components/candidates/FloatingActionBar';
 import { DeleteCandidateModal } from '@/components/candidates/modals/DeleteCandidateModal';
@@ -23,8 +22,6 @@ export default function CandidateManagementPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 md:p-8 transition-colors duration-300">
       <div className="w-full max-w-[98%] mx-auto space-y-6">
-        <PageHeader title="Candidate Management" />
-
         {/* Dedicated Candidate Management Table */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
           <CandidateManagementTable
