@@ -233,13 +233,7 @@ export default function Sidebar({ onMobileClose, isMobileDrawer = false }: Sideb
         )}
 
         {/* ── Outreach, Analytics & Inquiries ──────────────────────── */}
-        {canAccessOutreach && (
-          <Link href="/dashboard/outreach" onClick={onMobileClose} className={linkClass('/dashboard/outreach')}>
-            {renderIcon('/dashboard/outreach')}
-            <span className={labelClass}>Outreach</span>
-            {renderTooltip("Outreach")}
-          </Link>
-        )}
+        {/* Outreach hidden for now per user request */}
 
         {canViewAnalytics && (
           <Link href="/dashboard/analytics" onClick={onMobileClose} className={linkClass('/dashboard/analytics')}>
@@ -275,7 +269,7 @@ export default function Sidebar({ onMobileClose, isMobileDrawer = false }: Sideb
           </>
         )}
 
-        <div className={hasFullAccess || canAccessOutreach ? "" : "mt-auto"}></div>
+        <div className={hasFullAccess ? "" : "mt-auto"}></div>
 
         {/* Settings: Admin only */}
         {canManageSettings && (
