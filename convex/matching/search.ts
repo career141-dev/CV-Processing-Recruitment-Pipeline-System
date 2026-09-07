@@ -805,11 +805,20 @@ export const bulkAddToPipeline = mutation({
         .first();
         
       if (!existing) {
+        const isDatabaseOrManual = 
+          args.sourceChannel === "database" ||
+          (typeof args.sourceChannel === "string" && (
+            args.sourceChannel.toLowerCase().includes("manual") ||
+            args.sourceChannel.toLowerCase().includes("directory") ||
+            args.sourceChannel.toLowerCase().includes("folder")
+          ));
+        const defaultStage = isDatabaseOrManual ? "matched_candidates" : "new_cvs";
+
         await ctx.db.insert("applications", {
           candidateId,
           jobId: args.jobId,
           sourceChannel: args.sourceChannel,
-          currentStage: (args.stage ?? "new_cvs") as any,
+          currentStage: (args.stage ?? defaultStage) as any,
           loopIteration: 0,
           isActive: true,
           createdAt: Date.now(),

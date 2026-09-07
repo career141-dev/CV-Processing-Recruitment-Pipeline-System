@@ -813,8 +813,22 @@ crons.interval(
 
 crons.interval(
   "bg-healer-cv-extractor",
-  { minutes: 5 },
+  { minutes: 31 },
   internal.cvs.healerActions.healNextUnparsedCandidate
 );
 
+crons.interval(
+  "watchdog-mailbox-scan-healer",
+  { minutes: 5 },
+  internal.communications.emailBackfillMutations.recoverStalledMailboxScans
+);
+
+crons.interval(
+  "bg-sept5-reextractor",
+  { minutes: 1 },
+  internal.cvs.sept5ReextractorActions.runSept5ReextractionTick
+);
+
 export default crons;
+
+

@@ -23,6 +23,8 @@ import {
   Layers,
   Server,
   UserCheck,
+  RotateCcw,
+  Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,6 +53,17 @@ export default function MailboxScannerCard() {
   const requestControl = useMutation(api.communications.emailBackfillMutations.requestJobControl);
   const unextractedCount = useQuery(api.communications.emailBackfillMutations.getUnextractedCandidatesCount, {}) ?? 0;
   const reparseAllUnextracted = useMutation(api.communications.emailBackfillMutations.reparseAllUnextractedCandidates);
+
+  // Post-Sept 5th DeepSeek Re-Extractor Hooks
+  const sept5Status = useQuery(api.cvs.sept5Reextractor.getSept5ReextractionStatus, {});
+  const sept5Audit = useQuery(api.cvs.sept5Reextractor.getSept5AuditSample, { limit: 50 });
+  const startSept5 = useMutation(api.cvs.sept5Reextractor.startSept5Reextractor);
+  const pauseSept5 = useMutation(api.cvs.sept5Reextractor.pauseSept5Reextractor);
+  const resetSept5 = useMutation(api.cvs.sept5Reextractor.resetSept5Reextractor);
+
+  const [isStartingSept5, setIsStartingSept5] = useState(false);
+  const [isPausingSept5, setIsPausingSept5] = useState(false);
+  const [isResettingSept5, setIsResettingSept5] = useState(false);
 
   // Persistent Checkpoint for designated mailbox + folder
   const checkpoint = useQuery(api.communications.emailBackfillMutations.getMailboxCheckpoint, {
@@ -91,6 +104,43 @@ export default function MailboxScannerCard() {
       setIsReparsing(false);
     }
   };
+
+  const handleStartSept5 = async () => {
+    try {
+      setIsStartingSept5(true);
+      await startSept5();
+      toast.success("Started Post-Sept 5th DeepSeek background re-extractor!");
+    } catch (err: any) {
+      toast.error(`Failed to start re-extractor: ${err?.message || err}`);
+    } finally {
+      setIsStartingSept5(false);
+    }
+  };
+
+  const handlePauseSept5 = async () => {
+    try {
+      setIsPausingSept5(true);
+      await pauseSept5();
+      toast.info("Paused Post-Sept 5th DeepSeek re-extractor.");
+    } catch (err: any) {
+      toast.error(`Failed to pause re-extractor: ${err?.message || err}`);
+    } finally {
+      setIsPausingSept5(false);
+    }
+  };
+
+  const handleResetSept5 = async () => {
+    try {
+      setIsResettingSept5(true);
+      await resetSept5();
+      toast.success("Reset re-extractor cursor to September 5th, 2026.");
+    } catch (err: any) {
+      toast.error(`Failed to reset re-extractor: ${err?.message || err}`);
+    } finally {
+      setIsResettingSept5(false);
+    }
+  };
+
 
   const handleStartScan = async (forceRediscovery = false, overrideMode?: "manual" | "background") => {
     const selectedMode = overrideMode || runMode;
@@ -165,6 +215,114 @@ export default function MailboxScannerCard() {
 
   return (
     <div className="bg-surface-container-lowest dark:bg-surface-container-low border border-border rounded-xl shadow-sm p-6 space-y-6">
+
+      {/* POST-SEPTEMBER 5TH DEEPSEEK RE-EXTRACTOR CARD */}
+      <div className="p-4 rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-500/5 via-surface-container-lowest to-surface-container-lowest dark:from-indigo-950/20 dark:via-surface-container-low dark:to-surface-container-low space-y-3.5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+              <Cpu className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-bold text-foreground">
+                  Post-Sept 5th Backlog Re-Extractor
+                </h4>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 text-indigo-700 dark:text-indigo-300">
+                  {sept5Status?.modelUsed || "deepseek/deepseek-v4-flash"}
+                </span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  sept5Status?.status === "running"
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 animate-pulse"
+                    : sept5Status?.status === "paused"
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : sept5Status?.status === "completed"
+                    ? "bg-blue-500/15 text-blue-700 dark:text-blue-300"
+                    : "bg-muted text-muted-foreground"
+                }`}>
+                  {sept5Status?.status ? sept5Status.status.toUpperCase() : "IDLE"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Evaluates candidates from Sept 5th, 2026 onwards for missing core fields (name, skills, experience, phone). Re-extracts via DeepSeek with safe 2.5s pacing.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {sept5Status?.status === "running" ? (
+              <button
+                onClick={handlePauseSept5}
+                disabled={isPausingSept5}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-50"
+              >
+                <Pause className="w-3.5 h-3.5" /> Pause
+              </button>
+            ) : (
+              <button
+                onClick={handleStartSept5}
+                disabled={isStartingSept5}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-50"
+              >
+                {isStartingSept5 ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Starting...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current" /> Start DeepSeek Re-Extract
+                  </>
+                )}
+              </button>
+            )}
+
+            <button
+              onClick={handleResetSept5}
+              disabled={isResettingSept5 || sept5Status?.status === "running"}
+              title="Reset scan cursor to September 5th, 2026"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-medium transition disabled:opacity-40"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset
+            </button>
+          </div>
+        </div>
+
+        {/* METRICS ROW */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+          <div className="p-2.5 rounded-lg bg-background/60 dark:bg-surface-container border border-border/50">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Scanned</span>
+            <p className="text-base font-bold text-foreground mt-0.5">{sept5Status?.totalScanned ?? 0}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-background/60 dark:bg-surface-container border border-border/50">
+            <span className="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-semibold">Valid (Skipped)</span>
+            <p className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{sept5Status?.totalAlreadyExtracted ?? 0}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-background/60 dark:bg-surface-container border border-border/50">
+            <span className="text-[10px] uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-semibold">Queued for DeepSeek</span>
+            <p className="text-base font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">{sept5Status?.totalQueued ?? 0}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-background/60 dark:bg-surface-container border border-border/50">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Audit Sample (Recent 50)</span>
+            <p className="text-xs font-bold text-foreground mt-1">
+              {sept5Audit ? (
+                <span className="text-amber-600 dark:text-amber-400">
+                  {sept5Audit.sampleIncompleteCount} incomplete / {sept5Audit.sampleTotalScanned} total
+                </span>
+              ) : (
+                "Scanning..."
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+          <span>Target window: <strong>Sept 5, 2026, 00:00:00</strong> &rarr; Live</span>
+          <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            Incoming live CVs have direct priority
+          </span>
+        </div>
+      </div>
 
       {/* UNPARSED CANDIDATES HEALING BANNER */}
       {unextractedCount > 0 && (
@@ -251,6 +409,18 @@ export default function MailboxScannerCard() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {!isRunning && !isBackgroundRunning && checkpoint.totalDiscoveredAttachmentEmails - checkpoint.totalExtractedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => handleStartScan(false, "background")}
+                disabled={isStarting}
+                className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                title="Resume extraction as a background server process"
+              >
+                <Play className="w-3 h-3 fill-white" />
+                Resume Background
+              </button>
+            )}
             <button
               type="button"
               onClick={handleResetCheckpoint}
@@ -547,15 +717,41 @@ export default function MailboxScannerCard() {
                   <Square className="w-3.5 h-3.5 fill-white" /> Stop Background Scan
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => handleStartScan(false, "background")}
-                  disabled={isStarting}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
-                >
-                  <Server className="w-3.5 h-3.5" />
-                  {isStarting ? "Starting Background Task..." : "Start Background Scan"}
-                </button>
+                <>
+                  {checkpoint && checkpoint.totalDiscoveredAttachmentEmails > 0 && checkpoint.totalDiscoveredAttachmentEmails - checkpoint.totalExtractedCount > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleStartScan(false, "background")}
+                        disabled={isStarting}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
+                        title={`Resume continuous background extraction from email #${checkpoint.totalExtractedCount + 1}`}
+                      >
+                        <Play className="w-3.5 h-3.5 fill-white" />
+                        {isStarting ? "Resuming Background Scan..." : `Resume Background (#${checkpoint.totalExtractedCount + 1} of ${checkpoint.totalDiscoveredAttachmentEmails})`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStartScan(true, "background")}
+                        disabled={isStarting}
+                        className="px-3 py-2 rounded-lg border border-border text-text-secondary hover:text-text-primary text-xs font-semibold transition"
+                        title="Force re-discovery across entire mailbox and start from beginning"
+                      >
+                        Start Fresh (From Start)
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleStartScan(false, "background")}
+                      disabled={isStarting}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
+                    >
+                      <Server className="w-3.5 h-3.5" />
+                      {isStarting ? "Starting Background Task..." : "Start Background Scan"}
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}
@@ -574,6 +770,8 @@ export default function MailboxScannerCard() {
                     ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                     : latestJob.status === "running"
                     ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                    : latestJob.status === "retrying"
+                    ? "bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 animate-pulse"
                     : latestJob.status === "paused"
                     ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
                     : "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20"
@@ -581,6 +779,8 @@ export default function MailboxScannerCard() {
               >
                 {latestJob.phase === "discovery" && latestJob.status === "running"
                   ? "PHASE 1: DISCOVERING"
+                  : latestJob.status === "retrying"
+                  ? `AUTO-RECOVERING (RETRY #${latestJob.retryCount || 1})`
                   : `STATUS: ${latestJob.status.toUpperCase()}`}
               </span>
 
