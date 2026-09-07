@@ -1009,6 +1009,44 @@ export const saveReverseMatchResults = internalMutation({
   },
 });
 
+export const addCandidateToReverseMatchResults = internalMutation({
+  args: {
+    jobId: v.id("jobs"),
+    candidateId: v.id("candidates"),
+    cvUploadId: v.optional(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) return;
+
+    const candidate = await ctx.db.get(args.candidateId);
+    if (!candidate) return;
+
+    const existingResults = job.reverseMatchResults || [];
+    const cvId = String(args.candidateId);
+    if (existingResults.some((r) => String(r.cvId) === cvId)) {
+      return;
+    }
+
+    const newMatch = {
+      cvId,
+      candidateName: candidate.fullName || "Unknown Candidate",
+      candidateRole: candidate.currentJobTitle || (candidate as any).currentTitle || "Unknown Role",
+      candidateExp: candidate.totalExperienceYears,
+      overallScore: 70,
+      reason: "Matched from database / manual directory CV extraction",
+      sourceLevel1: "Database",
+      matchedSkills: candidate.skills?.slice(0, 5) || [],
+      missingSkills: [],
+      breakdown: { skills: 70, experience: 70, seniority: 70, industry: 70, location: 70 },
+    };
+
+    await ctx.db.patch(args.jobId, {
+      reverseMatchResults: [newMatch, ...existingResults],
+    });
+  },
+});
+
 export const updateTaPreferences = mutation({
   args: {
     jobId: v.id("jobs"),

@@ -279,20 +279,50 @@ export const recoverStuckUploads = internalMutation({
       .take(50);
 
     let count = 0;
-    const sixtyMinutesAgo = Date.now() - 60 * 60 * 1000;
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
     for (const upload of stuck) {
       // Use processingStartedAt (stamped when extraction actually began) if available;
       // fall back to _creationTime only for legacy records that predate the new field.
       const processingStartMs = (upload as any).processingStartedAt ?? upload._creationTime;
-      if (processingStartMs < sixtyMinutesAgo) {
+      if (processingStartMs < tenMinutesAgo) {
         await ctx.db.patch(upload._id, {
           status: "failed",
-          errorMessage: "Process interrupted (Server restarted/crashed)",
+          errorMessage: "Process interrupted or timed out (>10m)",
         });
         
         // Also check if this upload is part of a batch
         if (upload.batchId) {
           // Trigger next batch evaluation
+          await ctx.scheduler.runAfter(0, api.cvs.cvUploads.checkAndTriggerNextBatch, {
+            batchId: upload.batchId as any,
+          });
+        }
+        count++;
+      }
+    }
+    return count;
+  },
+});
+
+export const recoverStuckUploadsPublic = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const stuck = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(50);
+
+    let count = 0;
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    for (const upload of stuck) {
+      const processingStartMs = (upload as any).processingStartedAt ?? upload._creationTime;
+      if (processingStartMs < tenMinutesAgo) {
+        await ctx.db.patch(upload._id, {
+          status: "failed",
+          errorMessage: "Process interrupted or timed out (>10m)",
+        });
+        
+        if (upload.batchId) {
           await ctx.scheduler.runAfter(0, api.cvs.cvUploads.checkAndTriggerNextBatch, {
             batchId: upload.batchId as any,
           });

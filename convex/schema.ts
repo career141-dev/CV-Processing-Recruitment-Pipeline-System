@@ -1433,7 +1433,8 @@ export default defineSchema({
       v.literal("paused"),
       v.literal("done"),
       v.literal("error"),
-      v.literal("stopped")
+      v.literal("stopped"),
+      v.literal("retrying")
     ),
     totalMessages: v.number(),
     scannedMessages: v.number(),
@@ -1447,11 +1448,11 @@ export default defineSchema({
       v.union(
         v.literal("discovery"),
         v.literal("extracting"),
-        v.literal("retrying"),
         v.literal("done"),
         v.literal("error"),
         v.literal("stopped"),
-        v.literal("paused")
+        v.literal("paused"),
+        v.literal("retrying")
       )
     ),
     discoveredTotalEmails: v.optional(v.number()),
@@ -1460,8 +1461,12 @@ export default defineSchema({
     processedAttachmentEmails: v.optional(v.number()),
     errorMessage: v.optional(v.string()),
     nextCursorUrl: v.optional(v.string()),
-    currentFolderId: v.optional(v.string()),
     currentFolderIndex: v.optional(v.number()),
+    currentFolderId: v.optional(v.string()),
+    lastProcessedMessageId: v.optional(v.string()),
+    lastProcessedReceivedAt: v.optional(v.number()),
+    retryCount: v.optional(v.number()),
+    userStopped: v.optional(v.boolean()),
     lastHeartbeatAt: v.optional(v.number()),
     dryRun: v.boolean(),
     mode: v.optional(v.union(v.literal("manual"), v.literal("background"))),
@@ -1915,9 +1920,29 @@ export default defineSchema({
     totalExtractedCount: v.number(), // Cumulative count of extracted attachment emails
     nextCursorUrl: v.optional(v.string()), // Microsoft Graph API pagination continuation URL
     currentFolderIndex: v.optional(v.number()), // Folder index for "all" scope
+    currentFolderId: v.optional(v.string()), // Explicit folder ID for stable folder resumption
+    lastProcessedMessageId: v.optional(v.string()), // ID of last extracted message
+    lastProcessedReceivedAt: v.optional(v.number()), // Timestamp of last extracted message
     lastDiscoveredAt: v.number(),
     lastExtractedAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_mailbox_folder", ["mailboxEmail", "folder"]),
 
+  sept5ReextractionState: defineTable({
+    key: v.string(), // "singleton"
+    startTimestamp: v.number(), // 1788546600000 (September 5, 2026 00:00:00 GMT+5:30)
+    lastProcessedCreationTime: v.number(),
+    lastProcessedUploadId: v.optional(v.id("cvUploads")),
+    totalScanned: v.number(),
+    totalAlreadyExtracted: v.number(),
+    totalQueued: v.number(),
+    totalHealed: v.number(),
+    totalFailed: v.number(),
+    status: v.string(), // "idle" | "running" | "paused" | "completed"
+    modelUsed: v.string(), // "deepseek/deepseek-v4-flash"
+    lastTickAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
 }, { schemaValidation: false });
+
