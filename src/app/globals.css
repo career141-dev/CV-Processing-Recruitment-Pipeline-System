@@ -3,35 +3,35 @@
 @custom-variant dark (&:is(.dark *));
 :root {
   --on-primary-fixed-variant: #0c5216;
-  --inverse-on-surface: #f1f1ec;
+  --inverse-on-surface: #f8fafc;
   --inverse-primary: #91d78a;
-  --surface-container-highest: #e3e3de;
-  --surface: #FFFFFF;
+  --surface-container-highest: #e2e8f0;
+  --surface: #ffffff;
   --accent-teal: #006763;
   --secondary-fixed: #94f990;
-  --accent-yellow: #CBFC06;
-  --outline: #717a6d;
+  --accent-yellow: #cbfc06;
+  --outline: #64748b;
   --on-primary-container: #90d689;
-  --on-surface-variant: #41493e;
+  --on-surface-variant: #475569;
   --on-secondary: #ffffff;
   --tertiary-container: #883454;
-  --surface-bright: #fafaf5;
-  --surface-container-high: #e8e8e3;
+  --surface-bright: #ffffff;
+  --surface-container-high: #f1f5f9;
   --primary-fixed-dim: #91d78a;
-  --surface-container: #eeeee9;
+  --surface-container: #f8fafc;
   --on-secondary-fixed: #002204;
   --secondary-fixed-dim: #78dc77;
   --on-primary-fixed: #002203;
   --on-secondary-container: #00731e;
-  --background: #fafaf5;
+  --background: #ffffff;
   --on-tertiary: #ffffff;
   --surface-tint: #2a6b2c;
-  --inverse-surface: #2f312e;
-  --surface-container-low: #f4f4ef;
-  --outline-variant: #c0c9bb;
+  --inverse-surface: #1e293b;
+  --surface-container-low: #ffffff;
+  --outline-variant: #cbd5e1;
   --on-secondary-fixed-variant: #005313;
-  --on-background: #1a1c19;
-  --surface-variant: #e3e3de;
+  --on-background: #0f172a;
+  --surface-variant: #f8fafc;
   --secondary-container: #91f78e;
   --primary: #00450d;
   --on-tertiary-container: #ffaec6;
@@ -39,20 +39,20 @@
   --on-primary: #ffffff;
   --error-container: #ffdad6;
   --on-error: #ffffff;
-  --surface-dim: #dadad5;
-  --text-secondary: #616161;
+  --surface-dim: #f1f5f9;
+  --text-secondary: #64748b;
   --on-tertiary-fixed: #3e001d;
   --secondary: #006e1c;
-  --text-primary: #212121;
+  --text-primary: #0f172a;
   --surface-container-lowest: #ffffff;
   --tertiary-fixed-dim: #ffb1c8;
-  --on-surface: #1a1c19;
+  --on-surface: #0f172a;
   --on-error-container: #93000a;
   --primary-fixed: #acf4a4;
   --tertiary-fixed: #ffd9e2;
-  --text-disabled: #9E9E9E;
+  --text-disabled: #94a3b8;
   --on-tertiary-fixed-variant: #7a2949;
-  --border: #CBD5E1;
+  --border: #e2e8f0;
   --primary-container: #1b5e20;
   --error: #ba1a1a;
 }
@@ -228,6 +228,9 @@
 
 html, body {
   height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -239,7 +242,7 @@ body {
    Ensures ALL table rows show a visible hover highlight in dark mode,
    even if they use hard-coded hover:bg-gray-50 or similar light colors */
 .dark table tr:hover {
-  background-color: rgba(255, 255, 255, 0.05) !important;
+  background-color: rgba(255, 255, 255, 0.04) !important;
 }
 
 /* Global Form Input Light Outline Borders & Focus Styling */
@@ -251,8 +254,9 @@ input[type="url"],
 input[type="tel"],
 select,
 textarea {
-  border: 1px solid #CBD5E1 !important;
-  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 0.5rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark input[type="text"],
@@ -263,7 +267,7 @@ textarea {
 .dark input[type="tel"],
 .dark select,
 .dark textarea {
-  border: 1px solid #374151 !important;
+  border: 1px solid #334155 !important;
 }
 
 input[type="text"]:hover,
@@ -274,7 +278,7 @@ input[type="url"]:hover,
 input[type="tel"]:hover,
 select:hover,
 textarea:hover {
-  border-color: #94A3B8 !important;
+  border-color: #CBD5E1 !important;
 }
 
 .dark input[type="text"]:hover,
@@ -285,7 +289,7 @@ textarea:hover {
 .dark input[type="tel"]:hover,
 .dark select:hover,
 .dark textarea:hover {
-  border-color: #4B5563 !important;
+  border-color: #475569 !important;
 }
 
 input[type="text"]:focus,
@@ -297,8 +301,8 @@ input[type="tel"]:focus,
 select:focus,
 textarea:focus {
   outline: none !important;
-  border-color: #006763 !important;
-  box-shadow: 0 0 0 2px rgba(0, 103, 99, 0.2) !important;
+  border-color: #10B981 !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
 }
 
 /* ==========================================================================
