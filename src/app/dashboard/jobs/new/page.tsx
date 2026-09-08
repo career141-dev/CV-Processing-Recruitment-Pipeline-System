@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { useMutation, useQuery, useAction } from "convex/react";
@@ -44,6 +44,7 @@ export default function CreateJobWizard() {
   const createJob = useMutation(api.jobs.jobs.createJob);
   const createDraftJob = useMutation(api.jobs.jobs.createDraftJob);
   const whatChimpNumbersDB = useQuery(api.settings.whatsappNumbers.list) || [];
+  const allJobs = useQuery(api.jobs.jobs.list);
   const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
   const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
   const updateJobAiConfig = useMutation(api.jobs.jobs.updateJobAiConfig);
@@ -68,6 +69,35 @@ export default function CreateJobWizard() {
   const [templateModalStepIndex, setTemplateModalStepIndex] = useState<number>(0);
   const [templateModalChannel, setTemplateModalChannel] = useState<'email' | 'whatsapp'>('email');
   const [templateModalView, setTemplateModalView] = useState<'editor' | 'preview'>('editor');
+
+  // ── Phase 1: Client → Opening → Job Post ──────────────────────────────────
+  const [creationMode, setCreationMode] = useState<'new' | 'existing'>('new');
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null);
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [openingSearch, setOpeningSearch] = useState('');
+  const [openingPickerOpen, setOpeningPickerOpen] = useState(false);
+  const clientPickerRef = useRef<HTMLDivElement>(null);
+  const openingPickerRef = useRef<HTMLDivElement>(null);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Phase 1 derived data hooks — must live here at top level with all other hooks
+  const existingClients = useMemo(() => {
+    if (!allJobs) return [];
+    const map = new Map<string, number>();
+    (allJobs as any[]).forEach((j: any) => {
+      const name = j.clientName?.trim();
+      if (name) map.set(name, (map.get(name) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [allJobs]);
+
+  const selectedOpening = useMemo(() => {
+    if (!selectedOpeningId || !allJobs) return null;
+    return (allJobs as any[]).find((j: any) => j._id === selectedOpeningId) || null;
+  }, [selectedOpeningId, allJobs]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -383,6 +413,8 @@ export default function CreateJobWizard() {
   const isNextDisabled = () => {
     if (isPublishing) return true;
     if (currentStep === 1) {
+      // In 'existing' mode, opening is pre-filled from a valid job — skip Step 1 validation
+      if (creationMode === 'existing' && selectedOpeningId) return false;
       if (!formData.jobTitle.trim() || !formData.jobDescription.trim() || formData.requiredSkills.length === 0) {
         return true;
       }
@@ -467,6 +499,34 @@ export default function CreateJobWizard() {
       setIsDrafting(false);
     }
   };
+
+  // ── Phase 1: Additional Post publish path ───────────────────────────────
+  const handlePublishAdditionalPost = async () => {
+    if (!selectedOpeningId) return;
+    setIsPublishing(true);
+    setPublishError('');
+    try {
+      if (formData.channels.whatsapp && !formData.commonWhatsAppNumber.trim()) {
+        throw new Error('WhatsApp channel is enabled, but no WhatsApp number was selected in Step 2.');
+      }
+      const channelsPayload: any[] = [];
+      channelsPayload.push({ channelType: 'whatsapp', isEnabled: !!formData.channels.whatsapp, whatsappNumber: formData.commonWhatsAppNumber || undefined });
+      channelsPayload.push({ channelType: 'linkedin', isEnabled: !!formData.channels.linkedin, emailInbox: formData.linkedinEmail || undefined });
+      channelsPayload.push({ channelType: 'meta_campaign', isEnabled: !!formData.channels.metaCampaign, whatsappNumber: (formData.useDifferentMetaNumber ? formData.metaWhatsAppNumber : formData.commonWhatsAppNumber) || undefined });
+      channelsPayload.push({ channelType: 'email_campaign', isEnabled: !!formData.channels.emailCampaign, emailInbox: formData.emailInbox || undefined });
+      channelsPayload.push({ channelType: 'workable', isEnabled: !!formData.channels.workable, workableJobId: formData.workableJobId || undefined });
+      await updateJobChannels({ jobId: selectedOpeningId as any, channels: channelsPayload });
+      // Redirect to the existing Opening's pipeline — no new job created
+      router.push(`/dashboard/jobs/${selectedOpeningId}`);
+    } catch (err: any) {
+      console.error('Additional post publish error:', err);
+      setPublishError(err.message || 'An unexpected error occurred.');
+      showError(err, { title: 'Failed to Add Channel' });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -692,12 +752,144 @@ export default function CreateJobWizard() {
     </div>
   );
 
+  // Pre-fill Step 1 fields when an existing Opening is selected
+  useEffect(() => {
+    if (creationMode !== 'existing' || !selectedOpening) return;
+    setFormData(prev => ({
+      ...prev,
+      jobTitle:         selectedOpening.title            || prev.jobTitle,
+      clientCompany:    selectedOpening.clientName       || prev.clientCompany,
+      jobDescription:   selectedOpening.jobDescription   || prev.jobDescription,
+      requiredSkills:   selectedOpening.requiredSkills   || prev.requiredSkills,
+      niceToHaveSkills: selectedOpening.niceToHaveSkills || prev.niceToHaveSkills,
+      location:         selectedOpening.location         || prev.location,
+      seniorityLevel:   selectedOpening.seniorityLevel   || prev.seniorityLevel,
+      industry:         selectedOpening.clientIndustry   || prev.industry,
+      salaryRange:      selectedOpening.salaryMin
+        ? `${selectedOpening.salaryMin}${selectedOpening.salaryMax ? `-${selectedOpening.salaryMax}` : ''} ${selectedOpening.salaryCurrency || 'LKR'}`
+        : prev.salaryRange,
+    }));
+  }, [creationMode, selectedOpening]);
+
+  // Close pickers on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (clientPickerRef.current && !clientPickerRef.current.contains(e.target as Node)) setClientPickerOpen(false);
+      if (openingPickerRef.current && !openingPickerRef.current.contains(e.target as Node)) setOpeningPickerOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const renderStep1 = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 max-w-4xl">
       <div>
         <h2 className="text-xl font-bold text-text-primary mb-1">Job Details</h2>
         <p className="text-sm text-text-secondary">Define the role, client, and requirements.</p>
       </div>
+
+      {/* ── Phase 1: New Opening vs Additional Post toggle ─────────────── */}
+      <div className="border border-border rounded-xl p-4 bg-surface space-y-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <label className={`flex items-center gap-2.5 flex-1 px-4 py-3 rounded-lg border-2 cursor-pointer transition-all ${
+            creationMode === 'new' ? 'border-primary-container bg-primary-container/5' : 'border-border hover:border-border-strong'
+          }`}>
+            <input
+              type="radio"
+              name="creationMode"
+              checked={creationMode === 'new'}
+              onChange={() => {
+                setCreationMode('new');
+                setSelectedOpeningId(null);
+                setOpeningSearch('');
+              }}
+              className="text-primary-container focus:ring-primary-container w-4 h-4"
+            />
+            <div>
+              <p className="text-sm font-semibold text-text-primary">New Opening</p>
+              <p className="text-xs text-text-secondary">Create a fresh vacancy with its own candidate pipeline</p>
+            </div>
+          </label>
+          <label className={`flex items-center gap-2.5 flex-1 px-4 py-3 rounded-lg border-2 cursor-pointer transition-all ${
+            creationMode === 'existing' ? 'border-primary-container bg-primary-container/5' : 'border-border hover:border-border-strong'
+          }`}>
+            <input
+              type="radio"
+              name="creationMode"
+              checked={creationMode === 'existing'}
+              onChange={() => setCreationMode('existing')}
+              className="text-primary-container focus:ring-primary-container w-4 h-4"
+            />
+            <div>
+              <p className="text-sm font-semibold text-text-primary">Additional post for an existing Opening</p>
+              <p className="text-xs text-text-secondary">Add a new channel or title variant — same candidate pool</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Opening search — shown only in 'existing' mode */}
+        {creationMode === 'existing' && (
+          <div ref={openingPickerRef} className="relative">
+            <input
+              type="text"
+              value={openingSearch}
+              onChange={e => { setOpeningSearch(e.target.value); setOpeningPickerOpen(true); }}
+              onFocus={() => setOpeningPickerOpen(true)}
+              placeholder="Search existing Opening by title or client…"
+              className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface text-sm focus:outline-none focus:border-primary-container"
+            />
+            {openingPickerOpen && allJobs && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border rounded-lg shadow-xl z-50 max-h-56 overflow-y-auto">
+                {(allJobs as any[])
+                  .filter((j: any) => {
+                    const q = openingSearch.toLowerCase();
+                    return !q || j.title?.toLowerCase().includes(q) || j.clientName?.toLowerCase().includes(q) || j.keyword?.toLowerCase().includes(q);
+                  })
+                  .slice(0, 8)
+                  .map((j: any) => (
+                    <button
+                      key={j._id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedOpeningId(j._id);
+                        setOpeningSearch(`${j.title} · ${j.clientName || ''}`);
+                        setOpeningPickerOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-surface-container-high text-sm transition-colors border-b border-border/50 last:border-0"
+                    >
+                      <span className="font-semibold text-text-primary">{j.title}</span>
+                      <span className="text-text-secondary ml-2">· {j.clientName}</span>
+                      {j.keyword && <span className="text-text-disabled ml-2 text-xs font-mono">{j.keyword}</span>}
+                    </button>
+                  ))}
+                {(allJobs as any[]).filter((j: any) => {
+                  const q = openingSearch.toLowerCase();
+                  return !q || j.title?.toLowerCase().includes(q) || j.clientName?.toLowerCase().includes(q);
+                }).length === 0 && (
+                  <div className="px-4 py-3 text-sm text-text-secondary">No openings found</div>
+                )}
+              </div>
+            )}
+            {/* Selected opening summary */}
+            {selectedOpening && (
+              <div className="mt-2 flex items-center justify-between bg-primary-container/10 border border-primary-container/30 rounded-lg px-3 py-2">
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">{selectedOpening.title}</p>
+                  <p className="text-xs text-text-secondary">{selectedOpening.clientName} · {selectedOpening.keyword}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="ml-4 px-4 py-1.5 bg-primary-container text-on-primary rounded-full text-xs font-bold hover:bg-primary transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  Jump to Channel Setup →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {/* ── End Phase 1 toggle ──────────────────────────────────────────── */}
 
       {/* Core info */}
       <div className="grid gap-5">
@@ -750,10 +942,62 @@ export default function CreateJobWizard() {
           <span className="material-symbols-outlined text-primary-container text-[20px]">corporate_fare</span> Client & Recruitment
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
+          {/* ── Phase 1: Client Name Autocomplete Picker ──────────────── */}
+          <div ref={clientPickerRef} className="relative">
             <label className="block text-sm font-medium text-text-secondary mb-1.5">Client Name</label>
-            <input type="text" className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.clientCompany} onChange={e => updateFormData('clientCompany', e.target.value)} placeholder="e.g. Unilever" />
+            <input
+              type="text"
+              value={creationMode === 'existing' ? formData.clientCompany : clientSearch || formData.clientCompany}
+              disabled={creationMode === 'existing'}
+              onChange={e => {
+                setClientSearch(e.target.value);
+                updateFormData('clientCompany', e.target.value);
+                setClientPickerOpen(true);
+              }}
+              onFocus={() => { if (creationMode !== 'existing') setClientPickerOpen(true); }}
+              placeholder="e.g. Lanka Hospitals"
+              className={`w-full border border-border rounded-md px-3 py-2 text-body bg-surface ${
+                creationMode === 'existing' ? 'opacity-60 cursor-not-allowed' : 'focus:outline-none focus:border-primary-container'
+              }`}
+            />
+            {clientPickerOpen && creationMode !== 'existing' && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+                {existingClients
+                  .filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()))
+                  .slice(0, 6)
+                  .map(c => (
+                    <button
+                      key={c.name}
+                      type="button"
+                      onClick={() => {
+                        updateFormData('clientCompany', c.name);
+                        setClientSearch(c.name);
+                        setClientPickerOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-surface-container-high text-sm flex items-center justify-between border-b border-border/50 last:border-0 transition-colors"
+                    >
+                      <span className="font-medium text-text-primary">{c.name}</span>
+                      <span className="text-xs text-text-disabled">{c.count} {c.count === 1 ? 'opening' : 'openings'}</span>
+                    </button>
+                  ))}
+                {/* + Add new client option */}
+                {clientSearch.trim() && !existingClients.some(c => c.name.toLowerCase() === clientSearch.toLowerCase()) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateFormData('clientCompany', clientSearch.trim());
+                      setClientPickerOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-surface-container-high text-sm text-primary-container font-semibold flex items-center gap-1.5 transition-colors"
+                  >
+                    <span>+</span>
+                    <span>Add new client &quot;{clientSearch.trim()}&quot;</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+          {/* ── End Client Picker ─────────────────────────────────────── */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1.5">Client Industry</label>
             <select className="w-full border border-border rounded-md px-3 py-2 text-body bg-surface" value={formData.industry} onChange={e => updateFormData('industry', e.target.value)}>
@@ -2084,7 +2328,7 @@ export default function CreateJobWizard() {
                 </button>
                 <button 
                   className="px-8 py-2 bg-primary-container text-on-primary rounded-md hover:bg-primary transition-colors font-medium shadow-md flex items-center gap-2 text-lg disabled:opacity-50 disabled:cursor-not-allowed" 
-                  onClick={handlePublish}
+                  onClick={creationMode === 'existing' && selectedOpeningId ? handlePublishAdditionalPost : handlePublish}
                   disabled={!formData.jobTitle || !formData.requiredSkills || isPublishing || isDrafting}
                 >
                 {isPublishing ? (

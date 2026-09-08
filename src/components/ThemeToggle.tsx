@@ -19,7 +19,7 @@ export function ThemeToggle({ compact = false }: ThemeToggleProps) {
   if (!mounted) {
     if (compact) {
       return (
-        <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 animate-pulse" />
+        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 animate-pulse" />
       );
     }
     return (
@@ -74,4 +74,3 @@ export function ThemeToggle({ compact = false }: ThemeToggleProps) {
     </button>
   );
 }
-
