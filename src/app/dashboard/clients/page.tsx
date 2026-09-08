@@ -163,15 +163,16 @@ export default function ClientsPage() {
   }, [currentPage, totalPages]);
 
   return (
-    <div className="w-full max-w-[1400px] mx-auto pb-16">
-      {/* ── Page Header ──────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div className="w-full max-w-[1440px] mx-auto pb-20 pt-1">
+      {/* ── Top Header Section (Matching LinkedIn Recruiter) ─────────────── */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 mb-6 border-b border-border/80">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary tracking-tight">Clients</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">Clients</h1>
           <p className="text-xs text-text-secondary mt-0.5">
-            {isLoading ? 'Loading clients...' : `${filtered.length} client ${filtered.length === 1 ? 'company' : 'companies'} registered`}
+            {isLoading ? 'Loading clients...' : `${clients.length} client ${clients.length === 1 ? 'company' : 'companies'} registered`}
           </p>
         </div>
+
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard/jobs/new"
@@ -190,104 +191,157 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* ── Layout Grid (Sidebar + Table) ────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row gap-6 items-start">
-        {/* ── Left Sidebar Filter Panel ─────────────────────────────────── */}
-        <aside className="w-full md:w-64 shrink-0 rounded-xl border border-border bg-surface p-4 space-y-5 sticky top-20 shadow-2xs">
-          {/* Header & Reset */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-text-primary uppercase tracking-wider">Filters</span>
-            {hasActiveFilters && (
-              <button
-                onClick={resetFilters}
-                className="flex items-center gap-1 text-[11px] text-primary-container hover:underline font-semibold"
-              >
-                <RotateCcw size={11} /> Reset
-              </button>
-            )}
+      {/* ── Two-Column Layout: Left Filter Sidebar + Main Feed ────────────── */}
+      <div className="flex flex-col lg:flex-row gap-8 items-start">
+        {/* ── Left Sidebar Filters ────────────────────────── */}
+        <aside className="w-full lg:w-64 shrink-0 space-y-5 lg:pr-2 lg:sticky lg:top-20">
+          {/* Reset filters header */}
+          <div className="flex items-center justify-between pb-2 border-b border-border/60">
+            <button
+              onClick={resetFilters}
+              className="flex items-center gap-1.5 text-xs font-semibold text-[#0a66c2] hover:underline cursor-pointer"
+            >
+              <RotateCcw size={13} />
+              <span>Reset filters</span>
+            </button>
           </div>
 
-          {/* Search */}
+          {/* Search for a client input */}
           <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled" />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              placeholder="Search for a client..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-disabled focus:outline-hidden focus:border-primary-container"
+              placeholder="Search for a client"
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border border-border bg-surface text-text-primary placeholder:text-text-secondary focus:outline-hidden focus:border-[#0a66c2] focus:ring-1 focus:ring-[#0a66c2] transition-colors"
             />
           </div>
 
-          {/* Industry facet */}
-          <div>
-            <p className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Industry</p>
-            <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
-              {industryFacets.map(f => (
-                <label key={f.label} className="flex items-center justify-between gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer group text-xs">
-                  <div className="flex items-center gap-2 truncate">
-                    <input
-                      type="checkbox"
-                      checked={selectedIndustries.includes(f.label)}
-                      onChange={() => toggleIndustry(f.label)}
-                      className="rounded text-primary-container focus:ring-primary-container w-3.5 h-3.5 cursor-pointer"
-                    />
-                    <span className="text-text-primary group-hover:text-primary-container transition-colors truncate">
-                      {f.label}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-text-disabled shrink-0 font-medium">
-                    {f.count}
-                  </span>
-                </label>
-              ))}
+          {/* Industry Facet */}
+          <div className="space-y-2">
+            <h3 className="text-[13px] font-bold text-text-primary">Industry</h3>
+            <div className="space-y-2 pt-1">
+              {isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-28" />
+                </div>
+              ) : (
+                industryFacets.map(f => {
+                  const isChecked = selectedIndustries.includes(f.label);
+                  return (
+                    <label key={f.label} className="flex items-center gap-2.5 text-[13px] text-text-secondary hover:text-text-primary cursor-pointer select-none leading-normal">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleIndustry(f.label)}
+                        className="rounded border-border text-[#0a66c2] focus:ring-[#0a66c2] w-4 h-4 cursor-pointer"
+                      />
+                      <span className="truncate flex-1">{f.label}</span>
+                      <span className="text-text-disabled text-xs">({f.count})</span>
+                    </label>
+                  );
+                })
+              )}
             </div>
           </div>
         </aside>
 
-        {/* ── Main Table Content ────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 w-full space-y-4">
-          {/* Active filter chips */}
-          {selectedIndustries.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pb-1">
-              <span className="text-xs text-text-secondary font-medium mr-1">Active filters:</span>
-              {selectedIndustries.map(i => (
-                <button
-                  key={i}
-                  onClick={() => toggleIndustry(i)}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-container/10 text-primary-container border border-primary-container/20 hover:bg-primary-container/20 transition-colors"
-                >
-                  {i} <span className="text-sm leading-none">&times;</span>
-                </button>
-              ))}
-              <button 
-                onClick={resetFilters} 
-                className="text-xs text-text-secondary hover:text-text-primary underline ml-1"
-              >
-                Clear all
-              </button>
-            </div>
-          )}
+        {/* ── Main Content Area: Clients Feed ────────────────────────── */}
+        <main className="flex-1 w-full min-w-0">
+          {/* Top Toolbar: Selection, Active Filter Chips, Sort & Pagination */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border mb-3">
+            {/* Left: Client count + Active Filter Chips */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-text-primary tracking-wider uppercase mr-2">
+                {filtered.length} CLIENTS
+              </span>
 
-          {/* Table Container */}
-          <div className="border border-border rounded-xl overflow-hidden bg-surface shadow-2xs">
+              {selectedIndustries.map(i => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                >
+                  Industry: {i}
+                  <span
+                    className="cursor-pointer hover:opacity-75 font-bold ml-0.5"
+                    onClick={() => toggleIndustry(i)}
+                  >
+                    ×
+                  </span>
+                </span>
+              ))}
+
+              {searchQuery.trim().length > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-border"
+                >
+                  Search: "{searchQuery}"
+                  <span
+                    className="cursor-pointer hover:opacity-75 font-bold ml-0.5"
+                    onClick={() => setSearchQuery('')}
+                  >
+                    ×
+                  </span>
+                </span>
+              )}
+
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="text-xs font-semibold text-[#0a66c2] hover:underline ml-1 cursor-pointer"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            {/* Right: Top Pagination Text & Arrows */}
+            <div className="flex items-center gap-4 text-xs text-text-secondary self-end sm:self-auto">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-secondary">
+                  {filtered.length > 0 ? `${(currentPage - 1) * ITEMS_PER_PAGE + 1} – ${Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}` : '0'}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Previous page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Next page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Client Feed Items */}
+          <div className="divide-y divide-border">
             {isLoading ? (
-              <div className="divide-y divide-border">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="flex items-center justify-between px-6 py-4">
-                    <div className="space-y-2">
+              <div className="py-8 space-y-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="py-5 px-3 flex items-start gap-4">
+                    <Skeleton className="w-10 h-10 rounded-lg shrink-0" />
+                    <div className="space-y-2 flex-1">
                       <Skeleton className="w-48 h-5" />
-                      <Skeleton className="w-32 h-3.5" />
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <Skeleton className="w-20 h-4" />
-                      <Skeleton className="w-24 h-4" />
+                      <Skeleton className="w-72 h-3.5" />
+                      <Skeleton className="w-36 h-3" />
                     </div>
                   </div>
                 ))}
               </div>
-            ) : paginated.length === 0 ? (
-              <div className="text-center py-16 px-4">
+            ) : filtered.length === 0 ? (
+              <div className="py-16 text-center text-text-secondary">
                 <Building2 className="w-12 h-12 text-text-disabled mx-auto mb-3" />
                 <h3 className="text-base font-semibold text-text-primary">No clients found</h3>
                 <p className="text-xs text-text-secondary mt-1 max-w-sm mx-auto">
@@ -296,163 +350,168 @@ export default function ClientsPage() {
                 {hasActiveFilters ? (
                   <button
                     onClick={resetFilters}
-                    className="mt-4 text-xs font-semibold text-primary-container hover:underline"
+                    className="mt-3 text-xs font-semibold text-[#0a66c2] hover:underline cursor-pointer"
                   >
-                    Reset filters
+                    Reset all filters
                   </button>
                 ) : (
                   <button
                     onClick={() => setIsAddClientModalOpen(true)}
-                    className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-primary-container text-on-primary rounded-lg text-xs font-semibold hover:bg-primary transition-all shadow-sm"
+                    className="mt-4 px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs font-semibold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
                   >
                     <Plus size={14} /> Add Client
                   </button>
                 )}
               </div>
             ) : (
-              <div className="divide-y divide-border">
-                {paginated.map(client => (
-                  <div
-                    key={client.name}
-                    onClick={() => router.push(`/dashboard/clients/${encodeURIComponent(client.name)}`)}
-                    className="flex items-center justify-between px-5 py-4 hover:bg-surface-container-low transition-colors cursor-pointer group"
-                  >
-                    {/* Left: Client name + industry + TAs + notes */}
-                    <div className="min-w-0 flex-1 pr-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary-container shrink-0 border border-border mt-0.5">
-                          <Building2 size={18} />
+              paginated.map(client => (
+                <div
+                  key={client.name}
+                  onClick={() => router.push(`/dashboard/clients/${encodeURIComponent(client.name)}`)}
+                  className="py-4.5 px-3 hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-all duration-150 rounded-xl group cursor-pointer"
+                >
+                  <div className="flex items-start justify-between gap-5">
+                    {/* Left: Client Logo/Icon + Details */}
+                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900/60 flex items-center justify-center text-[#0a66c2] dark:text-blue-300 font-bold text-base shrink-0 mt-0.5">
+                        {client.name.charAt(0).toUpperCase()}
+                      </div>
+
+                      <div className="space-y-1.5 min-w-0 flex-1">
+                        {/* 1. Client Name & Industry Badge */}
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <span className="text-[15.5px] font-bold uppercase tracking-tight text-slate-900 dark:text-slate-100 group-hover:text-[#0a66c2] group-hover:underline transition-colors leading-snug">
+                            {client.name}
+                          </span>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-border">
+                            {client.industry}
+                          </span>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-text-primary group-hover:text-primary-container transition-colors truncate">
-                              {client.name}
+
+                        {/* 2. Assigned TAs & Contact Person */}
+                        <div className="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-400 flex-wrap leading-relaxed">
+                          {client.taNames.length > 0 ? (
+                            <span className="flex items-center gap-1.5">
+                              <Users size={13} className="text-slate-400 shrink-0" />
+                              <span>TA: <strong className="text-slate-700 dark:text-slate-300 font-medium">{client.taNames.join(', ')}</strong></span>
                             </span>
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-surface-container text-text-secondary border border-border shrink-0">
-                              {client.industry}
-                            </span>
-                          </div>
-                          {client.notes && (
-                            <p className="text-xs text-text-secondary mt-0.5 line-clamp-1 italic">
+                          ) : (
+                            <span className="text-slate-400 text-xs">No TAs assigned</span>
+                          )}
+
+                          {client.contactPerson && (
+                            <>
+                              <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
+                              <span>Contact: <strong className="text-slate-700 dark:text-slate-300 font-medium">{client.contactPerson}</strong></span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* 3. Client Notes (if present) */}
+                        {client.notes && (
+                          <div className="pt-0.5">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 italic line-clamp-1">
                               &ldquo;{client.notes}&rdquo;
                             </p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary flex-wrap">
-                            {client.taNames.length > 0 ? (
-                              <span className="flex items-center gap-1 text-text-tertiary">
-                                <Users size={12} />
-                                Assigned TAs: <strong className="text-text-secondary font-medium">{client.taNames.join(', ')}</strong>
-                              </span>
-                            ) : (
-                              <span className="text-text-disabled">No TAs assigned yet</span>
-                            )}
-                            {client.contactPerson && (
-                              <>
-                                <span>·</span>
-                                <span>Contact: {client.contactPerson}</span>
-                              </>
-                            )}
                           </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Metrics + arrow */}
-                    <div className="flex items-center gap-5 shrink-0 text-right">
-                      {/* Openings count */}
-                      <div className="w-20 text-center">
-                        <span className="text-sm font-bold text-text-primary block">
-                          {client.openings}
-                        </span>
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider font-semibold">
-                          {client.openings === 1 ? 'Opening' : 'Openings'}
-                        </span>
-                      </div>
-
-                      {/* Total applicants */}
-                      <div className="w-20 text-center">
-                        <span className="text-sm font-bold text-text-primary block">
-                          {client.totalApplicants.toLocaleString()}
-                        </span>
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider font-semibold">
-                          Applicants
-                        </span>
-                      </div>
-
-                      {/* New CVs badge */}
-                      <div className="w-18 text-center">
-                        {client.newCvs > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                            {client.newCvs} new
-                          </span>
-                        ) : (
-                          <span className="text-xs text-text-disabled">—</span>
                         )}
                       </div>
+                    </div>
 
-                      <ArrowRight size={15} className="text-text-disabled group-hover:text-primary-container transition-transform group-hover:translate-x-0.5" />
+                    {/* Middle: Metrics Column (Openings / Applicants) */}
+                    <div className="hidden sm:flex flex-col items-start min-w-[140px] text-[13px] text-text-secondary pl-4 leading-relaxed">
+                      <div>
+                        <span>Openings: </span>
+                        <span className="font-semibold text-text-primary text-[13.5px]">{client.openings}</span>
+                        {client.activeOpenings > 0 && (
+                          <span className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold ml-1">
+                            ({client.activeOpenings} active)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span>Applicants: </span>
+                        <span className="font-semibold text-text-primary text-[13.5px]">{client.totalApplicants.toLocaleString()}</span>
+                        {client.newCvs > 0 && (
+                          <span className="text-blue-700 dark:text-blue-400 text-xs font-semibold ml-1">
+                            ({client.newCvs} new)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-2 shrink-0 pt-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/dashboard/clients/${encodeURIComponent(client.name)}`);
+                        }}
+                        className="px-4 py-1.5 rounded-full border border-[#0a66c2] text-[#0a66c2] hover:bg-[#0a66c2]/10 font-semibold text-xs transition-all active:scale-95 cursor-pointer"
+                      >
+                        View Openings
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))
             )}
           </div>
 
           {/* ── Unified Clean Bottom Pagination ───────────────────────── */}
           {!isLoading && totalPages > 1 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 px-1">
-              <span className="text-xs text-text-secondary">
-                Showing <strong className="text-text-primary">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</strong> to <strong className="text-text-primary">{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}</strong> of <strong className="text-text-primary">{filtered.length}</strong> clients
-              </span>
-              <div className="flex items-center gap-1">
+            <div className="flex items-center justify-center gap-3 pt-6 mt-6 border-t border-border/70">
+              {currentPage > 1 && (
                 <button
                   onClick={() => {
                     setCurrentPage(p => Math.max(1, p - 1));
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  disabled={currentPage === 1}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-border bg-surface hover:bg-surface-container text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-0.5 text-[13px] font-semibold text-[#0a66c2] hover:underline cursor-pointer mr-1"
                 >
-                  <ChevronLeft size={14} />
-                  Prev
+                  <ChevronLeft size={15} />
+                  <span>Previous</span>
                 </button>
-                <div className="flex items-center gap-1 mx-1">
-                  {pageNumbers.map((p, idx) => (
-                    p === '...' ? (
-                      <span key={`dots-${idx}`} className="px-2 text-xs text-text-disabled">...</span>
-                    ) : (
-                      <button
-                        key={`page-${p}`}
-                        onClick={() => {
-                          setCurrentPage(Number(p));
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className={`w-7 h-7 rounded-lg text-xs font-semibold transition-all ${
-                          p === currentPage
-                            ? 'bg-primary-container text-on-primary shadow-xs'
-                            : 'bg-surface hover:bg-surface-container text-text-secondary hover:text-text-primary border border-border'
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    )
-                  ))}
-                </div>
+              )}
+
+              <div className="flex items-center gap-1.5">
+                {pageNumbers.map((p, idx) => (
+                  p === '...' ? (
+                    <span key={`dots-${idx}`} className="px-1 text-xs text-text-disabled">...</span>
+                  ) : (
+                    <button
+                      key={`page-${p}`}
+                      onClick={() => {
+                        setCurrentPage(Number(p));
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all cursor-pointer ${
+                        p === currentPage
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                          : 'text-[#0a66c2] hover:underline hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                ))}
+              </div>
+
+              {currentPage < totalPages && (
                 <button
                   onClick={() => {
                     setCurrentPage(p => Math.min(totalPages, p + 1));
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  disabled={currentPage === totalPages}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-border bg-surface hover:bg-surface-container text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-0.5 text-[13px] font-semibold text-[#0a66c2] hover:underline cursor-pointer ml-1"
                 >
-                  Next
-                  <ChevronRight size={14} />
+                  <span>Next</span>
+                  <ChevronRight size={15} />
                 </button>
-              </div>
+              )}
             </div>
           )}
-        </div>
+        </main>
       </div>
 
       {/* Add Client Modal */}
