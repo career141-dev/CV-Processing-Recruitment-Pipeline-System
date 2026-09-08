@@ -304,6 +304,35 @@ export default function CreateJobWizard() {
     }
   }, [formData.channels.metaCampaign, formData.channels.whatsapp, formData.useDifferentMetaNumber]);
 
+  // Pre-fill Step 1 fields when an existing Opening is selected
+  useEffect(() => {
+    if (creationMode !== 'existing' || !selectedOpening) return;
+    setFormData(prev => ({
+      ...prev,
+      jobTitle:         selectedOpening.title            || prev.jobTitle,
+      clientCompany:    selectedOpening.clientName       || prev.clientCompany,
+      jobDescription:   selectedOpening.jobDescription   || prev.jobDescription,
+      requiredSkills:   selectedOpening.requiredSkills   || prev.requiredSkills,
+      niceToHaveSkills: selectedOpening.niceToHaveSkills || prev.niceToHaveSkills,
+      location:         selectedOpening.location         || prev.location,
+      seniorityLevel:   selectedOpening.seniorityLevel   || prev.seniorityLevel,
+      industry:         selectedOpening.clientIndustry   || prev.industry,
+      salaryRange:      selectedOpening.salaryMin
+        ? `${selectedOpening.salaryMin}${selectedOpening.salaryMax ? `-${selectedOpening.salaryMax}` : ''} ${selectedOpening.salaryCurrency || 'LKR'}`
+        : prev.salaryRange,
+    }));
+  }, [creationMode, selectedOpening]);
+
+  // Close pickers on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (clientPickerRef.current && !clientPickerRef.current.contains(e.target as Node)) setClientPickerOpen(false);
+      if (openingPickerRef.current && !openingPickerRef.current.contains(e.target as Node)) setOpeningPickerOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const [isCustomNumber, setIsCustomNumber] = useState(false);
   const [isCustomMetaNumber, setIsCustomMetaNumber] = useState(false);
 
@@ -751,35 +780,6 @@ export default function CreateJobWizard() {
       ))}
     </div>
   );
-
-  // Pre-fill Step 1 fields when an existing Opening is selected
-  useEffect(() => {
-    if (creationMode !== 'existing' || !selectedOpening) return;
-    setFormData(prev => ({
-      ...prev,
-      jobTitle:         selectedOpening.title            || prev.jobTitle,
-      clientCompany:    selectedOpening.clientName       || prev.clientCompany,
-      jobDescription:   selectedOpening.jobDescription   || prev.jobDescription,
-      requiredSkills:   selectedOpening.requiredSkills   || prev.requiredSkills,
-      niceToHaveSkills: selectedOpening.niceToHaveSkills || prev.niceToHaveSkills,
-      location:         selectedOpening.location         || prev.location,
-      seniorityLevel:   selectedOpening.seniorityLevel   || prev.seniorityLevel,
-      industry:         selectedOpening.clientIndustry   || prev.industry,
-      salaryRange:      selectedOpening.salaryMin
-        ? `${selectedOpening.salaryMin}${selectedOpening.salaryMax ? `-${selectedOpening.salaryMax}` : ''} ${selectedOpening.salaryCurrency || 'LKR'}`
-        : prev.salaryRange,
-    }));
-  }, [creationMode, selectedOpening]);
-
-  // Close pickers on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (clientPickerRef.current && !clientPickerRef.current.contains(e.target as Node)) setClientPickerOpen(false);
-      if (openingPickerRef.current && !openingPickerRef.current.contains(e.target as Node)) setOpeningPickerOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   const renderStep1 = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 max-w-4xl">
