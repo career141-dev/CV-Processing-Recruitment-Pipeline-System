@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Skeleton } from '@/components/ui/Skeleton';
+import { AddClientModal } from '@/components/clients/AddClientModal';
 import {
   Search,
   RotateCcw,
@@ -14,6 +15,7 @@ import {
   Building2,
   Users,
   Briefcase,
+  Plus,
   ChevronRight as ArrowRight,
 } from 'lucide-react';
 
@@ -23,7 +25,10 @@ export default function ClientsPage() {
   const router = useRouter();
   const dbJobs = useQuery(api.jobs.jobs.list);
   const users  = useQuery(api.users.users.getAllUsers);
-  const isLoading = dbJobs === undefined || users === undefined;
+  const registeredClients = useQuery(api.clients.clients.list);
+  const isLoading = dbJobs === undefined || users === undefined || registeredClients === undefined;
+
+  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery]           = useState('');
@@ -46,6 +51,26 @@ export default function ClientsPage() {
       statuses: string[];
     }>();
 
+    // 1. Seed with registered clients from database
+    if (registeredClients) {
+      registeredClients.forEach(rc => {
+        const name = rc.name.trim();
+        if (!map.has(name)) {
+          map.set(name, {
+            name,
+            industry: rc.industry || 'Other',
+            openings: 0,
+            activeOpenings: 0,
+            totalApplicants: 0,
+            newCvs: 0,
+            taNames: [],
+            statuses: [],
+          });
+        }
+      });
+    }
+
+    // 2. Populate and aggregate jobs per client
     dbJobs.forEach((j: any) => {
       const name = j.clientName?.trim() || 'Unknown Client';
       const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);
@@ -72,8 +97,8 @@ export default function ClientsPage() {
       if (j.status && !entry.statuses.includes(j.status)) entry.statuses.push(j.status);
     });
 
-    return Array.from(map.values()).sort((a, b) => b.totalApplicants - a.totalApplicants);
-  }, [dbJobs, users]);
+    return Array.from(map.values()).sort((a, b) => b.totalApplicants - a.totalApplicants || b.openings - a.openings);
+  }, [dbJobs, users, registeredClients]);
 
   // Industry facets
   const industryFacets = useMemo(() => {
@@ -181,12 +206,21 @@ export default function ClientsPage() {
               {isLoading ? '—' : `${filtered.length} ${filtered.length === 1 ? 'client' : 'clients'}`}
             </p>
           </div>
-          <Link
-            href="/dashboard/jobs/new"
-            className="flex items-center gap-2 px-4 py-2 bg-primary-container text-on-primary rounded-lg text-sm font-semibold hover:bg-primary transition-colors shadow-sm"
-          >
-            Post a job
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/jobs/new"
+              className="flex items-center gap-2 px-3.5 py-2 border border-border bg-surface text-text-primary rounded-lg text-sm font-semibold hover:bg-surface-container transition-colors shadow-2xs"
+            >
+              Post a job
+            </Link>
+            <button
+              onClick={() => setIsAddClientModalOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary-container text-on-primary rounded-lg text-sm font-semibold hover:bg-primary transition-all shadow-sm cursor-pointer"
+            >
+              <Plus size={16} />
+              Add Client
+            </button>
+          </div>
         </div>
 
         {/* Active filter chips */}
@@ -227,7 +261,7 @@ export default function ClientsPage() {
                   onClick={() => setCurrentPage(p)}
                   className={`w-7 h-7 rounded text-xs font-medium transition-colors ${
                     p === currentPage
-                      ? 'bg-text-primary text-surface'
+                      ? 'bg-primary-container text-on-primary font-bold'
                       : 'hover:bg-surface-container-high text-text-secondary'
                   }`}
                 >
@@ -245,111 +279,152 @@ export default function ClientsPage() {
           )}
         </div>
 
-        {/* Client rows */}
-        <div className="space-y-2">
+        {/* Clients Table */}
+        <div className="border border-border rounded-xl overflow-hidden bg-surface shadow-2xs">
           {isLoading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="border border-border rounded-xl p-4 bg-surface">
-                <Skeleton className="w-48 h-5 mb-2" />
-                <Skeleton className="w-64 h-4" />
-              </div>
-            ))
+            <div className="divide-y divide-border">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center justify-between px-6 py-4">
+                  <div className="space-y-2">
+                    <Skeleton className="w-48 h-5" />
+                    <Skeleton className="w-32 h-3.5" />
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <Skeleton className="w-20 h-4" />
+                    <Skeleton className="w-24 h-4" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : paginated.length === 0 ? (
-            <div className="text-center py-16 text-text-secondary">
-              <Building2 size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No clients found</p>
-              <p className="text-sm mt-1">Try adjusting your filters</p>
+            <div className="text-center py-16 px-4">
+              <Building2 className="w-12 h-12 text-text-disabled mx-auto mb-3" />
+              <h3 className="text-base font-semibold text-text-primary">No clients found</h3>
+              <p className="text-sm text-text-secondary mt-1 max-w-sm mx-auto">
+                {hasActiveFilters ? 'Try adjusting your search or filters.' : 'Add your first client company to get started.'}
+              </p>
+              {hasActiveFilters ? (
+                <button
+                  onClick={resetFilters}
+                  className="mt-4 text-xs font-semibold text-primary-container hover:underline"
+                >
+                  Reset filters
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsAddClientModalOpen(true)}
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-primary-container text-on-primary rounded-lg text-xs font-semibold hover:bg-primary transition-all shadow-sm"
+                >
+                  <Plus size={14} /> Add Client
+                </button>
+              )}
             </div>
           ) : (
-            paginated.map(client => (
-              <button
-                key={client.name}
-                onClick={() => router.push(`/dashboard/clients/${encodeURIComponent(client.name)}`)}
-                className="w-full text-left border border-border rounded-xl p-4 bg-surface hover:bg-surface-container-high/60 hover:border-border-strong transition-all group"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  {/* Left: name + meta */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2.5 mb-1">
-                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary-container/10 shrink-0">
-                        <Building2 size={16} className="text-primary-container" />
-                      </span>
-                      <span className="text-base font-semibold text-text-primary group-hover:text-primary-container transition-colors truncate">
-                        {client.name}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 ml-10 text-xs text-text-secondary">
-                      <span className="flex items-center gap-1">
-                        <Briefcase size={11} />
-                        {client.industry}
-                      </span>
-                      {client.taNames.length > 0 && (
-                        <span className="flex items-center gap-1">
-                          <Users size={11} />
-                          {client.taNames.slice(0, 2).join(', ')}
-                          {client.taNames.length > 2 && ` +${client.taNames.length - 2}`}
+            <div className="divide-y divide-border">
+              {paginated.map(client => (
+                <div
+                  key={client.name}
+                  onClick={() => router.push(`/dashboard/clients/${encodeURIComponent(client.name)}`)}
+                  className="flex items-center justify-between px-6 py-4.5 hover:bg-surface-container-low transition-colors cursor-pointer group"
+                >
+                  {/* Left: Client name + industry + TAs */}
+                  <div className="min-w-0 flex-1 pr-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary-container shrink-0 border border-border">
+                        <Building2 size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[15px] font-semibold text-text-primary group-hover:text-primary-container transition-colors truncate block">
+                          {client.name}
                         </span>
-                      )}
+                        <div className="flex items-center gap-2 mt-0.5 text-xs text-text-secondary flex-wrap">
+                          <span className="font-medium text-text-tertiary">{client.industry}</span>
+                          {client.taNames.length > 0 && (
+                            <>
+                              <span>·</span>
+                              <span className="flex items-center gap-1">
+                                <Users size={12} />
+                                {client.taNames.join(', ')}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Right: stats */}
-                  <div className="flex items-center gap-6 shrink-0">
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-text-primary">{client.openings}</p>
-                      <p className="text-[11px] text-text-secondary">{client.openings === 1 ? 'Opening' : 'Openings'}</p>
+                  {/* Right: Metrics + arrow */}
+                  <div className="flex items-center gap-6 shrink-0 text-right">
+                    {/* Openings count */}
+                    <div className="w-24 text-center">
+                      <span className="text-base font-bold text-text-primary block">
+                        {client.openings}
+                      </span>
+                      <span className="text-[11px] text-text-secondary uppercase tracking-wider font-semibold">
+                        {client.openings === 1 ? 'Opening' : 'Openings'}
+                      </span>
                     </div>
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-text-primary">{client.totalApplicants}</p>
-                      <p className="text-[11px] text-text-secondary">Applicants</p>
+
+                    {/* Total applicants */}
+                    <div className="w-24 text-center">
+                      <span className="text-base font-bold text-text-primary block">
+                        {client.totalApplicants.toLocaleString()}
+                      </span>
+                      <span className="text-[11px] text-text-secondary uppercase tracking-wider font-semibold">
+                        Applicants
+                      </span>
                     </div>
-                    {client.newCvs > 0 && (
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-blue-600">{client.newCvs}</p>
-                        <p className="text-[11px] text-text-secondary">New CVs</p>
-                      </div>
-                    )}
+
+                    {/* New CVs badge */}
+                    <div className="w-20 text-center">
+                      {client.newCvs > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                          {client.newCvs} new
+                        </span>
+                      ) : (
+                        <span className="text-xs text-text-disabled">—</span>
+                      )}
+                    </div>
+
                     <ArrowRight size={16} className="text-text-disabled group-hover:text-primary-container transition-colors" />
                   </div>
                 </div>
-              </button>
-            ))
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Bottom pagination */}
+        {/* Bottom Pagination */}
         {!isLoading && totalPages > 1 && (
-          <div className="flex justify-center items-center gap-1 mt-6 text-sm">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            {pageWindow.map(p => (
+          <div className="flex items-center justify-between mt-4">
+            <span className="text-xs text-text-secondary">
+              Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length} clients
+            </span>
+            <div className="flex items-center gap-1">
               <button
-                key={p}
-                onClick={() => setCurrentPage(p)}
-                className={`w-8 h-8 rounded text-xs font-medium transition-colors ${
-                  p === currentPage
-                    ? 'bg-text-primary text-surface'
-                    : 'hover:bg-surface-container-high text-text-secondary'
-                }`}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded text-xs font-medium border border-border hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {p}
+                Previous
               </button>
-            ))}
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronRight size={16} />
-            </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded text-xs font-medium border border-border hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </main>
+
+      {/* Add Client Modal */}
+      <AddClientModal
+        isOpen={isAddClientModalOpen}
+        onClose={() => setIsAddClientModalOpen(false)}
+      />
     </div>
   );
 }

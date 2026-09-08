@@ -48,6 +48,7 @@ import type * as candidates_referees from "../candidates/referees.js";
 import type * as candidates_timeline from "../candidates/timeline.js";
 import type * as candidates_updateAllExp from "../candidates/updateAllExp.js";
 import type * as candidates_updateSanjeevExp from "../candidates/updateSanjeevExp.js";
+import type * as clients_clients from "../clients/clients.js";
 import type * as communications_emailAgent from "../communications/emailAgent.js";
 import type * as communications_emailBackfill from "../communications/emailBackfill.js";
 import type * as communications_emailBackfillMutations from "../communications/emailBackfillMutations.js";
@@ -176,6 +177,7 @@ declare const fullApi: ApiFromModules<{
   "candidates/timeline": typeof candidates_timeline;
   "candidates/updateAllExp": typeof candidates_updateAllExp;
   "candidates/updateSanjeevExp": typeof candidates_updateSanjeevExp;
+  "clients/clients": typeof clients_clients;
   "communications/emailAgent": typeof communications_emailAgent;
   "communications/emailBackfill": typeof communications_emailBackfill;
   "communications/emailBackfillMutations": typeof communications_emailBackfillMutations;

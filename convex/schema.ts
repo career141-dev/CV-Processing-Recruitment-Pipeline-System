@@ -152,6 +152,22 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_importance", ["importanceLevel"]),
 
+  // ■■ CLIENTS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  clients: defineTable({
+    name: v.string(),
+    industry: v.string(),
+    contactPerson: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    website: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdBy: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_name", ["name"])
+    .index("by_industry", ["industry"])
+    .index("by_createdAt", ["createdAt"]),
+
   // ■■ JOBS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   jobs: defineTable({
     // Core Details

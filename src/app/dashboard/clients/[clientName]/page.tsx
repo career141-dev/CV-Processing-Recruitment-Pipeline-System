@@ -14,6 +14,7 @@ import {
   Building2,
   MapPin,
   User,
+  Plus,
 } from 'lucide-react';
 
 const ITEMS_PER_PAGE = 10;
@@ -172,10 +173,11 @@ export default function ClientOpeningsPage() {
             </div>
           </div>
           <Link
-            href={`/dashboard/jobs/new`}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-container text-on-primary rounded-lg text-sm font-semibold hover:bg-primary transition-colors shadow-sm"
+            href={`/dashboard/jobs/new?clientName=${encodeURIComponent(clientName)}`}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary-container text-on-primary rounded-lg text-sm font-semibold hover:bg-primary transition-colors shadow-sm"
           >
-            Post a job
+            <Plus size={16} />
+            New Opening
           </Link>
         </div>
 
@@ -230,8 +232,16 @@ export default function ClientOpeningsPage() {
               </div>
             ))
           ) : paginated.length === 0 ? (
-            <div className="text-center py-16 text-text-secondary">
-              <p className="font-medium">No openings found</p>
+            <div className="text-center py-16 px-4 bg-surface rounded-xl border border-border">
+              <Building2 className="w-10 h-10 text-text-disabled mx-auto mb-2.5" />
+              <p className="font-semibold text-text-primary text-base">No openings found for {clientName}</p>
+              <p className="text-xs text-text-secondary mt-1">Get started by creating the first opening for this client.</p>
+              <Link
+                href={`/dashboard/jobs/new?clientName=${encodeURIComponent(clientName)}`}
+                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-primary-container text-on-primary rounded-lg text-xs font-semibold hover:bg-primary transition-all shadow-sm"
+              >
+                <Plus size={14} /> Create Opening for {clientName}
+              </Link>
             </div>
           ) : (
             paginated.map(job => (

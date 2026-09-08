@@ -45,6 +45,7 @@ export default function CreateJobWizard() {
   const createDraftJob = useMutation(api.jobs.jobs.createDraftJob);
   const whatChimpNumbersDB = useQuery(api.settings.whatsappNumbers.list) || [];
   const allJobs = useQuery(api.jobs.jobs.list);
+  const registeredClients = useQuery(api.clients.clients.list);
   const updateJobDetails = useMutation(api.jobs.jobs.updateJobDetails);
   const updateJobChannels = useMutation(api.jobs.jobs.updateJobChannels);
   const updateJobAiConfig = useMutation(api.jobs.jobs.updateJobAiConfig);
@@ -83,16 +84,26 @@ export default function CreateJobWizard() {
 
   // Phase 1 derived data hooks — must live here at top level with all other hooks
   const existingClients = useMemo(() => {
-    if (!allJobs) return [];
-    const map = new Map<string, number>();
-    (allJobs as any[]).forEach((j: any) => {
-      const name = j.clientName?.trim();
-      if (name) map.set(name, (map.get(name) || 0) + 1);
-    });
+    const map = new Map<string, { count: number; industry?: string }>();
+    if (registeredClients) {
+      registeredClients.forEach((c: any) => {
+        const name = c.name?.trim();
+        if (name) map.set(name, { count: 0, industry: c.industry });
+      });
+    }
+    if (allJobs) {
+      (allJobs as any[]).forEach((j: any) => {
+        const name = j.clientName?.trim();
+        if (name) {
+          const prev = map.get(name) || { count: 0, industry: j.clientIndustry };
+          map.set(name, { count: prev.count + 1, industry: prev.industry || j.clientIndustry });
+        }
+      });
+    }
     return Array.from(map.entries())
-      .map(([name, count]) => ({ name, count }))
+      .map(([name, data]) => ({ name, count: data.count, industry: data.industry }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [allJobs]);
+  }, [allJobs, registeredClients]);
 
   const selectedOpening = useMemo(() => {
     if (!selectedOpeningId || !allJobs) return null;
@@ -331,6 +342,20 @@ export default function CreateJobWizard() {
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // URL clientName prefill effect
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const clientParam = params.get('clientName');
+    if (clientParam && clientParam.trim()) {
+      const trimmed = clientParam.trim();
+      setFormData(prev => ({
+        ...prev,
+        clientCompany: trimmed,
+      }));
+    }
   }, []);
 
   const [isCustomNumber, setIsCustomNumber] = useState(false);
