@@ -5,6 +5,7 @@ import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
 import { requireFullAccess } from "../lib/permissions";
+import { isCandidateExtracted } from "../cvs/sept5Reextractor";
 
 export const listCandidates = query({
   args: {
@@ -486,7 +487,7 @@ export const updateCandidateFields = mutation({
       : null;
 
     const survivor = [lookupByEmail, lookupByPhone, lookupByLinkedin, lookupByFileHash]
-      .find((c) => c && c._id !== candidateId);
+      .find((c) => c && c._id !== candidateId && isCandidateExtracted(c));
 
     if (survivor) {
       console.log(
@@ -676,6 +677,9 @@ export const createCandidate = mutation({
     }
 
     if (existingCandidateId) {
+      const existingCandidateDoc = await ctx.db.get(existingCandidateId);
+      const isAlreadyExtracted = isCandidateExtracted(existingCandidateDoc);
+
       // Retrieve candidate applications
       const apps = await ctx.db
         .query("applications")
@@ -688,9 +692,9 @@ export const createCandidate = mutation({
         (app.currentStage === "rejected" && app.taRejectionReason === "Did not complete requirements within 7-day window")
       );
 
-      // Skip updating candidate details and CV if they are in a different stage than follow-up
-      if (!inFollowUpOrAutoRejected && apps.length > 0) {
-        console.log(`[createCandidate] Candidate ${existingCandidateId} exists but is not in follow_up or auto-rejected state. Skipping details and CV update.`);
+      // Skip updating candidate details and CV if they are already extracted and in another stage
+      if (isAlreadyExtracted && !inFollowUpOrAutoRejected && apps.length > 0) {
+        console.log(`[createCandidate] Candidate ${existingCandidateId} exists and is already extracted. Skipping details and CV update.`);
         return existingCandidateId;
       }
 

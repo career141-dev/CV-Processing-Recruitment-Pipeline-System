@@ -22,6 +22,9 @@ export const runSept5ReextractionTick = internalAction({
     if (!claimed || claimed.length === 0) {
       if (isDone) {
         console.log("[Sept5 DeepSeek Re-Extractor] Reached live edge. Backlog re-extraction complete.");
+      } else {
+        // Fast-forward to the next window of uploads
+        await ctx.scheduler.runAfter(500, internal.cvs.sept5ReextractorActions.runSept5ReextractionTick, {});
       }
       return { processed: 0, isDone };
     }
@@ -50,6 +53,10 @@ export const runSept5ReextractionTick = internalAction({
         `[Sept5 DeepSeek Re-Extractor] Queued ${item.fileName} (${item.cvUploadId}) with delay ${delayMs}ms`
       );
     }
+
+    // Schedule next tick after this batch finishes
+    const nextTickDelayMs = Math.max(claimed.length * 3000, 10000);
+    await ctx.scheduler.runAfter(nextTickDelayMs, internal.cvs.sept5ReextractorActions.runSept5ReextractionTick, {});
 
     return { processed: claimed.length, isDone: false };
   },

@@ -116,6 +116,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
+import { isCandidateExtracted } from "./sept5Reextractor";
 import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, getOpenAI, getModelForTask, executeLLMWithNvidiaFallback, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
 
 // ──────────────────────────────────────────────────
@@ -988,7 +989,7 @@ export async function runCvExtraction(
     });
   }
 
-  let candidateId: any = null;
+  let candidateId: any = cvUpload?.candidateId ?? null;
 
   try {
     let url: string | null = null;
@@ -1022,7 +1023,11 @@ export async function runCvExtraction(
 
     // Skip extraction if file is duplicate of an already extracted candidate (Agent 6 factor)
     const existingCandidate = await ctx.runQuery(internal.candidates.candidates.findCandidateByHash, { fileHash });
-    if (existingCandidate) {
+    const currentCandidateId = cvUpload?.candidateId;
+    const isSelf = existingCandidate && (existingCandidate._id === currentCandidateId || existingCandidate.cvUploadId === cvUploadId);
+    const isAlreadyExtracted = existingCandidate && isCandidateExtracted(existingCandidate);
+
+    if (existingCandidate && !isSelf && isAlreadyExtracted) {
       console.log(`[CvExtraction] Duplicate CV detected (hash: ${fileHash}). Candidate ID: ${existingCandidate._id}. Skipping extraction.`);
 
       const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
@@ -1286,28 +1291,54 @@ export async function runCvExtraction(
         }
       }
 
-      const updateRes: any = await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
-        candidateId,
-        rawTextKey,
-        ...safeExtractedWithoutReferees,
-        locationStructured,
-        cvUploadId,
-        currentEmployer: derivedEmployer,
-        currentTitle: derivedTitle,
-        jobHistory: formattedJobHistory,
-        seniorityLevel: seniorityLevel ?? safeExtracted.seniorityLevel,
-        noticePeriodDays,
-        educationDegree,
-        educationInstitution,
-        educationYear,
-        totalExperienceYears,
-        fileHash,
-        skills: formattedSkills,
-        parsingConfidence,
-        isParsed: true,
-        hasEmbedding: true,
-        extractionModel: extractionModel || OPENROUTER_PRIMARY_MODEL,
-      });
+      let updateRes: any = null;
+      if (candidateId) {
+        updateRes = await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
+          candidateId,
+          rawTextKey,
+          ...safeExtractedWithoutReferees,
+          locationStructured,
+          cvUploadId,
+          currentEmployer: derivedEmployer,
+          currentTitle: derivedTitle,
+          jobHistory: formattedJobHistory,
+          seniorityLevel: seniorityLevel ?? safeExtracted.seniorityLevel,
+          noticePeriodDays,
+          educationDegree,
+          educationInstitution,
+          educationYear,
+          totalExperienceYears,
+          fileHash,
+          skills: formattedSkills,
+          parsingConfidence,
+          isParsed: true,
+          hasEmbedding: true,
+          extractionModel: extractionModel || OPENROUTER_PRIMARY_MODEL,
+        });
+      } else {
+        const newCandId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
+          rawTextKey,
+          ...safeExtractedWithoutReferees,
+          cvUploadId,
+          currentEmployer: derivedEmployer,
+          currentTitle: derivedTitle,
+          jobHistory: formattedJobHistory,
+          seniorityLevel: seniorityLevel ?? safeExtracted.seniorityLevel,
+          noticePeriodDays,
+          educationDegree,
+          educationInstitution,
+          educationYear,
+          totalExperienceYears,
+          fileHash,
+          skills: formattedSkills,
+          parsingConfidence,
+          isParsed: true,
+          hasEmbedding: true,
+          extractionModel: extractionModel || OPENROUTER_PRIMARY_MODEL,
+        });
+        candidateId = newCandId;
+        updateRes = { targetCandidateId: newCandId };
+      }
 
       if (updateRes?.targetCandidateId) {
         candidateId = updateRes.targetCandidateId;
