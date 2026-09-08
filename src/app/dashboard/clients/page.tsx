@@ -129,7 +129,7 @@ export default function ClientsPage() {
     setSelectedStatuses([]);
     setCurrentPage(1);
   };
-  const hasActiveFilters = searchQuery || selectedIndustries.length || selectedStatuses.length;
+  const hasActiveFilters = Boolean(searchQuery.trim().length > 0 || selectedIndustries.length > 0 || selectedStatuses.length > 0);
 
   const toggleIndustry = (industry: string) => {
     setSelectedIndustries(prev =>

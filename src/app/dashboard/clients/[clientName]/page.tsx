@@ -92,7 +92,7 @@ export default function ClientOpeningsPage() {
     setSelectedStatuses([]);
     setCurrentPage(1);
   };
-  const hasActiveFilters = searchQuery || selectedStatuses.length;
+  const hasActiveFilters = Boolean(searchQuery.trim().length > 0 || selectedStatuses.length > 0);
 
   const toggleStatus = (s: string) => {
     setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
