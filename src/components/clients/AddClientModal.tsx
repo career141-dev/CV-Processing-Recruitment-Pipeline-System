@@ -208,16 +208,16 @@ export function AddClientModal({ isOpen, onClose, onSuccess }: AddClientModalPro
             </div>
           </div>
 
-          {/* Notes */}
+          {/* Client Notes */}
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1 flex items-center gap-1.5">
-              <FileText size={13} /> Notes / Description
+              <FileText size={13} /> Client Notes
             </label>
             <textarea
-              rows={2}
+              rows={3}
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="e.g. Key client for leadership and engineering roles..."
+              placeholder="e.g. Key client preferences, background, domain requirements..."
               className="w-full px-3.5 py-2 text-sm bg-surface border border-border rounded-lg text-text-primary placeholder:text-text-disabled focus:outline-hidden focus:border-primary-container resize-none"
             />
           </div>
