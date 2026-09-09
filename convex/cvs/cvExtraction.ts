@@ -325,39 +325,63 @@ async function extractTextFromPdfWithPdfJs(buffer: ArrayBuffer): Promise<string>
 async function extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
   ensureDOMMatrixPolyfill();
 
-  // Primary PDF extractor: Mozilla pdfjs-dist (handles FlateDecode, CID fonts, & complex PDF structures)
-  const pdfJsText = await extractTextFromPdfWithPdfJs(buffer);
-  if (pdfJsText && pdfJsText.length >= 30) {
-    return pdfJsText;
+  // Primary PDF extractor: Mozilla pdfjs-dist with 4s timeout guard
+  try {
+    const pdfJsPromise = extractTextFromPdfWithPdfJs(buffer);
+    const pdfJsTimeout = new Promise<string>((resolve) =>
+      setTimeout(() => {
+        console.warn("[pdfjs-dist] Extraction timed out after 4000ms");
+        resolve("");
+      }, 4000)
+    );
+    const pdfJsText = await Promise.race([pdfJsPromise, pdfJsTimeout]);
+    if (pdfJsText && pdfJsText.length >= 30) {
+      return pdfJsText;
+    }
+  } catch (err: any) {
+    console.warn("[pdfjs-dist] PDF extraction error:", err.message || err);
   }
 
+  // Secondary PDF extractor: pdf2json with strict 3s timeout guard
   try {
-    return await new Promise((resolve, reject) => {
-      const PDFParser = require("pdf2json");
-      const pdfParser = new PDFParser(null, 1);
-      pdfParser.on("pdfParser_dataError", (errData: any) => {
-        console.warn("[pdf2json] Parser error, attempting raw stream fallback:", errData?.parserError || errData);
-        const fallbackText = extractRawPdfStreamTextFallback(buffer);
-        if (fallbackText.trim().length >= 30) {
-          console.log(`[extractTextFromPdf] Recovered ${fallbackText.trim().length} chars via raw stream fallback!`);
-          resolve(fallbackText);
-        } else {
-          resolve(fallbackText || "");
-        }
-      });
-      pdfParser.on("pdfParser_dataReady", () => {
-        const text = pdfParser.getRawTextContent();
-        if (!text || text.trim().length < 30) {
-          const fallbackText = extractRawPdfStreamTextFallback(buffer);
-          if (fallbackText.trim().length > (text?.trim().length || 0)) {
-            resolve(fallbackText);
-            return;
+    const pdf2jsonPromise = new Promise<string>((resolve) => {
+      try {
+        const PDFParser = require("pdf2json");
+        const pdfParser = new PDFParser(null, 1);
+        pdfParser.on("pdfParser_dataError", (errData: any) => {
+          console.warn("[pdf2json] Parser error, attempting raw stream fallback:", errData?.parserError || errData);
+          resolve(extractRawPdfStreamTextFallback(buffer));
+        });
+        pdfParser.on("pdfParser_dataReady", () => {
+          const text = pdfParser.getRawTextContent();
+          if (!text || text.trim().length < 30) {
+            const fallbackText = extractRawPdfStreamTextFallback(buffer);
+            if (fallbackText.trim().length > (text?.trim().length || 0)) {
+              resolve(fallbackText);
+              return;
+            }
           }
-        }
-        resolve(text || "");
-      });
-      pdfParser.parseBuffer(Buffer.from(safeSliceBuffer(buffer)));
+          resolve(text || "");
+        });
+        pdfParser.parseBuffer(Buffer.from(safeSliceBuffer(buffer)));
+      } catch (parserErr: any) {
+        console.warn("[pdf2json] Exception during parseBuffer:", parserErr.message || parserErr);
+        resolve(extractRawPdfStreamTextFallback(buffer));
+      }
     });
+
+    const pdf2jsonTimeout = new Promise<string>((resolve) =>
+      setTimeout(() => {
+        console.warn("[pdf2json] Parser timed out after 3000ms, using raw stream fallback");
+        resolve(extractRawPdfStreamTextFallback(buffer));
+      }, 3000)
+    );
+
+    const result = await Promise.race([pdf2jsonPromise, pdf2jsonTimeout]);
+    if (result && result.trim().length >= 30) {
+      return result;
+    }
+    return result || extractRawPdfStreamTextFallback(buffer);
   } catch (err: any) {
     console.warn("[pdf2json] Uncaught parser exception, using raw stream fallback:", err.message || err);
     return extractRawPdfStreamTextFallback(buffer);
@@ -672,6 +696,11 @@ export async function extractText(
       return { text: pdfText, extractionModel: "deepseek-v4-flash" };
     }
 
+    // Fast-path for scanner/bulk evaluation: skip heavy OCR / Vision rendering
+    if (skipOCR) {
+      return { text: pdfText || "", extractionModel: "deepseek-v4-flash" };
+    }
+
     console.log(`[extractText] PDF text extraction yielded < 50 chars (${pdfText.trim().length} chars). Sending to Tesseract OCR...`);
 
     const tesseractText = await extractTextWithTesseract(buffer, fileType, ctx, cvUploadId);
@@ -721,7 +750,9 @@ export async function extractText(
 
   // 3. Images (PNG, JPG, JPEG, WEBP, TIFF)
   if (type.includes("image") || type === "png" || type === "jpeg" || type === "jpg" || type === "webp" || type === "tiff") {
-
+    if (skipOCR) {
+      return { text: "", extractionModel: "none" };
+    }
     const visionText = await extractTextFromImage(buffer, fileType, ctx, cvUploadId);
     return { text: visionText, extractionModel: "vision-llama32" };
   }

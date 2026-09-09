@@ -14,7 +14,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test convex/cvs/__tests__/cvScoring.test.ts"
+    "test": "tsx --test convex/cvs/__tests__/cvScoring.test.ts",
+    "mailbox:start": "node scripts/mailbox-scanner.mjs start",
+    "mailbox:stop": "node scripts/mailbox-scanner.mjs stop",
+    "mailbox:progress": "node scripts/mailbox-scanner.mjs progress"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1091.0",

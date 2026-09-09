@@ -17,7 +17,12 @@ export const runSept5ReextractionTick = internalAction({
       { limit: 4 }
     );
 
-    const { claimed, isDone } = res;
+    const { claimed, isDone, isPaused } = res;
+
+    if (isPaused) {
+      console.log("[Sept5 DeepSeek Re-Extractor] Runner is paused. Ceasing background execution.");
+      return { processed: 0, isDone: false };
+    }
 
     if (!claimed || claimed.length === 0) {
       if (isDone) {

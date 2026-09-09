@@ -185,7 +185,7 @@ export const claimNextSept5UnextractedBatch = internalMutation({
     }
 
     if (state.status !== "running") {
-      return { claimed: [], isDone: state.status === "completed" };
+      return { claimed: [], isDone: state.status === "completed", isPaused: state.status === "paused" };
     }
 
     const cursorTime = state.lastProcessedCreationTime;

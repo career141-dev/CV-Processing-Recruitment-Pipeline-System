@@ -8,6 +8,7 @@ import { getGraphToken } from "../lib/graphClient";
 import { extractText } from "../cvs/cvExtraction";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getS3Client } from "../storage/r2";
+import crypto from "crypto";
 
 // ── 1. TWO-STAGE CV DETECTION ENGINE ──────────────────────────────────────────
 
@@ -98,20 +99,87 @@ export function checkCvKeywords(rawText: string): {
 
 // ── 2. MICROSOFT GRAPH API HELPERS ───────────────────────────────────────────
 
+// Folders to strictly exclude from CV scanning
+const EXCLUDED_FOLDER_NAMES = new Set([
+  "deleteditems",
+  "deleted items",
+  "trash",
+  "bin",
+  "drafts",
+  "junkemail",
+  "junk email",
+  "spam",
+  "outbox",
+  "conversationhistory",
+  "conversation history",
+  "clutter",
+]);
+
+function isExcludedFolder(name: string, id: string): boolean {
+  const lowerName = (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const lowerId = (id || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const excluded of EXCLUDED_FOLDER_NAMES) {
+    const cleanExcluded = excluded.replace(/[^a-z0-9]/g, "");
+    if (lowerName.includes(cleanExcluded) || lowerId.includes(cleanExcluded)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function getAvailableMailboxFolders(
   mailboxEmail: string,
   token: string
 ): Promise<string[]> {
-  try {
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
-      mailboxEmail
-    )}/mailFolders?$top=50&$select=id,displayName`;
-    const res = await safeGraphFetch(url, token);
-    if (res && res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.value) && data.value.length > 0) {
-        return data.value.map((f: any) => f.id);
+  const discoveredFolderIds: string[] = [];
+  const visitedFolderIds = new Set<string>();
+
+  async function fetchFoldersRecursively(parentFolderId?: string) {
+    let url: string | null = parentFolderId
+      ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+          mailboxEmail
+        )}/mailFolders/${encodeURIComponent(parentFolderId)}/childFolders?$top=100&$select=id,displayName,childFolderCount`
+      : `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+          mailboxEmail
+        )}/mailFolders?$top=100&$select=id,displayName,childFolderCount`;
+
+    while (url) {
+      const res = await safeGraphFetch(url, token);
+      if (!res || !res.ok) break;
+
+      const data = (await res.json()) as any;
+      const folders = data.value || [];
+
+      for (const f of folders) {
+        if (!f.id || visitedFolderIds.has(f.id)) continue;
+        visitedFolderIds.add(f.id);
+
+        const displayName = f.displayName || "";
+        if (isExcludedFolder(displayName, f.id)) {
+          console.log(`[MailboxScan] Skipping excluded folder: ${displayName} (${f.id})`);
+          continue;
+        }
+
+        discoveredFolderIds.push(f.id);
+
+        // Recursively fetch subfolders if any exist
+        if (f.childFolderCount && f.childFolderCount > 0) {
+          await fetchFoldersRecursively(f.id);
+        }
       }
+
+      url = data["@odata.nextLink"] || null;
+    }
+  }
+
+  try {
+    await fetchFoldersRecursively();
+    if (discoveredFolderIds.length > 0) {
+      discoveredFolderIds.sort((a, b) => a.localeCompare(b));
+      console.log(
+        `[MailboxScan] Successfully discovered ${discoveredFolderIds.length} active folders for ${mailboxEmail} (excluding Deleted/Drafts/Junk)`
+      );
+      return discoveredFolderIds;
     }
   } catch (err: any) {
     console.warn("[MailboxScan] Error fetching mail folders:", err?.message || err);
@@ -126,21 +194,36 @@ async function safeGraphFetch(
 ): Promise<Response | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+
       if (res.ok) return res;
       if (res.status === 404 || res.status === 401) return res; // Non-retryable
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get("Retry-After") || "3", 10);
+        console.warn(`[Graph API] 429 Rate limited. Waiting ${retryAfter}s before retry...`);
+        await new Promise((r) => setTimeout(r, Math.min(retryAfter, 10) * 1000));
+        continue;
+      }
       console.warn(
         `[Graph API] Attempt ${attempt}/${retries} HTTP ${res.status} for ${url.slice(0, 80)}`
       );
       if (attempt === retries) return res;
       await new Promise((r) => setTimeout(r, 1000 * attempt));
     } catch (err: any) {
-      console.warn(`[Graph API Network] Attempt ${attempt}/${retries} failed:`, err.message);
+      console.warn(`[Graph API Network] Attempt ${attempt}/${retries} failed:`, err?.message || err);
       if (attempt === retries) return null;
       await new Promise((r) => setTimeout(r, 1000 * attempt));
     }
@@ -346,7 +429,7 @@ export const executeMailboxScanBackground = internalAction({
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
-    const MAX_ACTION_DURATION_MS = 30000; // 30s yield threshold (well below 120s Convex limit)
+    const MAX_ACTION_DURATION_MS = 25000; // 25s yield threshold (well below 120s Convex limit)
 
     const { jobId, mailboxEmail, folder, dryRun, maxMessages } = args;
     const targetGoal = args.targetAttachmentEmails || maxMessages || 150;
@@ -406,7 +489,7 @@ export const executeMailboxScanBackground = internalAction({
             ? args.nextCursorUrl
             : `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
                 mailboxEmail
-              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15&$filter=hasAttachments eq true`;
+              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=8&$filter=hasAttachments eq true`;
 
         if (!args.nextCursorUrl || fIdx > startFolderIndex) {
           await ctx.runMutation((internal as any).communications.emailBackfillMutations.updateScanProgress, {
@@ -442,11 +525,11 @@ export const executeMailboxScanBackground = internalAction({
               // Resilient resumption: Query messages up to the last processed timestamp
               fallbackUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
                 mailboxEmail
-              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15&$filter=hasAttachments eq true and receivedDateTime le ${new Date(lastProcessedReceivedAt).toISOString()}&$orderby=receivedDateTime desc`;
+              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=8&$filter=hasAttachments eq true and receivedDateTime le ${new Date(lastProcessedReceivedAt).toISOString()}&$orderby=receivedDateTime desc`;
             } else {
               fallbackUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
                 mailboxEmail
-              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=15`;
+              )}/mailFolders/${currentFolder}/messages?$select=id,subject,hasAttachments,receivedDateTime,from&$top=8`;
             }
             res = await safeGraphFetch(fallbackUrl, token);
           }
@@ -473,11 +556,12 @@ export const executeMailboxScanBackground = internalAction({
           for (const message of messages) {
             if (processedAttachmentEmails >= targetGoal) break;
 
-            // Track message metadata for robust pointer resumption
-            lastProcessedMessageId = message.id;
-            if (message.receivedDateTime) {
-              lastProcessedReceivedAt = new Date(message.receivedDateTime).getTime();
-            }
+            try {
+              // Track message metadata for robust pointer resumption
+              lastProcessedMessageId = message.id;
+              if (message.receivedDateTime) {
+                lastProcessedReceivedAt = new Date(message.receivedDateTime).getTime();
+              }
 
             // Check for job cancellation on each message for instant stop responsiveness
             const loopStatus = await ctx.runQuery(
@@ -573,21 +657,10 @@ export const executeMailboxScanBackground = internalAction({
                 const contentBytes = contentData.contentBytes;
                 if (!contentBytes) continue;
 
-                // Convert base64 to ArrayBuffer
-                const binaryString = atob(contentBytes);
-                const fileBuffer = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  fileBuffer[i] = binaryString.charCodeAt(i);
-                }
-
-                // Compute SHA-256 hash
-                const hashBuffer = await crypto.subtle.digest(
-                  "SHA-256",
-                  fileBuffer.buffer as ArrayBuffer
-                );
-                const fileHash = Array.from(new Uint8Array(hashBuffer))
-                  .map((b) => b.toString(16).padStart(2, "0"))
-                  .join("");
+                // Fast native base64 decode & SHA-256 hash
+                const nodeBuffer = Buffer.from(contentBytes, "base64");
+                const fileHash = crypto.createHash("sha256").update(nodeBuffer).digest("hex");
+                const fileBuffer = new Uint8Array(nodeBuffer);
 
                 // Pre-upload Deduplication Check: Check if this file already exists in cvUploads
                 const isDuplicate = await ctx.runQuery(
@@ -759,7 +832,10 @@ export const executeMailboxScanBackground = internalAction({
                 );
               }
             }
+          } catch (msgErr: any) {
+            console.warn(`[MailboxScan] Error handling message ${message.id}:`, msgErr?.message || msgErr);
           }
+        }
 
           url = nextLink;
           currentFolderCursor = nextLink;
@@ -856,6 +932,42 @@ export const executeMailboxScanBackground = internalAction({
             return;
           }
         }
+      }
+
+      // Wrap-around safeguard: If this run started at an offset folder index (startFolderIndex > 0)
+      // and reached the end of foldersToScan without hitting targetGoal, wrap around to folder 0
+      // so earlier folders (e.g. Inbox, Sent Items) are never skipped!
+      if (startFolderIndex > 0 && processedAttachmentEmails < targetGoal && fIdx >= foldersToScan.length) {
+        console.log(
+          `[MailboxScan Wrap-Around] Finished folder batch from index ${startFolderIndex} to ${foldersToScan.length - 1}. Wrapping around to scan folders 0 to ${startFolderIndex - 1}...`
+        );
+        await ctx.scheduler.runAfter(
+          0,
+          (internal as any).communications.emailBackfill.executeMailboxScanBackground,
+          {
+            jobId,
+            mailboxEmail,
+            folder,
+            dryRun,
+            maxMessages: targetGoal,
+            targetAttachmentEmails: targetGoal,
+            processedAttachmentEmails,
+            folderIndex: 0,
+            currentFolderId: foldersToScan[0],
+            lastProcessedMessageId: undefined,
+            lastProcessedReceivedAt: undefined,
+            nextCursorUrl: undefined,
+            scannedMessages: processedAttachmentEmails,
+            totalAttachments: totalAttachmentsInspected,
+            classifiedHighConfidence,
+            flaggedNeedsReview,
+            skippedLowConfidence,
+            deduplicatedCount,
+            llmCallsCount,
+            retryCount: 0,
+          }
+        );
+        return;
       }
 
       // Save persistent checkpoint on completion

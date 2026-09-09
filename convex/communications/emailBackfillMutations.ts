@@ -415,6 +415,155 @@ export const getLatestScanJob = query({
 });
 
 /**
+ * Public reactive query: Returns detailed mailbox scan progress and metrics for CLI and monitoring.
+ */
+export const getMailboxScanProgress = query({
+  args: {
+    mailboxEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetEmail = (args.mailboxEmail || "joborders@career141.com").toLowerCase().trim();
+
+    // Look for an active/running scan job first
+    let job = await ctx.db
+      .query("mailboxScanJobs")
+      .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", targetEmail))
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "running"),
+          q.eq(q.field("status"), "retrying"),
+          q.eq(q.field("status"), "pending")
+        )
+      )
+      .first();
+
+    // If no active job, get the latest scan job for this mailbox
+    if (!job) {
+      job = await ctx.db
+        .query("mailboxScanJobs")
+        .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", targetEmail))
+        .order("desc")
+        .first();
+    }
+
+    if (!job) {
+      return {
+        hasJob: false,
+        mailboxEmail: targetEmail,
+        message: `No scan jobs found for mailbox ${targetEmail}.`,
+      };
+    }
+
+    const totalAttachmentEmails = job.discoveredAttachmentEmails ?? job.totalMessages ?? 0;
+    const processedAttachmentEmails = job.processedAttachmentEmails ?? job.scannedMessages ?? 0;
+    const cvsAddedToSystem = job.classifiedHighConfidence ?? 0;
+    const nonCvSkipped = job.skippedLowConfidence ?? 0;
+    const duplicatesSkipped = job.deduplicatedCount ?? 0;
+
+    return {
+      hasJob: true,
+      jobId: job._id,
+      mailboxEmail: job.mailboxEmail,
+      status: job.status,
+      phase: job.phase || "unknown",
+      currentStage: job.currentStage || "Idle",
+      folder: job.folder,
+      currentFolderId: job.currentFolderId,
+      // Core 3 user metrics:
+      totalAttachmentEmails,
+      processedAttachmentEmails,
+      cvsAddedToSystem,
+      // Additional diagnostics:
+      nonCvSkipped,
+      duplicatesSkipped,
+      totalAttachments: job.totalAttachments ?? 0,
+      discoveredTotalEmails: job.discoveredTotalEmails ?? 0,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt ?? null,
+      lastHeartbeatAt: job.lastHeartbeatAt ?? null,
+      recentLogs: (job.recentLogs || []).slice(-5),
+      mode: job.mode || "background",
+      dryRun: job.dryRun,
+    };
+  },
+});
+
+/**
+ * Public mutation: Stops all active/running scan jobs for a target mailbox.
+ */
+export const stopMailboxScanByEmail = mutation({
+  args: {
+    mailboxEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetEmail = (args.mailboxEmail || "joborders@career141.com").toLowerCase().trim();
+
+    const activeJobs = await ctx.db
+      .query("mailboxScanJobs")
+      .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", targetEmail))
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "running"),
+          q.eq(q.field("status"), "retrying"),
+          q.eq(q.field("status"), "pending")
+        )
+      )
+      .collect();
+
+    if (activeJobs.length === 0) {
+      return {
+        success: true,
+        stoppedCount: 0,
+        message: `No active running scan jobs found for ${targetEmail}.`,
+      };
+    }
+
+    const now = Date.now();
+    for (const job of activeJobs) {
+      await ctx.db.patch(job._id, {
+        status: "stopped",
+        phase: "stopped",
+        userStopped: true,
+        completedAt: now,
+        lastHeartbeatAt: now,
+        currentStage: "Scan stopped by user.",
+        recentLogs: [
+          ...(job.recentLogs || []),
+          {
+            timestamp: now,
+            message: `Background scan job stopped by CLI command.`,
+            type: "warning",
+          },
+        ].slice(-50),
+      });
+
+      // Update checkpoint so resumed runs can pick up where left off
+      const existingCp = await ctx.db
+        .query("mailboxCheckpoints")
+        .withIndex("by_mailbox_folder", (q) =>
+          q.eq("mailboxEmail", targetEmail).eq("folder", job.folder)
+        )
+        .first();
+
+      if (existingCp) {
+        await ctx.db.patch(existingCp._id, {
+          totalExtractedCount: job.processedAttachmentEmails || job.scannedMessages || existingCp.totalExtractedCount,
+          lastExtractedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      stoppedCount: activeJobs.length,
+      jobIds: activeJobs.map((j) => j._id),
+      message: `Successfully stopped ${activeJobs.length} running background scan job(s) for ${targetEmail}.`,
+    };
+  },
+});
+
+/**
  * Public query: Gets a specific scan job by ID.
  */
 export const getScanJob = query({
@@ -651,6 +800,28 @@ export const startMailboxScan = mutation({
     const runMode = args.mode || "manual";
     const forceRediscovery = Boolean(args.forceRediscovery);
     const now = Date.now();
+
+    // Check if an active scan is already running for this mailbox
+    const activeExisting = await ctx.db
+      .query("mailboxScanJobs")
+      .withIndex("by_mailbox", (q) => q.eq("mailboxEmail", targetEmail))
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "running"),
+          q.eq(q.field("status"), "retrying"),
+          q.eq(q.field("status"), "pending")
+        )
+      )
+      .first();
+
+    if (activeExisting && !forceRediscovery) {
+      return {
+        success: false,
+        alreadyRunning: true,
+        jobId: activeExisting._id,
+        message: `Scan job ${activeExisting._id} is already actively running for ${targetEmail}.`,
+      };
+    }
 
     // Check if there is an active persistent checkpoint
     const checkpoint = await ctx.db
