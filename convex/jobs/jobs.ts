@@ -111,15 +111,15 @@ export const createJob = mutation({
       esaCheckEnabled: false,
       rejectionLoopAction: "restart_from_new_cvs",
       headhuntingEnabled: false,
-      slaNoNewCvsDays: 5,
-      slaTaReviewDays: 2,
+      slaNoNewCvsDays: 1,
+      slaTaReviewDays: 1,
       slaAiCallDays: 1,
-      slaSecondShortlistDays: 2,
-      slaDirectorReviewDays: 3,
-      slaEsaDays: 3,
-      slaClientReviewDays: 5,
-      slaInterviewDays: 3,
-      slaOfferDays: 2,
+      slaSecondShortlistDays: 1,
+      slaDirectorReviewDays: 1,
+      slaEsaDays: 1,
+      slaClientReviewDays: 1,
+      slaInterviewDays: 1,
+      slaOfferDays: 1,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       recruitmentType: args.recruitmentType as any,
@@ -238,15 +238,15 @@ export const createDraftJob = mutation({
       esaCheckEnabled: false,
       rejectionLoopAction: "ask_ta_each_time",
       headhuntingEnabled: false,
-      slaNoNewCvsDays: 5,
-      slaTaReviewDays: 2,
+      slaNoNewCvsDays: 1,
+      slaTaReviewDays: 1,
       slaAiCallDays: 1,
-      slaSecondShortlistDays: 2,
-      slaDirectorReviewDays: 3,
-      slaEsaDays: 3,
-      slaClientReviewDays: 5,
-      slaInterviewDays: 3,
-      slaOfferDays: 2,
+      slaSecondShortlistDays: 1,
+      slaDirectorReviewDays: 1,
+      slaEsaDays: 1,
+      slaClientReviewDays: 1,
+      slaInterviewDays: 1,
+      slaOfferDays: 1,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -304,6 +304,23 @@ export const updateJobDetails = mutation({
     enableEmailFollowUp: v.optional(v.boolean()),
     agent3Enabled: v.optional(v.boolean()),
     conversationTone: v.optional(v.string()),
+    // AI Match Scoring Weights
+    scoreWeightSkills: v.optional(v.number()),
+    scoreWeightExperience: v.optional(v.number()),
+    scoreWeightJobTitle: v.optional(v.number()),
+    scoreWeightIndustry: v.optional(v.number()),
+    scoreWeightLocation: v.optional(v.number()),
+    minMatchScoreToShow: v.optional(v.number()),
+    reverseMatchOnPublish: v.optional(v.boolean()),
+    // Pipeline Gates
+    directorReviewEnabled: v.optional(v.boolean()),
+    clientReviewEnabled: v.optional(v.boolean()),
+    esaCheckEnabled: v.optional(v.boolean()),
+    rejectionLoopAction: v.optional(v.union(
+      v.literal("restart_from_new_cvs"),
+      v.literal("return_to_client_review"),
+      v.literal("ask_ta_each_time")
+    )),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter", "test_ta"]);
@@ -992,6 +1009,44 @@ export const saveReverseMatchResults = internalMutation({
   },
 });
 
+export const addCandidateToReverseMatchResults = internalMutation({
+  args: {
+    jobId: v.id("jobs"),
+    candidateId: v.id("candidates"),
+    cvUploadId: v.optional(v.id("cvUploads")),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) return;
+
+    const candidate = await ctx.db.get(args.candidateId);
+    if (!candidate) return;
+
+    const existingResults = job.reverseMatchResults || [];
+    const cvId = String(args.candidateId);
+    if (existingResults.some((r) => String(r.cvId) === cvId)) {
+      return;
+    }
+
+    const newMatch = {
+      cvId,
+      candidateName: candidate.fullName || "Unknown Candidate",
+      candidateRole: candidate.currentJobTitle || (candidate as any).currentTitle || "Unknown Role",
+      candidateExp: candidate.totalExperienceYears,
+      overallScore: 70,
+      reason: "Matched from database / manual directory CV extraction",
+      sourceLevel1: "Database",
+      matchedSkills: candidate.skills?.slice(0, 5) || [],
+      missingSkills: [],
+      breakdown: { skills: 70, experience: 70, seniority: 70, industry: 70, location: 70 },
+    };
+
+    await ctx.db.patch(args.jobId, {
+      reverseMatchResults: [newMatch, ...existingResults],
+    });
+  },
+});
+
 export const updateTaPreferences = mutation({
   args: {
     jobId: v.id("jobs"),
@@ -1029,6 +1084,16 @@ export const triggerReverseMatch = mutation({
     });
   },
 });
+
+export const stopReverseMatch = mutation({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      reverseMatchStatus: "done",
+    });
+  },
+});
+
 
 export const updateTaPreferencesInternal = internalMutation({
   args: {

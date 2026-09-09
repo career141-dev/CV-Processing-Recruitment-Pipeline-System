@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import {
   RefreshCw,
@@ -35,6 +34,7 @@ import {
   Clock,
 } from "lucide-react";
 import RealTimeBatchLog from "@/components/ingestion-monitor/RealTimeBatchLog";
+import MailboxScannerCard from "@/components/ingestion-monitor/MailboxScannerCard";
 import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -438,8 +438,6 @@ export default function IngestionMonitorPage() {
 
   return (
     <div className="self-stretch bg-background min-h-screen w-full flex flex-col">
-      <PageHeader title="" />
-
       <div className="px-6 pb-24 md:pb-6 mx-auto w-full max-w-7xl">
         {/* Section A: Header Metrics Bar */}
         <header className="mb-6">
@@ -1123,6 +1121,9 @@ export default function IngestionMonitorPage() {
                 <StatBox label="Received Today" value={emailStats.todayCount} icon={Mail} color="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400" />
                 <StatBox label="Last Received" value={emailStats.lastReceived ? 1 : 0} icon={Activity} color="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" />
               </div>
+
+              {/* Historical Mailbox Scanner & Backfill Tool */}
+              <MailboxScannerCard />
             </div>
           )}
 

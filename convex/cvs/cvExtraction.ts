@@ -263,13 +263,13 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
   try {
     const str = Buffer.from(safeSliceBuffer(buffer)).toString("latin1");
     const textMatches: string[] = [];
-    
+
     // Match text within BT (Begin Text) and ET (End Text) operators
     const btBlocks = str.split("BT");
     for (const block of btBlocks) {
       if (!block.includes("ET")) continue;
       const etContent = block.split("ET")[0];
-      
+
       // Match string literals (text)
       const matches = etContent.match(/\(([^()]+)\)/g);
       if (matches) {
@@ -281,7 +281,7 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
         }
       }
     }
-    
+
     return textMatches.join(" ");
   } catch (err) {
     console.warn("[PDF Raw Stream Fallback] Failed to extract raw text streams:", err);
@@ -459,7 +459,7 @@ function ensureDOMMatrixPolyfill() {
  */
 async function extractImagesFromPdfBuffer(
   buffer: ArrayBuffer,
-  maxPages: number = 5
+  maxPages: number = 3
 ): Promise<string[]> {
   ensureDOMMatrixPolyfill();
   const images: string[] = [];
@@ -960,9 +960,17 @@ export async function runCvExtraction(
   let t_embed = 0;
   let t_write = 0;
 
-  // Check if upload is still valid/running, abort if already marked failed or cancelled
+  const CV_EXTRACTION_DEADLINE_MS = 210_000;
+  const checkDeadline = (stage: string) => {
+    const elapsed = Date.now() - tStart;
+    if (elapsed > CV_EXTRACTION_DEADLINE_MS) {
+      throw new Error(`CV extraction safety guard tripped at stage "${stage}" (${Math.round(elapsed / 1000)}s elapsed > 210s threshold). Terminating cleanly before Convex runtime kill.`);
+    }
+  };
+
+  // Check if upload is still valid/running, abort if already marked cancelled
   const cvUpload = await ctx.runQuery(internal.candidates.candidates.getCvUpload, { cvUploadId });
-  if (!cvUpload || cvUpload.status === "failed" || cvUpload.status === "failed_retry" || cvUpload.status === "cancelled") {
+  if (!cvUpload || cvUpload.status === "cancelled") {
     console.log(`[CvExtraction] Aborting extraction for upload ${cvUploadId} because status is: ${cvUpload?.status}`);
     return null;
   }
@@ -1000,11 +1008,12 @@ export async function runCvExtraction(
 
     if (!url) throw new Error("File URL not found (neither R2 nor Convex storage)");
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!response.ok) throw new Error(`Failed to download file from Convex storage. Status: ${response.status}`);
 
     const buffer = await response.arrayBuffer();
     t_download = Date.now() - tDownloadStart;
+    checkDeadline("post_download");
 
     if (buffer.byteLength === 0) {
       throw new Error("The file retrieved from storage is empty (zero bytes).");
@@ -1015,7 +1024,7 @@ export async function runCvExtraction(
     const existingCandidate = await ctx.runQuery(internal.candidates.candidates.findCandidateByHash, { fileHash });
     if (existingCandidate) {
       console.log(`[CvExtraction] Duplicate CV detected (hash: ${fileHash}). Candidate ID: ${existingCandidate._id}. Skipping extraction.`);
-      
+
       const jobId = await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
         cvUploadId,
         status: "processed",
@@ -1068,6 +1077,7 @@ export async function runCvExtraction(
     const tTextStart = Date.now();
     const { text: rawText, extractionModel } = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
     t_text = Date.now() - tTextStart;
+    checkDeadline("post_text_extraction");
 
     const cleanedText = cleanRawText(rawText);
     let trimmed = cleanedText.trim();
@@ -1119,15 +1129,26 @@ export async function runCvExtraction(
       console.warn(`[CvExtraction] R2 raw text upload error for upload ${cvUploadId}:`, r2Err?.message || r2Err);
     }
 
-    candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
-      rawTextKey,
-      sourceChannel: sourceChannel ?? undefined,
-      fileHash,
-      cvUploadId,
-      workableCandidateId: workableCandidateId ?? undefined,
-      isParsed: !skipLLM,
-      extractionModel,
-    });
+    if (cvUpload.candidateId) {
+      candidateId = cvUpload.candidateId;
+      await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
+        candidateId,
+        rawTextKey,
+        fileHash,
+        cvUploadId,
+        extractionModel,
+      });
+    } else {
+      candidateId = await ctx.runMutation(api.candidates.candidates.createCandidate, {
+        rawTextKey,
+        sourceChannel: sourceChannel ?? undefined,
+        fileHash,
+        cvUploadId,
+        workableCandidateId: workableCandidateId ?? undefined,
+        isParsed: !skipLLM,
+        extractionModel,
+      });
+    }
 
     await ctx.runMutation(api.candidates.candidates.updateCvUpload, {
       cvUploadId,
@@ -1180,12 +1201,14 @@ export async function runCvExtraction(
       }
 
       // LLM structuring only — embedding is deferred to background scheduler below
+      checkDeadline("pre_llm");
       const tLlmStart = Date.now();
       let extractedData = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
         console.warn("[CvExtraction] First call to OpenRouter LLM failed:", err.message || err);
         return null;
       });
       t_llm = Date.now() - tLlmStart;
+      checkDeadline("post_llm");
 
       extracted = extractedData;
 
@@ -1210,7 +1233,7 @@ export async function runCvExtraction(
           cappedRawText = cleanedTesseract.length > MAX_RAW_TEXT_LENGTH
             ? cleanedTesseract.slice(0, MAX_RAW_TEXT_LENGTH)
             : cleanedTesseract;
-            
+
           console.log(`[CvExtraction] Tesseract OCR extracted ${cappedRawText.length} characters (>= 50 threshold). Passing text to OpenRouter DeepSeek...`);
           extracted = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel).catch((err) => {
             console.error("[CvExtraction] OpenRouter DeepSeek call on Tesseract OCR text failed:", err.message || err);
@@ -1403,10 +1426,10 @@ export async function runCvExtraction(
 
     // NEVER delete the candidate stub. Preserve the candidate and application in New CVs so no applicant is lost!
     if (candidateId) {
-      const fallbackName = cvUpload?.fileName 
-        ? cvUpload.fileName.replace(/\.[^/.]+$/, "").replace(/[_\-]/g, " ") 
+      const fallbackName = cvUpload?.fileName
+        ? cvUpload.fileName.replace(/\.[^/.]+$/, "").replace(/[_\-]/g, " ")
         : "Applicant";
-        
+
       await ctx.runMutation(api.candidates.candidates.updateCandidateFields, {
         candidateId,
         fullName: fallbackName,
@@ -1591,7 +1614,7 @@ export const processNextBatch = internalAction({
     const cvUploadIds = [];
     for (const upload of uploads) {
       cvUploadIds.push(upload._id);
-      
+
       // Update status to "queued" and schedule extraction with a 2-second stagger
       await ctx.runMutation(api.cvs.cvUploads.queueManualExtraction, {
         cvUploadId: upload._id,
@@ -1675,21 +1698,39 @@ Respond ONLY with a valid JSON object in this exact format:
           const matchedJob = activeJobs.find((j: any) => j._id === resultObj.matchedJobId);
           if (matchedJob) {
             console.log(`[CvExtraction] Post-extract AI matched candidate ${candidate.fullName ?? args.candidateId} to job: ${matchedJob.title} (${resultObj.matchedJobId})`);
-            await ctx.runMutation(api.applications.applications.createApplication, {
-              candidateId: args.candidateId,
-              jobId: resultObj.matchedJobId as any,
-              cvFileId: args.cvUploadId,
-              sourceChannel: args.sourceChannel,
-              metaCampaignId: cvUpload?.campaignLabel,
-              metaSourceUrl: cvUpload?.metaSourceUrl,
-              metaSourceId: cvUpload?.metaSourceId,
-              metaHeadline: cvUpload?.metaHeadline,
-            });
+            const isManualDirectory = 
+              typeof args.sourceChannel === "string" && (
+                args.sourceChannel.toLowerCase().includes("manual") ||
+                args.sourceChannel.toLowerCase().includes("directory") ||
+                args.sourceChannel.toLowerCase().includes("folder") ||
+                args.sourceChannel === "database"
+              );
 
-            await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
-              candidateId: args.candidateId,
-              jobId: resultObj.matchedJobId as any,
-            });
+            if (isManualDirectory) {
+              // Manual directory / database candidates fall directly into the 'Matches' tab (reverseMatchResults)
+              // and do NOT create an active pipeline application until shortlisted by TA.
+              await ctx.runMutation(internal.jobs.jobs.addCandidateToReverseMatchResults, {
+                jobId: resultObj.matchedJobId as any,
+                candidateId: args.candidateId,
+                cvUploadId: args.cvUploadId,
+              });
+            } else {
+              await ctx.runMutation(api.applications.applications.createApplication, {
+                candidateId: args.candidateId,
+                jobId: resultObj.matchedJobId as any,
+                cvFileId: args.cvUploadId,
+                sourceChannel: args.sourceChannel,
+                metaCampaignId: cvUpload?.campaignLabel,
+                metaSourceUrl: cvUpload?.metaSourceUrl,
+                metaSourceId: cvUpload?.metaSourceId,
+                metaHeadline: cvUpload?.metaHeadline,
+              });
+
+              await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
+                candidateId: args.candidateId,
+                jobId: resultObj.matchedJobId as any,
+              });
+            }
           }
         }
       }
@@ -1731,32 +1772,22 @@ export const processUnextractedQueueCron = internalAction({
       return { processed: 0 };
     }
 
-    console.log(`[processUnextractedQueueCron] Processing ${claimed.length} CVs through AI LLM extraction pipeline...`);
+    console.log(`[processUnextractedQueueCron] Dispathing ${claimed.length} CVs to async AI extraction workers...`);
 
-    let count = 0;
-    const CONCURRENCY = 1;
-    for (let i = 0; i < claimed.length; i += CONCURRENCY) {
-      const chunk = claimed.slice(i, i + CONCURRENCY);
-      await Promise.all(
-        chunk.map(async (upload) => {
-          try {
-            await ctx.runAction(api.cvs.cvExtraction.processCvExtraction, {
-              cvUploadId: upload._id,
-              storageId: upload.storageId,
-              s3Key: upload.s3Key,
-              storageProvider: upload.storageProvider || (upload.s3Key ? "r2" : "convex"),
-              fileType: upload.fileType || "pdf",
-              sourceChannel: upload.source || "Manual Directory Import",
-              uploadedBy: upload.uploadedBy || "System Worker",
-            });
-            count++;
-          } catch (err: any) {
-            console.error(`[processUnextractedQueueCron] Error processing upload ${upload._id}:`, err?.message || err);
-          }
-        })
-      );
+    // Stagger individual extractions by 2.5 seconds to prevent rate limits and run each in an independent execution sandbox
+    for (let i = 0; i < claimed.length; i++) {
+      const upload = claimed[i];
+      await ctx.scheduler.runAfter(i * 2500, api.cvs.cvExtraction.processCvExtraction, {
+        cvUploadId: upload._id,
+        storageId: upload.storageId,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || (upload.s3Key ? "r2" : "convex"),
+        fileType: upload.fileType || "pdf",
+        sourceChannel: upload.source || "Manual Directory Import",
+        uploadedBy: upload.uploadedBy || "System Worker",
+      });
     }
 
-    return { processed: count };
+    return { processed: claimed.length };
   },
 });

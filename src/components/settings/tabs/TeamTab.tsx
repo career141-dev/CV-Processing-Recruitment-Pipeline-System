@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
-import { UserPlus, Edit2, X, Loader2 } from 'lucide-react';
+import { UserPlus, Edit2, X, Loader2, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { inviteUser } from "../../../app/actions/inviteUser";
@@ -11,8 +11,13 @@ export function TeamTab() {
   const teamMembers = useQuery(api.users.users.getTeamMembers);
   const assignRole = useMutation(api.users.users.assignRole);
   const deactivate = useMutation(api.users.users.deactivate);
+  const activate = useMutation(api.users.users.activate);
   const updateUser = useMutation(api.users.users.updateUser);
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   // Invite Modal state
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -67,6 +72,15 @@ export function TeamTab() {
     }
   };
 
+  const handleActivate = async (userId: any) => {
+    if (!confirm("Are you sure you want to activate this user? They will regain access to the platform.")) return;
+    try {
+      await activate({ targetUserId: userId, reason: "Admin activation via UI" });
+    } catch (err: any) {
+      alert("Failed to activate user: " + err.message);
+    }
+  };
+
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMember || !editName.trim()) return;
@@ -85,6 +99,14 @@ export function TeamTab() {
     }
   };
 
+  // Pagination Math
+  const totalMembers = teamMembers ? teamMembers.length : 0;
+  const totalPages = Math.max(1, Math.ceil(totalMembers / pageSize));
+  const validCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (validCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalMembers);
+  const paginatedMembers = teamMembers ? teamMembers.slice(startIndex, endIndex) : [];
+
   return (
     <>
       <Card className="overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300 relative" noPadding>
@@ -98,7 +120,7 @@ export function TeamTab() {
             Invite Member
           </button>
         </div>
-        <div className="overflow-x-auto bg-surface rounded-b-[10px]">
+        <div className="overflow-x-auto bg-surface">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low border-b border-border">
@@ -125,7 +147,7 @@ export function TeamTab() {
                   </td>
                 </tr>
               ) : (
-                teamMembers.map((member) => {
+                paginatedMembers.map((member) => {
                   const initial = member.fullName ? member.fullName.charAt(0).toUpperCase() : "?";
                   const isAdmin = member.role === "admin" || member.role === "ta_manager";
                   
@@ -202,12 +224,20 @@ export function TeamTab() {
                           <Edit2 size={13} />
                           Edit Name
                         </button>
-                        {member.isActive && (
+                        {member.isActive ? (
                           <button 
                             onClick={() => handleDeactivate(member._id)}
                             className="text-red-500 hover:text-red-700 transition-colors text-[12px] font-medium border border-red-200 hover:border-red-500 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md"
                           >
                             Deactivate
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => handleActivate(member._id)}
+                            className="text-emerald-600 hover:text-emerald-800 transition-colors text-[12px] font-medium border border-emerald-200 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                          >
+                            <CheckCircle2 size={13} />
+                            Activate
                           </button>
                         )}
                       </td>
@@ -218,7 +248,57 @@ export function TeamTab() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Footer */}
+        {teamMembers && teamMembers.length > 0 && (
+          <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 bg-surface text-[13px] text-text-secondary rounded-b-[10px]">
+            <div className="flex items-center gap-2">
+              <span>
+                Showing <strong className="font-semibold text-text-primary">{totalMembers === 0 ? 0 : startIndex + 1}</strong> to{" "}
+                <strong className="font-semibold text-text-primary">{endIndex}</strong> of{" "}
+                <strong className="font-semibold text-text-primary">{totalMembers}</strong> members
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="ml-2 bg-surface-container-low border border-border rounded px-2 py-1 text-[12px] text-text-primary focus:outline-none focus:border-primary-container"
+              >
+                <option value={5}>5 per page</option>
+                <option value={10}>10 per page</option>
+                <option value={25}>25 per page</option>
+                <option value={50}>50 per page</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={validCurrentPage === 1}
+                className="px-2.5 py-1 border border-border rounded-md hover:bg-surface-container-high transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-[12px]"
+              >
+                <ChevronLeft size={14} /> Previous
+              </button>
+
+              <span className="px-2 text-[12px]">
+                Page <strong className="font-semibold text-text-primary">{validCurrentPage}</strong> of{" "}
+                <strong className="font-semibold text-text-primary">{totalPages}</strong>
+              </span>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={validCurrentPage >= totalPages}
+                className="px-2.5 py-1 border border-border rounded-md hover:bg-surface-container-high transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-[12px]"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
+
 
       {/* Edit Name Modal */}
       {editingMember && (

@@ -1080,11 +1080,20 @@ export function scoreCandidateAgainstRequirements(
     effectiveMaxYears = 1.5;
   }
 
-  // Title Match Dimension incorporating Role-Family Equivalence multiplier
+  // Title Match Dimension incorporating Soft Weighted Role-Family Equivalence multiplier
   const baseTitleScore = scoreTitleMatchImpl(jobTitleVariants, candidateTitleText);
+  const candTitleLower = candidateTitleText.toLowerCase();
+  const jobTitleLower = (req.title || "").toLowerCase();
+  const hasDirectTitleOverlap = jobTitleLower.split(/\s+/).filter(w => w.length > 3).some(w => candTitleLower.includes(w));
+
   let roleFamilyMultiplier = 1.0;
-  if (req.roleFamilyMatch === "adjacent") roleFamilyMultiplier = 0.65;
-  else if (req.roleFamilyMatch === "unrelated") roleFamilyMultiplier = 0.15;
+  if (hasDirectTitleOverlap || req.roleFamilyMatch === "exact" || req.roleFamilyMatch === "synonym" || !req.roleFamilyMatch) {
+    roleFamilyMultiplier = 1.0;
+  } else if (req.roleFamilyMatch === "adjacent") {
+    roleFamilyMultiplier = 0.85;
+  } else if (req.roleFamilyMatch === "unrelated") {
+    roleFamilyMultiplier = 0.70;
+  }
 
   const titleScore = Math.round(roleFamilyMultiplier * baseTitleScore);
 

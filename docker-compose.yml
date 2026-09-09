@@ -15,8 +15,8 @@ services:
     volumes:
       - data:/convex/data
     environment:
-      - V8_ACTION_USER_TIMEOUT_SECS=${V8_ACTION_USER_TIMEOUT_SECS:-180}
-      - NODE_ACTION_USER_TIMEOUT_SECS=${NODE_ACTION_USER_TIMEOUT_SECS:-180}
+      - V8_ACTION_USER_TIMEOUT_SECS=${V8_ACTION_USER_TIMEOUT_SECS:-300}
+      - NODE_ACTION_USER_TIMEOUT_SECS=${NODE_ACTION_USER_TIMEOUT_SECS:-300}
       # ── CRASH FIX 3: Reduced concurrency to prevent CPU/memory overload ──
       # Original was 16 for all — lowered to prevent thundering herd under load
       - APPLICATION_MAX_CONCURRENT_MUTATIONS=${APPLICATION_MAX_CONCURRENT_MUTATIONS:-16}
@@ -125,7 +125,7 @@ services:
     ports:
       - "${DASHBOARD_PORT:-6791}:6791"
     environment:
-      - NEXT_PUBLIC_DEPLOYMENT_URL=${NEXT_PUBLIC_DEPLOYMENT_URL:-http://127.0.0.1:${PORT:-3210}}
+      - NEXT_PUBLIC_DEPLOYMENT_URL=${NEXT_PUBLIC_DEPLOYMENT_URL:-https://api.career141.com}
       - NEXT_PUBLIC_LOAD_MONACO_INTERNALLY
     depends_on:
       backend:

@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { PageHeader } from "@/components/ui/PageHeader";
 import {
   RefreshCw,
   Coins,
@@ -245,8 +244,6 @@ export default function TokenMonitorPage() {
 
   return (
     <div className="flex flex-col items-stretch self-stretch min-h-screen bg-background pb-12 w-full">
-      <PageHeader title="NVIDIA API Token Usage & Cost Monitor" />
-
       {/* Container wrapper */}
       <div className="px-6 flex flex-col gap-6 w-full max-w-7xl mx-auto">
         

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useUser } from '@clerk/nextjs';
+import { UserButton } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -23,10 +24,17 @@ import {
   UserCheck,
   Search,
   ScanLine,
-  Mic
+  Mic,
+  Bell,
+  X
 } from 'lucide-react';
 
-export default function Sidebar() {
+interface SidebarProps {
+  onMobileClose?: () => void;
+  isMobileDrawer?: boolean;
+}
+
+export default function Sidebar({ onMobileClose, isMobileDrawer = false }: SidebarProps = {}) {
   const { user } = useUser();
   const userName = user?.fullName || user?.firstName || 'User';
   const imageUrl = user?.imageUrl || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 24 24' fill='%231b5e20'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm0 14c-2.03 0-3.8-.85-5.05-2.2.03-1.68 3.37-2.6 5.05-2.6s5.02.92 5.05 2.6C15.8 19.15 14.03 20 12 20z'/%3E%3C/svg%3E";
@@ -59,7 +67,7 @@ export default function Sidebar() {
     localStorage.setItem('sidebar-pinned', String(nextState));
   };
 
-  const isExpanded = isPinned || isHovered;
+  const isExpanded = isMobileDrawer || isPinned || isHovered;
 
   const isActive = (path: string) => {
     if (path === '/dashboard' && pathname === '/dashboard') return true;
@@ -146,49 +154,66 @@ export default function Sidebar() {
         )}
         
         {isExpanded && (
-          <button 
-            onClick={togglePin}
-            className={`p-1.5 rounded-lg border shadow-sm transition-colors cursor-pointer ${
-              isPinned
-                ? 'bg-emerald-100 dark:bg-emerald-900/50 border-emerald-400 text-emerald-700 dark:text-emerald-300'
-                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-            title={isPinned ? "Unpin Sidebar (Auto-collapse on mouse leave)" : "Pin Sidebar (Keep expanded)"}
-          >
-            {isPinned ? <PinOff size={15} /> : <Pin size={15} />}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button 
+              onClick={togglePin}
+              className={`hidden md:block p-1.5 rounded-lg border shadow-sm transition-colors cursor-pointer ${
+                isPinned
+                  ? 'bg-emerald-100 dark:bg-emerald-900/50 border-emerald-400 text-emerald-700 dark:text-emerald-300'
+                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title={isPinned ? "Unpin Sidebar (Auto-collapse on mouse leave)" : "Pin Sidebar (Keep expanded)"}
+            >
+              {isPinned ? <PinOff size={15} /> : <Pin size={15} />}
+            </button>
+            {onMobileClose && (
+              <button
+                onClick={onMobileClose}
+                className="md:hidden p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                title="Close Navigation"
+                aria-label="Close Navigation"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      <div className={`flex items-center bg-slate-100 dark:bg-slate-900/40 py-3 mb-2 border-b border-solid border-slate-200 dark:border-slate-800/80 w-full transition-all duration-300 ${!isExpanded ? 'justify-center' : 'px-4'}`}>
-        <button
-          className="flex flex-col shrink-0 items-start bg-white dark:bg-slate-800 text-left p-[1px] rounded-[9999px] border border-solid border-slate-200 dark:border-slate-700/50"
-          onClick={() => alert('Pressed!')}
-        >
-          <img
-            src={imageUrl}
-            className="w-[34px] h-[34px] rounded-[9999px] object-cover"
-            alt="Profile"
-          />
-        </button>
+      <div className={`flex items-center bg-slate-100 dark:bg-slate-900/40 py-3 mb-2 border-b border-solid border-slate-200 dark:border-slate-800/80 w-full transition-all duration-300 ${!isExpanded ? 'justify-center px-0' : 'px-4'}`}>
+        <UserButton
+          appearance={{
+            elements: {
+              avatarBox: 'w-[34px] h-[34px]',
+            }
+          }}
+        />
         {isExpanded && (
-          <div className="flex flex-col shrink-0 items-start ml-3">
-            <span className="text-slate-800 dark:text-white text-[13px] font-bold">
-              {userName}
-            </span>
-          </div>
+          <>
+            <div className="flex flex-col shrink-0 items-start ml-3 flex-1 min-w-0">
+              <span className="text-slate-800 dark:text-white text-[13px] font-bold truncate max-w-[100px]">
+                {userName}
+              </span>
+              <span className="text-slate-400 dark:text-slate-500 text-[11px] truncate max-w-[110px]">
+                {user?.primaryEmailAddress?.emailAddress}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 ml-auto shrink-0">
+              <Bell className="w-4 h-4 text-slate-400 dark:text-slate-500 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 transition-colors" />
+            </div>
+          </>
         )}
       </div>
 
       <div className="flex flex-col w-full px-3 flex-1">
         {/* ── Always visible ────────────────────────── */}
-        <Link href="/dashboard" className={linkClass('/dashboard')}>
+        <Link href="/dashboard" onClick={onMobileClose} className={linkClass('/dashboard')}>
           {renderIcon('/dashboard')}
           <span className={labelClass}>Dashboard</span>
           {renderTooltip("Dashboard")}
         </Link>
 
-        <Link href="/dashboard/jobs" className={linkClass('/dashboard/jobs')}>
+        <Link href="/dashboard/jobs" onClick={onMobileClose} className={linkClass('/dashboard/jobs')}>
           {renderIcon('/dashboard/jobs')}
           <span className={labelClass}>Jobs</span>
           {renderTooltip("Jobs")}
@@ -203,20 +228,15 @@ export default function Sidebar() {
             renderIcon={renderIcon}
             labelClass={labelClass}
             renderTooltip={renderTooltip}
+            onNavClick={onMobileClose}
           />
         )}
 
         {/* ── Outreach, Analytics & Inquiries ──────────────────────── */}
-        {canAccessOutreach && (
-          <Link href="/dashboard/outreach" className={linkClass('/dashboard/outreach')}>
-            {renderIcon('/dashboard/outreach')}
-            <span className={labelClass}>Outreach</span>
-            {renderTooltip("Outreach")}
-          </Link>
-        )}
+        {/* Outreach hidden for now per user request */}
 
         {canViewAnalytics && (
-          <Link href="/dashboard/analytics" className={linkClass('/dashboard/analytics')}>
+          <Link href="/dashboard/analytics" onClick={onMobileClose} className={linkClass('/dashboard/analytics')}>
             {renderIcon('/dashboard/analytics')}
             <span className={labelClass}>Analytics</span>
             {renderTooltip("Analytics")}
@@ -224,7 +244,7 @@ export default function Sidebar() {
         )}
 
         {canViewInquiries && (
-          <Link href="/dashboard/inquiries" className={linkClass('/dashboard/inquiries')}>
+          <Link href="/dashboard/inquiries" onClick={onMobileClose} className={linkClass('/dashboard/inquiries')}>
             {renderIcon('/dashboard/inquiries')}
             <span className={labelClass}>Candidate Inquiries</span>
             {renderTooltip("Candidate Inquiries")}
@@ -241,7 +261,7 @@ export default function Sidebar() {
               )}
             </div>
 
-            <Link href="/dashboard/ingestion-monitor" className={linkClass('/dashboard/ingestion-monitor')}>
+            <Link href="/dashboard/ingestion-monitor" onClick={onMobileClose} className={linkClass('/dashboard/ingestion-monitor')}>
               {renderIcon('/dashboard/ingestion-monitor')}
               <span className={labelClass}>Ingestion Monitor</span>
               {renderTooltip("Ingestion Monitor")}
@@ -249,11 +269,11 @@ export default function Sidebar() {
           </>
         )}
 
-        <div className={hasFullAccess || canAccessOutreach ? "" : "mt-auto"}></div>
+        <div className={hasFullAccess ? "" : "mt-auto"}></div>
 
         {/* Settings: Admin only */}
         {canManageSettings && (
-          <Link href="/dashboard/settings" className={linkClass('/dashboard/settings')}>
+          <Link href="/dashboard/settings" onClick={onMobileClose} className={linkClass('/dashboard/settings')}>
             {renderIcon('/dashboard/settings')}
             <span className={labelClass}>Settings</span>
             {renderTooltip("Settings")}
@@ -289,6 +309,7 @@ interface CandidatesDropdownProps {
   renderIcon: (path: string) => React.ReactNode;
   labelClass: string;
   renderTooltip: (label: string) => React.ReactNode;
+  onNavClick?: () => void;
 }
 
 function CandidatesDropdown({
@@ -298,6 +319,7 @@ function CandidatesDropdown({
   renderIcon,
   labelClass,
   renderTooltip,
+  onNavClick,
 }: CandidatesDropdownProps) {
   const isCandidateRoute =
     pathname.startsWith('/dashboard/candidates') ||
@@ -364,19 +386,19 @@ function CandidatesDropdown({
       {/* Inline Submenu (when sidebar is expanded) */}
       {isExpanded && isOpen && (
         <div className="pl-8 pr-2 space-y-1 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
-          <Link href="/dashboard/candidates" className={subItemClass('/dashboard/candidates')}>
+          <Link href="/dashboard/candidates" onClick={onNavClick} className={subItemClass('/dashboard/candidates')}>
             <UserCheck className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             Candidate Management
           </Link>
-          <Link href="/dashboard/candidates/search" className={subItemClass('/dashboard/candidates/search')}>
+          <Link href="/dashboard/candidates/search" onClick={onNavClick} className={subItemClass('/dashboard/candidates/search')}>
             <Search className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             Candidate Search
           </Link>
-          <Link href="/dashboard/cv-scanner" className={subItemClass('/dashboard/cv-scanner')}>
+          <Link href="/dashboard/cv-scanner" onClick={onNavClick} className={subItemClass('/dashboard/cv-scanner')}>
             <ScanLine className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             CV Scan
           </Link>
-          <Link href="/dashboard/aura-voice-agent" className={subItemClass('/dashboard/aura-voice-agent')}>
+          <Link href="/dashboard/aura-voice-agent" onClick={onNavClick} className={subItemClass('/dashboard/aura-voice-agent')}>
             <Mic className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400 shrink-0" />
             Aura Voice Lab
           </Link>
@@ -393,6 +415,7 @@ function CandidatesDropdown({
           <div className="space-y-1">
             <Link
               href="/dashboard/candidates"
+              onClick={onNavClick}
               className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
               <UserCheck className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
@@ -400,6 +423,7 @@ function CandidatesDropdown({
             </Link>
             <Link
               href="/dashboard/candidates/search"
+              onClick={onNavClick}
               className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
               <Search className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
@@ -407,6 +431,7 @@ function CandidatesDropdown({
             </Link>
             <Link
               href="/dashboard/cv-scanner"
+              onClick={onNavClick}
               className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
               <ScanLine className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />
@@ -414,6 +439,7 @@ function CandidatesDropdown({
             </Link>
             <Link
               href="/dashboard/aura-voice-agent"
+              onClick={onNavClick}
               className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white dark:hover:bg-slate-700/70 transition-colors"
             >
               <Mic className="w-4 h-4 mr-2 text-emerald-400 shrink-0" />

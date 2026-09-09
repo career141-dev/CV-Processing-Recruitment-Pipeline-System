@@ -1,23 +1,42 @@
 import { v } from "convex/values";
 import { query, mutation, action, internalQuery, internalMutation } from "../_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import type { Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 import { checkAndAdvanceFollowUp, updateFollowUpFlags } from "../pipeline/followUpHelper";
 import { requireFullAccess } from "../lib/permissions";
 
-
-
-
 export const listCandidates = query({
   args: {
-    paginationOpts: v.optional(v.any()),
+    paginationOpts: v.optional(paginationOptsValidator),
     searchQuery: v.optional(v.string()),
     overallStatus: v.optional(v.string()),
     sourceChannel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const apps = await ctx.db.query("candidates").take(50);
-    return { page: apps, isDone: true, continueCursor: "" };
+    let q;
+    if (args.overallStatus) {
+      q = ctx.db
+        .query("candidates")
+        .withIndex("by_overallStatus", (idx) =>
+          idx.eq("overallStatus", args.overallStatus as any)
+        );
+    } else if (args.sourceChannel) {
+      q = ctx.db
+        .query("candidates")
+        .withIndex("by_sourceChannel", (idx) =>
+          idx.eq("sourceChannel", args.sourceChannel)
+        );
+    } else {
+      q = ctx.db.query("candidates");
+    }
+
+    if (args.paginationOpts) {
+      return await q.order("desc").paginate(args.paginationOpts);
+    }
+
+    const docs = await q.order("desc").take(50);
+    return { page: docs, isDone: false, continueCursor: "" };
   },
 });
 
@@ -932,6 +951,107 @@ export const listFailedUploads = query({
       isDone: result.isDone,
       continueCursor: result.continueCursor,
     };
+  },
+});
+
+export const getUnextractedCandidatesCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const unparsed = await ctx.db
+      .query("candidates")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("isParsed"), false),
+          q.eq(q.field("fullName"), undefined),
+          q.eq(q.field("fullName"), "Unknown"),
+          q.eq(q.field("fullName"), "Applicant")
+        )
+      )
+      .take(100);
+
+    return unparsed.length;
+  },
+});
+
+export const reparseAllUnextractedCandidates = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const unparsedCandidates = await ctx.db
+      .query("candidates")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("isParsed"), false),
+          q.eq(q.field("fullName"), undefined),
+          q.eq(q.field("fullName"), "Unknown"),
+          q.eq(q.field("fullName"), "Applicant")
+        )
+      )
+      .take(100);
+
+    let requeued = 0;
+    const processedUploadIds = new Set<string>();
+
+    for (const candidate of unparsedCandidates) {
+      if (!candidate.cvUploadId) continue;
+      const upload = await ctx.db.get(candidate.cvUploadId);
+      if (!upload || (!upload.s3Key && !upload.storageId)) continue;
+
+      processedUploadIds.add(upload._id);
+
+      await ctx.db.patch(upload._id, {
+        status: "pending",
+        isHealAttempted: false,
+        errorMessage: undefined,
+        candidateId: candidate._id,
+      });
+
+      await ctx.scheduler.runAfter(requeued * 2000, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId as any,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || "r2",
+        fileType: upload.fileType || "pdf",
+        sourceChannel: upload.source || candidate.sourceChannel || "Email",
+        uploadedBy: upload.uploadedBy || "System Healing",
+        cvUploadId: upload._id,
+      });
+
+      requeued++;
+    }
+
+    const stuckUploads = await ctx.db
+      .query("cvUploads")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "failed"),
+          q.eq(q.field("status"), "uploaded")
+        )
+      )
+      .take(50);
+
+    for (const upload of stuckUploads) {
+      if (processedUploadIds.has(upload._id)) continue;
+      if (!upload.s3Key && !upload.storageId) continue;
+
+      await ctx.db.patch(upload._id, {
+        status: "pending",
+        isHealAttempted: false,
+        errorMessage: undefined,
+      });
+
+      await ctx.scheduler.runAfter(requeued * 2000, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId as any,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || "r2",
+        fileType: upload.fileType || "pdf",
+        sourceChannel: upload.source || "Email",
+        uploadedBy: upload.uploadedBy || "System Healing",
+        cvUploadId: upload._id,
+      });
+
+      requeued++;
+    }
+
+    return { scannedCandidates: unparsedCandidates.length, requeuedCount: requeued };
   },
 });
 

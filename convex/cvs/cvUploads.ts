@@ -279,20 +279,50 @@ export const recoverStuckUploads = internalMutation({
       .take(50);
 
     let count = 0;
-    const sixtyMinutesAgo = Date.now() - 60 * 60 * 1000;
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
     for (const upload of stuck) {
       // Use processingStartedAt (stamped when extraction actually began) if available;
       // fall back to _creationTime only for legacy records that predate the new field.
       const processingStartMs = (upload as any).processingStartedAt ?? upload._creationTime;
-      if (processingStartMs < sixtyMinutesAgo) {
+      if (processingStartMs < tenMinutesAgo) {
         await ctx.db.patch(upload._id, {
           status: "failed",
-          errorMessage: "Process interrupted (Server restarted/crashed)",
+          errorMessage: "Process interrupted or timed out (>10m)",
         });
         
         // Also check if this upload is part of a batch
         if (upload.batchId) {
           // Trigger next batch evaluation
+          await ctx.scheduler.runAfter(0, api.cvs.cvUploads.checkAndTriggerNextBatch, {
+            batchId: upload.batchId as any,
+          });
+        }
+        count++;
+      }
+    }
+    return count;
+  },
+});
+
+export const recoverStuckUploadsPublic = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const stuck = await ctx.db
+      .query("cvUploads")
+      .withIndex("by_status", (q) => q.eq("status", "processing"))
+      .take(50);
+
+    let count = 0;
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    for (const upload of stuck) {
+      const processingStartMs = (upload as any).processingStartedAt ?? upload._creationTime;
+      if (processingStartMs < tenMinutesAgo) {
+        await ctx.db.patch(upload._id, {
+          status: "failed",
+          errorMessage: "Process interrupted or timed out (>10m)",
+        });
+        
+        if (upload.batchId) {
           await ctx.scheduler.runAfter(0, api.cvs.cvUploads.checkAndTriggerNextBatch, {
             batchId: upload.batchId as any,
           });
@@ -347,6 +377,118 @@ export const restoreAllCandidatesFromUploads = mutation({
     }
 
     return { checkedCount, requeuedRestored: requeued };
+  },
+});
+
+/**
+ * Sweeps all unparsed, empty ("Unknown"), or interrupted candidate profiles
+ * and schedules AI extraction for each with a 2-second stagger.
+ */
+export const reparseAllUnextractedCandidates = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // 1. Find all candidates that are unparsed or have empty/stub names
+    const unparsedCandidates = await ctx.db
+      .query("candidates")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("isParsed"), false),
+          q.eq(q.field("fullName"), undefined),
+          q.eq(q.field("fullName"), "Unknown"),
+          q.eq(q.field("fullName"), "Applicant")
+        )
+      )
+      .take(100);
+
+    let requeued = 0;
+    const processedUploadIds = new Set<string>();
+
+    for (const candidate of unparsedCandidates) {
+      if (!candidate.cvUploadId) continue;
+      const upload = await ctx.db.get(candidate.cvUploadId);
+      if (!upload || (!upload.s3Key && !upload.storageId)) continue;
+
+      processedUploadIds.add(upload._id);
+
+      // Reset upload state to pending
+      await ctx.db.patch(upload._id, {
+        status: "pending",
+        isHealAttempted: false,
+        errorMessage: undefined,
+        candidateId: candidate._id,
+      });
+
+      // Schedule extraction with 2-second stagger to prevent rate limits
+      await ctx.scheduler.runAfter(requeued * 2000, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId as any,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || "r2",
+        fileType: upload.fileType || "pdf",
+        sourceChannel: upload.source || candidate.sourceChannel || "Email",
+        uploadedBy: upload.uploadedBy || "System Healing",
+        cvUploadId: upload._id,
+      });
+
+      requeued++;
+    }
+
+    // 2. Also check any cvUploads that are stuck in 'failed' or 'uploaded' with no candidate
+    const stuckUploads = await ctx.db
+      .query("cvUploads")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "failed"),
+          q.eq(q.field("status"), "uploaded")
+        )
+      )
+      .take(50);
+
+    for (const upload of stuckUploads) {
+      if (processedUploadIds.has(upload._id)) continue;
+      if (!upload.s3Key && !upload.storageId) continue;
+
+      await ctx.db.patch(upload._id, {
+        status: "pending",
+        isHealAttempted: false,
+        errorMessage: undefined,
+      });
+
+      await ctx.scheduler.runAfter(requeued * 2000, api.cvs.cvExtraction.processCvExtraction, {
+        storageId: upload.storageId as any,
+        s3Key: upload.s3Key,
+        storageProvider: upload.storageProvider || "r2",
+        fileType: upload.fileType || "pdf",
+        sourceChannel: upload.source || "Email",
+        uploadedBy: upload.uploadedBy || "System Healing",
+        cvUploadId: upload._id,
+      });
+
+      requeued++;
+    }
+
+    return { scannedCandidates: unparsedCandidates.length, requeuedCount: requeued };
+  },
+});
+
+/**
+ * Returns the count of candidates with isParsed: false or Unknown name
+ */
+export const getUnextractedCandidatesCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const unparsed = await ctx.db
+      .query("candidates")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("isParsed"), false),
+          q.eq(q.field("fullName"), undefined),
+          q.eq(q.field("fullName"), "Unknown"),
+          q.eq(q.field("fullName"), "Applicant")
+        )
+      )
+      .take(100);
+
+    return unparsed.length;
   },
 });
 

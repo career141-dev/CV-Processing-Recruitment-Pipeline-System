@@ -393,11 +393,12 @@ Respond ONLY with a valid JSON object in this exact format:
       }
 
 
-      // Dispatch CV attachment processing asynchronously to keep pollEmailInbox non-blocking (< 500ms)
-      for (const attachment of cvAttachments) {
+      // Dispatch CV attachment processing asynchronously with a 2-second stagger to prevent burst concurrency
+      for (let attachIdx = 0; attachIdx < cvAttachments.length; attachIdx++) {
+        const attachment = cvAttachments[attachIdx];
         console.log(`[EmailAgent] Found CV attachment: ${attachment.name} (${attachment.contentType}). Scheduling async background ingestion...`);
 
-        await ctx.scheduler.runAfter(0, internal.communications.emailAgent.processSingleEmailAttachment, {
+        await ctx.scheduler.runAfter(attachIdx * 2000, internal.communications.emailAgent.processSingleEmailAttachment, {
           targetInboxEmail,
           messageId: message.id,
           attachmentId: attachment.id,

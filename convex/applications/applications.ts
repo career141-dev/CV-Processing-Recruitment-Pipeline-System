@@ -98,16 +98,22 @@ export const getByJobId = query({
       const cvUploadId = dbCandidate?.cvUploadId || app.candidateCvUploadId;
 
       let candidateObj: any = dbCandidate ? {
-        ...dbCandidate,
+        _id: dbCandidate._id,
         fullName: dbCandidate.fullName || app.candidateName || "Unknown Candidate",
         email: dbCandidate.email || app.candidateEmail,
         phone: dbCandidate.phone || app.candidatePhone,
         currentTitle: dbCandidate.currentJobTitle || dbCandidate.currentTitle || app.candidateTitle,
         totalExperienceYears: dbCandidate.totalExperienceYears ?? app.candidateExperience,
         cvUploadId: cvUploadId,
+        location: dbCandidate.location,
+        skills: dbCandidate.skills,
+        seniorityLevel: dbCandidate.seniorityLevel,
         currentSalary: dbCandidate.currentSalary ?? app.candidateCurrentSalary,
         expectedSalary: dbCandidate.expectedSalary ?? app.candidateExpectedSalary,
         noticePeriodDays: dbCandidate.noticePeriodDays ?? app.candidateNoticePeriodDays,
+        overallStatus: dbCandidate.overallStatus,
+        sourceChannel: dbCandidate.sourceChannel || dbCandidate.firstSourceChannel || (dbCandidate as any).source,
+        source: (dbCandidate as any).source || dbCandidate.sourceChannel || dbCandidate.firstSourceChannel,
       } : {
         _id: app.candidateId,
         fullName: app.candidateName ?? "Unknown Candidate",
@@ -119,6 +125,8 @@ export const getByJobId = query({
         currentSalary: app.candidateCurrentSalary,
         expectedSalary: app.candidateExpectedSalary,
         noticePeriodDays: app.candidateNoticePeriodDays,
+        sourceChannel: app.sourceChannel,
+        source: app.sourceChannel,
       };
 
       return {
@@ -127,8 +135,6 @@ export const getByJobId = query({
         cv: app.cvFileName ? { fileName: app.cvFileName } : (cvUploadId ? { storageId: cvUploadId } : null),
       };
     }).filter(Boolean);
-
-    return enriched;
 
     return enriched;
   },
@@ -346,6 +352,7 @@ export const createApplication = mutation({
     jobId: v.id("jobs"),
     cvFileId: v.optional(v.id("cvUploads")),
     sourceChannel: v.string(),
+    stage: v.optional(v.string()),
     metaCampaignId: v.optional(v.string()),
     metaSourceUrl: v.optional(v.string()),
     metaSourceId: v.optional(v.string()),
@@ -364,6 +371,14 @@ export const createApplication = mutation({
       return null;
     }
 
+    const isDatabaseOrManual =
+      args.sourceChannel === "database" ||
+      (typeof args.sourceChannel === "string" && (
+        args.sourceChannel.toLowerCase().includes("manual") ||
+        args.sourceChannel.toLowerCase().includes("directory") ||
+        args.sourceChannel.toLowerCase().includes("folder")
+      ));
+
     // Check if application already exists for this candidate and job
     const existing = await ctx.db
       .query("applications")
@@ -374,7 +389,10 @@ export const createApplication = mutation({
     if (existing) {
       let updates: any = {};
       
-      if (args.sourceChannel === "database" || existing.currentStage === "new_cvs" || existing.currentStage === "rejected") {
+      if (args.stage) {
+        updates.currentStage = args.stage as any;
+        updates.lastStageChangedAt = Date.now();
+      } else if (isDatabaseOrManual || existing.currentStage === "new_cvs" || existing.currentStage === "rejected") {
         updates.currentStage = "matched_candidates" as any;
         updates.lastStageChangedAt = Date.now();
       }
@@ -418,8 +436,8 @@ export const createApplication = mutation({
         }
       }
 
-      // Trigger AI scoring if score is missing or when adding from database
-      if (!existing.aiMatchScore && args.sourceChannel === "database") {
+      // Trigger AI scoring if score is missing or when adding from database / manual directory
+      if (!existing.aiMatchScore && isDatabaseOrManual) {
         await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
           candidateId: targetCandidateId,
           jobId: args.jobId,
@@ -430,7 +448,7 @@ export const createApplication = mutation({
     }
 
     const now = Date.now();
-    const initialStage = args.sourceChannel === "database" ? "matched_candidates" : "new_cvs";
+    const initialStage = args.stage || (isDatabaseOrManual ? "matched_candidates" : "new_cvs");
     
     const appId = await ctx.db.insert("applications", {
       candidateId: targetCandidateId,
@@ -456,7 +474,7 @@ export const createApplication = mutation({
       metaConversionSentFor: [],
     });
 
-    if (args.sourceChannel === "database") {
+    if (isDatabaseOrManual) {
       await ctx.scheduler.runAfter(0, api.cvs.cvScoringActions.processCvScoring, {
         candidateId: args.candidateId,
         jobId: args.jobId,

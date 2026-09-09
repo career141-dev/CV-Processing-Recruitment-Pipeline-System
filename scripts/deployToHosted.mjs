@@ -16,7 +16,7 @@ let url = process.env.CONVEX_SELF_HOSTED_URL || "http://127.0.0.1:3210";
 console.log(`[Deploy] Syncing latest Convex backend code to ${url}...`);
 
 try {
-  execSync(`npx convex dev --once --typecheck=disable --url "${url}" --admin-key "${adminKey}"`, {
+  execSync(`npx convex deploy --typecheck disable --url "${url}" --admin-key "${adminKey}"`, {
     stdio: 'inherit',
     env: { ...process.env, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey },
   });

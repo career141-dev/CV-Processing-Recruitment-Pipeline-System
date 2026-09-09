@@ -16,3 +16,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 2. **Strict Adherence to User Configurations**:
    - Never add unintended secondary fallbacks (e.g., using alternative phone numbers, secondary routes, or workarounds) that deviate from the user's intended primary setup.
+
+3. **Environment Isolation & VPS Resource Protection**:
+   - The production Contabo VPS operates near maximum memory/CPU capacity. **Never run dev instances or heavy builds on the production VPS.**
+   - All development must run 100% locally via `start-local-dev.bat` (`localhost:3000` + local Convex/dev containers).
+   - Direct SSH code editing and direct pushes to `main` are strictly forbidden; all updates must go through feature branches and GitHub PRs -> CI/CD deployment.
+
