@@ -373,13 +373,14 @@ export default function JobsPage() {
 
 
   // Check if any filter is active
-  const hasActiveFilters =
+  const hasActiveFilters = Boolean(
     searchQuery.trim().length > 0 ||
     selectedLocations.length > 0 ||
     selectedWorkplaceTypes.length > 0 ||
     selectedStatuses.length > 0 ||
     selectedPosters.length > 0 ||
-    selectedClients.length > 0;
+    selectedClients.length > 0
+  );
 
   return (
     <div className="w-full max-w-[1440px] mx-auto pb-20 pt-1">
@@ -389,11 +390,24 @@ export default function JobsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-text-primary">Jobs</h1>
         </div>
 
-        <div className="flex items-center gap-5 self-end sm:self-auto">
+        <div className="flex items-center gap-6 self-end sm:self-auto">
+          {/* Job slots in use progress bar */}
+          <div className="hidden md:flex flex-col items-end gap-1.5">
+            <span className="text-xs font-semibold text-text-secondary">
+              <span className="text-text-primary font-bold">{filteredJobs.length}</span> of 42 job slots in use
+            </span>
+            <div className="w-36 h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-slate-700 dark:bg-slate-300 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.round((filteredJobs.length / 42) * 100))}%` }}
+              />
+            </div>
+          </div>
+
           {/* Post a job primary button */}
           <button
             onClick={() => router.push('/dashboard/jobs/new')}
-            className="px-4 py-1.5 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs sm:text-[13px] font-semibold transition-all shadow-xs cursor-pointer flex items-center gap-1"
+            className="px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs sm:text-[13px] font-semibold transition-all shadow-xs hover:shadow active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
           >
             Post a job
           </button>
@@ -403,7 +417,7 @@ export default function JobsPage() {
       {/* Two-Column Layout: Left Filter Sidebar + Main Jobs Feed */}
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         {/* ── Left Sidebar Filters ────────────────────────── */}
-        <aside className="w-full lg:w-64 shrink-0 space-y-5 lg:pr-2">
+        <aside className="w-full lg:w-64 shrink-0 space-y-5 lg:pr-2 lg:sticky lg:top-20">
           {/* Reset filters header */}
           <div className="flex items-center justify-between pb-2 border-b border-border/60">
             <button
@@ -863,7 +877,7 @@ export default function JobsPage() {
                   <div
                     key={job.id}
                     onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
-                    className="py-5 px-3 hover:bg-surface-container-high/25 transition-colors rounded-xl group cursor-pointer"
+                    className="py-4.5 px-3 hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-all duration-150 rounded-xl group cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-5">
                       {/* Left: Checkbox + Job Details */}
@@ -876,130 +890,73 @@ export default function JobsPage() {
                           className="rounded border-border text-[#0a66c2] focus:ring-[#0a66c2] w-4 h-4 cursor-pointer mt-1 shrink-0"
                         />
 
-                        <div className="space-y-2 min-w-0 flex-1">
-                          {/* 1. STATUS & JOB TITLE */}
+                        <div className="space-y-1.5 min-w-0 flex-1">
+                          {/* 1. TITLE & STATUS DOT */}
                           <div className="flex items-center gap-2.5 flex-wrap">
-                            {/* STATUS */}
-                            <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full border border-border/80 bg-surface shadow-2xs shrink-0">
-                              {job.status === 'Open' && (
-                                <>
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Open</span>
-                                </>
-                              )}
-                              {job.status === 'On Hold' && (
-                                <>
-                                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                                  <span className="text-amber-700 dark:text-amber-400 font-semibold">On Hold</span>
-                                </>
-                              )}
-                              {job.status === 'Fins' && (
-                                <>
-                                  <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
-                                  <span className="text-slate-600 dark:text-slate-400 font-semibold">Closed</span>
-                                </>
-                              )}
-                              {job.status === 'Lost' && (
-                                <>
-                                  <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                                  <span className="text-red-700 dark:text-red-400 font-semibold">Lost</span>
-                                </>
-                              )}
-                              {job.status === 'Draft' && (
-                                <>
-                                  <span className="w-2 h-2 rounded-full bg-gray-400 shrink-0" />
-                                  <span className="text-gray-600 dark:text-gray-400 font-semibold">Draft</span>
-                                </>
-                              )}
-                            </span>
-
                             <Link
                               href={`/dashboard/jobs/${job.id}`}
-                              className="text-[16px] font-semibold text-slate-800 dark:text-slate-100 hover:text-[#0a66c2] hover:underline transition-colors leading-snug tracking-tight"
+                              className="text-[15.5px] font-bold uppercase tracking-tight text-slate-900 dark:text-slate-100 group-hover:text-[#0a66c2] group-hover:underline transition-colors leading-snug"
                             >
                               {job.title}
                             </Link>
-                          </div>
 
-                          {/* 2. CLIENT · 3. LOCATION · 7. TA ASSIGNED */}
-                          <div className="flex items-center gap-2.5 text-[13.5px] text-text-secondary flex-wrap leading-relaxed">
-                            {/* CLIENT */}
-                            <span className="font-semibold text-text-primary flex items-center gap-1.5">
-                              <Building size={14} className="text-text-tertiary shrink-0" />
-                              <span>{job.client}</span>
-                            </span>
-                            <span className="text-border font-bold">·</span>
-
-                            {/* LOCATION */}
-                            <span className="flex items-center gap-1.5">
-                              <MapPin size={14} className="text-text-tertiary shrink-0" />
-                              <span>{job.location} ({job.workplaceType})</span>
-                            </span>
-                            <span className="text-border font-bold">·</span>
-
-                            {/* TA ASSIGNED */}
-                            <span className="flex items-center gap-1.5">
-                              <User size={14} className="text-text-tertiary shrink-0" />
-                              <span className="text-text-tertiary font-medium">TA:</span>
-                              <span className="font-medium text-text-primary">{job.taAssigned || 'Unassigned'}</span>
-                            </span>
-                          </div>
-
-                          {/* 6. STAGE · 4. SOURCES ACTIVE · 5. NEW CVS */}
-                          <div className="flex items-center gap-3 text-[13px] text-text-secondary flex-wrap pt-0.5 leading-relaxed">
-                            {/* STAGE */}
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[12px] font-medium text-text-tertiary">Stage:</span>
-                              <span className={`px-2.5 py-0.5 rounded text-[12px] font-semibold border ${job.stage.bgClass} ${job.stage.textClass} ${job.stage.borderClass}`}>
-                                {job.stage.label}
+                            {/* STATUS DOT */}
+                            {job.status === 'Open' && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                <span>Open</span>
                               </span>
-                            </div>
-
-                            <span className="text-border font-bold">·</span>
-
-                            {/* SOURCES ACTIVE */}
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[12px] font-medium text-text-tertiary">Active Sources:</span>
-                              {job.sources.length > 0 ? (
-                                <div className="inline-flex items-center gap-1">
-                                  {job.sources.map(src => (
-                                    <span
-                                      key={src.id}
-                                      className={`w-4.5 h-4.5 rounded text-[9.5px] font-bold flex items-center justify-center ${src.bgClass} ${src.textClass}`}
-                                      title={`Source: ${src.id}`}
-                                    >
-                                      {src.label}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-text-disabled text-[12px]">-</span>
-                              )}
-                            </div>
-
-                            <span className="text-border font-bold">·</span>
-
-                            {/* NEW CVS */}
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[12px] font-medium text-text-tertiary">New CVs:</span>
-                              <span className="font-bold text-text-primary text-[13px]">{job.newCvs}</span>
-                              {job.newCvs > 0 && (
-                                <span className="bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-[11px] px-2 py-0.5 rounded font-semibold uppercase tracking-wider">
-                                  new
-                                </span>
-                              )}
-                            </div>
+                            )}
+                            {job.status === 'On Hold' && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                                <span>On Hold</span>
+                              </span>
+                            )}
+                            {job.status === 'Fins' && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                                <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+                                <span>Closed</span>
+                              </span>
+                            )}
+                            {job.status === 'Lost' && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-700 dark:text-red-400">
+                                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                                <span>Lost</span>
+                              </span>
+                            )}
+                            {job.status === 'Draft' && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400">
+                                <span className="w-2 h-2 rounded-full bg-gray-400 shrink-0" />
+                                <span>Draft</span>
+                              </span>
+                            )}
                           </div>
 
-                          {/* Meta line: Posted date · Project Name */}
-                          <div className="text-[12.5px] text-text-secondary flex items-center gap-2.5 flex-wrap pt-0.5 leading-relaxed">
-                            <span>Posted: {job.created}</span>
-                            <span className="text-border font-bold">·</span>
-                            <span className="truncate">
-                              <span className="font-medium text-text-tertiary">Project: </span>
-                              <span className="font-semibold uppercase tracking-tight text-text-primary">
-                                {job.keyword ? `${job.keyword} - ${job.client}` : `${job.title} - ${job.client}`}
-                              </span>
+                          {/* 2. COMPANY · LOCATION · RECRUITER NAME */}
+                          <div className="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-400 flex-wrap leading-relaxed">
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {job.client || 'CAREER141'}
+                            </span>
+                            <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
+                            <span>{job.location} ({job.workplaceType})</span>
+                            <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-medium">
+                              {job.taAssigned || 'Unassigned'}
+                            </span>
+                          </div>
+
+                          {/* 3. POSTED DATE · JOB POST TYPE */}
+                          <div className="text-[12.5px] text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap leading-relaxed">
+                            <span>Posted: {job.created} (Expiring in 30 days)</span>
+                            <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
+                            <span>Job post type: Manual</span>
+                          </div>
+
+                          {/* 4. PROJECT TAG (HIGHLIGHTED BLUE PILL) */}
+                          <div className="pt-0.5">
+                            <span className="inline-block px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-50/90 text-[#0a66c2] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-800/60">
+                              Project: {job.keyword ? `${job.keyword} - ${job.client}` : `${job.title} - ${job.client}`}{job.taAssigned ? ` - ${job.taAssigned}` : ''}
                             </span>
                           </div>
 
@@ -1015,8 +972,10 @@ export default function JobsPage() {
                                 {job.seniority}
                               </div>
                               <div>
-                                <span className="font-semibold text-text-primary">Job ID: </span>
-                                <span className="font-mono text-[11px]">{job.id}</span>
+                                <span className="font-semibold text-text-primary">Stage: </span>
+                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${job.stage.bgClass} ${job.stage.textClass}`}>
+                                  {job.stage.label}
+                                </span>
                               </div>
                             </div>
                           )}
