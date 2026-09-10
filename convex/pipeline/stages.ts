@@ -66,6 +66,12 @@ export const moveToTAShortlist = mutation({
       applicationId: args.applicationId,
       eventName: "QualifiedLead",
     });
+
+    // Auto-sync candidate to job Excel master sheet if configured
+    await ctx.scheduler.runAfter(0, internal.integrations.excelSync.syncCandidateToMasterSheet, {
+      jobId: entry.jobId,
+      applicationId: args.applicationId,
+    });
   },
 });
 

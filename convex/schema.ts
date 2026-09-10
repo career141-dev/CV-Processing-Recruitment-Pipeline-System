@@ -378,6 +378,18 @@ export default defineSchema({
     // AI Embedding (set async after creation)
     embedding: v.optional(v.array(v.number())),
 
+    // Excel Master Tracking Sheet (Microsoft Graph / SharePoint / OneDrive)
+    excelMasterSheetUrl: v.optional(v.string()),
+    excelMasterSheetEmbedUrl: v.optional(v.string()),
+    excelMasterSheetDriveId: v.optional(v.string()),
+    excelMasterSheetItemId: v.optional(v.string()),
+    excelMasterSheetName: v.optional(v.string()),
+    excelMasterSheetLastSyncedAt: v.optional(v.number()),
+    excelMasterSheetSyncStatus: v.optional(v.union(
+      v.literal("idle"), v.literal("syncing"), v.literal("synced"), v.literal("error")
+    )),
+    excelMasterSheetError: v.optional(v.string()),
+
     // Timestamps
     createdAt: v.string(),
     publishedAt: v.optional(v.string()),
@@ -834,6 +846,10 @@ export default defineSchema({
     loopIteration: v.number(),
     isActive: v.boolean(),
     notes: v.optional(v.string()),
+    excelSyncedAt: v.optional(v.number()),
+    masterSheetStatus: v.optional(v.string()),
+    masterSheetInterviewDate: v.optional(v.string()),
+    masterSheetNotes: v.optional(v.string()),
     createdAt: v.union(v.number(), v.string()),
     lastStageChangedAt: v.number(),
     followUpState: v.optional(v.object({

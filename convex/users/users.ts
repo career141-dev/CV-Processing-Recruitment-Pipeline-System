@@ -38,16 +38,21 @@ export const syncCurrentUser = mutation({
     const isSuperAdminEmail = 
       args.email.toLowerCase() === "sanjaysanjeev2000@gmail.com" ||
       args.email.toLowerCase() === "bytecreator3@gmail.com" ||
-      args.email.toLowerCase() === "sanjeevsivasuthakaran@gmail.com";
+      args.email.toLowerCase() === "sanjeevsivasuthakaran@gmail.com" ||
+      args.email.toLowerCase() === "binath@career141.com";
 
     if (existing) {
-      // Update login time and name/email if changed — DO NOT overwrite existing user role!
+      // Update login time and name/email if changed
       const patchData: any = {
         email: args.email,
         avatarUrl: args.avatarUrl,
         lastLoginAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      if (isSuperAdminEmail && (existing.role !== "admin" || !existing.isOnboarded)) {
+        patchData.role = "admin";
+        patchData.isOnboarded = true;
+      }
       if (!existing.fullName || existing.fullName === "Unknown User" || args.name !== "Unknown User") {
         patchData.fullName = fullName;
       }
@@ -257,6 +262,7 @@ export const setUserRoleByEmail = mutation({
     if (target) {
       await ctx.db.patch(target._id, {
         role: args.role as any,
+        isOnboarded: true,
         updatedAt: new Date().toISOString(),
       });
       return { success: true, email: args.email, newRole: args.role };

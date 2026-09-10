@@ -68,7 +68,7 @@ if (action === 'dev') {
   console.log(`[Convex Runner] Running ${funcName} against ${url}...`);
   const { spawnSync } = require('child_process');
   const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  const res = spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', adminKey, funcName, ...extraArgs], { stdio: 'inherit', env, shell: true });
+  const res = spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', `"${adminKey}"`, funcName, ...extraArgs], { stdio: 'inherit', env, shell: true });
   if (res.status !== 0) {
     process.exit(res.status || 1);
   }
@@ -82,9 +82,34 @@ if (action === 'dev') {
     process.exit(1);
   }
 
-  console.log('[Sync] Exporting database from hosted backend...');
-  execSync(`npx convex export --url "${hostedEnv.CONVEX_SELF_HOSTED_URL || 'https://api.career141.com'}" --admin-key "${hostedEnv.CONVEX_SELF_HOSTED_ADMIN_KEY}" --path hosted_export.zip`, { stdio: 'inherit' });
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const { spawnSync } = require('child_process');
 
-  console.log('[Sync] Importing database into local backend...');
-  execSync(`npx convex import hosted_export.zip --replace --yes --url "${localEnv.CONVEX_SELF_HOSTED_URL || 'http://127.0.0.1:3210'}" --admin-key "${localEnv.CONVEX_SELF_HOSTED_ADMIN_KEY}"`, { stdio: 'inherit' });
+  console.log('[Sync] Exporting database from hosted backend (read-only)...');
+  const exportRes = spawnSync(npxCmd, [
+    'convex', 'export',
+    '--url', hostedEnv.CONVEX_SELF_HOSTED_URL || 'https://api.career141.com',
+    '--admin-key', hostedEnv.CONVEX_SELF_HOSTED_ADMIN_KEY,
+    '--path', 'hosted_export.zip'
+  ], { stdio: 'inherit' });
+
+  if (exportRes.status !== 0) {
+    console.error('[ERROR] Export from hosted backend failed.');
+    process.exit(exportRes.status || 1);
+  }
+
+  console.log('[Sync] Importing database into local backend (127.0.0.1)...');
+  const importRes = spawnSync(npxCmd, [
+    'convex', 'import', 'hosted_export.zip',
+    '--replace', '--yes',
+    '--url', localEnv.CONVEX_SELF_HOSTED_URL || 'http://127.0.0.1:3210',
+    '--admin-key', localEnv.CONVEX_SELF_HOSTED_ADMIN_KEY
+  ], { stdio: 'inherit' });
+
+  if (importRes.status !== 0) {
+    console.error('[ERROR] Import into local backend failed.');
+    process.exit(importRes.status || 1);
+  }
+
+  console.log('[Sync] Database sync completed successfully!');
 }

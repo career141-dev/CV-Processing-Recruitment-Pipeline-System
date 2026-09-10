@@ -9,7 +9,7 @@ import {
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
   Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, MessageCircle, DollarSign, ExternalLink, HelpCircle, Square, Search,
-  Database
+  Database, FileSpreadsheet
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -20,6 +20,7 @@ import { useUser } from '@clerk/nextjs';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
 import { SendBulkFollowUpModal } from '@/components/outreach/SendBulkFollowUpModal';
 import { CandidateTimelineDrawer } from '@/components/candidates/CandidateTimelineDrawer';
+import { JobMasterSheetView } from '@/components/jobs/JobMasterSheetView';
 import { toast } from 'sonner';
 import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -2165,7 +2166,7 @@ export default function JobDetailPage() {
   const { user } = useUser();
   const jobId = params.jobId as Id<"jobs">;
 
-  const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('matches');
+  const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline' | 'masterSheet'>('matches');
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
   const [timelineAppId, setTimelineAppId] = useState<Id<"applications"> | null>(null);
@@ -4166,6 +4167,14 @@ export default function JobDetailPage() {
           <Layers className="w-4 h-4" />
           Pipeline ({applications.filter(a => a.currentStage !== 'new_cvs' && a.currentStage !== 'rejected').length})
         </button>
+        <button
+          onClick={() => setActiveMainTab('masterSheet')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeMainTab === 'masterSheet' ? 'border-emerald-500 text-emerald-600 font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'}`}
+        >
+          <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+          Master Tracking Sheet
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+        </button>
       </div>
 
       {activeMainTab === 'matches' && (
@@ -4227,6 +4236,12 @@ export default function JobDetailPage() {
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
         {renderPipelineTable()}
       </div>
+        </div>
+      )}
+
+      {activeMainTab === 'masterSheet' && (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <JobMasterSheetView jobId={jobId} jobTitle={job?.title} />
         </div>
       )}
       
