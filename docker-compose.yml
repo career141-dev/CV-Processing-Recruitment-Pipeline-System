@@ -41,8 +41,8 @@ services:
       - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-172800}
       - DO_NOT_REQUIRE_SSL=true
       - HTTP_SERVER_TIMEOUT_SECONDS
-      - INSTANCE_NAME
-      - INSTANCE_SECRET
+      - INSTANCE_NAME=${INSTANCE_NAME:-career141-local}
+      - INSTANCE_SECRET=${INSTANCE_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       - MYSQL_URL
       - POSTGRES_URL=postgresql://convex:career141_postgres_pass_2026@postgres:5432?sslmode=disable
       - PGSSLMODE=disable
@@ -93,7 +93,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-convex}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-career141_postgres_pass_2026}
-      POSTGRES_DB: ${POSTGRES_DB:-convex}
+      POSTGRES_DB: ${POSTGRES_DB:-career141_local}
     command: >
       postgres
         -c shared_buffers=1024MB

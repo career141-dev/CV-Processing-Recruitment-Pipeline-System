@@ -46,13 +46,15 @@ if (action === 'dev') {
   }
 
   console.log(`[Convex Runner] Connecting to ${url}...`);
-  execSync(`npx convex dev --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit' });
+  const env = { ...process.env, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey, CONVEX_SELF_HOSTED_URL: url };
+  execSync(`npx convex dev --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit', env });
 
 } else if (action === 'deploy') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
   console.log(`[Convex Runner] Deploying to ${url}...`);
-  execSync(`npx convex deploy --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit' });
+  const env = { ...process.env, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey, CONVEX_SELF_HOSTED_URL: url };
+  execSync(`npx convex deploy --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit', env });
 } else if (action === 'run') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
@@ -68,7 +70,7 @@ if (action === 'dev') {
   console.log(`[Convex Runner] Running ${funcName} against ${url}...`);
   const { spawnSync } = require('child_process');
   const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  const res = spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', adminKey, funcName, ...extraArgs], { stdio: 'inherit', env, shell: true });
+  const res = spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', `"${adminKey}"`, funcName, ...extraArgs], { stdio: 'inherit', env, shell: true });
   if (res.status !== 0) {
     process.exit(res.status || 1);
   }
