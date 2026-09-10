@@ -42,7 +42,7 @@ export const moveToTAShortlist = mutation({
       taShortlistAt: now,
       lastStageChangedAt: now,
     });
-    
+
     await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "ta_shortlist");
 
     await ctx.db.insert("pipelineEvents", {
@@ -58,19 +58,13 @@ export const moveToTAShortlist = mutation({
       createdAt: now,
     });
     await syncCandidateOverallStatus(ctx, entry.candidateId);
-    
+
     // Stop any scheduled automated follow-up sequence when moved to TA Shortlist
     await stopFollowUpSequenceForApp(ctx, args.applicationId);
 
     await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
       applicationId: args.applicationId,
       eventName: "QualifiedLead",
-    });
-
-    // Auto-sync candidate to job Excel master sheet if configured
-    await ctx.scheduler.runAfter(0, internal.integrations.excelSync.syncCandidateToMasterSheet, {
-      jobId: entry.jobId,
-      applicationId: args.applicationId,
     });
   },
 });
@@ -135,10 +129,10 @@ export const rejectCandidate = mutation({
 });
 
 export const setPipelineStage = mutation({
-  args: { 
-    applicationId: v.id("applications"), 
+  args: {
+    applicationId: v.id("applications"),
     newStage: v.string(), // "new_cvs" | "ta_shortlist" | "interview" | "offer" | "placed" | "rejected" | etc
-    note: v.optional(v.string()) 
+    note: v.optional(v.string())
   },
   handler: async (ctx, { applicationId, newStage, note }) => {
     return await executeStageTransition(ctx, {
@@ -260,7 +254,7 @@ export const clientApprove = mutation({
       }],
     });
     await adjustJobStageStat(ctx, entry.jobId, entry.currentStage, "interview");
-    
+
     await ctx.runMutation(internal.meta.trigger.triggerMetaEventIfEligible, {
       applicationId: args.applicationId,
       eventName: "Schedule",

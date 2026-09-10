@@ -87,8 +87,6 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as integrations_elevenlabs from "../integrations/elevenlabs.js";
 import type * as integrations_excelMutations from "../integrations/excelMutations.js";
-import type * as integrations_excelSync from "../integrations/excelSync.js";
-import type * as integrations_excelUrlHelper from "../integrations/excelUrlHelper.js";
 import type * as integrations_livekitSip from "../integrations/livekitSip.js";
 import type * as integrations_livekitSipPolicy from "../integrations/livekitSipPolicy.js";
 import type * as integrations_workable from "../integrations/workable.js";
@@ -219,8 +217,6 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "integrations/elevenlabs": typeof integrations_elevenlabs;
   "integrations/excelMutations": typeof integrations_excelMutations;
-  "integrations/excelSync": typeof integrations_excelSync;
-  "integrations/excelUrlHelper": typeof integrations_excelUrlHelper;
   "integrations/livekitSip": typeof integrations_livekitSip;
   "integrations/livekitSipPolicy": typeof integrations_livekitSipPolicy;
   "integrations/workable": typeof integrations_workable;

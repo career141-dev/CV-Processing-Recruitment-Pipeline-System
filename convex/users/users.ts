@@ -15,9 +15,9 @@ function formatNameFromEmail(email?: string): string {
 
 // Called from Next.js on every login via useConvexAuth / onAuthStateChange
 export const syncCurrentUser = mutation({
-  args: { 
-    name: v.string(), 
-    email: v.string(), 
+  args: {
+    name: v.string(),
+    email: v.string(),
     avatarUrl: v.optional(v.string()),
     invitedRole: v.optional(v.string())
   },
@@ -35,24 +35,19 @@ export const syncCurrentUser = mutation({
       .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
       .unique();
 
-    const isSuperAdminEmail = 
+    const isSuperAdminEmail =
       args.email.toLowerCase() === "sanjaysanjeev2000@gmail.com" ||
       args.email.toLowerCase() === "bytecreator3@gmail.com" ||
-      args.email.toLowerCase() === "sanjeevsivasuthakaran@gmail.com" ||
-      args.email.toLowerCase() === "binath@career141.com";
+      args.email.toLowerCase() === "sanjeevsivasuthakaran@gmail.com";
 
     if (existing) {
-      // Update login time and name/email if changed
+      // Update login time and name/email if changed — DO NOT overwrite existing user role!
       const patchData: any = {
         email: args.email,
         avatarUrl: args.avatarUrl,
         lastLoginAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      if (isSuperAdminEmail && (existing.role !== "admin" || !existing.isOnboarded)) {
-        patchData.role = "admin";
-        patchData.isOnboarded = true;
-      }
       if (!existing.fullName || existing.fullName === "Unknown User" || args.name !== "Unknown User") {
         patchData.fullName = fullName;
       }
@@ -132,7 +127,7 @@ export const deactivate = mutation({
   args: { targetUserId: v.id("users"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const admin = await requireRole(ctx, ["admin"]);
-    
+
     await ctx.db.patch(args.targetUserId, {
       isActive: false,
       updatedAt: new Date().toISOString(),
@@ -153,7 +148,7 @@ export const activate = mutation({
   args: { targetUserId: v.id("users"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const admin = await requireRole(ctx, ["admin"]);
-    
+
     await ctx.db.patch(args.targetUserId, {
       isActive: true,
       updatedAt: new Date().toISOString(),
@@ -216,7 +211,7 @@ export const listByRoles = query({
   args: { roles: v.array(v.string()) },
   handler: async (ctx, args) => {
     const userGroups = await Promise.all(
-      args.roles.map(role => 
+      args.roles.map(role =>
         ctx.db.query("users").withIndex("by_role", q => q.eq("role", role as any)).collect()
       )
     );
@@ -262,7 +257,6 @@ export const setUserRoleByEmail = mutation({
     if (target) {
       await ctx.db.patch(target._id, {
         role: args.role as any,
-        isOnboarded: true,
         updatedAt: new Date().toISOString(),
       });
       return { success: true, email: args.email, newRole: args.role };

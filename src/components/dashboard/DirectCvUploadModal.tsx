@@ -294,18 +294,16 @@ export function DirectCvUploadModal({
               <button
                 type="button"
                 onClick={() => setDestinationType("common")}
-                className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all ${
-                  destinationType === "common"
+                className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all ${destinationType === "common"
                     ? "border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 ring-1 ring-emerald-500"
                     : "border-border hover:bg-surface-container-high bg-surface"
-                }`}
+                  }`}
               >
                 <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                    destinationType === "common"
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${destinationType === "common"
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                  }`}
+                    }`}
                 >
                   <Database size={14} />
                 </div>
@@ -326,18 +324,16 @@ export function DirectCvUploadModal({
               <button
                 type="button"
                 onClick={() => setDestinationType("job")}
-                className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all ${
-                  destinationType === "job"
+                className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all ${destinationType === "job"
                     ? "border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 ring-1 ring-emerald-500"
                     : "border-border hover:bg-surface-container-high bg-surface"
-                }`}
+                  }`}
               >
                 <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                    destinationType === "job"
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${destinationType === "job"
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                  }`}
+                    }`}
                 >
                   <Briefcase size={14} />
                 </div>
@@ -584,11 +580,10 @@ export function DirectCvUploadModal({
                 <div
                   className="bg-accent-teal h-full transition-all duration-300"
                   style={{
-                    width: `${
-                      uploadProgress.total > 0
+                    width: `${uploadProgress.total > 0
                         ? (uploadProgress.current / uploadProgress.total) * 100
                         : 0
-                    }%`,
+                      }%`,
                   }}
                 />
               </div>

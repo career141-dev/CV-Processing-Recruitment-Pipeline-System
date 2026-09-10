@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { 
-  ChevronLeft, Check, Copy, ChevronRight, 
-  Users, Layers, FileText, ListTodo, PhoneCall, 
-  CheckCircle2, UserCheck, Building2, Video, 
+import {
+  ChevronLeft, Check, Copy, ChevronRight,
+  Users, Layers, FileText, ListTodo, PhoneCall,
+  CheckCircle2, UserCheck, Building2, Video,
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
   Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, MessageCircle, DollarSign, ExternalLink, HelpCircle, Square, Search,
@@ -20,7 +20,7 @@ import { useUser } from '@clerk/nextjs';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
 import { SendBulkFollowUpModal } from '@/components/outreach/SendBulkFollowUpModal';
 import { CandidateTimelineDrawer } from '@/components/candidates/CandidateTimelineDrawer';
-import { JobMasterSheetView } from '@/components/jobs/JobMasterSheetView';
+import { JobMasterSpreadsheet } from '@/components/jobs/JobMasterSpreadsheet';
 import { toast } from 'sonner';
 import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -43,13 +43,13 @@ const MOVEABLE_STAGES = PIPELINE_STAGES.filter(s => s.id !== "director_shortlist
 
 // AI call status → color config
 const AI_CALL_STATUS: Record<string, { label: string; color: string; bg: string; pulse?: boolean }> = {
-  scheduled:   { label: "Scheduled",    color: "text-blue-600",   bg: "bg-blue-500/10",   pulse: true },
-  in_progress: { label: "In Progress",  color: "text-yellow-600", bg: "bg-yellow-500/10", pulse: true },
-  completed:   { label: "Completed",    color: "text-green-600",  bg: "bg-green-500/10" },
-  no_answer:   { label: "No Answer",    color: "text-orange-600", bg: "bg-orange-500/10" },
-  failed:      { label: "Failed",       color: "text-red-600",    bg: "bg-red-500/10" },
-  declined:    { label: "Declined",     color: "text-red-600",    bg: "bg-red-500/10" },
-  not_called:  { label: "Not Called",   color: "text-text-secondary", bg: "bg-surface-container" },
+  scheduled: { label: "Scheduled", color: "text-blue-600", bg: "bg-blue-500/10", pulse: true },
+  in_progress: { label: "In Progress", color: "text-yellow-600", bg: "bg-yellow-500/10", pulse: true },
+  completed: { label: "Completed", color: "text-green-600", bg: "bg-green-500/10" },
+  no_answer: { label: "No Answer", color: "text-orange-600", bg: "bg-orange-500/10" },
+  failed: { label: "Failed", color: "text-red-600", bg: "bg-red-500/10" },
+  declined: { label: "Declined", color: "text-red-600", bg: "bg-red-500/10" },
+  not_called: { label: "Not Called", color: "text-text-secondary", bg: "bg-surface-container" },
 };
 
 
@@ -172,14 +172,14 @@ const AiReasonDisplay = ({ reason, candidateName }: { reason?: string | null; ca
       </div>
 
       {isModalOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={(e) => {
             e.stopPropagation();
             setIsModalOpen(false);
           }}
         >
-          <div 
+          <div
             className="bg-surface border border-border rounded-xl shadow-2xl max-w-lg w-full p-5 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
@@ -233,7 +233,7 @@ const StatusDot = ({ status }: { status: string }) => {
   const isRed = status.toLowerCase().includes('not called') || status.toLowerCase().includes('rejected');
   const isGreen = status.toLowerCase().includes('good') || status.toLowerCase().includes('placed') || status.toLowerCase().includes('scheduled') || status.toLowerCase().includes('approved');
   const colorClass = isRed ? 'bg-red-500' : isGreen ? 'bg-green-500' : 'bg-yellow-500';
-  
+
   return (
     <div className="flex items-center gap-2">
       <div className={`w-2 h-2 rounded-full ${colorClass} shadow-sm animate-pulse`} />
@@ -403,7 +403,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
   const handleRevert = async () => {
     if (!applicationForCandidate) return;
     if (!confirm("Are you sure you want to revert this shortlist? This will remove them from the pipeline for this job.")) return;
-    
+
     setIsShortlisting(true);
     try {
       await removeApplication({ applicationId: applicationForCandidate._id });
@@ -438,7 +438,7 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
         <td className="p-4 text-right">
           <div className="flex items-center justify-end gap-2">
             {!isAlreadyInPipeline ? (
-              <button 
+              <button
                 onClick={handleShortlist}
                 disabled={isShortlisting}
                 className="text-[12px] font-bold bg-green-600 hover:bg-green-500 text-white px-3.5 py-1.5 rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -447,14 +447,14 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
               </button>
             ) : (
               <div className="flex items-center gap-2">
-                <button 
+                <button
                   onClick={onNavigate}
                   className="text-[12px] font-medium text-green-600 bg-green-500/10 hover:bg-green-500/20 px-2 py-1.5 rounded-[6px] flex items-center gap-1 border border-green-500/20 transition-colors"
                   title="View in Pipeline"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" /> Added to Matched
                 </button>
-                <button 
+                <button
                   onClick={handleRevert}
                   disabled={isShortlisting}
                   className="text-text-secondary hover:text-error hover:bg-error/10 p-1.5 rounded-[6px] transition-colors"
@@ -487,21 +487,21 @@ const MatchRow = ({ match, jobId, applications, onNavigate }: { match: any, jobI
 const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUploads"> | null, candidateName?: string }) => {
   const cvUpload = useQuery(api.candidates.candidates.getCvUploadUrl, cvUploadId ? { cvUploadId } : "skip");
   const [isOpen, setIsOpen] = useState(false);
-  
+
   if (!cvUploadId) return (
     <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface/50 text-text-disabled text-[11px] font-medium" title="No CV attached">
       <FileText className="w-3 h-3" />
       View CV
     </button>
   );
-  
+
   if (cvUpload === undefined) return (
     <button disabled className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border bg-surface/50 text-text-disabled text-[11px] font-medium animate-pulse">
       <FileText className="w-3 h-3" />
       View CV
     </button>
   );
-  
+
   if (cvUpload?.isMissingMigrationFile || (!cvUpload?.url && cvUpload !== undefined)) return (
     <button
       onClick={(e) => {
@@ -516,7 +516,7 @@ const CvViewButton = ({ cvUploadId, candidateName }: { cvUploadId?: Id<"cvUpload
       <Info className="w-3 h-3 text-amber-600 ml-0.5" />
     </button>
   );
-  
+
   return (
     <>
       <button
@@ -598,7 +598,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  
+
   const logManualCall = useMutation(api.applications.applications.logManualCall);
   const setPipelineStage = useMutation(api.pipeline.stages.setPipelineStage);
   const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
@@ -618,7 +618,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
       if (cvFile && user?.id) {
         let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: cvFile.name, contentType: cvFile.type });
         const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
-        
+
         let cvUploadId = await saveUpload({
           s3Key,
           storageProvider: "r2",
@@ -675,7 +675,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
           </span>
         </div>
       </td>
-      
+
       <td className="p-4 align-top">
         {!isLoggingCall ? (
           <div className="flex flex-col gap-1">
@@ -695,9 +695,9 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
                 <div className="w-2 h-2 rounded-full border border-text-tertiary" /> Not yet logged
               </span>
             )}
-            
+
             {!hasOutcome && (
-              <button 
+              <button
                 onClick={() => setIsLoggingCall(true)}
                 className="mt-2 text-[12px] font-medium bg-surface-container hover:bg-border text-text-primary px-3 py-1.5 rounded-[6px] w-fit transition-colors border border-border"
               >
@@ -707,7 +707,7 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
           </div>
         ) : (
           <div className="flex flex-col gap-3 bg-surface-container p-3 rounded-lg border border-border mt-1">
-            <select 
+            <select
               value={outcome}
               onChange={e => setOutcome(e.target.value)}
               className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container"
@@ -717,35 +717,35 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
               <option value="Not Interested">Not Interested</option>
               <option value="No Answer">No Answer</option>
             </select>
-            
+
             {outcome === "Interested" && (
               <div className="grid grid-cols-2 gap-2">
                 <input type="text" placeholder="Current Salary" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
                 <input type="text" placeholder="Expected Salary" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
                 <input type="text" placeholder="Notice Period" className="bg-surface border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:border-primary-container col-span-2" value={noticePeriod} onChange={e => setNoticePeriod(e.target.value)} />
-                
+
                 <div className="col-span-2 mt-1">
                   <label className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary mb-1.5">
                     <Upload className="w-3.5 h-3.5" /> Upload New CV (Optional)
                   </label>
-                  <input 
-                    type="file" 
+                  <input
+                    type="file"
                     onChange={e => setCvFile(e.target.files?.[0] || null)}
-                    className="w-full text-[11px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-surface-container-high file:text-text-primary hover:file:bg-border transition-colors cursor-pointer" 
+                    className="w-full text-[11px] text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-surface-container-high file:text-text-primary hover:file:bg-border transition-colors cursor-pointer"
                   />
                 </div>
               </div>
             )}
 
             <div className="flex justify-end gap-2 mt-1">
-              <button 
+              <button
                 onClick={() => setIsLoggingCall(false)}
                 className="text-[11px] font-medium text-text-secondary hover:text-text-primary px-2 py-1"
               >
                 Cancel
               </button>
-              <button 
-                onClick={handleSaveLog} 
+              <button
+                onClick={handleSaveLog}
                 disabled={isSaving || !outcome}
                 className="text-[11px] font-medium bg-primary text-on-primary px-3 py-1.5 rounded-[4px] hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
               >
@@ -755,26 +755,25 @@ const MatchedCandidateRow = ({ item, renderKanbanDropdown }: { item: any, render
           </div>
         )}
       </td>
-      
+
       <td className="p-4 align-top">
         <AiReasonDisplay reason={item.scoreReason} candidateName={item.name} />
       </td>
-      
+
       <td className="p-4 text-right align-top">
         <div className="flex flex-col items-end gap-2">
           <button
             disabled={!isCallLogged}
             onClick={handleMoveToFollowUp}
-            className={`text-[12px] font-medium px-4 py-2 rounded-[6px] transition-all shadow-sm ${
-              isCallLogged 
-                ? 'bg-green-600 text-white hover:bg-green-700' 
+            className={`text-[12px] font-medium px-4 py-2 rounded-[6px] transition-all shadow-sm ${isCallLogged
+                ? 'bg-green-600 text-white hover:bg-green-700'
                 : 'bg-surface-container text-text-disabled cursor-not-allowed border border-border'
-            }`}
+              }`}
           >
             Move to Follow-up
           </button>
-          
-          <button 
+
+          <button
             onClick={handleReject}
             className="text-[12px] font-medium text-text-secondary hover:text-error px-4 py-1.5 rounded-[6px] transition-colors"
           >
@@ -827,7 +826,7 @@ const LogManualCallCard = ({
     <div className="bg-surface rounded-2xl border border-amber-300/40 dark:border-amber-700/50 p-5 shadow-lg relative overflow-hidden transition-all animate-in fade-in slide-in-from-top-2 duration-200">
       {/* Top Banner Accent */}
       <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600" />
-      
+
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-border">
         <div className="flex items-center gap-3">
@@ -861,11 +860,10 @@ const LogManualCallCard = ({
           <button
             type="button"
             onClick={() => setOutcome("Interested")}
-            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
-              outcome === "Interested"
+            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${outcome === "Interested"
                 ? "bg-emerald-500/10 border-emerald-500 text-emerald-700 dark:text-emerald-400 ring-2 ring-emerald-500/20 shadow-xs"
                 : "bg-surface border-border text-text-secondary hover:bg-surface-bright hover:border-text-tertiary"
-            }`}
+              }`}
           >
             <CheckCircle2 className={`w-4 h-4 ${outcome === "Interested" ? "text-emerald-500" : "text-text-tertiary"}`} />
             <div className="text-left">
@@ -877,11 +875,10 @@ const LogManualCallCard = ({
           <button
             type="button"
             onClick={() => setOutcome("Not Interested")}
-            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
-              outcome === "Not Interested"
+            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${outcome === "Not Interested"
                 ? "bg-red-500/10 border-red-500 text-red-700 dark:text-red-400 ring-2 ring-red-500/20 shadow-xs"
                 : "bg-surface border-border text-text-secondary hover:bg-surface-bright hover:border-text-tertiary"
-            }`}
+              }`}
           >
             <XCircle className={`w-4 h-4 ${outcome === "Not Interested" ? "text-red-500" : "text-text-tertiary"}`} />
             <div className="text-left">
@@ -893,11 +890,10 @@ const LogManualCallCard = ({
           <button
             type="button"
             onClick={() => setOutcome("No Answer")}
-            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
-              outcome === "No Answer"
+            className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${outcome === "No Answer"
                 ? "bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-400 ring-2 ring-amber-500/20 shadow-xs"
                 : "bg-surface border-border text-text-secondary hover:bg-surface-bright hover:border-text-tertiary"
-            }`}
+              }`}
           >
             <Clock className={`w-4 h-4 ${outcome === "No Answer" ? "text-amber-500" : "text-text-tertiary"}`} />
             <div className="text-left">
@@ -1120,13 +1116,13 @@ const LogManualCallCard = ({
 const isUrl = (str: string) => {
   if (!str) return false;
   const trimmed = str.trim();
-  return /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(trimmed) || 
-         trimmed.includes('drive.google.com') ||
-         trimmed.includes('behance.net') ||
-         trimmed.includes('dribbble.com') ||
-         trimmed.includes('vimeo.com') ||
-         trimmed.includes('youtube.com') ||
-         trimmed.includes('github.com');
+  return /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/[^\s]*)?$/i.test(trimmed) ||
+    trimmed.includes('drive.google.com') ||
+    trimmed.includes('behance.net') ||
+    trimmed.includes('dribbble.com') ||
+    trimmed.includes('vimeo.com') ||
+    trimmed.includes('youtube.com') ||
+    trimmed.includes('github.com');
 };
 
 const formatUrl = (str: string) => {
@@ -1144,11 +1140,11 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   const [currentSalary, setCurrentSalary] = useState(item.currentSalary !== '—' ? item.currentSalary : '');
   const [expectedSalary, setExpectedSalary] = useState(item.expectedSalary !== '—' ? item.expectedSalary : '');
   const [noticePeriod, setNoticePeriod] = useState(item.noticePeriod !== '—' ? item.noticePeriod : '');
-  
+
   const jobCustomQuestions: string[] = job?.customFollowUpQuestions || (job as any)?.agent5CustomQuestions || [];
   const customAnswers = item.customFollowUpAnswers || item.candidate?.customCallData || {};
 
-  const [customFields, setCustomFields] = useState<{key: string, value: string}[]>(() => {
+  const [customFields, setCustomFields] = useState<{ key: string, value: string }[]>(() => {
     const fields: { key: string; value: string }[] = [];
     for (const q of jobCustomQuestions) {
       const val = customAnswers[q] || (item.candidate?.customCallData && item.candidate.customCallData[q]) || '';
@@ -1222,7 +1218,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   const hasCurrentSalary = item.followUpCurrentSalary === true || (item.candidate?.currentSalary !== undefined && item.candidate?.currentSalary !== null) || (item.currentSalary !== undefined && item.currentSalary !== '—' && item.currentSalary !== null);
   const hasExpectedSalary = item.followUpExpectedSalary === true || (item.candidate?.expectedSalary !== undefined && item.candidate?.expectedSalary !== null) || (item.expectedSalary !== undefined && item.expectedSalary !== '—' && item.expectedSalary !== null);
   const hasNoticePeriod = item.followUpNoticePeriod === true || (item.candidate?.noticePeriodDays !== undefined && item.candidate?.noticePeriodDays !== null) || (item.noticePeriod !== undefined && item.noticePeriod !== '—' && item.noticePeriod !== null);
-  
+
   let customQuestionsComplete = true;
   for (const q of jobCustomQuestions) {
     const a = customAnswers[q] || (item.candidate?.customCallData && item.candidate.customCallData[q]);
@@ -1237,7 +1233,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
   const flagItem = (label: string, done: boolean, value?: any) => {
     const rawVal = value !== undefined && value !== null && value !== '—' && value !== '' ? String(value).trim() : '';
     let displayVal = rawVal;
-    
+
     if (rawVal && !rawVal.includes('$') && label.includes('Salary') && !isNaN(Number(rawVal.replace(/,/g, '')))) {
       displayVal = '$' + Number(rawVal.replace(/,/g, '')).toLocaleString();
     } else if (rawVal && label.includes('Notice') && !rawVal.toLowerCase().includes('day') && !isNaN(Number(rawVal))) {
@@ -1249,7 +1245,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
     const tooltipValue = displayVal || (done ? 'Flagged as received — exact value not stored as text' : 'Missing / Pending');
 
     return (
-      <div 
+      <div
         className="group/flag relative flex items-center gap-1.5 text-[11px] cursor-help w-fit py-0.5"
         title={`${label}: ${tooltipValue}`}
       >
@@ -1310,8 +1306,8 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
     <tr className={`hover:bg-surface-bright transition-colors group ${allComplete ? 'bg-green-500/5' : ''}`}>
       <td className="p-4 align-top w-10">
         {!allComplete ? (
-          <input 
-            type="checkbox" 
+          <input
+            type="checkbox"
             checked={isSelected}
             onChange={onSelectToggle}
             className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
@@ -1352,10 +1348,10 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
           const lastDay = item.followUpState?.lastContactDay ?? -1;
           const contactStatus =
             lastDay === -1 ? { label: 'Not Contacted Yet', sub: 'Awaiting sequence start', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/30' }
-            : lastDay === 0 ? { label: '1st Outreach Sent', sub: 'WhatsApp + Email — Day 1', color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400', dot: 'bg-blue-500' }
-            : lastDay === 4 ? { label: '2nd Reminder Sent', sub: 'WhatsApp + Email — Day 5', color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400', dot: 'bg-yellow-500' }
-            : lastDay === 6 ? { label: 'Final Reminder Sent', sub: 'WhatsApp + Email — Day 7', color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500 animate-pulse' }
-            : { label: `Day ${lastDay} Contacted`, sub: 'WhatsApp + Email', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/50' };
+              : lastDay === 0 ? { label: '1st Outreach Sent', sub: 'WhatsApp + Email — Day 1', color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400', dot: 'bg-blue-500' }
+                : lastDay === 4 ? { label: '2nd Reminder Sent', sub: 'WhatsApp + Email — Day 5', color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400', dot: 'bg-yellow-500' }
+                  : lastDay === 6 ? { label: 'Final Reminder Sent', sub: 'WhatsApp + Email — Day 7', color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500 animate-pulse' }
+                    : { label: `Day ${lastDay} Contacted`, sub: 'WhatsApp + Email', color: 'bg-surface-container text-text-secondary', dot: 'bg-text-secondary/50' };
 
           return (
             <div className="flex flex-col gap-1">
@@ -1377,17 +1373,17 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
           const customCallData = candidateObj?.customCallData || {};
 
           // For each field: try raw number first, then customCallData string notes
-          const actualCurrentSalary = 
+          const actualCurrentSalary =
             (item as any).rawCurrentSalary ??
             customCallData['Current Salary (Note)'] ??
             ((item.currentSalary && item.currentSalary !== '—') ? item.currentSalary : undefined);
 
-          const actualExpectedSalary = 
+          const actualExpectedSalary =
             (item as any).rawExpectedSalary ??
             customCallData['Expected Salary (Note)'] ??
             ((item.expectedSalary && item.expectedSalary !== '—') ? item.expectedSalary : undefined);
 
-          const rawNotice = 
+          const rawNotice =
             (item as any).rawNoticePeriodDays ??
             customCallData['Notice Period (Note)'] ??
             ((item.noticePeriod && item.noticePeriod !== '—') ? item.noticePeriod : undefined);
@@ -1479,11 +1475,10 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
         })()}
       </td>
       <td className="p-4 align-top">
-        <div className={`inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1 rounded-full ${
-          daysLeft <= 1 ? 'bg-error/10 text-error' :
-          daysLeft <= 3 ? 'bg-yellow-500/10 text-yellow-600' :
-          'bg-surface-container text-text-secondary'
-        }`}>
+        <div className={`inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1 rounded-full ${daysLeft <= 1 ? 'bg-error/10 text-error' :
+            daysLeft <= 3 ? 'bg-yellow-500/10 text-yellow-600' :
+              'bg-surface-container text-text-secondary'
+          }`}>
           <Clock className="w-3 h-3" />
           {daysLeft === 0 ? 'Expires today' : `${daysLeft}d left`}
         </div>
@@ -1608,7 +1603,7 @@ const FollowUpCandidateRow = ({ item, job, renderKanbanDropdown, api, convex, sh
             <RefreshCw className="w-4 h-4 text-red-500" />
           </button>
         </div>
-        
+
         <div className="mt-1">
           <button
             onClick={async () => {
@@ -1648,7 +1643,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
   const [currentSalary, setCurrentSalary] = useState(u.currentSalary != null ? u.currentSalary : '');
   const [expectedSalary, setExpectedSalary] = useState(u.expectedSalary != null ? u.expectedSalary : '');
   const [noticePeriod, setNoticePeriod] = useState(u.noticePeriodDays != null ? u.noticePeriodDays : '');
-  const [customFields, setCustomFields] = useState<{key: string, value: string}[]>([]);
+  const [customFields, setCustomFields] = useState<{ key: string, value: string }[]>([]);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
@@ -1694,7 +1689,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
         if (!resp.ok) {
           throw new Error(`Failed to upload to R2: ${resp.status} ${resp.statusText}`);
         }
-        
+
         cvUploadId = await saveUpload({
           s3Key,
           storageProvider: "r2",
@@ -1780,13 +1775,12 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
           )}
         </td>
         <td className="p-4">
-          <span className={`inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-full ${
-            u.daysUnresponsive >= 14
+          <span className={`inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-full ${u.daysUnresponsive >= 14
               ? 'bg-error/10 text-error'
               : u.daysUnresponsive >= 10
-              ? 'bg-orange-500/10 text-orange-600'
-              : 'bg-yellow-500/10 text-yellow-600'
-          }`}>
+                ? 'bg-orange-500/10 text-orange-600'
+                : 'bg-yellow-500/10 text-yellow-600'
+            }`}>
             <Clock className="w-3 h-3" />
             {u.daysUnresponsive}d
           </span>
@@ -1794,7 +1788,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
         <td className="p-4 text-right">
           <div className="flex items-center justify-end gap-1.5 flex-nowrap">
             {/* Move back to Follow-up Button */}
-            <button 
+            <button
               onClick={handleMoveToFollowUp}
               disabled={isMoving}
               className="p-2 h-8 w-8 inline-flex items-center justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-300/40 dark:border-blue-700/50 rounded-lg transition-all shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
@@ -1804,7 +1798,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
             </button>
 
             {/* Log Call Icon Button */}
-            <button 
+            <button
               onClick={() => setIsLoggingCall(true)}
               className="p-2 h-8 w-8 inline-flex items-center justify-center bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300/40 dark:border-amber-700/50 rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
               title="Log Call Outcome"
@@ -1813,7 +1807,7 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
             </button>
 
             {/* View Timeline Icon Button */}
-            <button 
+            <button
               onClick={() => onViewTimeline(u.applicationId)}
               className="p-2 h-8 w-8 inline-flex items-center justify-center bg-surface-container hover:bg-surface-container-high border border-border rounded-lg text-text-secondary hover:text-text-primary transition-all shadow-xs cursor-pointer shrink-0"
               title="View Candidate Timeline"
@@ -1854,11 +1848,11 @@ const UnresponsiveCandidateRow = ({ u, api, onViewTimeline }: { u: any, api: any
 };
 
 // ─── Reject Modal ─────────────────────────────────────────────────────────────
-const RejectModal = ({ 
-  isOpen, onClose, onConfirm, candidateName, stage 
-}: { 
-  isOpen: boolean; onClose: () => void; onConfirm: (reason: string) => void; 
-  candidateName: string; stage: string; 
+const RejectModal = ({
+  isOpen, onClose, onConfirm, candidateName, stage
+}: {
+  isOpen: boolean; onClose: () => void; onConfirm: (reason: string) => void;
+  candidateName: string; stage: string;
 }) => {
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1878,7 +1872,7 @@ const RejectModal = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div 
+      <div
         className="relative bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
@@ -1976,12 +1970,12 @@ const HeadhuntModal = ({
     try {
       // Upload CV first
       let { url: uploadUrl, key: s3Key } = await generateUploadUrl({ fileName: cvFile.name, contentType: cvFile.type });
-        const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
-        
-        let cvUploadId = await saveUpload({
-          s3Key,
-          storageProvider: "r2",
-          fileName: cvFile.name,
+      const resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": cvFile.type }, body: cvFile });
+
+      let cvUploadId = await saveUpload({
+        s3Key,
+        storageProvider: "r2",
+        fileName: cvFile.name,
         fileSize: cvFile.size,
         fileType: cvFile.type,
         source: 'Headhunting',
@@ -2105,14 +2099,14 @@ const AiCallStatusBadge = ({ status }: { status?: string }) => {
 // ─── Pipeline Tracker (stage count bar) ───────────────────────────────────────
 const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; onTabClick: (tab: string) => void }) => {
   const stages = [
-    { id: 'new_cvs',          label: 'New CVs',                   tab: 'New CVs' },
-    { id: 'ta_shortlist',     label: 'TA Shortlisted & Follow-up', tab: 'TA Shortlist & Follow-up' },
-    { id: 'second_shortlist', label: '2nd Shortlist',             tab: '2nd Shortlist' },
-    { id: 'director_shortlist', label: 'Director',                tab: 'Director Shortlist' },
-    { id: 'client_review',    label: 'Client Review',             tab: 'Client Review' },
-    { id: 'interview',        label: 'Interview',                 tab: 'Interview' },
-    { id: 'offer',            label: 'Offer',                     tab: 'Offer' },
-    { id: 'placed',           label: 'Placed',                    tab: 'Placed', highlight: true },
+    { id: 'new_cvs', label: 'New CVs', tab: 'New CVs' },
+    { id: 'ta_shortlist', label: 'TA Shortlisted & Follow-up', tab: 'TA Shortlist & Follow-up' },
+    { id: 'second_shortlist', label: '2nd Shortlist', tab: '2nd Shortlist' },
+    { id: 'director_shortlist', label: 'Director', tab: 'Director Shortlist' },
+    { id: 'client_review', label: 'Client Review', tab: 'Client Review' },
+    { id: 'interview', label: 'Interview', tab: 'Interview' },
+    { id: 'offer', label: 'Offer', tab: 'Offer' },
+    { id: 'placed', label: 'Placed', tab: 'Placed', highlight: true },
   ];
 
   return (
@@ -2126,20 +2120,17 @@ const PipelineTracker = ({ applications, onTabClick }: { applications: any[]; on
           <React.Fragment key={s.id}>
             <button
               onClick={() => onTabClick(s.tab)}
-              className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg hover:bg-surface-container transition-colors shrink-0 group min-w-[76px] ${
-                s.highlight && count > 0 ? 'bg-green-500/5' : ''
-              }`}
+              className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg hover:bg-surface-container transition-colors shrink-0 group min-w-[76px] ${s.highlight && count > 0 ? 'bg-green-500/5' : ''
+                }`}
             >
-              <span className={`text-[14px] font-bold px-3 py-0.5 rounded-md mb-1.5 transition-colors ${
-                s.highlight && count > 0 
-                  ? 'bg-green-500/20 text-green-700 dark:text-green-400' 
-                  : count > 0 
-                    ? 'bg-primary/10 text-primary' 
+              <span className={`text-[14px] font-bold px-3 py-0.5 rounded-md mb-1.5 transition-colors ${s.highlight && count > 0
+                  ? 'bg-green-500/20 text-green-700 dark:text-green-400'
+                  : count > 0
+                    ? 'bg-primary/10 text-primary'
                     : 'bg-surface-container text-text-secondary/50 border border-border/50'
-              }`}>{count}</span>
-              <span className={`text-[10px] font-medium leading-tight text-center ${
-                count > 0 ? 'text-text-secondary' : 'text-text-secondary/50'
-              }`}>{s.label}</span>
+                }`}>{count}</span>
+              <span className={`text-[10px] font-medium leading-tight text-center ${count > 0 ? 'text-text-secondary' : 'text-text-secondary/50'
+                }`}>{s.label}</span>
             </button>
             {!isLast && (
               <ArrowRight className="w-3 h-3 text-border shrink-0" />
@@ -2166,7 +2157,7 @@ export default function JobDetailPage() {
   const { user } = useUser();
   const jobId = params.jobId as Id<"jobs">;
 
-  const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline' | 'masterSheet'>('matches');
+  const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline' | 'mastersheet'>('matches');
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
   const [timelineAppId, setTimelineAppId] = useState<Id<"applications"> | null>(null);
@@ -2187,7 +2178,7 @@ export default function JobDetailPage() {
   // Fetch job details
   const job = useQuery(api.jobs.jobs.getJob, { jobId });
   const jobChannels = useQuery(api.jobs.jobs.getJobChannels, { jobId });
-  
+
   const rawApplications = useQuery(api.applications.applications.getByJobId, { jobId });
   const applications = rawApplications ? (rawApplications.filter(Boolean) as any[]) : [];
   const filteredMatches = (job?.reverseMatchResults || []).filter((match: any) => !applications.some(app => app && app.candidateId === match.cvId));
@@ -2229,7 +2220,7 @@ export default function JobDetailPage() {
   };
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
-  
+
   const triggerReverseMatch = useMutation(api.jobs.jobs.triggerReverseMatch);
   const stopReverseMatchMutation = useMutation(api.jobs.jobs.stopReverseMatch);
   const updateTaPreferencesMutation = useMutation(api.jobs.jobs.updateTaPreferences);
@@ -2360,7 +2351,7 @@ export default function JobDetailPage() {
       if (!resp.ok) {
         throw new Error(`Failed to upload to R2: ${resp.status} ${resp.statusText}`);
       }
-      
+
       const result = await processCvIngestion({
         s3Key,
         storageProvider: "r2",
@@ -2499,7 +2490,7 @@ export default function JobDetailPage() {
     if (!matchesSourceFilter(app, activeSourceFilter)) return false;
     return isWithinTimeFilter(app._creationTime);
   });
-  
+
   newCvs.sort((a, b) => {
     if (sortOrder === 'score') {
       const scoreA = typeof a.aiMatchScore === 'number' ? a.aiMatchScore : -1;
@@ -2510,7 +2501,7 @@ export default function JobDetailPage() {
       return b._creationTime - a._creationTime;
     }
   });
-  
+
   // Issue #10: Average across ALL applications with an AI match score, not just reverseMatchResults
   const scoredApps = applications.filter(a => a.aiMatchScore != null);
   const avgAiScore = scoredApps.length > 0
@@ -2538,7 +2529,7 @@ export default function JobDetailPage() {
       showError(e, { title: "Failed to Trigger AI Call" });
     }
   };
-  
+
   const handleStageChange = async (appId: string, newStage: string) => {
     try {
       await setPipelineStage({ applicationId: appId as Id<"applications">, newStage });
@@ -2582,11 +2573,11 @@ export default function JobDetailPage() {
     setIsBulkRescoring(true);
     setBulkRescoreProgress({ current: 0, total: pipelineApps.length, percent: 0, candidateName: '' });
     const toastId = toast.loading(`Rescoring ${pipelineApps.length} candidates...`);
-    
+
     try {
       let successCount = 0;
       let errorCount = 0;
-      
+
       for (let i = 0; i < pipelineApps.length; i++) {
         const app = pipelineApps[i];
         const candidateName = app.candidate?.fullName || `Candidate ${i + 1}`;
@@ -2604,7 +2595,7 @@ export default function JobDetailPage() {
           errorCount++;
         }
       }
-      
+
       if (errorCount === 0) {
         toast.success(`Successfully rescored all ${successCount} pipeline candidates!`, { id: toastId });
       } else {
@@ -2646,7 +2637,7 @@ export default function JobDetailPage() {
     );
   };
 
-  
+
   const renderMatchesPagination = () => {
     const matchesPerPage = 6;
     const totalItems = filteredMatches.length;
@@ -2747,7 +2738,7 @@ export default function JobDetailPage() {
 
         {/* 0% to 100% Animated Progress Bar */}
         <div className="w-full bg-surface-container-high rounded-full h-2.5 overflow-hidden border border-primary/20">
-          <div 
+          <div
             className="bg-gradient-to-r from-primary via-emerald-500 to-primary h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_8px_rgba(34,197,94,0.4)]"
             style={{ width: `${progress}%` }}
           />
@@ -2762,11 +2753,11 @@ export default function JobDetailPage() {
     const matchesSearchLower = matchesSearch.toLowerCase().trim();
     const searchedMatches = matchesSearchLower
       ? filteredMatches.filter((match: any) => {
-          const name = (match.candidateName || '').toLowerCase();
-          const role = (match.candidateRole || match.candidateTitle || '').toLowerCase();
-          const skills = Array.isArray(match.matchedSkills) ? match.matchedSkills.join(' ').toLowerCase() : '';
-          return name.includes(matchesSearchLower) || role.includes(matchesSearchLower) || skills.includes(matchesSearchLower);
-        })
+        const name = (match.candidateName || '').toLowerCase();
+        const role = (match.candidateRole || match.candidateTitle || '').toLowerCase();
+        const skills = Array.isArray(match.matchedSkills) ? match.matchedSkills.join(' ').toLowerCase() : '';
+        return name.includes(matchesSearchLower) || role.includes(matchesSearchLower) || skills.includes(matchesSearchLower);
+      })
       : filteredMatches;
 
     const matchesPerPage = 6;
@@ -2804,7 +2795,7 @@ export default function JobDetailPage() {
               >
                 <MessageSquarePlus className="w-4 h-4" /> Add Preferences
               </button>
-              <button 
+              <button
                 onClick={() => handleScanDatabase()}
                 disabled={isScanningActive}
                 className="bg-primary text-on-primary px-3 py-1.5 rounded-[8px] text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
@@ -2862,7 +2853,7 @@ export default function JobDetailPage() {
               <Sparkles className="w-4 h-4 text-primary shrink-0" />
               <span className="truncate">Active Filter Criteria: <strong className="font-semibold text-text-primary">"{job.taPreferences}"</strong></span>
             </div>
-            <button 
+            <button
               onClick={handleClearPreferences}
               className="text-text-secondary hover:text-red-500 text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors"
               title="Clear preferences and rescan"
@@ -2913,7 +2904,7 @@ export default function JobDetailPage() {
                           We couldn't find any matching candidates in your database. You can scan with standard requirements or add custom TA preferences & skills.
                         </p>
                         <div className="flex items-center gap-3">
-                          <button 
+                          <button
                             onClick={() => handleScanDatabase()}
                             disabled={isScanningActive}
                             className="bg-primary text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
@@ -2937,11 +2928,11 @@ export default function JobDetailPage() {
                 </tr>
               ) : (
                 currentMatches.map((match: any) => (
-                  <MatchRow 
-                    key={match.cvId} 
-                    match={match} 
-                    jobId={jobId} 
-                    applications={applications} 
+                  <MatchRow
+                    key={match.cvId}
+                    match={match}
+                    jobId={jobId}
+                    applications={applications}
                     onNavigate={() => {
                       setActiveMainTab('pipeline');
                       setActivePipelineTab('TA Shortlist');
@@ -2961,89 +2952,89 @@ export default function JobDetailPage() {
   const renderNewCVsTable = () => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const currentNewCvs = newCvs.slice(startIndex, startIndex + itemsPerPage);
-    
+
     return (
-    <table className="w-full text-left border-collapse">
-      <thead>
-        <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
-                    <th className="p-4 w-10"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></th>
-                    <th className="p-4">Candidate</th>
-                    <th className="p-4">Source</th>
-                    <th className="p-4">Match Score</th>
-                    <th className="p-4">Role & Exp</th>
-                    <th className="p-4">AI Reason</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[13px] text-text-primary divide-y divide-border">
-                  {currentNewCvs.length === 0 ? (
-                    <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No candidates found. Start by sourcing!</td></tr>
-                  ) : (
-                    currentNewCvs.map(app => (
-                      <tr key={app._id} className="hover:bg-surface-bright transition-colors group">
-                        <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
-                        <td className="p-4 font-medium">
-                          <div className="flex items-center gap-2">
-                            <Link href={`/dashboard/candidates/${app.candidateId}`} className="text-text-primary hover:underline">
-                              {app.candidate?.fullName || 'Unknown Candidate'}
-                            </Link>
-                            <CvViewButton cvUploadId={(app as any).cvFileId || (app.candidate as any)?.cvUploadId || app.candidateId || app._id} />
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          {(() => {
-                            const badge = getSourceDisplayBadge(app);
-                            return (
-                              <span className={`font-medium text-[13px] flex items-center gap-1.5 ${badge.textClass}`}>
-                                {badge.icon}
-                                <span>{badge.label}</span>
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} /></td>
-                        <td className="p-4 text-[13px]">
-                          <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}</div>
-                          <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
-                        </td>
-                        <td className="p-4">
-                          <AiReasonDisplay reason={(app as any).aiMatchExplanation || (app.candidate as any)?.summary} candidateName={app.candidate?.fullName || 'Candidate'} />
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex justify-end items-center gap-2">
-                            <select 
-                              className="appearance-none bg-primary text-on-primary border border-transparent rounded-[6px] px-3 py-1.5 text-[12px] font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer shadow-sm text-center min-w-[120px]"
-                              onChange={(e) => handleStageChange(app._id, e.target.value)}
-                              defaultValue=""
-                            >
-                              <option value="" disabled>Add to Pipeline...</option>
-                              {PIPELINE_STAGES.filter(s => s.id !== 'new_cvs').map(s => (
-                                <option key={s.id} value={s.id}>{s.label}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => handleRescore(app.candidateId)}
-                              disabled={isRescoring[app.candidateId]}
-                              className="p-1.5 text-text-secondary hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
-                              title="Rescore against updated requirements"
-                            >
-                              <RefreshCw className={`w-4 h-4 ${isRescoring[app.candidateId] ? 'animate-spin' : ''}`} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteApplication(app._id)}
-                              className="p-1.5 text-text-secondary hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                              title="Delete Candidate Application"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-    </table>
-  );
+      <table className="w-full text-left border-collapse">
+        <thead>
+          <tr className="border-b border-border bg-surface-bright text-[12px] text-text-secondary uppercase font-semibold tracking-wider">
+            <th className="p-4 w-10"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></th>
+            <th className="p-4">Candidate</th>
+            <th className="p-4">Source</th>
+            <th className="p-4">Match Score</th>
+            <th className="p-4">Role & Exp</th>
+            <th className="p-4">AI Reason</th>
+            <th className="p-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="text-[13px] text-text-primary divide-y divide-border">
+          {currentNewCvs.length === 0 ? (
+            <tr><td colSpan={7} className="p-8 text-center text-text-secondary">No candidates found. Start by sourcing!</td></tr>
+          ) : (
+            currentNewCvs.map(app => (
+              <tr key={app._id} className="hover:bg-surface-bright transition-colors group">
+                <td className="p-4"><input className="rounded border-border text-primary-container focus:ring-primary-container" type="checkbox" /></td>
+                <td className="p-4 font-medium">
+                  <div className="flex items-center gap-2">
+                    <Link href={`/dashboard/candidates/${app.candidateId}`} className="text-text-primary hover:underline">
+                      {app.candidate?.fullName || 'Unknown Candidate'}
+                    </Link>
+                    <CvViewButton cvUploadId={(app as any).cvFileId || (app.candidate as any)?.cvUploadId || app.candidateId || app._id} />
+                  </div>
+                </td>
+                <td className="p-4">
+                  {(() => {
+                    const badge = getSourceDisplayBadge(app);
+                    return (
+                      <span className={`font-medium text-[13px] flex items-center gap-1.5 ${badge.textClass}`}>
+                        {badge.icon}
+                        <span>{badge.label}</span>
+                      </span>
+                    );
+                  })()}
+                </td>
+                <td className="p-4"><ScoreRing score={app.aiMatchScore || 'Pending'} /></td>
+                <td className="p-4 text-[13px]">
+                  <div className="font-medium text-text-primary truncate max-w-[200px]" title={(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}>{(app.candidate as any)?.currentTitle || (app.candidate as any)?.currentJobTitle || 'Unknown Role'}</div>
+                  <div className="text-text-secondary text-xs">{(app.candidate as any)?.totalExperienceYears ? `${(app.candidate as any).totalExperienceYears} yrs exp` : ((app.candidate as any)?.experience ? `${(app.candidate as any).experience} yrs exp` : 'Exp not specified')}</div>
+                </td>
+                <td className="p-4">
+                  <AiReasonDisplay reason={(app as any).aiMatchExplanation || (app.candidate as any)?.summary} candidateName={app.candidate?.fullName || 'Candidate'} />
+                </td>
+                <td className="p-4 text-right">
+                  <div className="flex justify-end items-center gap-2">
+                    <select
+                      className="appearance-none bg-primary text-on-primary border border-transparent rounded-[6px] px-3 py-1.5 text-[12px] font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer shadow-sm text-center min-w-[120px]"
+                      onChange={(e) => handleStageChange(app._id, e.target.value)}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Add to Pipeline...</option>
+                      {PIPELINE_STAGES.filter(s => s.id !== 'new_cvs').map(s => (
+                        <option key={s.id} value={s.id}>{s.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleRescore(app.candidateId)}
+                      disabled={isRescoring[app.candidateId]}
+                      className="p-1.5 text-text-secondary hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
+                      title="Rescore against updated requirements"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isRescoring[app.candidateId] ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteApplication(app._id)}
+                      className="p-1.5 text-text-secondary hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                      title="Delete Candidate Application"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    );
   };
 
   const renderPipelineTable = () => {
@@ -3072,11 +3063,11 @@ export default function JobDetailPage() {
         stageMatch = app.currentStage === currentStageId;
       }
       if (!stageMatch) return false;
-      
+
       if (!matchesSourceFilter(app, activeSourceFilter)) return false;
       return isWithinTimeFilter(app._creationTime);
     });
-    
+
 
     const itemsToRender = stageApps.map(app => {
       const candidateObj = app.candidate;
@@ -3140,7 +3131,7 @@ export default function JobDetailPage() {
         reason: app.taRejectionReason || 'Not a fit'
       };
     });
-    
+
     itemsToRender.sort((a, b) => {
       if (sortOrder === 'score') {
         const scoreA = typeof a.score === 'number' ? a.score : -1;
@@ -3156,12 +3147,12 @@ export default function JobDetailPage() {
     const pipelineSearchLower = pipelineSearch.toLowerCase().trim();
     const searchedPipelineItems = pipelineSearchLower
       ? itemsToRender.filter(item => {
-          const name = (item.name || '').toLowerCase();
-          const role = (item.role || '').toLowerCase();
-          const email = ((item.candidate as any)?.email || '').toLowerCase();
-          const phone = ((item.candidate as any)?.phoneNumber || '').toLowerCase();
-          return name.includes(pipelineSearchLower) || role.includes(pipelineSearchLower) || email.includes(pipelineSearchLower) || phone.includes(pipelineSearchLower);
-        })
+        const name = (item.name || '').toLowerCase();
+        const role = (item.role || '').toLowerCase();
+        const email = ((item.candidate as any)?.email || '').toLowerCase();
+        const phone = ((item.candidate as any)?.phoneNumber || '').toLowerCase();
+        return name.includes(pipelineSearchLower) || role.includes(pipelineSearchLower) || email.includes(pipelineSearchLower) || phone.includes(pipelineSearchLower);
+      })
       : itemsToRender;
 
     const totalItems = searchedPipelineItems.length;
@@ -3173,7 +3164,7 @@ export default function JobDetailPage() {
       const normalizedStage = (defaultStage === 'follow_up' || defaultStage === 'matched_candidates') ? 'ta_shortlist' : defaultStage;
       return (
         <div className="flex justify-end items-center gap-2">
-          <select 
+          <select
             className="appearance-none bg-primary text-on-primary border border-transparent rounded-[6px] px-3 py-1.5 text-[12px] font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer shadow-sm text-center min-w-[120px]"
             onChange={(e) => handleStageChange(itemId, e.target.value)}
             value={normalizedStage}
@@ -3205,8 +3196,8 @@ export default function JobDetailPage() {
     };
 
     let tableContent = null;
-    
-    switch(activePipelineTab) {
+
+    switch (activePipelineTab) {
       case 'New CVs':
         tableContent = renderNewCVsTable();
         break;
@@ -3227,16 +3218,14 @@ export default function JobDetailPage() {
                       setActiveFollowUpTab('active');
                       setSelectedCandidates([]);
                     }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                      activeFollowUpTab === 'active'
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${activeFollowUpTab === 'active'
                         ? 'bg-primary text-on-primary shadow-sm'
                         : 'bg-surface hover:bg-surface-container text-text-secondary border border-border'
-                    }`}
+                      }`}
                   >
                     <span>Active Candidates</span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      activeFollowUpTab === 'active' ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
-                    }`}>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${activeFollowUpTab === 'active' ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+                      }`}>
                       {currentItems.length}
                     </span>
                   </button>
@@ -3246,17 +3235,15 @@ export default function JobDetailPage() {
                       setActiveFollowUpTab('unresponsive');
                       setSelectedCandidates([]);
                     }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                      activeFollowUpTab === 'unresponsive'
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${activeFollowUpTab === 'unresponsive'
                         ? 'bg-orange-600 text-white shadow-sm'
                         : 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800/50 hover:bg-orange-500/20'
-                    }`}
+                      }`}
                   >
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>Unresponsive (7 Days)</span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      activeFollowUpTab === 'unresponsive' ? 'bg-white/20 text-white' : 'bg-orange-500/20 text-orange-800 dark:text-orange-300'
-                    }`}>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${activeFollowUpTab === 'unresponsive' ? 'bg-white/20 text-white' : 'bg-orange-500/20 text-orange-800 dark:text-orange-300'
+                      }`}>
                       {unresponsiveList.length}
                     </span>
                   </button>
@@ -3316,9 +3303,9 @@ export default function JobDetailPage() {
                     {currentItems.length === 0 ? (
                       <tr><td colSpan={9} className="p-8 text-center text-text-secondary">No active candidates in TA Shortlisted & Follow-up.</td></tr>
                     ) : currentItems.map((item: any) => (
-                      <FollowUpCandidateRow 
-                        key={item.id} 
-                        item={item} 
+                      <FollowUpCandidateRow
+                        key={item.id}
+                        item={item}
                         job={job}
                         api={api}
                         convex={convex}
@@ -3329,9 +3316,9 @@ export default function JobDetailPage() {
                         triggerEmailFollowUp={triggerEmailFollowUp}
                         isSelected={selectedCandidates.includes(item.id)}
                         onSelectToggle={() => {
-                          setSelectedCandidates(prev => 
-                            prev.includes(item.id) 
-                              ? prev.filter(id => id !== item.id) 
+                          setSelectedCandidates(prev =>
+                            prev.includes(item.id)
+                              ? prev.filter(id => id !== item.id)
                               : [...prev, item.id]
                           );
                         }}
@@ -3481,7 +3468,7 @@ export default function JobDetailPage() {
                     {/* Issue #7: Gated Director actions — no free-form dropdown */}
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={async () => { try { await directorApproveMutation({ applicationId: item.id }); } catch(e: any) { showError(e, { title: "Director Approval Failed" }); } }}
+                        onClick={async () => { try { await directorApproveMutation({ applicationId: item.id }); } catch (e: any) { showError(e, { title: "Director Approval Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Approve
@@ -3495,7 +3482,7 @@ export default function JobDetailPage() {
                       <button
                         onClick={async () => {
                           const note = window.prompt('Note for TA (changes requested):');
-                          if (note) { try { await directorRequestChangesMutation({ applicationId: item.id, note }); } catch(e: any) { showError(e, { title: "Request Changes Failed" }); } }
+                          if (note) { try { await directorRequestChangesMutation({ applicationId: item.id, note }); } catch (e: any) { showError(e, { title: "Request Changes Failed" }); } }
                         }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium border border-border text-text-secondary px-3 py-1.5 rounded-[6px] hover:bg-surface-container transition-colors"
                       >
@@ -3532,13 +3519,13 @@ export default function JobDetailPage() {
                     {/* Issue #7: Gated Client actions */}
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={async () => { try { await clientApproveMutation({ applicationId: item.id }); } catch(e: any) { showError(e, { title: "Client Selection Failed" }); } }}
+                        onClick={async () => { try { await clientApproveMutation({ applicationId: item.id }); } catch (e: any) { showError(e, { title: "Client Selection Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium bg-green-600 text-white px-3 py-1.5 rounded-[6px] hover:bg-green-700 transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Select for Interview
                       </button>
                       <button
-                        onClick={async () => { try { await clientHoldMutation({ applicationId: item.id, note: 'Client placed on hold' }); } catch(e: any) { showError(e, { title: "Client Hold Failed" }); } }}
+                        onClick={async () => { try { await clientHoldMutation({ applicationId: item.id, note: 'Client placed on hold' }); } catch (e: any) { showError(e, { title: "Client Hold Failed" }); } }}
                         className="inline-flex items-center gap-1 text-[12px] font-medium border border-yellow-500/40 text-yellow-600 px-3 py-1.5 rounded-[6px] hover:bg-yellow-500/10 transition-colors"
                       >
                         ⏸ Hold
@@ -3609,7 +3596,7 @@ export default function JobDetailPage() {
                   </td>
                   <td className="p-4 font-bold">{item.salary}</td>
                   <td className="p-4">{item.startDate}</td>
-                                    <td className="p-4">
+                  <td className="p-4">
                     {item.timeInStageRaw > 432000000 && (
                       <div className="text-[11px] font-bold text-orange-600 bg-orange-500/10 px-2 py-1 rounded w-fit flex items-center gap-1 mb-1 border border-orange-500/20">
                         ⚠️ Stale Offer ({Math.floor(item.timeInStageRaw / 86400000)}d)
@@ -3710,13 +3697,12 @@ export default function JobDetailPage() {
 
               return (
                 <div className="flex flex-wrap items-center gap-2 text-[13px]">
-                  <button 
+                  <button
                     onClick={() => { setActiveSourceFilter('All Sources'); setCurrentPage(1); }}
-                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
-                      activeSourceFilter === 'All Sources' 
-                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'All Sources'
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border'
                         : 'hover:bg-surface-container text-text-secondary border border-transparent'
-                    }`}
+                      }`}
                   >
                     <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span>All Sources</span>
@@ -3724,13 +3710,12 @@ export default function JobDetailPage() {
                       {sourceCounts.all}
                     </span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => { setActiveSourceFilter('LinkedIn'); setCurrentPage(1); }}
-                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
-                      activeSourceFilter === 'LinkedIn' 
-                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'LinkedIn'
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border'
                         : 'hover:bg-surface-container text-text-secondary border border-transparent'
-                    }`}
+                      }`}
                   >
                     <LinkedInIcon className="w-3.5 h-3.5 text-[#0A66C2] shrink-0" />
                     <span>LinkedIn</span>
@@ -3738,13 +3723,12 @@ export default function JobDetailPage() {
                       {sourceCounts.linkedin}
                     </span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => { setActiveSourceFilter('WhatsApp'); setCurrentPage(1); }}
-                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
-                      activeSourceFilter === 'WhatsApp' 
-                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'WhatsApp'
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border'
                         : 'hover:bg-surface-container text-text-secondary border border-transparent'
-                    }`}
+                      }`}
                   >
                     <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366] shrink-0" />
                     <span>WhatsApp</span>
@@ -3752,13 +3736,12 @@ export default function JobDetailPage() {
                       {sourceCounts.whatsapp}
                     </span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => { setActiveSourceFilter('Direct Upload'); setCurrentPage(1); }}
-                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${
-                      activeSourceFilter === 'Direct Upload' 
-                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border' 
+                    className={`px-3 py-1.5 rounded-[6px] text-[13px] font-medium flex items-center gap-2 transition-colors ${activeSourceFilter === 'Direct Upload'
+                        ? 'bg-surface-container text-text-primary shadow-sm font-semibold border border-border'
                         : 'hover:bg-surface-container text-text-secondary border border-transparent'
-                    }`}
+                      }`}
                   >
                     <Upload className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
                     <span>Direct Upload</span>
@@ -3769,132 +3752,130 @@ export default function JobDetailPage() {
                 </div>
               );
             })()}
-          <div className="flex gap-3">
-            <button 
-              onClick={() => setSortOrder(prev => prev === 'score' ? 'time' : 'score')}
-              className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1"
-            >
-              <ArrowUpDown className="w-4 h-4" /> Sort: {sortOrder === 'score' ? 'Score' : 'Time'}
-            </button>
-            <div className="relative" ref={filterRef}>
-              <button 
-                disabled={sortOrder === 'score'}
-                onClick={() => setIsFilterOpen(prev => !prev)}
-                title={sortOrder === 'score' ? "Date filtering is available when sorted by Time" : "Filter candidates by date range"}
-                className={`border border-border px-3 py-1.5 rounded-[8px] text-[13px] transition-colors flex items-center gap-1.5 ${
-                  sortOrder === 'score'
-                    ? 'text-text-disabled opacity-50 cursor-not-allowed bg-surface'
-                    : timeFilter !== 'all'
-                    ? 'bg-primary/10 text-primary border-primary font-medium'
-                    : 'text-text-secondary hover:bg-surface-container'
-                }`}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSortOrder(prev => prev === 'score' ? 'time' : 'score')}
+                className="border border-border text-text-secondary px-3 py-1.5 rounded-[8px] text-[13px] hover:bg-surface-container transition-colors flex items-center gap-1"
               >
-                <Filter className="w-4 h-4" />
-                <span>
-                  {timeFilter === 'all' && 'Filter'}
-                  {timeFilter === '24h' && 'Filter: 24h'}
-                  {timeFilter === '3d' && 'Filter: 3d'}
-                  {timeFilter === '7d' && 'Filter: 7d'}
-                  {timeFilter === 'custom' && 'Filter: Custom'}
-                </span>
-                {timeFilter !== 'all' && (
-                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse ml-0.5" />
-                )}
+                <ArrowUpDown className="w-4 h-4" /> Sort: {sortOrder === 'score' ? 'Score' : 'Time'}
               </button>
+              <div className="relative" ref={filterRef}>
+                <button
+                  disabled={sortOrder === 'score'}
+                  onClick={() => setIsFilterOpen(prev => !prev)}
+                  title={sortOrder === 'score' ? "Date filtering is available when sorted by Time" : "Filter candidates by date range"}
+                  className={`border border-border px-3 py-1.5 rounded-[8px] text-[13px] transition-colors flex items-center gap-1.5 ${sortOrder === 'score'
+                      ? 'text-text-disabled opacity-50 cursor-not-allowed bg-surface'
+                      : timeFilter !== 'all'
+                        ? 'bg-primary/10 text-primary border-primary font-medium'
+                        : 'text-text-secondary hover:bg-surface-container'
+                    }`}
+                >
+                  <Filter className="w-4 h-4" />
+                  <span>
+                    {timeFilter === 'all' && 'Filter'}
+                    {timeFilter === '24h' && 'Filter: 24h'}
+                    {timeFilter === '3d' && 'Filter: 3d'}
+                    {timeFilter === '7d' && 'Filter: 7d'}
+                    {timeFilter === 'custom' && 'Filter: Custom'}
+                  </span>
+                  {timeFilter !== 'all' && (
+                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse ml-0.5" />
+                  )}
+                </button>
 
-              {isFilterOpen && sortOrder === 'time' && (
-                <div className="absolute right-0 mt-2 w-72 bg-surface border border-border rounded-xl shadow-xl z-50 p-4 font-body">
-                  <div className="flex items-center justify-between pb-2 mb-3 border-b border-border">
-                    <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Date Range Filter</span>
-                    {timeFilter !== 'all' && (
-                      <button
-                        onClick={() => {
-                          setTimeFilter('all');
-                          setCustomStartDate('');
-                          setCustomEndDate('');
-                          setIsFilterOpen(false);
-                        }}
-                        className="text-xs text-primary hover:underline font-medium"
-                      >
-                        Reset All
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    {[
-                      { id: 'all', label: 'All Time' },
-                      { id: '24h', label: 'Last 24 Hours' },
-                      { id: '3d', label: 'Last 3 Days' },
-                      { id: '7d', label: 'Last 7 Days' },
-                    ].map(opt => (
-                      <button
-                        key={opt.id}
-                        onClick={() => {
-                          setTimeFilter(opt.id as any);
-                          if (opt.id !== 'custom') setIsFilterOpen(false);
-                        }}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-left ${
-                          timeFilter === opt.id
-                            ? 'bg-primary text-primary-contrast'
-                            : 'bg-surface-container hover:bg-surface-container-high text-text-secondary'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="pt-3 border-t border-border">
-                    <div className="text-xs font-medium text-text-secondary mb-2 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-primary" /> Custom Calendar Range
-                    </div>
-                    <div className="space-y-2">
-                      <div>
-                        <label className="text-[11px] text-text-muted block mb-1">From Date</label>
-                        <input
-                          type="date"
-                          value={customStartDate}
-                          onChange={e => {
-                            setCustomStartDate(e.target.value);
-                            setTimeFilter('custom');
-                          }}
-                          className="w-full text-xs bg-surface-container border border-border rounded-lg px-2.5 py-1.5 text-text-primary focus:outline-none focus:border-primary"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-text-muted block mb-1">To Date</label>
-                        <input
-                          type="date"
-                          value={customEndDate}
-                          onChange={e => {
-                            setCustomEndDate(e.target.value);
-                            setTimeFilter('custom');
-                          }}
-                          className="w-full text-xs bg-surface-container border border-border rounded-lg px-2.5 py-1.5 text-text-primary focus:outline-none focus:border-primary"
-                        />
-                      </div>
-                      {timeFilter === 'custom' && (
+                {isFilterOpen && sortOrder === 'time' && (
+                  <div className="absolute right-0 mt-2 w-72 bg-surface border border-border rounded-xl shadow-xl z-50 p-4 font-body">
+                    <div className="flex items-center justify-between pb-2 mb-3 border-b border-border">
+                      <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Date Range Filter</span>
+                      {timeFilter !== 'all' && (
                         <button
-                          onClick={() => setIsFilterOpen(false)}
-                          className="w-full mt-2 bg-primary text-primary-contrast rounded-lg py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                          onClick={() => {
+                            setTimeFilter('all');
+                            setCustomStartDate('');
+                            setCustomEndDate('');
+                            setIsFilterOpen(false);
+                          }}
+                          className="text-xs text-primary hover:underline font-medium"
                         >
-                          Apply Custom Range
+                          Reset All
                         </button>
                       )}
                     </div>
+
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      {[
+                        { id: 'all', label: 'All Time' },
+                        { id: '24h', label: 'Last 24 Hours' },
+                        { id: '3d', label: 'Last 3 Days' },
+                        { id: '7d', label: 'Last 7 Days' },
+                      ].map(opt => (
+                        <button
+                          key={opt.id}
+                          onClick={() => {
+                            setTimeFilter(opt.id as any);
+                            if (opt.id !== 'custom') setIsFilterOpen(false);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-left ${timeFilter === opt.id
+                              ? 'bg-primary text-primary-contrast'
+                              : 'bg-surface-container hover:bg-surface-container-high text-text-secondary'
+                            }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-3 border-t border-border">
+                      <div className="text-xs font-medium text-text-secondary mb-2 flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-primary" /> Custom Calendar Range
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-[11px] text-text-muted block mb-1">From Date</label>
+                          <input
+                            type="date"
+                            value={customStartDate}
+                            onChange={e => {
+                              setCustomStartDate(e.target.value);
+                              setTimeFilter('custom');
+                            }}
+                            className="w-full text-xs bg-surface-container border border-border rounded-lg px-2.5 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-text-muted block mb-1">To Date</label>
+                          <input
+                            type="date"
+                            value={customEndDate}
+                            onChange={e => {
+                              setCustomEndDate(e.target.value);
+                              setTimeFilter('custom');
+                            }}
+                            className="w-full text-xs bg-surface-container border border-border rounded-lg px-2.5 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                          />
+                        </div>
+                        {timeFilter === 'custom' && (
+                          <button
+                            onClick={() => setIsFilterOpen(false)}
+                            className="w-full mt-2 bg-primary text-primary-contrast rounded-lg py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                          >
+                            Apply Custom Range
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+              <button
+                disabled
+                title="Bulk AI Call feature is disabled for now"
+                className="border border-border text-text-disabled px-3 py-1.5 rounded-[8px] text-[13px] font-medium opacity-50 cursor-not-allowed flex items-center gap-1"
+              >
+                <Bot className="w-4 h-4 text-text-disabled" /> Bulk AI Call (Disabled)
+              </button>
             </div>
-            <button 
-              disabled
-              title="Bulk AI Call feature is disabled for now"
-              className="border border-border text-text-disabled px-3 py-1.5 rounded-[8px] text-[13px] font-medium opacity-50 cursor-not-allowed flex items-center gap-1"
-            >
-              <Bot className="w-4 h-4 text-text-disabled" /> Bulk AI Call (Disabled)
-            </button>
-          </div>
           </div>
           {/* Pipeline Candidate Search Bar */}
           <div className="relative">
@@ -3983,13 +3964,13 @@ export default function JobDetailPage() {
                 {(jobChannels || []).map(ch => {
                   if (!ch.isEnabled) return null;
                   const channelConfig: Record<string, { label: string; color: string; title: string }> = {
-                    whatsapp:       { label: 'WhatsApp',   color: 'bg-[#25D366]',  title: 'WhatsApp Ingestion Active' },
+                    whatsapp: { label: 'WhatsApp', color: 'bg-[#25D366]', title: 'WhatsApp Ingestion Active' },
                     whatsapp_campaign: { label: 'WhatsApp', color: 'bg-[#25D366]', title: 'WhatsApp Campaign Active' },
-                    linkedin:       { label: 'LinkedIn',   color: 'bg-[#0A66C2]',  title: 'LinkedIn Ingestion Active' },
-                    email_campaign: { label: 'Email',      color: 'bg-orange-400', title: 'Email Campaign Active' },
-                    meta_campaign:  { label: 'Meta Ads',   color: 'bg-blue-600',   title: 'Meta Campaign Active' },
-                    workable:       { label: 'Workable',   color: 'bg-sky-500',    title: 'Workable API Active' },
-                    headhunting:    { label: 'Headhunt',   color: 'bg-purple-500', title: 'Headhunting Active' },
+                    linkedin: { label: 'LinkedIn', color: 'bg-[#0A66C2]', title: 'LinkedIn Ingestion Active' },
+                    email_campaign: { label: 'Email', color: 'bg-orange-400', title: 'Email Campaign Active' },
+                    meta_campaign: { label: 'Meta Ads', color: 'bg-blue-600', title: 'Meta Campaign Active' },
+                    workable: { label: 'Workable', color: 'bg-sky-500', title: 'Workable API Active' },
+                    headhunting: { label: 'Headhunt', color: 'bg-purple-500', title: 'Headhunting Active' },
                   };
                   const cfg = channelConfig[ch.channelType];
                   if (!cfg) return null;
@@ -4006,11 +3987,10 @@ export default function JobDetailPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleToggleWhatsAppFollowUp}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
-                    job.enableWhatsAppFollowUp === true
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${job.enableWhatsAppFollowUp === true
                       ? 'bg-[#25D366]/10 border-[#25D366]/20 text-[#128C7E] hover:bg-[#25D366]/20'
                       : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
-                  }`}
+                    }`}
                   title={job.enableWhatsAppFollowUp === true ? "WhatsApp Follow-Up Active. Click to Disable." : "WhatsApp Follow-Up Disabled. Click to Enable."}
                 >
                   <MessageCircle className="w-3.5 h-3.5 shrink-0" />
@@ -4018,11 +3998,10 @@ export default function JobDetailPage() {
                 </button>
                 <button
                   onClick={handleToggleEmailFollowUp}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${
-                    job.enableEmailFollowUp === true
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-2xs border transition-all ${job.enableEmailFollowUp === true
                       ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 hover:bg-blue-500/20'
                       : 'bg-surface-variant/40 border-border text-text-secondary hover:bg-surface-variant/70'
-                  }`}
+                    }`}
                   title={job.enableEmailFollowUp === true ? "Email Follow-Up Active. Click to Disable." : "Email Follow-Up Disabled. Click to Enable."}
                 >
                   <Mail className="w-3.5 h-3.5 shrink-0" />
@@ -4055,7 +4034,7 @@ export default function JobDetailPage() {
                   accept=".pdf,.docx"
                   className="hidden"
                 />
-                <button 
+                <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading}
                   className="bg-primary text-on-primary hover:bg-primary/90 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
@@ -4068,14 +4047,14 @@ export default function JobDetailPage() {
                     </>
                   )}
                 </button>
-                <button 
+                <button
                   onClick={() => alert("QR feature not implemented yet.")}
                   className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
                 >
                   <QrCode className="w-4 h-4" /> Ad QR Code
                 </button>
                 {job.status === 'draft' && (
-                  <button 
+                  <button
                     onClick={handlePublishJob}
                     disabled={isPublishing}
                     className="bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
@@ -4083,7 +4062,7 @@ export default function JobDetailPage() {
                     <Send className="w-4 h-4" /> {isPublishing ? "Publishing..." : "Publish Job"}
                   </button>
                 )}
-                <button 
+                <button
                   onClick={() => setIsEditModalOpen(true)}
                   className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1"
                 >
@@ -4097,12 +4076,12 @@ export default function JobDetailPage() {
                 <button className="border border-border text-text-primary hover:border-primary-container hover:text-primary-container px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1">
                   <Download className="w-4 h-4" /> Export CVs
                 </button>
-                <button 
+                <button
                   onClick={handleBulkRescore}
                   disabled={isBulkRescoring}
                   className="border border-border text-text-primary hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-4 h-4 ${isBulkRescoring ? 'animate-spin' : ''}`} /> 
+                  <RefreshCw className={`w-4 h-4 ${isBulkRescoring ? 'animate-spin' : ''}`} />
                   {isBulkRescoring ? 'Rescoring...' : 'Rescore Pipeline'}
                 </button>
               </div>
@@ -4134,9 +4113,8 @@ export default function JobDetailPage() {
                       return (
                         <div
                           key={i}
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
-                            filled ? 'bg-blue-500' : active ? 'bg-blue-400 animate-pulse' : 'bg-surface-container-high'
-                          }`}
+                          className={`h-1.5 rounded-full transition-all duration-300 ${filled ? 'bg-blue-500' : active ? 'bg-blue-400 animate-pulse' : 'bg-surface-container-high'
+                            }`}
                           style={{ width: '8%' }}
                         />
                       );
@@ -4168,12 +4146,11 @@ export default function JobDetailPage() {
           Pipeline ({applications.filter(a => a.currentStage !== 'new_cvs' && a.currentStage !== 'rejected').length})
         </button>
         <button
-          onClick={() => setActiveMainTab('masterSheet')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeMainTab === 'masterSheet' ? 'border-emerald-500 text-emerald-600 font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'}`}
+          onClick={() => setActiveMainTab('mastersheet')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeMainTab === 'mastersheet' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'}`}
         >
-          <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
           Master Tracking Sheet
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
         </button>
       </div>
 
@@ -4188,63 +4165,61 @@ export default function JobDetailPage() {
       {activeMainTab === 'pipeline' && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
 
-      {/* Issue #8: Pipeline stage count tracker */}
-      <PipelineTracker
-        applications={applications}
-        onTabClick={(tab) => setActivePipelineTab(tab)}
-      />
+          {/* Issue #8: Pipeline stage count tracker */}
+          <PipelineTracker
+            applications={applications}
+            onTabClick={(tab) => setActivePipelineTab(tab)}
+          />
 
-      {/* Secondary Navigation (Pipeline Sub-tabs) */}
-      <div className="flex flex-wrap gap-2 mb-6 sticky top-0 bg-background/95 backdrop-blur z-10 py-4 border-b border-border shadow-sm">
-        {TABS.map(tab => {
-          const Icon = tab.icon;
-          const stageId = {
-            'New CVs': 'new_cvs',
-            'TA Shortlist & Follow-up': 'ta_shortlist',
-            'TA Shortlist': 'ta_shortlist',
-            'Follow-up': 'follow_up',
-            '2nd Shortlist': 'second_shortlist',
-            'Director Shortlist': 'director_shortlist', 'Client Review': 'client_review',
-            'Interview': 'interview', 'Offer': 'offer', 'Placed': 'placed', 'Rejected': 'rejected'
-          }[tab.id];
-          const count = (tab.id === 'TA Shortlist & Follow-up' || tab.id === 'TA Shortlist' || tab.id === 'Follow-up')
-            ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'follow_up' || a.currentStage === 'matched_candidates').length
-            : stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActivePipelineTab(tab.id)}
-              className={`px-4 py-2 text-[13px] font-medium rounded-full transition-all flex items-center gap-2 border shadow-sm ${
-                activePipelineTab === tab.id 
-                  ? 'bg-primary text-on-primary border-primary hover:bg-primary/90' 
-                  : 'bg-surface border-border text-text-secondary hover:text-text-primary hover:border-text-tertiary hover:bg-surface-bright'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-              {count > 0 && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${
-                  activePipelineTab === tab.id ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
-                }`}>{count}</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      
-      {/* Pipeline Table */}
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-        {renderPipelineTable()}
-      </div>
+          {/* Secondary Navigation (Pipeline Sub-tabs) */}
+          <div className="flex flex-wrap gap-2 mb-6 sticky top-0 bg-background/95 backdrop-blur z-10 py-4 border-b border-border shadow-sm">
+            {TABS.map(tab => {
+              const Icon = tab.icon;
+              const stageId = {
+                'New CVs': 'new_cvs',
+                'TA Shortlist & Follow-up': 'ta_shortlist',
+                'TA Shortlist': 'ta_shortlist',
+                'Follow-up': 'follow_up',
+                '2nd Shortlist': 'second_shortlist',
+                'Director Shortlist': 'director_shortlist', 'Client Review': 'client_review',
+                'Interview': 'interview', 'Offer': 'offer', 'Placed': 'placed', 'Rejected': 'rejected'
+              }[tab.id];
+              const count = (tab.id === 'TA Shortlist & Follow-up' || tab.id === 'TA Shortlist' || tab.id === 'Follow-up')
+                ? applications.filter(a => a.currentStage === 'ta_shortlist' || a.currentStage === 'follow_up' || a.currentStage === 'matched_candidates').length
+                : stageId ? applications.filter(a => a.currentStage === stageId).length : 0;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActivePipelineTab(tab.id)}
+                  className={`px-4 py-2 text-[13px] font-medium rounded-full transition-all flex items-center gap-2 border shadow-sm ${activePipelineTab === tab.id
+                      ? 'bg-primary text-on-primary border-primary hover:bg-primary/90'
+                      : 'bg-surface border-border text-text-secondary hover:text-text-primary hover:border-text-tertiary hover:bg-surface-bright'
+                    }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                  {count > 0 && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${activePipelineTab === tab.id ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+                      }`}>{count}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Pipeline Table */}
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {renderPipelineTable()}
+          </div>
         </div>
       )}
 
-      {activeMainTab === 'masterSheet' && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <JobMasterSheetView jobId={jobId} jobTitle={job?.title} />
+      {activeMainTab === 'mastersheet' && (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 mb-20">
+          <JobMasterSpreadsheet jobId={jobId as Id<"jobs">} />
         </div>
       )}
-      
+
       <EditJobModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
@@ -4265,7 +4240,7 @@ export default function JobDetailPage() {
                   <p className="text-[12px] text-text-secondary">Guide the AI on candidate background, skills, or domain focus</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setIsPreferenceModalOpen(false)}
                 className="text-text-secondary hover:text-text-primary p-1 rounded-lg hover:bg-surface-container transition-colors"
               >
@@ -4348,9 +4323,9 @@ export default function JobDetailPage() {
           }))}
       />
 
-      <CandidateTimelineDrawer 
-        applicationId={timelineAppId} 
-        onClose={() => setTimelineAppId(null)} 
+      <CandidateTimelineDrawer
+        applicationId={timelineAppId}
+        onClose={() => setTimelineAppId(null)}
       />
     </div>
   );

@@ -119,7 +119,7 @@ export default defineSchema({
     applicationId: v.optional(v.id("applications")),
     jobId: v.optional(v.id("jobs")),
     communicationId: v.optional(v.id("communications")),
-    
+
     channel: v.union(v.literal("whatsapp"), v.literal("email")),
     questionText: v.string(),
     category: v.union(
@@ -132,13 +132,13 @@ export default defineSchema({
       v.literal("general_inquiry")
     ),
     importanceLevel: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-    
+
     status: v.union(
       v.literal("unresolved"),
       v.literal("answered_by_ai"),
       v.literal("resolved_by_ta")
     ),
-    
+
     aiAutoReplyText: v.optional(v.string()),
     taResponseText: v.optional(v.string()),
     resolvedByUserId: v.optional(v.id("users")),
@@ -378,17 +378,10 @@ export default defineSchema({
     // AI Embedding (set async after creation)
     embedding: v.optional(v.array(v.number())),
 
-    // Excel Master Tracking Sheet (Microsoft Graph / SharePoint / OneDrive)
-    excelMasterSheetUrl: v.optional(v.string()),
-    excelMasterSheetEmbedUrl: v.optional(v.string()),
-    excelMasterSheetDriveId: v.optional(v.string()),
-    excelMasterSheetItemId: v.optional(v.string()),
-    excelMasterSheetName: v.optional(v.string()),
-    excelMasterSheetLastSyncedAt: v.optional(v.number()),
-    excelMasterSheetSyncStatus: v.optional(v.union(
-      v.literal("idle"), v.literal("syncing"), v.literal("synced"), v.literal("error")
-    )),
-    excelMasterSheetError: v.optional(v.string()),
+    // In-App Master Tracking Spreadsheet Data (JSON workbook state)
+    masterSpreadsheetData: v.optional(v.string()),
+    masterSpreadsheetLastSavedAt: v.optional(v.number()),
+    masterSpreadsheetLastSavedBy: v.optional(v.string()),
 
     // Timestamps
     createdAt: v.string(),
@@ -846,10 +839,6 @@ export default defineSchema({
     loopIteration: v.number(),
     isActive: v.boolean(),
     notes: v.optional(v.string()),
-    excelSyncedAt: v.optional(v.number()),
-    masterSheetStatus: v.optional(v.string()),
-    masterSheetInterviewDate: v.optional(v.string()),
-    masterSheetNotes: v.optional(v.string()),
     createdAt: v.union(v.number(), v.string()),
     lastStageChangedAt: v.number(),
     followUpState: v.optional(v.object({
@@ -1977,4 +1966,3 @@ export default defineSchema({
   }).index("by_key", ["key"]),
 
 }, { schemaValidation: false });
-

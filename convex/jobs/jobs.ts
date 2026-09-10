@@ -84,7 +84,7 @@ export const createJob = mutation({
       if (args.keyword) {
         throw new Error(`The keyword "${args.keyword}" is already in use. Please choose another one.`);
       }
-      keyword = generateKeyword(args.title); 
+      keyword = generateKeyword(args.title);
     }
 
     const jobId = await ctx.db.insert("jobs", {
@@ -136,7 +136,7 @@ export const createJob = mutation({
       entityId: jobId,
       occurredAt: new Date().toISOString(),
     });
-    
+
     return { jobId, keyword };
   },
 });
@@ -217,7 +217,7 @@ export const createDraftJob = mutation({
       supportingRecruiterIds: args.supportingRecruiterIds,
       muteDefaultWhatsappReply: false,
       outreachWhatsAppNumber: args.outreachWhatsAppNumber,
-      
+
       scoreWeightSkills: 35,
       scoreWeightExperience: 15,
       scoreWeightJobTitle: 30,
@@ -325,18 +325,18 @@ export const updateJobDetails = mutation({
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "recruiter", "test_ta"]);
     const { jobId, description, salaryRangeMin, salaryRangeMax, ...fields } = args;
-    
+
     const updates: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(fields)) {
       if (val !== undefined) {
         updates[key] = val;
       }
     }
-    
+
     if (description !== undefined) updates.jobDescription = description;
     if (salaryRangeMin !== undefined) updates.salaryMin = salaryRangeMin;
     if (salaryRangeMax !== undefined) updates.salaryMax = salaryRangeMax;
-    
+
     updates.updatedAt = new Date().toISOString();
 
     await ctx.db.patch(jobId, updates);
@@ -399,7 +399,7 @@ export const assignTeamToJob = mutation({
         isActive: true,
       });
     }
-    
+
     await ctx.db.patch(args.jobId, {
       primaryRecruiterId: args.primaryRecruiterId,
       supportingRecruiterIds: args.supportingRecruiterIds,
@@ -470,7 +470,7 @@ export const updateJobChannels = mutation({
     if (!enabledIds.includes("email_campaign")) paused.push("email");
     if (!enabledIds.includes("linkedin")) paused.push("linkedin");
     if (!enabledIds.includes("workable")) paused.push("portal");
-      
+
     await ctx.db.patch(args.jobId, {
       pausedChannels: paused,
     });
@@ -593,8 +593,8 @@ export const updateJobAiConfig = mutation({
     const total = config.scoreWeightSkills + config.scoreWeightExperience + config.scoreWeightJobTitle + config.scoreWeightIndustry + config.scoreWeightLocation;
     if (total !== 100) throw new Error(`Score weights must total 100. Got ${total}.`);
 
-    await ctx.db.patch(jobId, { 
-      ...config, 
+    await ctx.db.patch(jobId, {
+      ...config,
       clientAccessLevel: config.clientAccessLevel as any,
       agent3Day2Channel: config.agent3Day2Channel as any,
       agent3Day4Channel: config.agent3Day4Channel as any,
@@ -654,8 +654,8 @@ export const publishJob = mutation({
       throw new Error(errors.join("; "));
     }
 
-    await ctx.db.patch(jobId, { 
-      status: "active", 
+    await ctx.db.patch(jobId, {
+      status: "active",
       publishedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
@@ -672,10 +672,10 @@ export const publishJob = mutation({
     // Always generate the embedding for AI semantic search
     await ctx.scheduler.runAfter(0, api.matching.agent2.generateJobEmbedding, { jobId });
     if (job.reverseMatchOnPublish) {
-       await ctx.db.patch(jobId, { reverseMatchStatus: "running" });
-       await ctx.scheduler.runAfter(0, api.matching.agent2.runReverseMatch, { jobId });
+      await ctx.db.patch(jobId, { reverseMatchStatus: "running" });
+      await ctx.scheduler.runAfter(0, api.matching.agent2.runReverseMatch, { jobId });
     }
-    
+
     await adjustGlobalStat(ctx, "new_job");
 
     return { success: true, keyword: job.keyword };
@@ -696,18 +696,18 @@ export const updateJobStatus = mutation({
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, ["admin", "ta_manager", "senior_ta", "test_ta"]);
     const oldJob = await ctx.db.get(args.jobId);
-    
+
     const updates: any = { status: args.status, updatedAt: new Date().toISOString() };
     if (args.status === "filled") updates.filledAt = new Date().toISOString();
-    
+
     await ctx.db.patch(args.jobId, updates);
-    
+
     if (oldJob && oldJob.status === "active" && (args.status === "filled" || args.status === "cancelled" || args.status === "on_hold")) {
       await adjustGlobalStat(ctx, "closed_job");
     } else if (oldJob && oldJob.status !== "active" && args.status === "active") {
       await adjustGlobalStat(ctx, "new_job");
     }
-    
+
     await ctx.db.insert("activityLog", {
       actorId: user._id,
       actorName: user.fullName || "Unknown",
@@ -738,7 +738,7 @@ export const deleteJob = mutation({
     if (assets) await ctx.db.delete(assets._id);
 
     await ctx.db.delete(args.jobId);
-    
+
     await ctx.db.insert("activityLog", {
       actorId: user._id,
       actorName: user.fullName || "Unknown",
@@ -1113,13 +1113,13 @@ export const getActiveJobsBasicInfo = query({
     const activeJobs = await ctx.db.query("jobs")
       .withIndex("by_status", (q) => q.eq("status", "active"))
       .collect();
-      
+
     const pausedJobs = await ctx.db.query("jobs")
       .withIndex("by_status", (q) => q.eq("status", "on_hold"))
       .collect();
-      
+
     const jobs = [...activeJobs, ...pausedJobs];
-      
+
     return jobs.map(job => ({
       _id: job._id,
       title: job.title,

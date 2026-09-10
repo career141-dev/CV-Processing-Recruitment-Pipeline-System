@@ -172,13 +172,6 @@ export async function executeStageTransition(
       applicationId,
       eventName: "QualifiedLead",
     });
-
-    if (targetStage === "ta_shortlist") {
-      await ctx.scheduler.runAfter(0, internal.integrations.excelSync.syncCandidateToMasterSheet, {
-        jobId: app.jobId,
-        applicationId,
-      });
-    }
   }
 
   // 7. Automated Sequence Triggers & Stops
