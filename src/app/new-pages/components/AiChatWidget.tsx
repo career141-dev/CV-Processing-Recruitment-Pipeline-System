@@ -1,17 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  MinusCircle,
-  Send,
-  Copy,
-  ThumbsUp,
-  ThumbsDown,
-  Check,
-  Sparkles,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { AiBotIcon } from './AiBotIcon';
+import { X, Check, ArrowUp } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
@@ -31,42 +21,49 @@ interface AiChatWidgetProps {
 export const AiChatWidget: React.FC<AiChatWidgetProps> = ({
   isOpen,
   onClose,
-  title = 'Main Title',
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'm-1',
-      sender: 'bot',
-      text: 'Rapidly build stunning Web Apps with Frest 🚀\nDeveloper friendly, Highly customizable & Carefully crafted HTML Admin Dashboard Template.',
-      time: '7:20',
-    },
-    {
-      id: 'm-2',
       sender: 'user',
-      text: 'Minimum text check, Hide check icon',
-      time: '7:20',
+      text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc vulputate libero at velit.',
+      time: '10:20 AM',
       userAvatar:
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
       showCheck: true,
     },
     {
-      id: 'm-3',
+      id: 'm-2',
       sender: 'bot',
-      text: 'Rapidly build stunning Web Apps with Frest 🚀\nDeveloper friendly, Highly customizable & Carefully crafted HTML Admin Dashboard Template.',
-      time: '7:20',
+      text: 'Consectetur adipiscing elit. Nunc vulputate libero at velit interdum, ac dapibus odio mattis.',
+      time: '10:20 AM',
+    },
+    {
+      id: 'm-3',
+      sender: 'user',
+      text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+      time: '10:32 AM',
+      userAvatar:
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
+      showCheck: true,
+    },
+    {
+      id: 'm-4',
+      sender: 'bot',
+      text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc vulputate libero at velit interdum, ac dapibus odio mattis. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+      time: '10:32 AM',
     },
   ]);
 
   const [inputVal, setInputVal] = useState<string>('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [likedIds, setLikedIds] = useState<Record<string, 'up' | 'down'>>({});
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, isOpen]);
+  }, [messages, isGenerating, isOpen]);
 
   const handleSend = (textToSend?: string) => {
     const text = textToSend || inputVal;
@@ -79,253 +76,185 @@ export const AiChatWidget: React.FC<AiChatWidgetProps> = ({
       text: text.trim(),
       time: newTime,
       userAvatar:
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
       showCheck: true,
     };
 
     setMessages((prev) => [...prev, userMsg]);
     setInputVal('');
+    setIsGenerating(true);
 
-    // Simulate Bot Response
+    // Simulate Bot Response with typing indicator
     setTimeout(() => {
+      setIsGenerating(false);
       const botReply: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'bot',
-        text: `Here are the matching candidate profiles from the Database CV for: "${text.trim()}".\n\nFound 4 verified candidates matching skills & availability criteria.`,
+        text: `Here are the matching candidate profiles from the Database CV for: "${text.trim()}". Found 4 verified candidates matching criteria.`,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, botReply]);
-    }, 600);
-  };
-
-  const handleCopy = (id: string, text: string) => {
-    navigator.clipboard?.writeText(text);
-    setCopiedId(id);
-    toast.success('Copied to clipboard');
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleFeedback = (id: string, type: 'up' | 'down') => {
-    setLikedIds((prev) => ({
-      ...prev,
-      [id]: prev[id] === type ? undefined! : type,
-    }));
-    toast.info(type === 'up' ? 'Thanks for positive feedback!' : 'Feedback noted');
+    }, 1200);
   };
 
   return (
     <>
-      {/* ── MOBILE-ONLY BLACK BLUR BACKDROP OVERLAY (DESKTOP NO BLUR) ── */}
+      {/* ── MOBILE-ONLY BACKDROP OVERLAY (FOR SMOOTH TRANSITIONS) ── */}
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 w-screen h-screen bg-black/80 backdrop-blur-md z-40 md:hidden transition-all duration-300 animate-in fade-in cursor-pointer"
+          className="fixed inset-0 w-screen h-screen bg-black/50 backdrop-blur-xs z-50 md:hidden transition-all duration-300 animate-in fade-in cursor-pointer"
           aria-hidden="true"
         />
       )}
 
+      {/* ── RESPONSIVE CHATBOT CONTAINER ── */}
       <div
-        className={`fixed bottom-22 sm:bottom-24 right-3 sm:right-6 z-50 w-[calc(100vw-24px)] max-w-[380px] sm:w-[360px] h-[540px] sm:h-[580px] max-h-[82vh] bg-white rounded-[28px] shadow-2xl border border-slate-200/90 flex flex-col overflow-visible transform origin-bottom-right transition-all duration-300 ease-out font-sans ${isOpen
-            ? 'scale-100 opacity-100 translate-y-0 pointer-events-auto'
-            : 'scale-0 opacity-0 translate-y-6 pointer-events-none'
+        className={`fixed z-50 flex flex-col overflow-hidden backdrop-blur-md font-sans select-none transition-all duration-300 ease-out
+          /* Mobile View (< 640px): Full Viewport Docked */
+          inset-0 w-full h-[100dvh] max-w-full max-h-[100dvh] rounded-none
+          /* Desktop View (>= 640px): Floating Bottom-Right Card */
+          sm:inset-auto sm:bottom-24 sm:right-6 sm:w-[350px] sm:h-[620px] sm:max-h-[85vh] sm:rounded-[32px] sm:border sm:border-[#C2C2C2]
+          ${
+            isOpen
+              ? 'translate-y-0 opacity-100 pointer-events-auto sm:scale-100'
+              : 'translate-y-full opacity-0 pointer-events-none sm:translate-y-6 sm:scale-95'
           }`}
+        style={{
+          background: '#FFFFFFEB',
+          boxShadow: '0px 4px 4px 0px #00000040',
+        }}
       >
-        {/* ── SPEECH BUBBLE TAIL / ANCHOR POINTING DOWN TO THE BOT ICON ── */}
-        <div className="absolute -bottom-2.5 right-7 w-5 h-5 bg-white border-r border-b border-slate-200/90 rotate-45 z-0 rounded-xs shadow-xs hidden sm:block" />
+        {/* ── 1. HEADER (MINIMAL WITH TOP-RIGHT CLOSE BUTTON ONLY) ── */}
+        <div className="pt-3 sm:pt-4 px-4 pb-2 flex items-center justify-end shrink-0">
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-full bg-[#B3B3B3] hover:bg-[#999999] active:scale-90 text-white flex items-center justify-center cursor-pointer transition-all shadow-2xs"
+            title="Close Chat"
+          >
+            <X className="w-4 h-4 stroke-[2.5]" />
+          </button>
+        </div>
 
-        {/* ── INNER CARD WRAPPER WITH ROUNDED CORNERS ── */}
-        <div className="w-full h-full flex flex-col rounded-[28px] overflow-hidden bg-white relative z-10">
-          {/* ── 1. HEADER (EVERGREEN WITH BOT LOGO, MAIN TITLE, ONLINE STATUS, MINIMIZE BUTTON) ── */}
-          <div className="bg-[#165B42] px-4 py-3.5 sm:px-5 sm:py-4 text-white flex items-center justify-between shrink-0 shadow-xs">
-            <div className="flex items-center gap-3">
-              {/* Bot Icon with speech bubble */}
-              <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                <AiBotIcon className="w-8 h-8" />
-              </div>
-
-              <div>
-                <h3 className="font-bold text-[16px] sm:text-[17px] leading-none text-white tracking-tight">
-                  {title}
-                </h3>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
-                  <span className="text-[12px] text-white/90 font-medium leading-none">Online</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Minimize Button */}
-            <button
-              onClick={onClose}
-              className="text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-all cursor-pointer p-0.5"
-              title="Minimize Chat"
-            >
-              <MinusCircle className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* ── 2. CHAT MESSAGES BODY ── */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-5 bg-white scrollbar-thin scrollbar-thumb-slate-200">
-            {messages.map((msg) => {
-              if (msg.sender === 'user') {
-                return (
-                  <div key={msg.id} className="space-y-1.5 flex flex-col items-end">
-                    {/* Light Mint User Bubble (#E0F0EA) */}
-                    <div className="relative max-w-[90%]">
-                      <div className="bg-[#E0F0EA] text-[#165B42] px-4 py-3 rounded-[18px] text-[13px] leading-relaxed shadow-2xs relative z-10 font-medium">
-                        {msg.text}
-                      </div>
-
-                      {/* Tail pointing down to user avatar at bottom-right */}
-                      <div className="absolute -bottom-1 right-3 w-3.5 h-3.5 bg-[#E0F0EA] rotate-45 z-0" />
-                    </div>
-
-                    {/* Row below User Bubble: Timestamp on left, User Avatar on right */}
-                    <div className="flex items-center justify-between w-full max-w-[90%] pr-0.5">
-                      <div className="flex items-center gap-1.5 text-[12px] text-slate-400 font-medium pl-1">
-                        <span>{msg.time}</span>
-                        {msg.showCheck && <Check className="w-3.5 h-3.5 text-[#165B42] stroke-[2.5]" />}
-                      </div>
-
-                      <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-white shadow-sm shrink-0">
-                        <img
-                          src={
-                            msg.userAvatar ||
-                            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80'
-                          }
-                          alt="User"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
-              // Bot Message
+        {/* ── 2. MESSAGE THREAD BODY ── */}
+        <div className="flex-1 px-4 py-2 overflow-y-auto space-y-4 scrollbar-none">
+          {messages.map((msg) => {
+            if (msg.sender === 'user') {
               return (
-                <div key={msg.id} className="space-y-1.5 flex flex-col items-start">
-                  {/* Bot Green Bubble */}
-                  <div className="relative max-w-[92%]">
-                    <div className="bg-[#165B42] text-white px-4 py-3 rounded-[18px] text-[13px] leading-relaxed shadow-xs space-y-1 relative z-10">
-                      {msg.text.split('\n').map((line, lIdx) => (
-                        <p key={lIdx}>{line}</p>
-                      ))}
+                /* ── USER MESSAGE (RIGHT-ALIGNED) ── */
+                <div key={msg.id} className="flex justify-end items-start gap-2.5">
+                  <div className="flex flex-col items-end max-w-[80%] sm:max-w-[260px]">
+                    <div className="text-[12px] sm:text-[13px] text-slate-800 font-normal leading-relaxed text-left">
+                      {msg.text}
                     </div>
-
-                    {/* Tail pointing down to bot icon at bottom-left */}
-                    <div className="absolute -bottom-1 left-3 w-3.5 h-3.5 bg-[#165B42] rotate-45 z-0" />
-
-                    {/* Action Toolbar attached to bottom right of bubble */}
-                    <div className="absolute -bottom-2.5 right-2 bg-[#114934] text-white px-2 py-0.5 rounded-full flex items-center gap-1.5 shadow-sm text-xs z-20">
-                      <button
-                        onClick={() => handleCopy(msg.id, msg.text)}
-                        className="p-0.5 hover:text-emerald-200 cursor-pointer transition-colors"
-                        title="Copy message"
-                      >
-                        {copiedId === msg.id ? (
-                          <Check className="w-3 h-3 text-emerald-300" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleFeedback(msg.id, 'up')}
-                        className={`p-0.5 hover:text-emerald-200 cursor-pointer transition-colors ${
-                          likedIds[msg.id] === 'up' ? 'text-emerald-300' : ''
-                        }`}
-                        title="Helpful"
-                      >
-                        <ThumbsUp className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => handleFeedback(msg.id, 'down')}
-                        className={`p-0.5 hover:text-emerald-200 cursor-pointer transition-colors ${
-                          likedIds[msg.id] === 'down' ? 'text-rose-300' : ''
-                        }`}
-                        title="Not helpful"
-                      >
-                        <ThumbsDown className="w-3 h-3" />
-                      </button>
+                    <div className="flex items-center gap-1 text-[10px] text-slate-400 font-medium mt-1">
+                      <span>{msg.time}</span>
+                      {msg.showCheck && (
+                        <Check className="w-3 h-3 text-slate-700 stroke-[2.5]" />
+                      )}
                     </div>
                   </div>
 
-                  {/* Row below Bot Bubble: Bot Avatar on left + Timestamp to right */}
-                  <div className="flex items-center gap-2 pl-0.5">
-                    <div className="w-8 h-8 rounded-full bg-[#165B42] flex items-center justify-center p-1 shrink-0 shadow-sm border-2 border-white">
-                      <AiBotIcon className="w-full h-full text-white" />
-                    </div>
-                    <span className="text-[12px] text-slate-400 font-medium">{msg.time}</span>
+                  {/* User Avatar */}
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden border border-slate-200/80 shadow-2xs shrink-0 mt-0.5">
+                    <img
+                      src={
+                        msg.userAvatar ||
+                        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80'
+                      }
+                      alt="User"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 </div>
               );
-            })}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* ── 3. FOOTER SUGGESTION CHIPS ── */}
-          <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5 overflow-x-auto scrollbar-none bg-white border-t border-slate-100">
-            <button
-              onClick={() => handleSend('What is WappGPT?')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E0F0EA] hover:bg-[#d0e8df] text-[#165B42] text-[11px] font-semibold transition-colors cursor-pointer shrink-0 border border-[#165B42]/15"
-            >
-              <span>🤔</span>
-              <span>What is WappGPT?</span>
-            </button>
-
-            <button
-              onClick={() => handleSend('Tell me about Pricing')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E0F0EA] hover:bg-[#d0e8df] text-[#165B42] text-[11px] font-semibold transition-colors cursor-pointer shrink-0 border border-[#165B42]/15"
-            >
-              <span>💰</span>
-              <span>Pricing</span>
-            </button>
-
-            <button
-              onClick={() => handleSend('Show FAQs')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E0F0EA] hover:bg-[#d0e8df] text-[#165B42] text-[11px] font-semibold transition-colors cursor-pointer shrink-0 border border-[#165B42]/15"
-            >
-              <span>🙋</span>
-              <span>FAQs</span>
-            </button>
-          </div>
-
-          {/* ── 4. INPUT BAR ── */}
-          <div className="p-3 bg-white border-t border-slate-100 shrink-0">
-            <style>{`
-            .chat-borderless-input,
-            .chat-borderless-input[type="text"],
-            .chat-borderless-input[type="text"]:hover,
-            .chat-borderless-input[type="text"]:focus,
-            .chat-borderless-input[type="text"]:active {
-              border: none !important;
-              border-width: 0 !important;
-              border-style: none !important;
-              border-color: transparent !important;
-              outline: none !important;
-              box-shadow: none !important;
-              background-color: transparent !important;
             }
-          `}</style>
-            <div className="flex items-center justify-between bg-[#F0F7F4] border border-[#E0F0EA] rounded-[20px] px-3.5 py-2.5 focus-within:ring-2 focus-within:ring-[#165B42]/20 transition-all">
+
+            /* ── BOT MESSAGE (LEFT-ALIGNED) ── */
+            return (
+              <div key={msg.id} className="flex justify-start items-start gap-2.5">
+                {/* Bot Avatar (Circular Mint Badge with Two Green Eyes) */}
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#EAF3EE] border border-[#165B42]/30 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                  <div className="flex items-center gap-0.5">
+                    <span className="w-1 h-1 rounded-full bg-[#165B42]"></span>
+                    <span className="w-1 h-1 rounded-full bg-[#165B42]"></span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-start max-w-[80%] sm:max-w-[260px]">
+                  <div className="text-[12px] sm:text-[13px] text-[#165B42] font-normal leading-relaxed text-left">
+                    {msg.text}
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-medium mt-1">
+                    {msg.time}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* ── BOT GENERATING RESPONSE (TYPING INDICATOR) ── */}
+          {isGenerating && (
+            <div className="flex justify-start items-start gap-2.5 animate-in fade-in duration-200">
+              {/* Bot Avatar */}
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#EAF3EE] border border-[#165B42]/30 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                <div className="flex items-center gap-0.5">
+                  <span className="w-1 h-1 rounded-full bg-[#165B42] animate-bounce"></span>
+                  <span
+                    className="w-1 h-1 rounded-full bg-[#165B42] animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  ></span>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-start max-w-[80%] sm:max-w-[260px]">
+                <div className="text-[12px] sm:text-[13px] text-[#165B42] font-normal flex items-center gap-1">
+                  <span>Generating a response</span>
+                  <span className="tracking-widest font-bold animate-pulse">•••</span>
+                </div>
+                {/* Loading Underline Bars */}
+                <div className="flex items-center gap-2 mt-1.5">
+                  <div className="w-24 h-0.5 bg-slate-300 rounded-full animate-pulse"></div>
+                  <div className="w-12 h-0.5 bg-slate-200 rounded-full animate-pulse"></div>
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium mt-1">
+                  {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* ── 3. BOTTOM INPUT BAR & ACTION BUTTON ── */}
+        <div className="px-4 pt-2 pb-4 sm:pb-3 bg-transparent flex flex-col gap-2 shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            {/* Pill-shaped text input */}
+            <div className="flex-1 bg-white border border-[#D1D5DB] rounded-full px-4 py-2 sm:py-2.5 shadow-2xs flex items-center">
               <input
                 type="text"
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="Type your message here..."
-                className="chat-borderless-input flex-1 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 pr-2 border-0 border-none outline-none focus:outline-none focus:ring-0 shadow-none"
+                className="chat-borderless-input w-full bg-transparent text-[12px] sm:text-[13px] text-slate-800 placeholder:text-slate-400 border-none outline-none focus:outline-none focus:ring-0 shadow-none font-normal"
               />
-              <button
-                onClick={() => handleSend()}
-                disabled={!inputVal.trim()}
-                className="text-[#165B42] hover:text-[#114934] disabled:opacity-40 transition-all cursor-pointer p-0.5"
-                title="Send Message"
-              >
-                <Send className="w-4 h-4" />
-              </button>
             </div>
+
+            {/* Circular dark green send button with upward arrow */}
+            <button
+              onClick={() => handleSend()}
+              disabled={!inputVal.trim() && !isGenerating}
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#165B42] hover:bg-[#114934] active:scale-95 text-white flex items-center justify-center shadow-md transition-all cursor-pointer shrink-0 disabled:opacity-40"
+              title="Send Message"
+            >
+              <ArrowUp className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[2.5]" />
+            </button>
           </div>
+
+          {/* Bottom Home Indicator Bar */}
+          <div className="w-28 h-1 bg-[#6B7280] opacity-50 rounded-full mx-auto mt-1" />
         </div>
       </div>
     </>

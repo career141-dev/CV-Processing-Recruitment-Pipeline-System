@@ -301,12 +301,16 @@ textarea:focus {
   box-shadow: 0 0 0 2px rgba(0, 103, 99, 0.2) !important;
 }
 
-/* Explicit override for borderless inputs (e.g. Chat Widget, Inline Search, Snippets) */
+/* Explicit override for borderless inputs (e.g. Chat Widget, Inline Search, Snippets, HeadHunting) */
 input.chat-borderless-input,
 input.chat-borderless-input[type="text"],
 input.chat-borderless-input[type="text"]:hover,
 input.chat-borderless-input[type="text"]:focus,
 input.chat-borderless-input[type="text"]:active,
+select.chat-borderless-input,
+select.chat-borderless-input:hover,
+select.chat-borderless-input:focus,
+select.chat-borderless-input:active,
 textarea.chat-borderless-input,
 textarea.chat-borderless-input:hover,
 textarea.chat-borderless-input:focus,
