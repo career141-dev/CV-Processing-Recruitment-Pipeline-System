@@ -9,7 +9,7 @@ import {
   Award, Star, XCircle, Tag, Calendar, User,
   QrCode, Edit, Download, MoreVertical, ArrowUpDown, Filter, Bot, Info, X,
   Phone, Upload, AlertTriangle, ArrowRight, Clock, Send, ChevronDown, Sparkles, MessageSquarePlus, Trash2, RefreshCw, RotateCcw, Plus, Mail, MessageSquare, MessageCircle, DollarSign, ExternalLink, HelpCircle, Square, Search,
-  Database, FileSpreadsheet
+  Database, FileSpreadsheet, Loader2, Link2, Settings
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useAction, useConvex } from "convex/react";
@@ -20,7 +20,6 @@ import { useUser } from '@clerk/nextjs';
 import { EditJobModal } from '@/components/jobs/EditJobModal';
 import { SendBulkFollowUpModal } from '@/components/outreach/SendBulkFollowUpModal';
 import { CandidateTimelineDrawer } from '@/components/candidates/CandidateTimelineDrawer';
-import { JobMasterSpreadsheet } from '@/components/jobs/JobMasterSpreadsheet';
 import { toast } from 'sonner';
 import { useErrorPopup } from "@/components/ui/ErrorPopupProvider";
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -2157,7 +2156,7 @@ export default function JobDetailPage() {
   const { user } = useUser();
   const jobId = params.jobId as Id<"jobs">;
 
-  const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline' | 'mastersheet'>('matches');
+  const [activeMainTab, setActiveMainTab] = useState<'matches' | 'pipeline'>('pipeline');
   const [activePipelineTab, setActivePipelineTab] = useState('New CVs');
   const [activeFollowUpTab, setActiveFollowUpTab] = useState<'active' | 'unresponsive'>('active');
   const [timelineAppId, setTimelineAppId] = useState<Id<"applications"> | null>(null);
@@ -2285,6 +2284,119 @@ export default function JobDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useAction(api.storage.r2.generateUploadUrl);
   const processCvIngestion = useMutation(api.pipeline.ingestion.processCvIngestion);
+  const exportShortlistAction = useAction(api.integrations.exportShortlist.exportShortlistForMs365);
+  const [isExportingMs365, setIsExportingMs365] = useState(false);
+  const [isMs365DropdownOpen, setIsMs365DropdownOpen] = useState(false);
+
+  // SharePoint Excel Workbook Sync (Option 2)
+  const sharepointExcelConfig = useQuery(api.integrations.sharepointExcelHelper.getJobSharepointExcelConfig, { jobId });
+  const updateSharepointExcelUrl = useMutation(api.integrations.sharepointExcelHelper.updateJobSharepointExcelUrl);
+  const syncToSharePointExcelAction = useAction(api.integrations.sharepointExcelSync.syncShortlistToSharePointExcel);
+  const [isSyncingSharepointExcel, setIsSyncingSharepointExcel] = useState(false);
+  const [isSharepointUrlModalOpen, setIsSharepointUrlModalOpen] = useState(false);
+  const [sharepointUrlInput, setSharepointUrlInput] = useState("");
+
+  const handleSyncToSharepointExcel = async () => {
+    setIsSyncingSharepointExcel(true);
+    const toastId = toast.loading("Syncing candidates into SharePoint Excel...");
+    try {
+      const selectedIds = selectedCandidates.length > 0 ? (selectedCandidates as Id<"applications">[]) : undefined;
+      const result = await syncToSharePointExcelAction({
+        jobId,
+        applicationIds: selectedIds,
+      });
+
+      if (!result.success) {
+        if (result.requiresConfig) {
+          toast.dismiss(toastId);
+          setSharepointUrlInput(sharepointExcelConfig?.sharepointExcelUrl || "");
+          setIsSharepointUrlModalOpen(true);
+          return;
+        }
+        toast.error(result.message, { id: toastId });
+        return;
+      }
+
+      toast.success(result.message, { id: toastId });
+    } catch (err: any) {
+      toast.error("SharePoint sync failed: " + err.message, { id: toastId });
+    } finally {
+      setIsSyncingSharepointExcel(false);
+    }
+  };
+
+  const handleSaveSharepointUrl = async () => {
+    if (!sharepointUrlInput.trim()) return;
+    try {
+      await updateSharepointExcelUrl({
+        jobId,
+        sharepointExcelUrl: sharepointUrlInput.trim(),
+      });
+      setIsSharepointUrlModalOpen(false);
+      toast.success("SharePoint Excel URL saved!");
+      // Automatically trigger sync now
+      handleSyncToSharepointExcel();
+    } catch (err: any) {
+      toast.error("Failed to save SharePoint URL: " + err.message);
+    }
+  };
+
+  const handleOpenInMs365 = async (mode: 'auto' | 'office_online' | 'sharepoint' = 'auto') => {
+    setIsExportingMs365(true);
+    const toastId = toast.loading("Generating Microsoft 365 spreadsheet...");
+    try {
+      const selectedIds = selectedCandidates.length > 0 ? (selectedCandidates as Id<"applications">[]) : undefined;
+      const result = await exportShortlistAction({
+        jobId,
+        selectedApplicationIds: selectedIds,
+        mode,
+      });
+
+      if (result && result.webUrl) {
+        window.open(result.webUrl, '_blank', 'noopener,noreferrer');
+        toast.success(
+          result.mode === 'sharepoint'
+            ? `Opened ${result.candidateCount} candidate(s) in SharePoint Excel Online!`
+            : `Opened ${result.candidateCount} candidate(s) in Microsoft Office Online!`,
+          { id: toastId }
+        );
+      }
+    } catch (err: any) {
+      console.error('Failed to open in MS 365:', err);
+      toast.error('Failed to open spreadsheet: ' + err.message, { id: toastId });
+    } finally {
+      setIsExportingMs365(false);
+      setIsMs365DropdownOpen(false);
+    }
+  };
+
+  const handleDirectDownloadShortlist = async () => {
+    setIsExportingMs365(true);
+    const toastId = toast.loading("Downloading Excel spreadsheet...");
+    try {
+      const selectedIds = selectedCandidates.length > 0 ? (selectedCandidates as Id<"applications">[]) : undefined;
+      const result = await exportShortlistAction({
+        jobId,
+        selectedApplicationIds: selectedIds,
+        mode: 'office_online',
+      });
+
+      if (result && result.downloadUrl) {
+        const a = document.createElement("a");
+        a.href = result.downloadUrl;
+        a.download = result.filename || "Shortlist.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        toast.success(`Downloaded ${result.filename}!`, { id: toastId });
+      }
+    } catch (err: any) {
+      toast.error("Download failed: " + err.message, { id: toastId });
+    } finally {
+      setIsExportingMs365(false);
+      setIsMs365DropdownOpen(false);
+    }
+  };
 
   const handlePublishJob = async () => {
     setIsPublishing(true);
@@ -3249,16 +3361,98 @@ export default function JobDetailPage() {
                   </button>
                 </div>
 
-                {activeFollowUpTab === 'active' && selectedCandidates.length > 0 && (
+                <div className="flex items-center gap-2 relative">
+                  {/* SharePoint Excel Workbook Sync (Option 2) */}
                   <button
-                    onClick={handleBulkSendFollowUp}
-                    disabled={isBulkSending}
-                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    type="button"
+                    onClick={handleSyncToSharepointExcel}
+                    disabled={isSyncingSharepointExcel || currentItems.length === 0}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    title="Sync shortlisted candidate rows into the SharePoint Excel tracking sheet"
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Send Follow-Up ({selectedCandidates.length})</span>
+                    {isSyncingSharepointExcel ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    <span>Sync to SharePoint Excel</span>
+                    {selectedCandidates.length > 0 && (
+                      <span className="bg-white/20 text-white px-1.5 py-0.2 rounded-full text-[10px]">
+                        {selectedCandidates.length}
+                      </span>
+                    )}
                   </button>
-                )}
+
+                  {/* Open SharePoint Excel Workbook Link */}
+                  {sharepointExcelConfig?.sharepointExcelUrl && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(sharepointExcelConfig.sharepointExcelUrl!, '_blank', 'noopener,noreferrer')}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Open the SharePoint Excel workbook in a new tab"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open SharePoint Excel</span>
+                    </button>
+                  )}
+
+                  {/* Configure SharePoint Excel URL Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSharepointUrlInput(sharepointExcelConfig?.sharepointExcelUrl || "");
+                      setIsSharepointUrlModalOpen(true);
+                    }}
+                    className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-container border border-border transition-colors cursor-pointer"
+                    title="Configure SharePoint Excel File Link"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Download Local .xlsx Button */}
+                  <button
+                    type="button"
+                    onClick={handleDirectDownloadShortlist}
+                    disabled={isExportingMs365 || currentItems.length === 0}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-container border border-border text-text-primary transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                    title="Download client-ready 8-column TA Shortlist Excel sheet (.xlsx)"
+                  >
+                    {isExportingMs365 ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5 text-emerald-600" />
+                    )}
+                    <span>Export Shortlist (.xlsx)</span>
+                    {selectedCandidates.length > 0 && (
+                      <span className="bg-emerald-600 text-white px-1.5 py-0.2 rounded-full text-[10px]">
+                        {selectedCandidates.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Open in Microsoft 365 Viewer */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenInMs365('office_online')}
+                    disabled={isExportingMs365 || currentItems.length === 0}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-container border border-border text-text-secondary hover:text-text-primary transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                    title="Preview formatted shortlist in Microsoft 365 / Office Online"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Office 365</span>
+                  </button>
+
+                  {activeFollowUpTab === 'active' && selectedCandidates.length > 0 && (
+                    <button
+                      onClick={handleBulkSendFollowUp}
+                      disabled={isBulkSending}
+                      className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Send Follow-Up ({selectedCandidates.length})</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Sub-Tab View Rendering */}
@@ -4145,13 +4339,6 @@ export default function JobDetailPage() {
           <Layers className="w-4 h-4" />
           Pipeline ({applications.filter(a => a.currentStage !== 'new_cvs' && a.currentStage !== 'rejected').length})
         </button>
-        <button
-          onClick={() => setActiveMainTab('mastersheet')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeMainTab === 'mastersheet' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'}`}
-        >
-          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-          Master Tracking Sheet
-        </button>
       </div>
 
       {activeMainTab === 'matches' && (
@@ -4211,12 +4398,6 @@ export default function JobDetailPage() {
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             {renderPipelineTable()}
           </div>
-        </div>
-      )}
-
-      {activeMainTab === 'mastersheet' && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 mb-20">
-          <JobMasterSpreadsheet jobId={jobId as Id<"jobs">} />
         </div>
       )}
 
@@ -4322,6 +4503,66 @@ export default function JobDetailPage() {
             followUpNoticePeriod: (app as any).followUpNoticePeriod,
           }))}
       />
+
+      {/* SharePoint Excel URL Config Modal */}
+      {isSharepointUrlModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-surface border border-border rounded-2xl shadow-2xl max-w-lg w-full p-6 text-text-primary space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-bold text-base">SharePoint Excel Tracking Sheet</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSharepointUrlModalOpen(false)}
+                className="text-text-secondary hover:text-text-primary p-1 rounded-lg hover:bg-surface-container"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-text-secondary leading-relaxed">
+              Connect Career141 directly to your Excel file on SharePoint. When candidates are shortlisted, their details will be appended directly into this sheet.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text-secondary">
+                SharePoint Excel Web / Sharing Link:
+              </label>
+              <input
+                type="url"
+                value={sharepointUrlInput}
+                onChange={(e) => setSharepointUrlInput(e.target.value)}
+                placeholder="https://careerc141.sharepoint.com/:x:/r/sites/.../Master_Tracking.xlsx?web=1"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface-container focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <p className="text-[11px] text-text-secondary/80">
+                Open the file in SharePoint, click <strong>Share &gt; Copy Link</strong>, and paste it here.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setIsSharepointUrlModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium border border-border hover:bg-surface-container transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSharepointUrl}
+                disabled={!sharepointUrlInput.trim()}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Save &amp; Sync</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CandidateTimelineDrawer
         applicationId={timelineAppId}

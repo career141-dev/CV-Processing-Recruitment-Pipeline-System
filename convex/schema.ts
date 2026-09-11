@@ -383,6 +383,11 @@ export default defineSchema({
     masterSpreadsheetLastSavedAt: v.optional(v.number()),
     masterSpreadsheetLastSavedBy: v.optional(v.string()),
 
+    // SharePoint Excel Tracking (Option 2)
+    sharepointExcelUrl: v.optional(v.string()),
+    sharepointExcelFileId: v.optional(v.string()),
+    sharepointExcelLastSyncedAt: v.optional(v.number()),
+
     // Timestamps
     createdAt: v.string(),
     publishedAt: v.optional(v.string()),
@@ -649,6 +654,9 @@ export default defineSchema({
     currentSalary: v.optional(v.number()),
     currentSalaryCurrency: v.optional(v.string()),
     noticePeriodDays: v.optional(v.number()),
+    currentRemunerationText: v.optional(v.string()),
+    expectedRemunerationText: v.optional(v.string()),
+    executiveSummary: v.optional(v.string()),
     availability: v.optional(v.string()),
     firstSourceChannel: v.optional(
       v.union(
@@ -791,6 +799,10 @@ export default defineSchema({
     candidateCurrentSalary: v.optional(v.number()),
     candidateExpectedSalary: v.optional(v.number()),
     candidateNoticePeriodDays: v.optional(v.number()),
+    candidateCurrentRemunerationText: v.optional(v.string()),
+    candidateExpectedRemunerationText: v.optional(v.string()),
+    candidateNoticePeriodText: v.optional(v.string()),
+    executiveSummary: v.optional(v.string()),
 
     currentStage: v.union(
       v.literal("new_cvs"),
@@ -848,6 +860,7 @@ export default defineSchema({
     })),
     followUpAttemptCount: v.optional(v.number()),
     nextFollowUpScheduledAt: v.optional(v.number()),
+    sharepointRowSyncedAt: v.optional(v.number()),
     nextFollowUpMessage: v.optional(v.string()),
     promisedEtaTimestamp: v.optional(v.number()),
     lastCandidateEmailMessageId: v.optional(v.string()),
