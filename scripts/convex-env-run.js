@@ -36,6 +36,25 @@ if (fs.existsSync(targetEnvFile)) {
 
 const currentEnv = getEnvMap('.env.local');
 
+function runNpx(args, adminKey, url) {
+  const { spawnSync } = require('child_process');
+  const convexCli = path.resolve(process.cwd(), 'node_modules/convex/bin/main.js');
+  const env = {
+    ...process.env,
+    CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey || process.env.CONVEX_SELF_HOSTED_ADMIN_KEY,
+    CONVEX_SELF_HOSTED_URL: url || process.env.CONVEX_SELF_HOSTED_URL,
+    CONVEX_URL: url || process.env.CONVEX_URL,
+  };
+  const fullArgs = [convexCli, ...args];
+  if (adminKey && !args.includes('--admin-key')) {
+    fullArgs.push('--admin-key', adminKey);
+  }
+  const res = spawnSync(process.execPath, fullArgs, { stdio: 'inherit', env });
+  if (res.status !== 0) {
+    process.exit(res.status || 1);
+  }
+}
+
 if (action === 'dev') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
@@ -46,13 +65,14 @@ if (action === 'dev') {
   }
 
   console.log(`[Convex Runner] Connecting to ${url}...`);
-  execSync(`npx convex dev --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit' });
+  runNpx(['dev', '--url', url], adminKey, url);
 
 } else if (action === 'deploy') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
   console.log(`[Convex Runner] Deploying to ${url}...`);
-  execSync(`npx convex deploy --url "${url}" --admin-key "${adminKey}"`, { stdio: 'inherit' });
+  runNpx(['deploy', '--url', url], adminKey, url);
+
 } else if (action === 'run') {
   const url = currentEnv.CONVEX_SELF_HOSTED_URL || (mode === 'hosted' ? 'https://api.career141.com' : 'http://127.0.0.1:3210');
   const adminKey = currentEnv.CONVEX_SELF_HOSTED_ADMIN_KEY;
@@ -64,14 +84,8 @@ if (action === 'dev') {
     process.exit(1);
   }
 
-  const env = { ...process.env, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey, CONVEX_SELF_HOSTED_URL: url };
   console.log(`[Convex Runner] Running ${funcName} against ${url}...`);
-  const { spawnSync } = require('child_process');
-  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  const res = spawnSync(npxCmd, ['convex', 'run', '--url', url, '--admin-key', adminKey, funcName, ...extraArgs], { stdio: 'inherit', env, shell: true });
-  if (res.status !== 0) {
-    process.exit(res.status || 1);
-  }
+  runNpx(['run', '--url', url, funcName, ...extraArgs], adminKey, url);
 
 } else if (action === 'sync-from-hosted') {
   const hostedEnv = getEnvMap('.env.hosted');
@@ -83,8 +97,8 @@ if (action === 'dev') {
   }
 
   console.log('[Sync] Exporting database from hosted backend...');
-  execSync(`npx convex export --url "${hostedEnv.CONVEX_SELF_HOSTED_URL || 'https://api.career141.com'}" --admin-key "${hostedEnv.CONVEX_SELF_HOSTED_ADMIN_KEY}" --path hosted_export.zip`, { stdio: 'inherit' });
+  runNpx(['export', '--url', hostedEnv.CONVEX_SELF_HOSTED_URL || 'https://api.career141.com', '--path', 'hosted_export.zip'], hostedEnv.CONVEX_SELF_HOSTED_ADMIN_KEY, hostedEnv.CONVEX_SELF_HOSTED_URL);
 
   console.log('[Sync] Importing database into local backend...');
-  execSync(`npx convex import hosted_export.zip --replace --yes --url "${localEnv.CONVEX_SELF_HOSTED_URL || 'http://127.0.0.1:3210'}" --admin-key "${localEnv.CONVEX_SELF_HOSTED_ADMIN_KEY}"`, { stdio: 'inherit' });
+  runNpx(['import', 'hosted_export.zip', '--replace-all', '--yes', '--url', localEnv.CONVEX_SELF_HOSTED_URL || 'http://127.0.0.1:3210'], localEnv.CONVEX_SELF_HOSTED_ADMIN_KEY, localEnv.CONVEX_SELF_HOSTED_URL);
 }

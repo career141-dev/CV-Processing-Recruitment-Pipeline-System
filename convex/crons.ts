@@ -823,11 +823,12 @@ crons.interval(
   internal.communications.emailBackfillMutations.recoverStalledMailboxScans
 );
 
-crons.interval(
-  "bg-sept5-reextractor",
-  { minutes: 1 },
-  internal.cvs.sept5ReextractorActions.runSept5ReextractionTick
-);
+// Disable high-frequency background re-extractor on dev environments to prevent local SQLite locks
+// crons.interval(
+//   "bg-sept5-reextractor",
+//   { minutes: 1 },
+//   internal.cvs.sept5ReextractorActions.runSept5ReextractionTick
+// );
 
 export default crons;
 

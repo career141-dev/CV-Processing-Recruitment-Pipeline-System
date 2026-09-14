@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { EditJobModal } from '@/components/jobs/EditJobModal';
+import { AddOpeningModal } from '@/components/openings/AddOpeningModal';
 import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton';
 import {
   Search,
@@ -70,6 +71,7 @@ export default function JobsPage() {
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [activeDropdownJobId, setActiveDropdownJobId] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isOpeningModalOpen, setIsOpeningModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<any>(null);
   const [expandedJobIds, setExpandedJobIds] = useState<string[]>([]);
 
@@ -404,12 +406,12 @@ export default function JobsPage() {
             </div>
           </div>
 
-          {/* Post a job primary button */}
+          {/* Create Opening primary button */}
           <button
-            onClick={() => router.push('/dashboard/jobs/new')}
+            onClick={() => router.push('/dashboard/openings/new')}
             className="px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs sm:text-[13px] font-semibold transition-all shadow-xs hover:shadow active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
           >
-            Post a job
+            Create Opening
           </button>
         </div>
       </div>
@@ -1196,6 +1198,12 @@ export default function JobsPage() {
           }}
         />
       )}
+
+      {/* Add Opening Modal */}
+      <AddOpeningModal
+        isOpen={isOpeningModalOpen}
+        onClose={() => setIsOpeningModalOpen(false)}
+      />
     </div>
   );
 }

@@ -3,8 +3,7 @@ import { SignUp } from '@clerk/nextjs'
 export default function Page() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface px-4 py-8">
-      <SignUp fallbackRedirectUrl="/dashboard" forceRedirectUrl="/dashboard" />
+      <SignUp routing="hash" fallbackRedirectUrl="/dashboard" forceRedirectUrl="/dashboard" />
     </div>
   )
 }
-

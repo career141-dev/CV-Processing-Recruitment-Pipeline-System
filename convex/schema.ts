@@ -168,10 +168,33 @@ export default defineSchema({
     .index("by_industry", ["industry"])
     .index("by_createdAt", ["createdAt"]),
 
+  // ■■ OPENINGS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  openings: defineTable({
+    title: v.string(), // e.g. "Software Engineering Hiring", "QA Recruitment"
+    description: v.optional(v.string()), // Optional requisition summary
+    clientId: v.optional(v.id("clients")),
+    clientName: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("on_hold"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("draft")
+    ),
+    createdAt: v.number(),
+    createdBy: v.optional(v.id("users")),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_clientId", ["clientId"])
+    .index("by_clientName", ["clientName"])
+    .index("by_status", ["status"])
+    .index("by_createdAt", ["createdAt"]),
+
   // ■■ JOBS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   jobs: defineTable({
     // Core Details
     title: v.string(),
+    openingId: v.optional(v.id("openings")), // Reference to 1:N Opening requisition
     clientName: v.string(),
     clientIndustry: v.string(),
     recruitmentType: v.union(v.literal("headhunting"),
@@ -334,23 +357,23 @@ export default defineSchema({
       v.literal("email"), v.literal("whatsapp"), v.literal("sms"))),
     agent3Day7Channel: v.optional(v.union(
       v.literal("email"), v.literal("whatsapp"), v.literal("sms"))),
-    agent3AfterDay7: v.union(
-      v.literal("mark_unresponsive"), v.literal("continue_weekly")),
+    agent3AfterDay7: v.optional(v.union(
+      v.literal("mark_unresponsive"), v.literal("continue_weekly"))),
 
     // Agent 5 — AI Phone Call Config
     agent5Enabled: v.optional(v.boolean()),
-    agent5Trigger: v.union(
+    agent5Trigger: v.optional(v.union(
       v.literal("all_new_applicants"),
       v.literal("database_matches_70_plus"),
-      v.literal("manual_only")),
-    agent5CallScript: v.union(
+      v.literal("manual_only"))),
+    agent5CallScript: v.optional(v.union(
       v.literal("default"), v.literal("initial_screening"),
-      v.literal("technical_prescreen")),
+      v.literal("technical_prescreen"))),
     agent5CustomQuestions: v.optional(v.array(v.string())),
-    agent5NoAnswerAction: v.union(
+    agent5NoAnswerAction: v.optional(v.union(
       v.literal("trigger_agent3"),
       v.literal("retry_after_2hrs"),
-      v.literal("notify_ta")),
+      v.literal("notify_ta"))),
     agent5HideCompany: v.optional(v.boolean()),
 
     // Agent 3 — Outbound TA Identity
@@ -388,6 +411,7 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_recruiter", ["primaryRecruiterId"])
     .index("by_client", ["clientName"])
+    .index("by_openingId", ["openingId"])
     .index("by_createdAt", ["createdAt"])
     .searchIndex("search_title", {
       searchField: "title",

@@ -8,6 +8,7 @@ import { PipelineActivityTable } from '@/components/dashboard/PipelineActivityTa
 import { TeamActivityFeed } from '@/components/dashboard/TeamActivityFeed';
 import { CvIngestionQueue } from '@/components/dashboard/CvIngestionQueue';
 import { DirectCvUploadModal } from '@/components/dashboard/DirectCvUploadModal';
+import { AddOpeningModal } from '@/components/openings/AddOpeningModal';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { FileText, Briefcase, UserCheck, Trophy, Upload, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [dateRange, setDateRange] = React.useState('This Week');
   const [jobFilter, setJobFilter] = React.useState('All Jobs');
   const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false);
+  const [isOpeningModalOpen, setIsOpeningModalOpen] = React.useState(false);
 
   const stats = useQuery((api.stats.stats as any).getDashboardStats);
 
@@ -53,10 +55,10 @@ export default function Dashboard() {
           </button>
           <button
             className="flex-1 sm:flex-initial flex items-center justify-center bg-accent-teal text-white py-2 px-4 gap-2 rounded-lg hover:bg-[#00504d] transition-colors cursor-pointer text-[13px] font-semibold shadow-xs"
-            onClick={() => router.push('/dashboard/jobs/new')}
+            onClick={() => router.push('/dashboard/openings/new')}
           >
             <Plus className="w-4 h-4 text-white" />
-            <span>Create Job</span>
+            <span>Create Opening</span>
           </button>
         </div>
       </div>
@@ -84,12 +86,12 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Stats Cards: 1 col on mobile, 2 on tablet, 4 on desktop */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5 mb-6">
+      {/* Stats Cards: 1 col on mobile, 3 on desktop */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard
           title="CANDIDATES IN DATABASE"
           value={stats?.candidates.total ?? 0}
-          trendText={stats?.candidates.trendText ?? '...'}
+          trendText={stats?.candidates.trendText ?? 'Total candidates'}
           trendType={(stats?.candidates.trendType as any) ?? 'neutral'}
           bgColorClass="bg-[#E8F5E9] dark:bg-green-900/40"
           href="/dashboard/candidates"
@@ -98,7 +100,7 @@ export default function Dashboard() {
         <StatCard
           title="CVS TODAY"
           value={stats?.cvsToday.total ?? 0}
-          trendText={stats?.cvsToday.trendText ?? '...'}
+          trendText={stats?.cvsToday.trendText ?? 'Ingested today'}
           trendType={(stats?.cvsToday.trendType as any) ?? 'neutral'}
           bgColorClass="bg-[#E3F2FD] dark:bg-blue-900/40"
           href="/dashboard/candidates?filter=today"
@@ -107,20 +109,11 @@ export default function Dashboard() {
         <StatCard
           title="ACTIVE JOBS"
           value={stats?.activeJobs.total ?? 0}
-          trendText={stats?.activeJobs.trendText ?? '...'}
+          trendText={stats?.activeJobs.trendText ?? 'Active requisitions'}
           trendType={(stats?.activeJobs.trendType as any) ?? 'neutral'}
           bgColorClass="bg-[#FFF3E0] dark:bg-orange-900/40"
           href="/dashboard/jobs?status=active"
           icon={<Briefcase size={20} />}
-        />
-        <StatCard
-          title="PLACED THIS MONTH"
-          value={stats?.placedThisMonth.total ?? 0}
-          trendText={stats?.placedThisMonth.trendText ?? '...'}
-          trendType={(stats?.placedThisMonth.trendType as any) ?? 'neutral'}
-          bgColorClass="bg-[#F3E5F5] dark:bg-purple-900/40"
-          href="/dashboard/jobs?status=placed"
-          icon={<Trophy size={20} />}
         />
       </div>
 
@@ -143,6 +136,12 @@ export default function Dashboard() {
       <DirectCvUploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
+      />
+
+      {/* Create New Opening Modal */}
+      <AddOpeningModal
+        isOpen={isOpeningModalOpen}
+        onClose={() => setIsOpeningModalOpen(false)}
       />
     </div>
   );

@@ -6,6 +6,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Skeleton } from '@/components/ui/Skeleton';
+import { AddOpeningModal } from '@/components/openings/AddOpeningModal';
 import {
   Search,
   RotateCcw,
@@ -37,8 +38,10 @@ export default function ClientOpeningsPage() {
   const dbJobs = useQuery(api.jobs.jobs.list);
   const users  = useQuery(api.users.users.getAllUsers);
   const registeredClient = useQuery(api.clients.clients.getByName, { name: clientName });
+  const dbOpenings = useQuery(api.openings.openings.listByClient, { clientName });
   const isLoading = dbJobs === undefined || users === undefined;
 
+  const [isAddOpeningModalOpen, setIsAddOpeningModalOpen] = useState(false);
   const [searchQuery, setSearchQuery]         = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [currentPage, setCurrentPage]         = useState(1);
@@ -167,12 +170,20 @@ export default function ClientOpeningsPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsAddOpeningModalOpen(true)}
+            className="px-4 py-2 rounded-full border border-[#0a66c2] text-[#0a66c2] hover:bg-blue-50 dark:hover:bg-blue-950 text-xs sm:text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <Briefcase size={14} />
+            + Create Opening
+          </button>
           <Link
             href={`/dashboard/jobs/new?clientName=${encodeURIComponent(clientName)}`}
             className="px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs sm:text-[13px] font-semibold transition-all shadow-xs hover:shadow active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
           >
             <Plus size={15} />
-            New Opening
+            New Job
           </Link>
         </div>
       </div>
@@ -478,6 +489,13 @@ export default function ClientOpeningsPage() {
           )}
         </main>
       </div>
+
+      <AddOpeningModal
+        isOpen={isAddOpeningModalOpen}
+        onClose={() => setIsAddOpeningModalOpen(false)}
+        clientName={clientName}
+        clientId={registeredClient?._id}
+      />
     </div>
   );
 }

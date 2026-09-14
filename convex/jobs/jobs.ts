@@ -35,6 +35,7 @@ export const createJobKeyword = mutation({
 export const createJob = mutation({
   args: {
     title: v.string(),
+    openingId: v.optional(v.id("openings")),
     clientName: v.string(),
     clientIndustry: v.string(),
     recruitmentType: v.string(),
@@ -144,6 +145,7 @@ export const createJob = mutation({
 export const createDraftJob = mutation({
   args: {
     title: v.string(),
+    openingId: v.optional(v.id("openings")),
     description: v.string(),
     clientName: v.optional(v.string()),
     clientIndustry: v.optional(v.string()),
@@ -753,9 +755,10 @@ export const deleteJob = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const jobs = await ctx.db.query("jobs").order("desc").take(100);
+    const jobs = await ctx.db.query("jobs").withIndex("by_createdAt").order("desc").take(100);
 
     const jobsWithStats = jobs.map((job) => {
+      const { reverseMatchResults, embedding, ...cleanJob } = job;
       const stageCounts: Record<string, number> = job.stageCounts || {};
       const newCvsCount = stageCounts["new_cvs"] || 0;
       const totalApplications = job.totalApplications || 0;
@@ -774,7 +777,7 @@ export const list = query({
       }
 
       return {
-        ...job,
+        ...cleanJob,
         newCvsCount,
         totalApplications,
         dominantStage,
@@ -1355,6 +1358,17 @@ Key Responsibilities:
       videoEditorKeyword,
       graphicDesignerKeyword,
     };
+  },
+});
+
+export const listByOpening = query({
+  args: { openingId: v.id("openings") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("jobs")
+      .withIndex("by_openingId", (q) => q.eq("openingId", args.openingId))
+      .order("desc")
+      .collect();
   },
 });
 

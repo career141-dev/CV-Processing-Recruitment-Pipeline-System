@@ -30,10 +30,17 @@ export const syncCurrentUser = mutation({
       fullName = formatNameFromEmail(args.email);
     }
 
-    const existing = await ctx.db
+    let existing = await ctx.db
       .query("users")
       .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
-      .unique();
+      .first();
+
+    if (!existing && args.email) {
+      existing = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", args.email.trim()))
+        .first();
+    }
 
     const isSuperAdminEmail = 
       args.email.toLowerCase() === "sanjaysanjeev2000@gmail.com" ||
@@ -43,6 +50,8 @@ export const syncCurrentUser = mutation({
     if (existing) {
       // Update login time and name/email if changed — DO NOT overwrite existing user role!
       const patchData: any = {
+        tokenIdentifier: identity.tokenIdentifier,
+        clerkUserId: identity.subject,
         email: args.email,
         avatarUrl: args.avatarUrl,
         lastLoginAt: new Date().toISOString(),
