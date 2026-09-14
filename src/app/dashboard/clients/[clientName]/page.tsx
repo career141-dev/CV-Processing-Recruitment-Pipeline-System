@@ -1,501 +1,389 @@
-"use client";
+﻿'use client';
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
-import { useQuery } from "convex/react";
-import { api } from "../../../../../convex/_generated/api";
-import { Skeleton } from '@/components/ui/Skeleton';
-import { AddOpeningModal } from '@/components/openings/AddOpeningModal';
+import { SlidersHorizontal, Plus, ChevronDown, ChevronLeft } from 'lucide-react';
+import { toast } from 'sonner';
+import { useQuery } from 'convex/react';
+import { api } from '@/../convex/_generated/api';
 import {
-  Search,
-  RotateCcw,
-  ChevronLeft,
-  ChevronRight,
-  Building2,
-  MapPin,
-  User,
-  Plus,
-  Briefcase,
-} from 'lucide-react';
+  CLIENT_DESIGNATIONS,
+  INITIAL_CLIENT_CANDIDATES,
+  ClientCandidate,
+} from '@/app/new-pages/client/mock-data';
+import {
+  DeskSearchInput,
+  DeskButton,
+  DeskBadge,
+  CandidateNameLink,
+} from '@/app/new-pages/components/common';
 
-const ITEMS_PER_PAGE = 10;
+export default function ClientShortlistPage() {
+  const router = useRouter();
+  const params = useParams();
+  const rawClientName = (params?.clientName as string) || '';
+  const clientName = decodeURIComponent(rawClientName);
 
-const STATUS_BADGE: Record<string, { label: string; bg: string; text: string }> = {
-  active:  { label: 'Open',    bg: 'bg-emerald-50',  text: 'text-emerald-700' },
-  open:    { label: 'Open',    bg: 'bg-emerald-50',  text: 'text-emerald-700' },
-  on_hold: { label: 'On Hold', bg: 'bg-amber-50',    text: 'text-amber-700'   },
-  closed:  { label: 'Closed',  bg: 'bg-slate-100',   text: 'text-slate-600'   },
-  draft:   { label: 'Draft',   bg: 'bg-gray-100',    text: 'text-gray-600'    },
-  lost:    { label: 'Lost',    bg: 'bg-red-50',      text: 'text-red-700'     },
-};
-
-export default function ClientOpeningsPage() {
-  const router   = useRouter();
-  const params   = useParams();
-  const clientName = decodeURIComponent(params.clientName as string);
-
-  const dbJobs = useQuery(api.jobs.jobs.list);
-  const users  = useQuery(api.users.users.getAllUsers);
-  const registeredClient = useQuery(api.clients.clients.getByName, { name: clientName });
-  const dbOpenings = useQuery(api.openings.openings.listByClient, { clientName });
-  const isLoading = dbJobs === undefined || users === undefined;
-
-  const [isAddOpeningModalOpen, setIsAddOpeningModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery]         = useState('');
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [currentPage, setCurrentPage]         = useState(1);
-
-  // Filter to this client only
+  // Convex Queries to fetch real jobs & client info if available
+  const allJobs = useQuery(api.jobs.jobs.list);
   const clientJobs = useMemo(() => {
-    if (!dbJobs || !users) return [];
-    return dbJobs
-      .filter((j: any) => (j.clientName?.trim() || 'Unknown Client') === clientName)
-      .map((j: any) => {
-        const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);
-        const badge = STATUS_BADGE[j.status] || STATUS_BADGE.active;
-        return {
-          id: j._id,
-          title: j.title || 'Untitled',
-          keyword: j.keyword || '',
-          location: (j.location || 'Sri Lanka').replace(/\s*\((on-site|hybrid|remote)\)/gi, '').trim(),
-          seniority: j.seniorityLevel || '',
-          totalApplicants: j.totalApplications ?? 0,
-          newCvs: j.newCvsCount ?? 0,
-          ta: recruiter?.fullName || null,
-          status: j.status,
-          badge,
-          createdAt: j._creationTime,
-          industry: j.clientIndustry || '',
-        };
-      })
-      .sort((a, b) => b.createdAt - a.createdAt);
-  }, [dbJobs, users, clientName]);
+    if (!allJobs) return [];
+    return allJobs.filter(
+      (j: any) =>
+        (j.clientName || '').trim().toLowerCase() === clientName.trim().toLowerCase()
+    );
+  }, [allJobs, clientName]);
 
-  // Status facets
-  const statusFacets = useMemo(() => {
-    const map = new Map<string, number>();
-    clientJobs.forEach(j => map.set(j.status, (map.get(j.status) || 0) + 1));
-    return Array.from(map.entries())
-      .map(([status, count]) => ({ status, label: STATUS_BADGE[status]?.label || status, count }));
+  // Designations dropdown items: prefer client's actual job titles, fallback to Figma mockup designations
+  const designations = useMemo(() => {
+    if (clientJobs.length > 0) {
+      const titles = Array.from(new Set(clientJobs.map((j: any) => j.title).filter(Boolean)));
+      if (titles.length > 0) return titles;
+    }
+    return CLIENT_DESIGNATIONS;
   }, [clientJobs]);
 
-  const filtered = useMemo(() => {
-    return clientJobs.filter(j => {
-      const q = searchQuery.toLowerCase();
-      if (q && !j.title.toLowerCase().includes(q) && !j.keyword.toLowerCase().includes(q)) return false;
-      if (selectedStatuses.length && !selectedStatuses.includes(j.status)) return false;
-      return true;
-    });
-  }, [clientJobs, searchQuery, selectedStatuses]);
+  const [candidates, setCandidates] = useState<ClientCandidate[]>(INITIAL_CLIENT_CANDIDATES);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [selectedDesignation, setSelectedDesignation] = useState<string>(
+    designations[0] || 'GROUP CHIEF - SUPPLY CHAIN'
+  );
+  const [openDropdownCandidateId, setOpenDropdownCandidateId] = useState<string | null>(
+    'client-cand-1'
+  );
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-  const paginated  = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  // Filter candidates
+  const filteredCandidates = useMemo(() => {
+    if (!searchQuery.trim()) return candidates;
+    const q = searchQuery.toLowerCase();
+    return candidates.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.role.toLowerCase().includes(q) ||
+        c.location.toLowerCase().includes(q) ||
+        c.industry.toLowerCase().includes(q) ||
+        c.overviewExperiences.some((exp) => exp.toLowerCase().includes(q)) ||
+        c.educationOrLinkedIn.toLowerCase().includes(q)
+    );
+  }, [candidates, searchQuery]);
 
-  const resetFilters = () => {
-    setSearchQuery('');
-    setSelectedStatuses([]);
-    setCurrentPage(1);
-  };
-  const hasActiveFilters = Boolean(searchQuery.trim().length > 0 || selectedStatuses.length > 0);
+  // Bulk selection handlers
+  const isAllSelected =
+    filteredCandidates.length > 0 &&
+    filteredCandidates.every((c) => selectedCandidateIds.includes(c.id));
 
-  const toggleStatus = (s: string) => {
-    setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
-    setCurrentPage(1);
-  };
-
-  // Generate page numbers
-  const pageNumbers = useMemo(() => {
-    const pages: (number | string)[] = [];
-    if (totalPages <= 5) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedCandidateIds(filteredCandidates.map((c) => c.id));
     } else {
-      if (currentPage <= 3) {
-        pages.push(1, 2, 3, 4, '...', totalPages);
-      } else if (currentPage >= totalPages - 2) {
-        pages.push(1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
-      } else {
-        pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
-      }
+      setSelectedCandidateIds([]);
     }
-    return pages;
-  }, [currentPage, totalPages]);
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedCandidateIds((prev) => [...prev, id]);
+    } else {
+      setSelectedCandidateIds((prev) => prev.filter((item) => item !== id));
+    }
+  };
+
+  const handleSetStep = (candidateId: string, step: number) => {
+    setCandidates((prev) =>
+      prev.map((c) => (c.id === candidateId ? { ...c, currentStep: step } : c))
+    );
+    toast.success(`Candidate step updated to ${step}`);
+  };
+
+  const handleRejectCandidate = (candidateId: string) => {
+    setCandidates((prev) => prev.filter((c) => c.id !== candidateId));
+    setSelectedCandidateIds((prev) => prev.filter((id) => id !== candidateId));
+    toast.info('Candidate marked as rejected');
+  };
+
+  const handleSelectDesignation = (desig: string) => {
+    setSelectedDesignation(desig);
+    setOpenDropdownCandidateId(null);
+    toast.info(`Switched designation to: ${desig}`);
+  };
+
+  const handleToggleDropdown = (candidateId: string) => {
+    setOpenDropdownCandidateId((prev) => (prev === candidateId ? null : candidateId));
+  };
 
   return (
-    <div className="w-full max-w-[1440px] mx-auto pb-20 pt-1">
-      {/* ── Breadcrumbs ─────────────────────────────────────────────────── */}
-      <nav className="flex items-center gap-1.5 text-xs text-text-secondary mb-4">
-        <Link href="/dashboard/clients" className="hover:text-[#0a66c2] hover:underline transition-colors font-medium">Clients</Link>
-        <ChevronRight size={12} className="text-text-disabled" />
-        <span className="text-text-primary font-semibold">{clientName}</span>
-      </nav>
-
-      {/* ── Page Header (LinkedIn Recruiter Style) ────────────────────────── */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 mb-6 border-b border-border/80">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900/60 flex items-center justify-center text-[#0a66c2] dark:text-blue-300 font-bold text-lg shrink-0">
-            {clientName.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight text-text-primary uppercase">{clientName}</h1>
-              {registeredClient?.industry && (
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-border">
-                  {registeredClient.industry}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-              <span>{isLoading ? '—' : `${filtered.length} ${filtered.length === 1 ? 'opening' : 'openings'}`}</span>
-              {registeredClient?.contactPerson && (
-                <>
-                  <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
-                  <span>Contact: <strong>{registeredClient.contactPerson}</strong></span>
-                </>
-              )}
-              {registeredClient?.contactEmail && (
-                <>
-                  <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
-                  <span>{registeredClient.contactEmail}</span>
-                </>
-              )}
-              {registeredClient?.contactPhone && (
-                <>
-                  <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
-                  <span>{registeredClient.contactPhone}</span>
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsAddOpeningModalOpen(true)}
-            className="px-4 py-2 rounded-full border border-[#0a66c2] text-[#0a66c2] hover:bg-blue-50 dark:hover:bg-blue-950 text-xs sm:text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <Briefcase size={14} />
-            + Create Opening
-          </button>
+    <div className="w-full text-slate-800 font-sans antialiased flex flex-col selection:bg-emerald-100 selection:text-emerald-900 relative pb-40">
+      {/* ── CLIENT BREADCRUMB & HEADER ── */}
+      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 text-sm text-slate-500">
           <Link
-            href={`/dashboard/jobs/new?clientName=${encodeURIComponent(clientName)}`}
-            className="px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs sm:text-[13px] font-semibold transition-all shadow-xs hover:shadow active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
+            href="/dashboard/clients"
+            className="flex items-center gap-1 hover:text-slate-800 transition-colors font-medium cursor-pointer"
           >
-            <Plus size={15} />
-            New Job
+            <ChevronLeft size={16} />
+            <span>Clients</span>
           </Link>
+          <span>/</span>
+          <span className="font-bold text-slate-900 uppercase tracking-wide">
+            {clientName || 'Client Profile'}
+          </span>
+          {selectedDesignation && (
+            <>
+              <span>/</span>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#165B42] border border-emerald-200">
+                {selectedDesignation}
+              </span>
+            </>
+          )}
         </div>
+
+        {clientJobs.length > 0 && (
+          <span className="text-xs text-slate-500 font-medium">
+            {clientJobs.length} active opening{clientJobs.length !== 1 ? 's' : ''}
+          </span>
+        )}
       </div>
 
-      {/* ── Client Overview Notes Banner (if present) ──────────────────── */}
-      {registeredClient?.notes && (
-        <div className="mb-6 p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2.5">
-          <span className="font-semibold text-[#0a66c2] dark:text-blue-300 shrink-0">Client Notes:</span>
-          <span className="italic">{registeredClient.notes}</span>
-        </div>
-      )}
-
-      {/* ── Two-Column Layout: Left Filter Sidebar + Main Feed ────────────── */}
-      <div className="flex flex-col lg:flex-row gap-8 items-start">
-        {/* ── Left Sidebar Filters ────────────────────────── */}
-        <aside className="w-full lg:w-64 shrink-0 space-y-5 lg:pr-2 lg:sticky lg:top-20">
-          {/* Reset filters header */}
-          <div className="flex items-center justify-between pb-2 border-b border-border/60">
-            <button
-              onClick={resetFilters}
-              className="flex items-center gap-1.5 text-xs font-semibold text-[#0a66c2] hover:underline cursor-pointer"
-            >
-              <RotateCcw size={13} />
-              <span>Reset filters</span>
-            </button>
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
-            <input
-              type="text"
+      {/* ── CANDIDATES DESK CARD (EXACT FIGMA REPLICA) ── */}
+      <div className="bg-white border border-[#DBDEE0] shadow-2xs rounded-[8px] w-full overflow-visible">
+        {/* 1. Toolbar */}
+        <div className="p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#DBDEE0]">
+          <div className="flex items-center gap-3 flex-wrap">
+            <DeskSearchInput
               value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              placeholder="Search openings"
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border border-border bg-surface text-text-primary placeholder:text-text-secondary focus:outline-hidden focus:border-[#0a66c2] focus:ring-1 focus:ring-[#0a66c2] transition-colors"
+              onChange={setSearchQuery}
+              placeholder="Search pipeline"
             />
+
+            <DeskButton
+              variant="toolbar"
+              onClick={() => toast.info('Filters dialog')}
+              icon={<SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />}
+            >
+              <span>All filters</span>
+            </DeskButton>
           </div>
 
-          {/* Status facet */}
-          <div className="space-y-2">
-            <h3 className="text-[13px] font-bold text-text-primary">Job status</h3>
-            <div className="space-y-2 pt-1">
-              {statusFacets.map(f => (
-                <label key={f.status} className="flex items-center gap-2.5 text-[13px] text-text-secondary hover:text-text-primary cursor-pointer select-none leading-normal">
-                  <input
-                    type="checkbox"
-                    checked={selectedStatuses.includes(f.status)}
-                    onChange={() => toggleStatus(f.status)}
-                    className="rounded border-border text-[#0a66c2] focus:ring-[#0a66c2] w-4 h-4 cursor-pointer"
-                  />
-                  <span className="truncate flex-1">{f.label}</span>
-                  <span className="text-text-disabled text-xs">({f.count})</span>
-                </label>
-              ))}
+          <button
+            type="button"
+            onClick={() => toast.info('Add a candidate modal')}
+            className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5 text-slate-500" />
+            <span>Add a candidate</span>
+          </button>
+        </div>
+
+        {/* 2. Results Header */}
+        <div className="px-5 py-3 flex items-center justify-between text-xs text-slate-600 border-b border-[#DBDEE0] bg-white">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={isAllSelected}
+              onChange={(e) => handleSelectAll(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-300 text-[#165B42] focus:ring-[#165B42] cursor-pointer"
+            />
+            <span className="font-bold text-[#165B42] tracking-wider uppercase">
+              {filteredCandidates.length} RESULTS
+            </span>
+          </div>
+
+          <div className="flex items-center gap-5 text-slate-600 text-[13px]">
+            <div className="flex items-center gap-1 cursor-pointer hover:text-slate-900">
+              <span className="text-slate-600">Sort by:</span>
+              <span className="text-slate-600">Last modified</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 ml-0.5" />
             </div>
+            <span className="text-slate-400">|</span>
+            <span className="text-slate-600">
+              {filteredCandidates.length > 0 ? `1 – ${filteredCandidates.length}` : '0'}
+            </span>
           </div>
-        </aside>
+        </div>
 
-        {/* ── Main Openings List Feed ────────────────────────────────────────── */}
-        <main className="flex-1 w-full min-w-0">
-          {/* Top Toolbar: Count, Filter Chips, Top Pagination */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border mb-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-text-primary tracking-wider uppercase mr-2">
-                {filtered.length} OPENINGS
-              </span>
-
-              {selectedStatuses.map(s => (
-                <span
-                  key={s}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                >
-                  Status: {STATUS_BADGE[s]?.label || s}
-                  <span
-                    className="cursor-pointer hover:opacity-75 font-bold ml-0.5"
-                    onClick={() => toggleStatus(s)}
-                  >
-                    ×
-                  </span>
-                </span>
-              ))}
-
-              {searchQuery.trim().length > 0 && (
-                <span
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-border"
-                >
-                  Search: "{searchQuery}"
-                  <span
-                    className="cursor-pointer hover:opacity-75 font-bold ml-0.5"
-                    onClick={() => setSearchQuery('')}
-                  >
-                    ×
-                  </span>
-                </span>
-              )}
-
-              {hasActiveFilters && (
+        {/* 3. Candidate Rows */}
+        <div className="divide-y divide-[#DBDEE0] overflow-visible">
+          {filteredCandidates.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 space-y-3">
+              <p className="text-sm font-medium">
+                No candidates found matching your criteria.
+              </p>
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={resetFilters}
-                  className="text-xs font-semibold text-[#0a66c2] hover:underline ml-1 cursor-pointer"
+                  onClick={() => setSearchQuery('')}
+                  className="text-xs text-[#165B42] hover:underline font-semibold cursor-pointer"
                 >
-                  Clear all
+                  Clear search query
                 </button>
               )}
             </div>
+          ) : (
+            filteredCandidates.map((candidate) => {
+              const isSelected = selectedCandidateIds.includes(candidate.id);
+              const isDropdownOpen = openDropdownCandidateId === candidate.id;
 
-            {/* Right: Top Pagination Text & Arrows */}
-            <div className="flex items-center gap-4 text-xs text-text-secondary self-end sm:self-auto">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-secondary">
-                  {filtered.length > 0 ? `${(currentPage - 1) * ITEMS_PER_PAGE + 1} – ${Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}` : '0'}
-                </span>
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1}
-                  className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  title="Previous page"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  title="Next page"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Openings Feed Items */}
-          <div className="divide-y divide-border">
-            {isLoading ? (
-              <div className="py-8 space-y-4">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="py-5 px-3 space-y-2">
-                    <Skeleton className="w-56 h-5" />
-                    <Skeleton className="w-80 h-3.5" />
-                  </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-16 text-center text-text-secondary">
-                <Building2 className="w-12 h-12 text-text-disabled mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-text-primary">No openings found for {clientName}</h3>
-                <p className="text-xs text-text-secondary mt-1 max-w-sm mx-auto">
-                  {hasActiveFilters ? 'Try adjusting your search query or status filters.' : 'Get started by creating the first vacancy for this client.'}
-                </p>
-                {hasActiveFilters ? (
-                  <button
-                    onClick={resetFilters}
-                    className="mt-3 text-xs font-semibold text-[#0a66c2] hover:underline cursor-pointer"
-                  >
-                    Reset all filters
-                  </button>
-                ) : (
-                  <Link
-                    href={`/dashboard/jobs/new?clientName=${encodeURIComponent(clientName)}`}
-                    className="mt-4 px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs font-semibold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
-                  >
-                    <Plus size={14} /> Create Opening
-                  </Link>
-                )}
-              </div>
-            ) : (
-              paginated.map(job => (
+              return (
                 <div
-                  key={job.id}
-                  onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
-                  className="py-4.5 px-3 hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-all duration-150 rounded-xl group cursor-pointer"
+                  key={candidate.id}
+                  className={`p-4 sm:p-6 transition-colors hover:bg-slate-50/40 relative overflow-visible ${
+                    isDropdownOpen ? 'z-30' : 'z-10'
+                  } ${isSelected ? 'bg-sky-50/30' : ''}`}
                 >
-                  <div className="flex items-start justify-between gap-5">
-                    {/* Left: Opening Details */}
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      {/* 1. Title + Status Dot */}
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <Link
-                          href={`/dashboard/jobs/${job.id}`}
-                          className="text-[15.5px] font-bold uppercase tracking-tight text-slate-900 dark:text-slate-100 group-hover:text-[#0a66c2] group-hover:underline transition-colors leading-snug"
-                        >
-                          {job.title}
-                        </Link>
+                  <div className="flex flex-col lg:flex-row items-start gap-4 overflow-visible">
+                    {/* Checkbox + Details */}
+                    <div className="flex items-start gap-2.5 sm:gap-4 flex-1 min-w-0 w-full">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => handleSelectOne(candidate.id, e.target.checked)}
+                        className="w-4 h-4 mt-1 rounded border-slate-300 text-[#165B42] focus:ring-[#165B42] cursor-pointer shrink-0"
+                      />
 
-                        {/* Status Dot */}
-                        {job.status === 'active' || job.status === 'open' ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                            <span>Open</span>
-                          </span>
-                        ) : (
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${job.badge.bg} ${job.badge.text} border-current/20`}>
-                            {job.badge.label}
-                          </span>
-                        )}
-                      </div>
+                      <div className="flex-1 space-y-3 min-w-0">
+                        {/* Header */}
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <CandidateNameLink
+                              name={candidate.name}
+                              onClick={() =>
+                                toast.info(`Viewing profile for ${candidate.name}`)
+                              }
+                            />
+                            <span className="text-[12px] text-slate-500 font-normal">
+                              in · {candidate.rank}
+                            </span>
+                            {candidate.isApplicant && (
+                              <DeskBadge variant="applicant">Applicant</DeskBadge>
+                            )}
+                          </div>
 
-                      {/* 2. Company · Location · TA */}
-                      <div className="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-400 flex-wrap leading-relaxed">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">{clientName}</span>
-                        <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
-                        <span>{job.location}</span>
-                        <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
-                        <span className="text-slate-700 dark:text-slate-300 font-medium">
-                          {job.ta || 'Unassigned TA'}
-                        </span>
-                      </div>
+                          <p className="text-[13px] font-semibold text-slate-800 mt-1">
+                            {candidate.role}
+                          </p>
+                          <p className="text-[13px] text-slate-500 mt-0.5 break-words">
+                            {candidate.location} · {candidate.industry}
+                          </p>
+                        </div>
 
-                      {/* 3. Project Tag */}
-                      <div className="pt-0.5">
-                        <span className="inline-block px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-50/90 text-[#0a66c2] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-800/60">
-                          Project: {job.keyword ? `${job.keyword} - ${clientName}` : `${job.title} - ${clientName}`}
-                        </span>
+                        {/* Structured Metadata */}
+                        <div className="space-y-2.5 text-[13px] pt-1">
+                          {/* Overview */}
+                          <div className="flex items-start gap-2.5 sm:gap-4">
+                            <span className="w-[95px] sm:w-[105px] min-w-[95px] sm:min-w-[105px] font-bold text-slate-900 shrink-0">
+                              Overview
+                            </span>
+                            <div className="flex-1 min-w-0 space-y-1 text-slate-800 break-words">
+                              {candidate.overviewExperiences.map((exp, idx) => (
+                                <p key={idx}>{exp}</p>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* LinkedIn URL */}
+                          <div className="flex items-start gap-2.5 sm:gap-4">
+                            <span className="w-[95px] sm:w-[105px] min-w-[95px] sm:min-w-[105px] font-bold text-slate-900 shrink-0">
+                              LinkedIn URL
+                            </span>
+                            <div className="flex-1 min-w-0 text-slate-800 break-words">
+                              <p>{candidate.educationOrLinkedIn}</p>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Middle: Metrics Column (Applicants / New CVs) */}
-                    <div className="hidden sm:flex flex-col items-start min-w-[140px] text-[13px] text-text-secondary pl-4 leading-relaxed">
-                      <div>
-                        <span>Applicants: </span>
-                        <span className="font-semibold text-text-primary text-[13.5px]">{job.totalApplicants.toLocaleString()}</span>
-                        {job.newCvs > 0 && (
-                          <span className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold ml-1">
-                            ({job.newCvs} new)
-                          </span>
-                        )}
+                    {/* Right Action Column: Step 1, 2, 3 buttons, Reject, Chevron */}
+                    <div className="w-full lg:w-auto shrink-0 flex items-center justify-between lg:justify-end gap-2.5 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 relative overflow-visible">
+                      {/* Step Sequence Buttons 1, 2, 3 */}
+                      <div className="flex items-center gap-1.5">
+                        {[1, 2, 3].map((step) => {
+                          const isActive = candidate.currentStep === step;
+                          return (
+                            <button
+                              key={step}
+                              type="button"
+                              onClick={() => handleSetStep(candidate.id, step)}
+                              className={`w-7 h-7 rounded-full text-xs font-semibold flex items-center justify-center transition-all cursor-pointer shadow-2xs ${
+                                isActive
+                                  ? 'bg-[#165B42] text-white shadow-xs'
+                                  : 'bg-white border border-[#CBD5E1] text-slate-700 hover:border-[#165B42] hover:text-[#165B42]'
+                              }`}
+                              title={`Set Step ${step}`}
+                            >
+                              {step}
+                            </button>
+                          );
+                        })}
                       </div>
-                    </div>
 
-                    {/* Right: Action Button */}
-                    <div className="flex items-center gap-2 shrink-0 pt-1">
+                      {/* Reject Button */}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/dashboard/jobs/${job.id}`);
-                        }}
-                        className="px-4 py-1.5 rounded-full border border-[#0a66c2] text-[#0a66c2] hover:bg-[#0a66c2]/10 font-semibold text-xs transition-all active:scale-95 cursor-pointer"
+                        type="button"
+                        onClick={() => handleRejectCandidate(candidate.id)}
+                        className="px-4 py-1.5 rounded-full border border-[#CBD5E1] text-slate-700 text-xs font-semibold hover:border-red-400 hover:text-red-600 hover:bg-red-50/50 transition-colors cursor-pointer"
                       >
-                        View Pipeline
+                        Reject
                       </button>
+
+                      {/* Dropdown Chevron Trigger */}
+                      <div className="relative overflow-visible">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDropdown(candidate.id)}
+                          className="p-1 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                          title={isDropdownOpen ? 'Hide Designations' : 'Show Designations'}
+                        >
+                          <ChevronDown
+                            className={`w-[18px] h-[18px] transition-transform duration-200 ${
+                              isDropdownOpen ? 'rotate-180 text-slate-700' : ''
+                            }`}
+                          />
+                        </button>
+
+                        {/* ── DOWNWARD FLOATING CLIENT DESIGNATIONS DROPDOWN (FIGMA SPECS) ── */}
+                        {isDropdownOpen && (
+                          <div
+                            className="absolute right-0 top-full mt-2 z-50 overflow-hidden shadow-2xl"
+                            style={{
+                              width: '402px',
+                              maxWidth: 'calc(100vw - 32px)',
+                              maxHeight: '874px',
+                              background: '#FFFFFFEB',
+                              borderRadius: '30px',
+                              border: '1px solid #C2C2C2',
+                              boxShadow: '0px 4px 4px 0px #00000040',
+                              backdropFilter: 'blur(8px)',
+                            }}
+                          >
+                            <div className="divide-y divide-[#E5E7EB] max-h-[874px] overflow-y-auto scrollbar-none py-1">
+                              {designations.map((desig: string, idx: number) => (
+                                <div
+                                  key={idx}
+                                  onClick={() => handleSelectDesignation(desig)}
+                                  className={`px-6 py-4 text-[13px] font-bold text-left transition-colors cursor-pointer select-none hover:bg-slate-50/70 ${
+                                    selectedDesignation === desig
+                                      ? 'text-[#165B42] bg-emerald-50/40'
+                                      : 'text-[#165B42]'
+                                  }`}
+                                >
+                                  {desig}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-
-          {/* ── Unified Clean Bottom Pagination ───────────────────────── */}
-          {!isLoading && totalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 pt-6 mt-6 border-t border-border/70">
-              {currentPage > 1 && (
-                <button
-                  onClick={() => {
-                    setCurrentPage(p => Math.max(1, p - 1));
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className="flex items-center gap-0.5 text-[13px] font-semibold text-[#0a66c2] hover:underline cursor-pointer mr-1"
-                >
-                  <ChevronLeft size={15} />
-                  <span>Previous</span>
-                </button>
-              )}
-
-              <div className="flex items-center gap-1.5">
-                {pageNumbers.map((p, idx) => (
-                  p === '...' ? (
-                    <span key={`dots-${idx}`} className="px-1 text-xs text-text-disabled">...</span>
-                  ) : (
-                    <button
-                      key={`page-${p}`}
-                      onClick={() => {
-                        setCurrentPage(Number(p));
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all cursor-pointer ${
-                        p === currentPage
-                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                          : 'text-[#0a66c2] hover:underline hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  )
-                ))}
-              </div>
-
-              {currentPage < totalPages && (
-                <button
-                  onClick={() => {
-                    setCurrentPage(p => Math.min(totalPages, p + 1));
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className="flex items-center gap-0.5 text-[13px] font-semibold text-[#0a66c2] hover:underline cursor-pointer ml-1"
-                >
-                  <span>Next</span>
-                  <ChevronRight size={15} />
-                </button>
-              )}
-            </div>
+              );
+            })
           )}
-        </main>
+        </div>
       </div>
-
-      <AddOpeningModal
-        isOpen={isAddOpeningModalOpen}
-        onClose={() => setIsAddOpeningModalOpen(false)}
-        clientName={clientName}
-        clientId={registeredClient?._id}
-      />
     </div>
   );
 }

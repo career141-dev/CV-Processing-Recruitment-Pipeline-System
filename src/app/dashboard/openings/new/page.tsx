@@ -337,7 +337,7 @@ export default function CreateOpeningWizard() {
         });
         toast.success(`Opening "${openingName.trim()}" created successfully!`, { id: 'launch-opening' });
       }
-      router.push('/dashboard/jobs');
+      router.push(`/dashboard/clients/${encodeURIComponent(client.trim())}`);
     } catch (err: any) {
       console.error('Launch opening error:', err);
       toast.error(err?.message || 'Failed to launch opening. Please try again.', { id: 'launch-opening' });
@@ -1032,7 +1032,7 @@ export default function CreateOpeningWizard() {
             {/* Follow-Up Sequence & Outreach */}
             <div className="border border-slate-200 rounded-xl bg-white shadow-2xs overflow-hidden">
               {/* Header with Edit Follow-Up Button */}
-              <div className="p-4 flex items-center justify-between border-b border-slate-100">
+              <div className={`p-4 flex items-center justify-between ${isEditingFollowUp ? 'border-b border-slate-100' : ''}`}>
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
                     <MessageSquare className="w-4 h-4" />
@@ -1068,38 +1068,8 @@ export default function CreateOpeningWizard() {
                 </button>
               </div>
 
-              {/* Default Active Summary View */}
-              {!isEditingFollowUp ? (
-                <div className="p-4 bg-slate-50/50 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div className="p-3 bg-white border border-slate-200 rounded-lg flex items-center justify-between shadow-2xs">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${enableWhatsAppFollowUp ? 'bg-emerald-600' : 'bg-slate-300'}`} />
-                        <div>
-                          <p className="text-xs font-semibold text-slate-900">WhatsApp Follow-ups</p>
-                          <p className="text-[11px] text-slate-500">Meta Cloud API (Verified)</p>
-                        </div>
-                      </div>
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${enableWhatsAppFollowUp ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400'}`}>
-                        {enableWhatsAppFollowUp ? 'Active' : 'Off'}
-                      </span>
-                    </div>
-
-                    <div className="p-3 bg-white border border-slate-200 rounded-lg flex items-center justify-between shadow-2xs">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${enableEmailFollowUp ? 'bg-blue-600' : 'bg-slate-300'}`} />
-                        <div>
-                          <p className="text-xs font-semibold text-slate-900">Email Follow-ups</p>
-                          <p className="text-[11px] text-slate-500">Microsoft Graph</p>
-                        </div>
-                      </div>
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${enableEmailFollowUp ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-400'}`}>
-                        {enableEmailFollowUp ? 'Active' : 'Off'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
+              {/* Edit Follow-Up Panel */}
+              {isEditingFollowUp && (
                 <div className="p-5 space-y-6 bg-slate-50/40 animate-in fade-in-50 duration-200">
                   {/* 1. Outreach Channels */}
                   <div className="space-y-3">

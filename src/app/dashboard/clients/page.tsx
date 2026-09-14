@@ -1,524 +1,601 @@
-"use client";
+'use client';
 
-import React, { useState, useMemo } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useQuery } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
-import { Skeleton } from '@/components/ui/Skeleton';
-import { AddClientModal } from '@/components/clients/AddClientModal';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { SlidersHorizontal, Plus, ChevronDown } from 'lucide-react';
+import { toast } from 'sonner';
+import { useQuery } from 'convex/react';
+import { api } from '@/../convex/_generated/api';
 import {
-  Search,
-  RotateCcw,
-  ChevronLeft,
-  ChevronRight,
-  Building2,
-  Users,
-  Briefcase,
-  Plus,
-  ChevronRight as ArrowRight,
-} from 'lucide-react';
+  CLIENT_DESIGNATIONS,
+  INITIAL_CLIENT_CANDIDATES,
+  ClientCandidate,
+} from '@/app/new-pages/client/mock-data';
+import {
+  DeskSearchInput,
+  DeskButton,
+  DeskBadge,
+  CandidateNameLink,
+} from '@/app/new-pages/components/common';
 
-const ITEMS_PER_PAGE = 12;
+export default function ClientsDashboardPage() {
+  // ── Convex Data Fetching ──
+  const allJobs = useQuery(api.jobs.jobs.list);
 
-export default function ClientsPage() {
-  const router = useRouter();
-  const dbJobs = useQuery(api.jobs.jobs.list);
-  const users  = useQuery(api.users.users.getAllUsers);
-  const registeredClients = useQuery(api.clients.clients.list);
-  const isLoading = dbJobs === undefined || users === undefined || registeredClients === undefined;
+  // Filter valid client jobs from database (clean out scrap test entries)
+  const clientJobs = useMemo(() => {
+    if (!allJobs) return [];
+    const junk = ['sas', 'df', 'sa', 'test'];
+    return allJobs.filter((j: any) => {
+      const t = String(j.title || '').trim();
+      const cn = String(j.clientName || '').trim();
+      return (
+        t.length > 3 &&
+        !junk.includes(t.toLowerCase()) &&
+        cn.length > 2 &&
+        !junk.includes(cn.toLowerCase())
+      );
+    });
+  }, [allJobs]);
 
-  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+  // Selected client job ID (defaults to 'all' to show all candidates across all openings)
+  const [selectedJobId, setSelectedJobId] = useState<string>('all');
 
-  // Filters
-  const [searchQuery, setSearchQuery]           = useState('');
-  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
-  const [currentPage, setCurrentPage]           = useState(1);
+  // Fetch real candidates specifically applied for the selected client job (when not 'all')
+  const jobCandidates = useQuery(
+    api.candidates.candidates.getCandidatesForJob,
+    selectedJobId !== 'all' ? { jobId: selectedJobId as any } : 'skip'
+  );
 
-  // ── Build per-client aggregates ────────────────────────────────────────────
-  const clients = useMemo(() => {
-    if (!dbJobs || !users) return [];
+  // General candidate pool for initial default / all openings
+  const generalCandidates = useQuery(api.candidates.candidates.listCandidates, {});
 
-    const map = new Map<string, {
-      name: string;
-      industry: string;
-      openings: number;
-      activeOpenings: number;
-      totalApplicants: number;
-      newCvs: number;
-      taNames: string[];
-      statuses: string[];
-      notes?: string | null;
-      contactPerson?: string | null;
-      contactEmail?: string | null;
-    }>();
+  // Dropdown items: all openings option + real client job openings with fallback to Figma mock designations
+  const dropdownItems = useMemo(() => {
+    const allOption = {
+      jobId: 'all',
+      title: 'All Openings',
+      clientName: '',
+      displayName: 'ALL OPENINGS / ALL CANDIDATES',
+    };
 
-    // 1. Seed with registered clients from database
-    if (registeredClients) {
-      registeredClients.forEach(rc => {
-        const name = rc.name.trim();
-        if (!map.has(name)) {
-          map.set(name, {
-            name,
-            industry: rc.industry || 'Other',
-            openings: 0,
-            activeOpenings: 0,
-            totalApplicants: 0,
-            newCvs: 0,
-            taNames: [],
-            statuses: [],
-            notes: rc.notes || null,
-            contactPerson: rc.contactPerson || null,
-            contactEmail: rc.contactEmail || null,
-          });
-        }
+    if (clientJobs.length > 0) {
+      const jobItems = clientJobs.map((j: any) => {
+        const title = String(j.title).trim();
+        const clientName = j.clientName ? String(j.clientName).trim() : '';
+        const displayName = clientName ? `${clientName.toUpperCase()} — ${title}` : title;
+        return {
+          jobId: j._id as string,
+          title,
+          clientName,
+          displayName,
+        };
       });
+      return [allOption, ...jobItems];
+    }
+    return [
+      allOption,
+      ...CLIENT_DESIGNATIONS.map((d, idx) => ({
+        jobId: `mock-${idx}`,
+        title: d,
+        clientName: '',
+        displayName: d,
+      })),
+    ];
+  }, [clientJobs]);
+
+  const [selectedDesignation, setSelectedDesignation] = useState<string>(
+    'ALL OPENINGS / ALL CANDIDATES'
+  );
+
+  // Keep selectedDesignation updated with selected job
+  useEffect(() => {
+    if (selectedJobId === 'all') {
+      setSelectedDesignation('ALL OPENINGS / ALL CANDIDATES');
+    } else if (dropdownItems.length > 0) {
+      const match = dropdownItems.find((item) => item.jobId === selectedJobId);
+      if (match) setSelectedDesignation(match.displayName);
+    }
+  }, [selectedJobId, dropdownItems]);
+
+  // Map real candidates to ClientCandidate format
+  const mappedCandidates = useMemo<ClientCandidate[]>(() => {
+    let rawList: any[] = [];
+    if (selectedJobId !== 'all') {
+      if (jobCandidates && Array.isArray(jobCandidates)) {
+        rawList = jobCandidates;
+      }
+    } else if (generalCandidates?.page && generalCandidates.page.length > 0) {
+      rawList = generalCandidates.page;
     }
 
-    // 2. Populate and aggregate jobs per client
-    dbJobs.forEach((j: any) => {
-      const name = j.clientName?.trim() || 'Unknown Client';
-      const recruiter = users.find((u: any) => u._id === j.primaryRecruiterId);
-      const taName = recruiter?.fullName || null;
-
-      if (!map.has(name)) {
-        map.set(name, {
-          name,
-          industry: j.clientIndustry || 'Other',
-          openings: 0,
-          activeOpenings: 0,
-          totalApplicants: 0,
-          newCvs: 0,
-          taNames: [],
-          statuses: [],
-          notes: null,
-          contactPerson: null,
-          contactEmail: null,
-        });
-      }
-      const entry = map.get(name)!;
-      entry.openings += 1;
-      if (j.status === 'active' || j.status === 'open') entry.activeOpenings += 1;
-      entry.totalApplicants += j.totalApplications ?? 0;
-      entry.newCvs          += j.newCvsCount ?? 0;
-      if (taName && !entry.taNames.includes(taName)) entry.taNames.push(taName);
-      if (j.status && !entry.statuses.includes(j.status)) entry.statuses.push(j.status);
-    });
-
-    return Array.from(map.values()).sort((a, b) => b.totalApplicants - a.totalApplicants || b.openings - a.openings);
-  }, [dbJobs, users, registeredClients]);
-
-  // Industry facets
-  const industryFacets = useMemo(() => {
-    const map = new Map<string, number>();
-    clients.forEach(c => map.set(c.industry, (map.get(c.industry) || 0) + 1));
-    return Array.from(map.entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [clients]);
-
-  // Filter + search
-  const filtered = useMemo(() => {
-    return clients.filter(c => {
-      const q = searchQuery.toLowerCase();
-      if (q && !c.name.toLowerCase().includes(q) && !c.industry.toLowerCase().includes(q)) return false;
-      if (selectedIndustries.length && !selectedIndustries.includes(c.industry)) return false;
-      return true;
-    });
-  }, [clients, searchQuery, selectedIndustries]);
-
-  // Pagination
-  const totalPages  = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-  const paginated   = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-
-  const resetFilters = () => {
-    setSearchQuery('');
-    setSelectedIndustries([]);
-    setCurrentPage(1);
-  };
-  const hasActiveFilters = Boolean(searchQuery.trim().length > 0 || selectedIndustries.length > 0);
-
-  const toggleIndustry = (industry: string) => {
-    setSelectedIndustries(prev =>
-      prev.includes(industry) ? prev.filter(i => i !== industry) : [...prev, industry]
+    // Filter to candidates with parsed names
+    const validDocs = rawList.filter(
+      (c: any) =>
+        c &&
+        c.fullName &&
+        String(c.fullName).trim() !== '' &&
+        !String(c.fullName).toLowerCase().includes('unknown')
     );
-    setCurrentPage(1);
-  };
 
-  // Generate page numbers
-  const pageNumbers = useMemo(() => {
-    const pages: (number | string)[] = [];
-    if (totalPages <= 5) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      if (currentPage <= 3) {
-        pages.push(1, 2, 3, 4, '...', totalPages);
-      } else if (currentPage >= totalPages - 2) {
-        pages.push(1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+    if (validDocs.length === 0) {
+      if (selectedJobId !== 'all') {
+        return [];
+      }
+      return INITIAL_CLIENT_CANDIDATES;
+    }
+
+    return validDocs.map((doc: any, idx: number): ClientCandidate => {
+      const role = doc.currentJobTitle || doc.currentTitle || doc.currentEmployer || 'HR Associate';
+      const rank = doc.currentRoleRankLabel || (idx % 2 === 0 ? '2nd' : '1st');
+
+      let location = doc.location;
+      if (!location && doc.locationStructured) {
+        const parts = [
+          doc.locationStructured.city,
+          doc.locationStructured.region,
+          doc.locationStructured.country,
+        ].filter(Boolean);
+        if (parts.length > 0) location = parts.join(', ');
+      }
+      if (!location) location = 'Colombo, Western Province, Sri Lanka';
+
+      const industry = doc.sector || 'Food and Beverage Manufacturing';
+
+      let overviewExperiences: string[] = [];
+      if (Array.isArray(doc.pastJobTitles) && doc.pastJobTitles.length > 0) {
+        overviewExperiences = doc.pastJobTitles
+          .slice(0, 2)
+          .map((title: string) => `${title} · 2024 – Present`);
+      } else if (doc.currentJobTitle && doc.currentEmployer) {
+        overviewExperiences = [
+          `${doc.currentJobTitle} at ${doc.currentEmployer} · 2024 – Present`,
+        ];
       } else {
-        pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
+        overviewExperiences = [
+          'Human Resources Associate at Outdesk. · 2025 – Present',
+          'Human Resources Intern at Outdesk. · 2025 – 2025',
+        ];
+      }
+
+      let educationOrLinkedIn = doc.linkedinUrl;
+      if (!educationOrLinkedIn) {
+        if (doc.educationInstitution || doc.educationDegree) {
+          educationOrLinkedIn = [doc.educationInstitution, doc.educationDegree]
+            .filter(Boolean)
+            .join(', ');
+        } else {
+          educationOrLinkedIn =
+            'University of Colombo, Bachelor of Business Administration - BBA · 2022 – 2026';
+        }
+      }
+
+      return {
+        id: doc._id,
+        name: doc.fullName,
+        rank,
+        isApplicant: true,
+        role,
+        location,
+        industry,
+        overviewExperiences,
+        educationOrLinkedIn,
+        currentStep: 1,
+      };
+    });
+  }, [selectedJobId, jobCandidates, generalCandidates]);
+
+  // State management
+  const [candidates, setCandidates] = useState<ClientCandidate[]>(INITIAL_CLIENT_CANDIDATES);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [openDropdownCandidateId, setOpenDropdownCandidateId] = useState<string | null>(null);
+  const [isToolbarDropdownOpen, setIsToolbarDropdownOpen] = useState<boolean>(false);
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const toolbarDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sync state when Convex data loads
+  useEffect(() => {
+    setCandidates(mappedCandidates);
+  }, [mappedCandidates]);
+
+  // Click outside to close floating dropdowns
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpenDropdownCandidateId(null);
+      }
+      if (
+        toolbarDropdownRef.current &&
+        !toolbarDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsToolbarDropdownOpen(false);
       }
     }
-    return pages;
-  }, [currentPage, totalPages]);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter candidates based on search query
+  const filteredCandidates = useMemo(() => {
+    if (!searchQuery.trim()) return candidates;
+    const q = searchQuery.toLowerCase();
+    return candidates.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.role.toLowerCase().includes(q) ||
+        c.location.toLowerCase().includes(q) ||
+        c.industry.toLowerCase().includes(q) ||
+        c.overviewExperiences.some((exp) => exp.toLowerCase().includes(q)) ||
+        c.educationOrLinkedIn.toLowerCase().includes(q)
+    );
+  }, [candidates, searchQuery]);
+
+  // Bulk selection handlers
+  const isAllSelected =
+    filteredCandidates.length > 0 &&
+    filteredCandidates.every((c) => selectedCandidateIds.includes(c.id));
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedCandidateIds(filteredCandidates.map((c) => c.id));
+    } else {
+      setSelectedCandidateIds([]);
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedCandidateIds((prev) => [...prev, id]);
+    } else {
+      setSelectedCandidateIds((prev) => prev.filter((item) => item !== id));
+    }
+  };
+
+  const handleSetStep = (candidateId: string, step: number) => {
+    setCandidates((prev) =>
+      prev.map((c) => (c.id === candidateId ? { ...c, currentStep: step } : c))
+    );
+    toast.success(`Candidate step updated to ${step}`);
+  };
+
+  const handleRejectCandidate = (candidateId: string) => {
+    setCandidates((prev) => prev.filter((c) => c.id !== candidateId));
+    setSelectedCandidateIds((prev) => prev.filter((id) => id !== candidateId));
+    toast.info('Candidate marked as rejected');
+  };
+
+  const handleSelectJob = (item: { jobId: string; title: string; displayName: string }) => {
+    setSelectedJobId(item.jobId);
+    setSelectedDesignation(item.displayName);
+    setOpenDropdownCandidateId(null);
+    setIsToolbarDropdownOpen(false);
+    toast.info(`Switched opening to: ${item.displayName}`);
+  };
+
+  const handleToggleDropdown = (candidateId: string) => {
+    setOpenDropdownCandidateId((prev) => (prev === candidateId ? null : candidateId));
+  };
 
   return (
-    <div className="w-full max-w-[1440px] mx-auto pb-20 pt-1">
-      {/* ── Top Header Section (Matching LinkedIn Recruiter) ─────────────── */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 mb-6 border-b border-border/80">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-text-primary">Clients</h1>
-          <p className="text-xs text-text-secondary mt-0.5">
-            {isLoading ? 'Loading clients...' : `${clients.length} client ${clients.length === 1 ? 'company' : 'companies'} registered`}
-          </p>
-        </div>
+    <div className="w-full text-slate-800 font-sans antialiased flex flex-col selection:bg-emerald-100 selection:text-emerald-900 relative pb-60 sm:pb-80 overflow-visible">
+      {/* ── CANDIDATES DESK CARD (EXACT FIGMA REPLICA) ── */}
+      <div className="bg-white border border-[#DBDEE0] shadow-2xs rounded-[8px] w-full overflow-visible">
+        {/* 1. Toolbar */}
+        <div className="p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#DBDEE0]">
+          <div className="flex items-center gap-3 flex-wrap">
+            <DeskSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search pipeline"
+            />
 
-        <div className="flex items-center gap-3">
-          <Link
-            href="/dashboard/jobs/new"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-[#0a66c2] text-[#0a66c2] hover:bg-blue-50/80 dark:hover:bg-blue-950/40 text-xs sm:text-[13px] font-semibold transition-all active:scale-[0.98] cursor-pointer"
-          >
-            <Briefcase size={14} />
-            Post a Job
-          </Link>
+            <DeskButton
+              variant="toolbar"
+              onClick={() => toast.info('All filters')}
+              icon={<SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />}
+            >
+              <span>All filters</span>
+            </DeskButton>
+
+            {/* Opening Selector Dropdown */}
+            <div className="relative" ref={toolbarDropdownRef}>
+              <DeskButton
+                variant="toolbar"
+                onClick={() => setIsToolbarDropdownOpen((prev) => !prev)}
+                icon={
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-150 ${
+                      isToolbarDropdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                }
+              >
+                <span className="text-slate-400 font-normal">Opening:</span>
+                <span className="max-w-[190px] sm:max-w-[260px] truncate text-[#165B42] font-semibold">
+                  {selectedDesignation}
+                </span>
+              </DeskButton>
+
+              {isToolbarDropdownOpen && (
+                <div
+                  className="absolute left-0 top-full mt-2 z-50 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+                  style={{
+                    width: '380px',
+                    maxWidth: 'calc(100vw - 32px)',
+                    maxHeight: '400px',
+                    background: '#FFFFFF',
+                    borderRadius: '16px',
+                    border: '1px solid #CBD5E1',
+                    boxShadow:
+                      '0px 10px 25px -5px rgba(0, 0, 0, 0.1), 0px 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                  }}
+                >
+                  <div className="divide-y divide-[#E5E7EB] max-h-[390px] overflow-y-auto py-1">
+                    {dropdownItems.map((item, idx: number) => {
+                      const isCurrent =
+                        selectedJobId === item.jobId ||
+                        selectedDesignation === item.displayName;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => handleSelectJob(item)}
+                          className={`px-5 py-3 text-[13px] font-semibold text-left transition-colors cursor-pointer select-none hover:bg-emerald-50/60 ${
+                            isCurrent
+                              ? 'text-[#165B42] bg-emerald-50 font-bold'
+                              : 'text-slate-700'
+                          }`}
+                        >
+                          {item.displayName}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           <button
-            onClick={() => setIsAddClientModalOpen(true)}
-            className="flex items-center gap-1.5 px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs sm:text-[13px] font-semibold transition-all shadow-xs hover:shadow active:scale-[0.98] cursor-pointer"
+            type="button"
+            onClick={() => toast.info('Add a candidate')}
+            className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
           >
-            <Plus size={15} />
-            Add Client
+            <Plus className="w-3.5 h-3.5 text-slate-500" />
+            <span>Add a candidate</span>
           </button>
         </div>
-      </div>
 
-      {/* ── Two-Column Layout: Left Filter Sidebar + Main Feed ────────────── */}
-      <div className="flex flex-col lg:flex-row gap-8 items-start">
-        {/* ── Left Sidebar Filters ────────────────────────── */}
-        <aside className="w-full lg:w-64 shrink-0 space-y-5 lg:pr-2 lg:sticky lg:top-20">
-          {/* Reset filters header */}
-          <div className="flex items-center justify-between pb-2 border-b border-border/60">
-            <button
-              onClick={resetFilters}
-              className="flex items-center gap-1.5 text-xs font-semibold text-[#0a66c2] hover:underline cursor-pointer"
-            >
-              <RotateCcw size={13} />
-              <span>Reset filters</span>
-            </button>
-          </div>
-
-          {/* Search for a client input */}
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
+        {/* 2. Results Header */}
+        <div className="px-5 py-3 flex items-center justify-between text-xs text-slate-600 border-b border-[#DBDEE0] bg-white">
+          <div className="flex items-center gap-3">
             <input
-              type="text"
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              placeholder="Search for a client"
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border border-border bg-surface text-text-primary placeholder:text-text-secondary focus:outline-hidden focus:border-[#0a66c2] focus:ring-1 focus:ring-[#0a66c2] transition-colors"
+              type="checkbox"
+              checked={isAllSelected}
+              onChange={(e) => handleSelectAll(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-300 text-[#165B42] focus:ring-[#165B42] cursor-pointer"
             />
+            <span className="font-bold text-[#165B42] tracking-wider uppercase">
+              {filteredCandidates.length} RESULTS
+            </span>
           </div>
 
-          {/* Industry Facet */}
-          <div className="space-y-2">
-            <h3 className="text-[13px] font-bold text-text-primary">Industry</h3>
-            <div className="space-y-2 pt-1">
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-28" />
-                </div>
-              ) : (
-                industryFacets.map(f => {
-                  const isChecked = selectedIndustries.includes(f.label);
-                  return (
-                    <label key={f.label} className="flex items-center gap-2.5 text-[13px] text-text-secondary hover:text-text-primary cursor-pointer select-none leading-normal">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleIndustry(f.label)}
-                        className="rounded border-border text-[#0a66c2] focus:ring-[#0a66c2] w-4 h-4 cursor-pointer"
-                      />
-                      <span className="truncate flex-1">{f.label}</span>
-                      <span className="text-text-disabled text-xs">({f.count})</span>
-                    </label>
-                  );
-                })
-              )}
+          <div className="flex items-center gap-5 text-slate-600 text-[13px]">
+            <div className="flex items-center gap-1 cursor-pointer hover:text-slate-900">
+              <span className="text-slate-600">Sort by:</span>
+              <span className="text-slate-600">Last modified</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 ml-0.5" />
             </div>
+            <span className="text-slate-400">|</span>
+            <span className="text-slate-600">
+              {filteredCandidates.length > 0 ? `1 – ${filteredCandidates.length}` : '0'}
+            </span>
           </div>
-        </aside>
+        </div>
 
-        {/* ── Main Content Area: Clients Feed ────────────────────────── */}
-        <main className="flex-1 w-full min-w-0">
-          {/* Top Toolbar: Selection, Active Filter Chips, Sort & Pagination */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border mb-3">
-            {/* Left: Client count + Active Filter Chips */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-text-primary tracking-wider uppercase mr-2">
-                {filtered.length} CLIENTS
-              </span>
-
-              {selectedIndustries.map(i => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
-                >
-                  Industry: {i}
-                  <span
-                    className="cursor-pointer hover:opacity-75 font-bold ml-0.5"
-                    onClick={() => toggleIndustry(i)}
-                  >
-                    ×
-                  </span>
-                </span>
-              ))}
-
-              {searchQuery.trim().length > 0 && (
-                <span
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-border"
-                >
-                  Search: "{searchQuery}"
-                  <span
-                    className="cursor-pointer hover:opacity-75 font-bold ml-0.5"
-                    onClick={() => setSearchQuery('')}
-                  >
-                    ×
-                  </span>
-                </span>
-              )}
-
-              {hasActiveFilters && (
+        {/* 3. Candidate Rows */}
+        <div className="divide-y divide-[#DBDEE0] overflow-visible">
+          {filteredCandidates.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 space-y-3">
+              <p className="text-sm font-medium">
+                {selectedJobId !== 'all'
+                  ? `No candidates found for ${selectedDesignation}.`
+                  : 'No candidates found matching your criteria.'}
+              </p>
+              {selectedJobId !== 'all' && (
                 <button
                   type="button"
-                  onClick={resetFilters}
-                  className="text-xs font-semibold text-[#0a66c2] hover:underline ml-1 cursor-pointer"
+                  onClick={() => {
+                    setSelectedJobId('all');
+                    setSelectedDesignation('ALL OPENINGS / ALL CANDIDATES');
+                  }}
+                  className="text-xs text-[#165B42] hover:underline font-semibold cursor-pointer block mx-auto"
                 >
-                  Clear all
+                  View all candidates across all openings
+                </button>
+              )}
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="text-xs text-[#165B42] hover:underline font-semibold cursor-pointer block mx-auto"
+                >
+                  Clear search query
                 </button>
               )}
             </div>
+          ) : (
+            filteredCandidates.map((candidate) => {
+              const isSelected = selectedCandidateIds.includes(candidate.id);
+              const isDropdownOpen = openDropdownCandidateId === candidate.id;
 
-            {/* Right: Top Pagination Text & Arrows */}
-            <div className="flex items-center gap-4 text-xs text-text-secondary self-end sm:self-auto">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-secondary">
-                  {filtered.length > 0 ? `${(currentPage - 1) * ITEMS_PER_PAGE + 1} – ${Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}` : '0'}
-                </span>
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1}
-                  className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  title="Previous page"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  title="Next page"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Client Feed Items */}
-          <div className="divide-y divide-border">
-            {isLoading ? (
-              <div className="py-8 space-y-4">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="py-5 px-3 flex items-start gap-4">
-                    <Skeleton className="w-10 h-10 rounded-lg shrink-0" />
-                    <div className="space-y-2 flex-1">
-                      <Skeleton className="w-48 h-5" />
-                      <Skeleton className="w-72 h-3.5" />
-                      <Skeleton className="w-36 h-3" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-16 text-center text-text-secondary">
-                <Building2 className="w-12 h-12 text-text-disabled mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-text-primary">No clients found</h3>
-                <p className="text-xs text-text-secondary mt-1 max-w-sm mx-auto">
-                  {hasActiveFilters ? 'Try adjusting your search query or industry filters.' : 'Add your first client company to get started.'}
-                </p>
-                {hasActiveFilters ? (
-                  <button
-                    onClick={resetFilters}
-                    className="mt-3 text-xs font-semibold text-[#0a66c2] hover:underline cursor-pointer"
-                  >
-                    Reset all filters
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setIsAddClientModalOpen(true)}
-                    className="mt-4 px-5 py-2 rounded-full bg-[#0a66c2] hover:bg-[#004182] text-white text-xs font-semibold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
-                  >
-                    <Plus size={14} /> Add Client
-                  </button>
-                )}
-              </div>
-            ) : (
-              paginated.map(client => (
+              return (
                 <div
-                  key={client.name}
-                  onClick={() => router.push(`/dashboard/clients/${encodeURIComponent(client.name)}`)}
-                  className="py-4.5 px-3 hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-all duration-150 rounded-xl group cursor-pointer"
+                  key={candidate.id}
+                  className={`p-4 sm:p-6 transition-colors hover:bg-slate-50/40 relative overflow-visible ${
+                    isDropdownOpen ? 'z-30' : 'z-10'
+                  } ${isSelected ? 'bg-sky-50/30' : ''}`}
                 >
-                  <div className="flex items-start justify-between gap-5">
-                    {/* Left: Client Logo/Icon + Details */}
-                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                      <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900/60 flex items-center justify-center text-[#0a66c2] dark:text-blue-300 font-bold text-base shrink-0 mt-0.5">
-                        {client.name.charAt(0).toUpperCase()}
+                  <div className="flex flex-col lg:flex-row items-start gap-4 overflow-visible">
+                    {/* Checkbox + Details */}
+                    <div className="flex items-start gap-2.5 sm:gap-4 flex-1 min-w-0 w-full">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => handleSelectOne(candidate.id, e.target.checked)}
+                        className="w-4 h-4 mt-1 rounded border-slate-300 text-[#165B42] focus:ring-[#165B42] cursor-pointer shrink-0"
+                      />
+
+                      <div className="flex-1 space-y-3 min-w-0">
+                        {/* Header */}
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <CandidateNameLink
+                              name={candidate.name}
+                              onClick={() =>
+                                toast.info(`Viewing profile for ${candidate.name}`)
+                              }
+                            />
+                            <span className="text-[12px] text-slate-500 font-normal">
+                              in · {candidate.rank}
+                            </span>
+                            {candidate.isApplicant && (
+                              <DeskBadge variant="applicant">Applicant</DeskBadge>
+                            )}
+                          </div>
+
+                          <p className="text-[13px] font-semibold text-slate-800 mt-1">
+                            {candidate.role}
+                          </p>
+                          <p className="text-[13px] text-slate-500 mt-0.5 break-words">
+                            {candidate.location} · {candidate.industry}
+                          </p>
+                        </div>
+
+                        {/* Structured Metadata */}
+                        <div className="space-y-2.5 text-[13px] pt-1">
+                          {/* Overview */}
+                          <div className="flex items-start gap-2.5 sm:gap-4">
+                            <span className="w-[95px] sm:w-[105px] min-w-[95px] sm:min-w-[105px] font-bold text-slate-900 shrink-0">
+                              Overview
+                            </span>
+                            <div className="flex-1 min-w-0 space-y-1 text-slate-800 break-words">
+                              {candidate.overviewExperiences.map((exp, idx) => (
+                                <p key={idx}>{exp}</p>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* LinkedIn URL */}
+                          <div className="flex items-start gap-2.5 sm:gap-4">
+                            <span className="w-[95px] sm:w-[105px] min-w-[95px] sm:min-w-[105px] font-bold text-slate-900 shrink-0">
+                              LinkedIn URL
+                            </span>
+                            <div className="flex-1 min-w-0 text-slate-800 break-words">
+                              <p>{candidate.educationOrLinkedIn}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Action Column: Step 1, 2, 3 buttons, Reject, Chevron */}
+                    <div className="w-full lg:w-auto shrink-0 flex items-center justify-between lg:justify-end gap-2.5 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 relative overflow-visible">
+                      {/* Step Sequence Buttons 1, 2, 3 */}
+                      <div className="flex items-center gap-1.5">
+                        {[1, 2, 3].map((step) => {
+                          const isActive = candidate.currentStep === step;
+                          return (
+                            <button
+                              key={step}
+                              type="button"
+                              onClick={() => handleSetStep(candidate.id, step)}
+                              className={`w-7 h-7 rounded-full text-xs font-semibold flex items-center justify-center transition-all cursor-pointer shadow-2xs ${
+                                isActive
+                                  ? 'bg-[#165B42] text-white shadow-xs'
+                                  : 'bg-white border border-[#CBD5E1] text-slate-700 hover:border-[#165B42] hover:text-[#165B42]'
+                              }`}
+                              title={`Set Step ${step}`}
+                            >
+                              {step}
+                            </button>
+                          );
+                        })}
                       </div>
 
-                      <div className="space-y-1.5 min-w-0 flex-1">
-                        {/* 1. Client Name & Industry Badge */}
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="text-[15.5px] font-bold uppercase tracking-tight text-slate-900 dark:text-slate-100 group-hover:text-[#0a66c2] group-hover:underline transition-colors leading-snug">
-                            {client.name}
-                          </span>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-border">
-                            {client.industry}
-                          </span>
-                        </div>
+                      {/* Reject Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleRejectCandidate(candidate.id)}
+                        className="px-4 py-1.5 rounded-full border border-[#CBD5E1] text-slate-700 text-xs font-semibold hover:border-red-400 hover:text-red-600 hover:bg-red-50/50 transition-colors cursor-pointer"
+                      >
+                        Reject
+                      </button>
 
-                        {/* 2. Assigned TAs & Contact Person */}
-                        <div className="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-400 flex-wrap leading-relaxed">
-                          {client.taNames.length > 0 ? (
-                            <span className="flex items-center gap-1.5">
-                              <Users size={13} className="text-slate-400 shrink-0" />
-                              <span>TA: <strong className="text-slate-700 dark:text-slate-300 font-medium">{client.taNames.join(', ')}</strong></span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">No TAs assigned</span>
-                          )}
+                      {/* Dropdown Chevron Trigger */}
+                      <div
+                        className="relative overflow-visible"
+                        ref={isDropdownOpen ? dropdownRef : undefined}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDropdown(candidate.id)}
+                          className="p-1 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                          title={isDropdownOpen ? 'Hide Designations' : 'Show Designations'}
+                        >
+                          <ChevronDown
+                            className={`w-[18px] h-[18px] transition-transform duration-200 ${
+                              isDropdownOpen ? 'rotate-180 text-slate-700' : ''
+                            }`}
+                          />
+                        </button>
 
-                          {client.contactPerson && (
-                            <>
-                              <span className="text-slate-300 dark:text-slate-600 font-bold">·</span>
-                              <span>Contact: <strong className="text-slate-700 dark:text-slate-300 font-medium">{client.contactPerson}</strong></span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* 3. Client Notes (if present) */}
-                        {client.notes && (
-                          <div className="pt-0.5">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 italic line-clamp-1">
-                              &ldquo;{client.notes}&rdquo;
-                            </p>
+                        {/* ── DOWNWARD FLOATING CLIENT DESIGNATIONS DROPDOWN (FIGMA SPECS) ── */}
+                        {isDropdownOpen && (
+                          <div
+                            className="absolute right-0 top-full mt-2 z-50 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+                            style={{
+                              width: '402px',
+                              maxWidth: 'calc(100vw - 32px)',
+                              maxHeight: '874px',
+                              background: '#FFFFFFEB',
+                              borderRadius: '30px',
+                              border: '1px solid #C2C2C2',
+                              boxShadow: '0px 4px 4px 0px #00000040',
+                              backdropFilter: 'blur(8px)',
+                            }}
+                          >
+                            <div className="divide-y divide-[#E5E7EB] max-h-[874px] overflow-y-auto scrollbar-none py-1">
+                              {dropdownItems.map((item, idx: number) => {
+                                const isCurrent =
+                                  selectedJobId === item.jobId ||
+                                  selectedDesignation === item.displayName;
+                                return (
+                                  <div
+                                    key={idx}
+                                    onClick={() => handleSelectJob(item)}
+                                    className={`px-6 py-4 text-[13px] font-bold text-left transition-colors cursor-pointer select-none hover:bg-emerald-50/50 ${
+                                      isCurrent
+                                        ? 'text-[#165B42] bg-emerald-50/80'
+                                        : 'text-[#165B42]'
+                                    }`}
+                                  >
+                                    {item.displayName}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
                     </div>
-
-                    {/* Middle: Metrics Column (Openings / Applicants) */}
-                    <div className="hidden sm:flex flex-col items-start min-w-[140px] text-[13px] text-text-secondary pl-4 leading-relaxed">
-                      <div>
-                        <span>Openings: </span>
-                        <span className="font-semibold text-text-primary text-[13.5px]">{client.openings}</span>
-                        {client.activeOpenings > 0 && (
-                          <span className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold ml-1">
-                            ({client.activeOpenings} active)
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <span>Applicants: </span>
-                        <span className="font-semibold text-text-primary text-[13.5px]">{client.totalApplicants.toLocaleString()}</span>
-                        {client.newCvs > 0 && (
-                          <span className="text-blue-700 dark:text-blue-400 text-xs font-semibold ml-1">
-                            ({client.newCvs} new)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right: Actions */}
-                    <div className="flex items-center gap-2 shrink-0 pt-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/dashboard/clients/${encodeURIComponent(client.name)}`);
-                        }}
-                        className="px-4 py-1.5 rounded-full border border-[#0a66c2] text-[#0a66c2] hover:bg-[#0a66c2]/10 font-semibold text-xs transition-all active:scale-95 cursor-pointer"
-                      >
-                        View Openings
-                      </button>
-                    </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-
-          {/* ── Unified Clean Bottom Pagination ───────────────────────── */}
-          {!isLoading && totalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 pt-6 mt-6 border-t border-border/70">
-              {currentPage > 1 && (
-                <button
-                  onClick={() => {
-                    setCurrentPage(p => Math.max(1, p - 1));
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className="flex items-center gap-0.5 text-[13px] font-semibold text-[#0a66c2] hover:underline cursor-pointer mr-1"
-                >
-                  <ChevronLeft size={15} />
-                  <span>Previous</span>
-                </button>
-              )}
-
-              <div className="flex items-center gap-1.5">
-                {pageNumbers.map((p, idx) => (
-                  p === '...' ? (
-                    <span key={`dots-${idx}`} className="px-1 text-xs text-text-disabled">...</span>
-                  ) : (
-                    <button
-                      key={`page-${p}`}
-                      onClick={() => {
-                        setCurrentPage(Number(p));
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all cursor-pointer ${
-                        p === currentPage
-                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                          : 'text-[#0a66c2] hover:underline hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  )
-                ))}
-              </div>
-
-              {currentPage < totalPages && (
-                <button
-                  onClick={() => {
-                    setCurrentPage(p => Math.min(totalPages, p + 1));
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className="flex items-center gap-0.5 text-[13px] font-semibold text-[#0a66c2] hover:underline cursor-pointer ml-1"
-                >
-                  <span>Next</span>
-                  <ChevronRight size={15} />
-                </button>
-              )}
-            </div>
+              );
+            })
           )}
-        </main>
+        </div>
       </div>
-
-      {/* Add Client Modal */}
-      <AddClientModal
-        isOpen={isAddClientModalOpen}
-        onClose={() => setIsAddClientModalOpen(false)}
-      />
     </div>
   );
 }

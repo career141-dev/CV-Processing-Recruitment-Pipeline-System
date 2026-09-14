@@ -305,6 +305,28 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
 }
 
+/* Explicit override for borderless inputs (e.g. Chat Widget, Inline Search, Snippets, HeadHunting) */
+input.chat-borderless-input,
+input.chat-borderless-input[type="text"],
+input.chat-borderless-input[type="text"]:hover,
+input.chat-borderless-input[type="text"]:focus,
+input.chat-borderless-input[type="text"]:active,
+select.chat-borderless-input,
+select.chat-borderless-input:hover,
+select.chat-borderless-input:focus,
+select.chat-borderless-input:active,
+textarea.chat-borderless-input,
+textarea.chat-borderless-input:hover,
+textarea.chat-borderless-input:focus,
+textarea.chat-borderless-input:active {
+  border: none !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
 /* ==========================================================================
    Modern Sleek Custom Scrollbars (Universal for Light & Dark Themes)
    ========================================================================== */
