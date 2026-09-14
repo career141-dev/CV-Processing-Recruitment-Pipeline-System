@@ -5,6 +5,7 @@ import { Plus, ChevronDown, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ResearchFormData } from '../types';
 import { INITIAL_RESEARCH_DATA, COUNTRIES, LOCATIONS } from '../mock-data';
+import { DeskCard } from '../../components/common';
 
 export const ResearchView: React.FC = () => {
   const [formData, setFormData] = useState<ResearchFormData>(INITIAL_RESEARCH_DATA);
@@ -119,7 +120,7 @@ export const ResearchView: React.FC = () => {
   };
 
   return (
-    <div className="w-full bg-white rounded-[8px] border border-[#DBDEE0] p-4 sm:p-6 md:p-8 shadow-2xs space-y-7 font-sans">
+    <DeskCard className="p-4 sm:p-6 md:p-8 space-y-7">
       {/* ═══════════════════════════════════════════════════════════════════
           SECTION 1: RESEARCH
           ═══════════════════════════════════════════════════════════════════ */}
@@ -509,6 +510,6 @@ export const ResearchView: React.FC = () => {
           </button>
         </div>
       </section>
-    </div>
+    </DeskCard>
   );
 };

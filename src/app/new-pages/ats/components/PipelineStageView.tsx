@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Info } from 'lucide-react';
 import { MockCandidate } from '../types';
 import { INITIAL_CANDIDATES, PIPELINE_SUB_STAGES } from '../mock-data';
 import { CandidateTableCard } from './CandidateTableCard';
+import { SpotlightsSection, SpotlightCard } from '../../components/common';
 
 interface PipelineStageViewProps {
   activeStageId: string;
@@ -98,28 +98,15 @@ export const PipelineStageView: React.FC<PipelineStageViewProps> = ({
     <div className="space-y-6 w-full">
       {/* ── 1ST BOX: SPOTLIGHTS (OMITTED WHEN EMPTY / IN OFFER STAGE) ── */}
       {spotlights.length > 0 && (
-        <div className="bg-white rounded-[8px] border border-[#DBDEE0] p-4 sm:p-5 shadow-2xs space-y-3.5">
-          <div className="flex items-center gap-1.5 text-slate-800 font-semibold text-[14px]">
-            <span>Spotlights</span>
-            <Info className="w-3.5 h-3.5 text-slate-400 cursor-pointer" />
-          </div>
-
-          <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-center gap-3 sm:gap-4">
-            {spotlights.map((spotlight, idx) => (
-              <div
-                key={idx}
-                className="w-full lg:w-[233px] h-[78px] rounded-[9px] border border-[#DBDEE0] bg-white px-3 sm:px-4 py-2 sm:py-2.5 flex flex-col justify-center hover:border-slate-400 transition-all cursor-pointer"
-              >
-                <div className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight leading-none">
-                  {spotlight.value}
-                </div>
-                <div className="text-[12px] sm:text-[13px] text-slate-600 font-medium mt-1.5 leading-tight truncate">
-                  {spotlight.label}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <SpotlightsSection>
+          {spotlights.map((spotlight, idx) => (
+            <SpotlightCard
+              key={idx}
+              label={spotlight.label}
+              value={spotlight.value}
+            />
+          ))}
+        </SpotlightsSection>
       )}
 
       {/* ── 2ND BOX: COMMON CANDIDATE TABLE CARD ── */}

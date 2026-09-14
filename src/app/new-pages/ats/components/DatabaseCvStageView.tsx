@@ -4,8 +4,8 @@ import React, { useState, useMemo } from 'react';
 import { MockCandidate } from '../types';
 import { INITIAL_CANDIDATES } from '../mock-data';
 import { CandidateTableCard } from './CandidateTableCard';
-import { AiChatWidget } from './AiChatWidget';
-import { AiBotIcon } from './AiBotIcon';
+import { AiChatWidget } from '../../components/AiChatWidget';
+import { AiBotIcon } from '../../components/AiBotIcon';
 
 interface DatabaseCvStageViewProps {
   candidates?: MockCandidate[];

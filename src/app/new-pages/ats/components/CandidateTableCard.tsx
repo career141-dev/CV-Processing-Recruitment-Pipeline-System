@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Search, SlidersHorizontal, Plus, ChevronDown, X } from 'lucide-react';
+import { SlidersHorizontal, Plus, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { MockCandidate } from '../types';
 import { ChangeStageModal } from './Modals';
 import { CandidateCard } from './CandidateCard';
+import { DeskCard, DeskSearchInput, DeskButton } from '../../components/common';
 
 interface CandidateTableCardProps {
   candidates: MockCandidate[];
@@ -110,39 +111,27 @@ export const CandidateTableCard: React.FC<CandidateTableCardProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-[8px] border border-[#DBDEE0] overflow-hidden shadow-2xs w-full">
+    <DeskCard noPadding className="w-full">
       {/* ── 1. SEARCH, FILTERS & ADD CANDIDATE TOOLBAR ── */}
       <div className="p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#DBDEE0]">
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative w-full sm:w-[309px] h-[31px]">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search pipeline"
-              className="w-full h-full pl-8 pr-7 bg-white border border-[#8B9399] rounded-[5px] text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#165B42] focus:border-[#165B42] transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+          <DeskSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search pipeline"
+          />
 
-          <button
+          <DeskButton
+            variant="toolbar"
             onClick={onAllFiltersClick || (() => toast.info('All filters options'))}
-            className="h-[31px] flex items-center gap-1.5 px-3 rounded-[5px] border border-[#DBDEE0] text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors cursor-pointer shrink-0"
+            icon={<SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />}
           >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
             <span>All filters</span>
-          </button>
+          </DeskButton>
         </div>
 
         <button
+          type="button"
           onClick={onAddCandidateClick || (() => toast.info('Add a new candidate'))}
           className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
         >
@@ -183,6 +172,7 @@ export const CandidateTableCard: React.FC<CandidateTableCardProps> = ({
             <p className="text-sm font-medium">{emptyMessage}</p>
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
                 className="text-xs text-[#165B42] hover:underline font-semibold cursor-pointer"
               >
@@ -213,6 +203,6 @@ export const CandidateTableCard: React.FC<CandidateTableCardProps> = ({
         onClose={() => setStageModalCandidate(null)}
         onChangeStage={handleChangeStage}
       />
-    </div>
+    </DeskCard>
   );
 };

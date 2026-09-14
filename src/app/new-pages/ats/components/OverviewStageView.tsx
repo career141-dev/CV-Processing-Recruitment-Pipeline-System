@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { DeskCard, DeskSearchInput, DeskButton, CandidateNameLink } from '../../components/common';
 
 type NotificationCategoryKey = 'daily_cv' | 'stale_jobs' | 'shortlist_sla' | 'client_feedback';
 
@@ -19,7 +19,6 @@ interface NotificationCardItem {
 
 const NOTIFICATION_DATA: NotificationCardItem[] = [
   // ── 1. DAILY CV TARGET (<10 CVs/day) ──
-
   {
     id: 'notif-4',
     category: 'daily_cv',
@@ -202,11 +201,13 @@ export const OverviewStageView: React.FC = () => {
             return (
               <button
                 key={metric.key}
+                type="button"
                 onClick={() => setSelectedCategory(metric.key)}
-                className={`text-left bg-white rounded-[10px] p-3.5 sm:p-5 shadow-2xs transition-all cursor-pointer relative overflow-hidden border ${isSelected
+                className={`text-left bg-white rounded-[10px] p-3.5 sm:p-5 shadow-2xs transition-all cursor-pointer relative overflow-hidden border ${
+                  isSelected
                     ? 'border-slate-900 ring-2 ring-slate-900/10 shadow-sm bg-slate-50/40'
                     : 'border-[#E2E8F0] hover:border-slate-300 hover:shadow-xs hover:bg-slate-50/20'
-                  }`}
+                }`}
               >
                 <div>
                   <h3 className="text-[24px] sm:text-[30px] font-bold text-slate-900 leading-none tracking-tight">
@@ -229,27 +230,15 @@ export const OverviewStageView: React.FC = () => {
       </div>
 
       {/* ── 2. NOTIFICATION LIST (CLEAN CARD STYLE WITHOUT CHECKBOXES OR SORT BY) ── */}
-      <div className="bg-white rounded-[8px] border border-[#DBDEE0] overflow-hidden shadow-2xs w-full">
+      <DeskCard noPadding className="w-full">
         {/* Top Search Bar */}
         <div className="p-4 sm:p-5 flex items-center justify-between border-b border-[#DBDEE0]">
-          <div className="relative w-[210px] sm:w-[320px] h-[31px]">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search pipeline"
-              className="w-full h-full pl-8 pr-7 bg-white border border-[#8B9399] rounded-[5px] text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#165B42] focus:border-[#165B42] transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+          <DeskSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search pipeline"
+            containerClassName="relative w-[210px] sm:w-[320px] h-[31px]"
+          />
 
           <span className="text-[12px] font-semibold text-slate-500">
             {filteredItems.length} alerts
@@ -268,19 +257,11 @@ export const OverviewStageView: React.FC = () => {
                 <div className="flex-1 space-y-1.5 min-w-0">
                   {/* Row 1: Name (Green Link Style) */}
                   <div>
-                    <h3
+                    <CandidateNameLink
+                      name={item.taName}
                       onClick={() => toast.info(`Viewing details for ${item.taName}`)}
-                      className="font-bold text-[16px] text-[#165B42] hover:underline cursor-pointer tracking-normal leading-[100%] inline-block"
-                      style={{
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 700,
-                        fontSize: '16px',
-                        lineHeight: '100%',
-                        letterSpacing: '0%',
-                      }}
-                    >
-                      {item.taName}
-                    </h3>
+                      className="inline-block"
+                    />
                   </div>
 
                   {/* Role / Position */}
@@ -296,18 +277,19 @@ export const OverviewStageView: React.FC = () => {
 
                 {/* Right Column: Reject Button Only */}
                 <div className="shrink-0 self-start sm:self-center pt-2 sm:pt-0">
-                  <button
+                  <DeskButton
+                    variant="outline"
                     onClick={() => handleReject(item.taName)}
-                    className="px-5 py-1 rounded-full border border-[#165B42] text-[#165B42] hover:bg-emerald-50 text-[13px] font-semibold transition-colors cursor-pointer"
+                    className="px-5 py-1"
                   >
                     Reject
-                  </button>
+                  </DeskButton>
                 </div>
               </div>
             </div>
           ))}
         </div>
-      </div>
+      </DeskCard>
     </div>
   );
 };

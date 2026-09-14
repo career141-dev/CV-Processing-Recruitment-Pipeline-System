@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Navbar } from '../new-pages/components/Navbar';
+import { Navbar } from '../components/Navbar';
 import { HeadHuntingSidebar } from './components/HeadHuntingSidebar';
 import { ResearchView } from './components/ResearchView';
-import { AiChatWidget } from '../new-pages/components/AiChatWidget';
-import { AiBotIcon } from '../new-pages/components/AiBotIcon';
+import { AiChatWidget } from '../components/AiChatWidget';
+import { AiBotIcon } from '../components/AiBotIcon';
 import { HeadHuntingTab } from './types';
 
 export default function HeadHuntingPage() {

@@ -89,23 +89,18 @@ const splitJobTitle = (title: string): { line1: string; line2: string } => {
 export const SnippetsStageView: React.FC = () => {
   const [snippet, setSnippet] = useState<SnippetData>(BLANK_SNIPPET);
   const [requirementsText, setRequirementsText] = useState<string>('');
-  const [templateImageUrl, setTemplateImageUrl] = useState<string | null>(null);
+  const [templateImageUrl, setTemplateImageUrl] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return localStorage.getItem('career141_canva_custom_template');
+    } catch {
+      return null;
+    }
+  });
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load custom template from localStorage if saved
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('career141_canva_custom_template');
-      if (saved) {
-        setTemplateImageUrl(saved);
-      }
-    } catch {
-      // Ignore
-    }
-  }, []);
 
   // Handle Requirements Editing
   const handleRequirementsChange = (text: string) => {

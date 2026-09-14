@@ -3,6 +3,7 @@
 import React from 'react';
 import { ChevronDown, Mail, MoreHorizontal, ArrowUpDown } from 'lucide-react';
 import { MockCandidate } from '../types';
+import { CandidateNameLink, DeskBadge, DeskButton } from '../../components/common';
 
 interface CandidateCardProps {
   candidate: MockCandidate;
@@ -47,26 +48,15 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
             {/* Header: Name, Rank, Badges */}
             <div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <h3
+                <CandidateNameLink
+                  name={candidate.name}
                   onClick={() => onProfileClick?.(candidate)}
-                  className="font-bold text-[16px] text-[#165B42] hover:underline cursor-pointer tracking-normal leading-[100%]"
-                  style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 700,
-                    fontSize: '16px',
-                    lineHeight: '100%',
-                    letterSpacing: '0%',
-                  }}
-                >
-                  {candidate.name}
-                </h3>
+                />
                 <span className="text-[12px] text-slate-500 font-normal">
                   in · {candidate.degreeRank}
                 </span>
                 {candidate.isApplicant && (
-                  <span className="px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-[#EBEBEB] text-slate-700">
-                    Applicant
-                  </span>
+                  <DeskBadge variant="applicant">Applicant</DeskBadge>
                 )}
               </div>
 
@@ -108,6 +98,7 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
                   ))}
                   {candidate.moreEducationsCount && !isExpandedEducation && (
                     <button
+                      type="button"
                       onClick={() => onToggleEducation(candidate.id)}
                       className="text-slate-500 hover:text-slate-800 font-normal inline-flex items-center gap-1 cursor-pointer"
                     >
@@ -145,7 +136,7 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[#165B42]">
                     {candidate.skillsMatch.tags.map((tag, idx) => (
                       <span key={idx} className="inline-flex items-center">
-                        <span className="hover:underline cursor-pointer">{tag}</span>
+                        <DeskBadge variant="tag">{tag}</DeskBadge>
                         {idx < candidate.skillsMatch.tags.length - 1 && (
                           <span className="text-slate-400 ml-1.5">·</span>
                         )}
@@ -198,22 +189,23 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
         <div className="w-full lg:w-auto shrink-0 flex flex-col items-start lg:items-end justify-between lg:justify-start gap-2.5 text-left lg:text-right pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100">
           {/* Top Action Buttons */}
           <div className="flex items-center gap-2.5 flex-wrap">
-            <button
+            <DeskButton
+              variant="primary"
               onClick={() => onChangeStageClick(candidate)}
-              className="px-4 py-1.5 bg-[#165B42] hover:bg-[#114934] text-white font-semibold rounded-full text-[13px] transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              icon={<ArrowUpDown className="w-3.5 h-3.5 text-white" />}
             >
               <span>Change stage</span>
-              <ArrowUpDown className="w-3.5 h-3.5 text-white" />
-            </button>
+            </DeskButton>
 
-            <button
+            <DeskButton
+              variant="outline"
               onClick={() => onRejectClick(candidate.id)}
-              className="px-4 py-1.5 bg-white border border-[#165B42] hover:bg-emerald-50 text-[#165B42] font-semibold rounded-full text-[13px] transition-colors cursor-pointer"
             >
               Reject
-            </button>
+            </DeskButton>
 
             <button
+              type="button"
               className="p-1 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
               title="Message Candidate"
             >
@@ -221,6 +213,7 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
             </button>
 
             <button
+              type="button"
               className="p-1 text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
               title="More Options"
             >
