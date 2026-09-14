@@ -1125,7 +1125,9 @@ export const getCvUploadUrl = query({
 
     let url: string | null = null;
     
-    if (upload.storageProvider === "r2" && upload.s3Key) {
+    const resolvedCandidateId = candidate?._id || upload?.candidateId || null;
+
+    if ((upload.storageProvider === "r2" || !upload.storageProvider) && upload.s3Key) {
        // Proxy through Next.js to bypass Nginx routing issues on the VPS
        url = `/api/r2-file?key=${encodeURIComponent(upload.s3Key)}`;
     } else if (upload.storageId) {
@@ -1149,6 +1151,7 @@ export const getCvUploadUrl = query({
     if (!url) {
       return {
         url: null,
+        candidateId: resolvedCandidateId,
         isMissingMigrationFile: true,
         fileName: upload?.fileName || "Candidate CV",
         fileType: upload?.fileType,
@@ -1159,6 +1162,7 @@ export const getCvUploadUrl = query({
     }
     return {
       url,
+      candidateId: resolvedCandidateId,
       isMissingMigrationFile: false,
       fileName: upload.fileName,
       fileType: upload.fileType,

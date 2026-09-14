@@ -1,16 +1,18 @@
 "use client";
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { FileText, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import { FileText, ExternalLink, Loader2, AlertCircle, ArrowRight, User } from 'lucide-react';
 
 interface CvPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   candidateId: string | null;
+  candidateProfileId?: string | null;
   candidateName?: string;
 }
 
@@ -18,8 +20,10 @@ export function CvPreviewModal({
   isOpen,
   onClose,
   candidateId,
+  candidateProfileId,
   candidateName,
 }: CvPreviewModalProps) {
+  const router = useRouter();
   const cvUpload = useQuery(
     api.candidates.candidates.getCvUploadUrl,
     candidateId ? { cvUploadId: candidateId } : 'skip'
@@ -34,6 +38,8 @@ export function CvPreviewModal({
     : null;
 
   const modalTitle = candidateName ? `${candidateName}'s CV Document` : 'Candidate CV Preview';
+
+  const resolvedProfileId = candidateProfileId || (cvUpload as any)?.candidateId || (candidateId && !candidateId.startsWith("jd") ? candidateId : null);
 
   return (
     <Modal
@@ -54,6 +60,19 @@ export function CvPreviewModal({
             )}
           </div>
           <div className="flex items-center gap-3">
+            {resolvedProfileId && (
+              <Button
+                variant="outline"
+                className="text-xs h-9 py-1 px-3 border border-border flex items-center gap-1.5 text-text-primary"
+                onClick={() => {
+                  onClose();
+                  router.push(`/dashboard/candidates/${resolvedProfileId}`);
+                }}
+                icon={<User className="w-3.5 h-3.5 text-text-secondary" />}
+              >
+                Go to Profile
+              </Button>
+            )}
             {iframeUrl && (
               <Button
                 variant="outline"
@@ -94,7 +113,7 @@ export function CvPreviewModal({
           />
         ) : (
           <div className="flex flex-col items-center justify-center text-center p-8 max-w-md gap-3">
-            <div className="p-3 bg-amber-50 rounded-full text-amber-600 mb-1">
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-full text-amber-600 mb-1">
               <FileText className="w-8 h-8" />
             </div>
             <h4 className="text-sm font-bold text-text-primary">
@@ -103,6 +122,24 @@ export function CvPreviewModal({
             <p className="text-xs text-text-secondary leading-relaxed">
               {cvUpload?.message || 'No original CV file attachment was found for this candidate profile.'}
             </p>
+            {resolvedProfileId && (
+              <div className="mt-4 flex flex-col items-center gap-2 w-full">
+                <p className="text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 p-2.5 rounded-lg w-full">
+                  All extracted profile data (job history, education, skills, and contact details) is available in the candidate profile.
+                </p>
+                <Button
+                  variant="primary"
+                  className="w-full text-xs h-10 px-4 mt-2 flex items-center justify-center gap-2 bg-[#1B5E20] hover:bg-[#144718]"
+                  onClick={() => {
+                    onClose();
+                    router.push(`/dashboard/candidates/${resolvedProfileId}`);
+                  }}
+                  icon={<ArrowRight className="w-3.5 h-3.5" />}
+                >
+                  View Parsed Candidate Profile
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
