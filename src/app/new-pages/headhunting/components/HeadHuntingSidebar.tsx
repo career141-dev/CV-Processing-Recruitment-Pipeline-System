@@ -51,7 +51,7 @@ export const HeadHuntingSidebar: React.FC<HeadHuntingSidebarProps> = ({
   };
 
   const handleSelectTab = (tab: HeadHuntingTab) => {
-    if (tab !== 'research') {
+    if (tab !== 'research' && tab !== 'boolean_search' && tab !== 'excel_tables') {
       toast.info(
         `${tab.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())} UI coming soon`
       );

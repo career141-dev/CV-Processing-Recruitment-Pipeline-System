@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { Navbar } from '../components/Navbar';
 import { HeadHuntingSidebar } from './components/HeadHuntingSidebar';
 import { ResearchView } from './components/ResearchView';
+import { BooleanSearchView } from './components/BooleanSearchView';
+import { ExcelTablesView } from './components/ExcelTablesView';
 import { AiChatWidget } from '../components/AiChatWidget';
 import { AiBotIcon } from '../components/AiBotIcon';
 import { HeadHuntingTab } from './types';
@@ -52,31 +54,40 @@ export default function HeadHuntingPage() {
           />
         </div>
 
-        {/* Active Content Area: Research View */}
+        {/* Active Content Area: Research, Boolean Search, or Excel Tables View */}
         <main className="flex-1 p-3.5 sm:p-5 md:p-7 space-y-6 overflow-x-hidden min-w-0">
-          <ResearchView />
+          {activeSidebarTab === 'boolean_search' ? (
+            <BooleanSearchView />
+          ) : activeSidebarTab === 'excel_tables' ? (
+            <ExcelTablesView />
+          ) : (
+            <ResearchView />
+          )}
         </main>
       </div>
 
-      {/* ── AI CHAT WIDGET POPUP (MATCHING NEW-PAGES DESIGN) ── */}
-      <AiChatWidget
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        title="HeadHunting AI Assistant"
-      />
+      {/* ── AI CHATBOT WIDGET & FLOATING LAUNCHER BUTTON (BOOLEAN SEARCH TAB ONLY) ── */}
+      {activeSidebarTab === 'boolean_search' && (
+        <>
+          <AiChatWidget
+            isOpen={isChatOpen}
+            onClose={() => setIsChatOpen(false)}
+            title="HeadHunting AI Assistant"
+          />
 
-      {/* ── FLOATING BOTTOM RIGHT AI BOT ICON BUTTON (SAME WIDGET AS NEW-PAGES) ── */}
-      <div className="fixed bottom-6 right-6 z-50">
-        <button
-          onClick={() => setIsChatOpen(!isChatOpen)}
-          className={`w-[54px] h-[54px] sm:w-[58px] sm:h-[58px] bg-[#165B42] hover:bg-[#114934] active:scale-95 text-white rounded-[20px] shadow-lg hover:shadow-xl flex items-center justify-center transition-all cursor-pointer group hover:-translate-y-0.5 ${
-            isChatOpen ? 'ring-4 ring-emerald-400/50 shadow-[#165B42]/30 scale-105' : ''
-          }`}
-          title={isChatOpen ? 'Close AI Assistant' : 'Open AI Assistant'}
-        >
-          <AiBotIcon className="w-10 h-10 sm:w-11 sm:h-11 transition-transform group-hover:scale-105" />
-        </button>
-      </div>
+          <div className="fixed bottom-6 right-6 z-50">
+            <button
+              onClick={() => setIsChatOpen(!isChatOpen)}
+              className={`w-[54px] h-[54px] sm:w-[58px] sm:h-[58px] bg-[#165B42] hover:bg-[#114934] active:scale-95 text-white rounded-[20px] shadow-lg hover:shadow-xl flex items-center justify-center transition-all cursor-pointer group hover:-translate-y-0.5 ${
+                isChatOpen ? 'ring-4 ring-emerald-400/50 shadow-[#165B42]/30 scale-105' : ''
+              }`}
+              title={isChatOpen ? 'Close AI Assistant' : 'Open AI Assistant'}
+            >
+              <AiBotIcon className="w-10 h-10 sm:w-11 sm:h-11 transition-transform group-hover:scale-105" />
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
