@@ -6,15 +6,17 @@ import { internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import ExcelJS from "exceljs";
 
-const SHORTLIST_COLUMNS = [
-  { header: "NO", key: "no", width: 8 },
-  { header: "NAME", key: "name", width: 28 },
-  { header: "NOTES", key: "notes", width: 56 },
-  { header: "NOTICE", key: "notice", width: 16 },
-  { header: "CURRENT COMPANY", key: "currentCompany", width: 28 },
-  { header: "CURRENT DESIGNATION", key: "currentDesignation", width: 30 },
-  { header: "CURRENT REMUNERATION", key: "currentRemuneration", width: 22 },
-  { header: "EXPECTED REMUNERATION", key: "expectedRemuneration", width: 28 },
+const STANDARD_COLUMNS = [
+  { header: "Date Shortlisted", key: "date", width: 18 },
+  { header: "Candidate Name", key: "name", width: 26 },
+  { header: "Current Role / Title", key: "role", width: 28 },
+  { header: "Email Address", key: "email", width: 30 },
+  { header: "Phone Number", key: "phone", width: 18 },
+  { header: "Experience", key: "experience", width: 14 },
+  { header: "AI Match Score", key: "score", width: 16 },
+  { header: "Recruiter Status", key: "status", width: 20 },
+  { header: "Shortlisted By", key: "recruiter", width: 20 },
+  { header: "Recruiter Notes / Feedback", key: "notes", width: 36 },
 ];
 
 /**
@@ -51,15 +53,10 @@ export const exportShortlistForMs365 = action({
     workbook.creator = "Career141 Platform";
     workbook.created = new Date();
 
-    const safeSheetTitle = (job.title || "TA Shortlist")
-      .replace(/[:\\/?*\[\]]/g, " ")
-      .trim()
-      .toUpperCase()
-      .slice(0, 31) || "SHORTLIST";
-    const worksheet = workbook.addWorksheet(safeSheetTitle);
+    const worksheet = workbook.addWorksheet("TA Shortlist");
 
     // Set columns
-    worksheet.columns = SHORTLIST_COLUMNS.map((col) => ({
+    worksheet.columns = STANDARD_COLUMNS.map((col) => ({
       header: col.header,
       key: col.key,
       width: col.width,
@@ -67,57 +64,79 @@ export const exportShortlistForMs365 = action({
 
     // Style Header Row (Row 1)
     const headerRow = worksheet.getRow(1);
-    headerRow.height = 32;
+    headerRow.height = 30;
     headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11, name: "Calibri" };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF1E4620" }, // Forest Green (#1E4620)
+        fgColor: { argb: "FF0F172A" }, // Slate-900
       };
       cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
       cell.border = {
-        top: { style: "thin", color: { argb: "FF0F2B13" } },
-        bottom: { style: "medium", color: { argb: "FF0F2B13" } },
-        left: { style: "thin", color: { argb: "FF275E2B" } },
-        right: { style: "thin", color: { argb: "FF275E2B" } },
+        bottom: { style: "medium", color: { argb: "FF334155" } },
       };
     });
 
     // Add Candidate Rows
     candidates.forEach((cand: any, idx: number) => {
-      const row = worksheet.addRow({
-        no: cand.no ?? idx + 1,
-        name: cand.name || cand.candidateName || "Candidate",
-        notes: cand.notes || "",
-        notice: cand.notice || "—",
-        currentCompany: cand.currentCompany || "—",
-        currentDesignation: cand.currentDesignation || cand.role || "—",
-        currentRemuneration: cand.currentRemuneration || "—",
-        expectedRemuneration: cand.expectedRemuneration || "—",
+      const rowNum = idx + 2;
+      const formattedDate = new Date(cand.shortlistedAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
       });
 
-      row.eachCell((cell, colNumber) => {
-        cell.font = { size: 10, color: { argb: "FF1E293B" }, name: "Calibri" };
+      const row = worksheet.addRow({
+        date: formattedDate,
+        name: cand.candidateName,
+        role: cand.role,
+        email: cand.candidateEmail,
+        phone: cand.candidatePhone,
+        experience: cand.experience ? `${cand.experience} yrs` : "-",
+        score: cand.aiMatchScore ? `${cand.aiMatchScore}%` : "Pending",
+        status: cand.masterSheetStatus || "Shortlisted",
+        recruiter: cand.recruiterName,
+        notes: cand.notes || "",
+      });
 
-        cell.border = {
-          top: { style: "thin", color: { argb: "FFCBD5E1" } },
-          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
-          left: { style: "thin", color: { argb: "FFCBD5E1" } },
-          right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      row.height = 24;
+
+      // Zebra striping & styling
+      const isEven = idx % 2 === 0;
+      row.eachCell((cell, colNumber) => {
+        cell.font = { size: 10, color: { argb: "FF1E293B" } };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: colNumber === 2 || colNumber === 3 || colNumber === 10 ? "left" : "center",
+          wrapText: colNumber === 10,
         };
 
-        if (colNumber === 1) {
-          cell.alignment = { vertical: "middle", horizontal: "center" };
-        } else if (colNumber === 2) {
-          cell.font = { bold: true, size: 10, color: { argb: "FF0F172A" }, name: "Calibri" };
-          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
-        } else if (colNumber === 3) {
-          cell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
-        } else if (colNumber === 4) {
-          cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        } else {
-          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+        if (isEven) {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF8FAFC" }, // Slate-50
+          };
+        }
+
+        cell.border = {
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+
+        // Score coloring (Column 7)
+        if (colNumber === 7 && cand.aiMatchScore) {
+          cell.font = {
+            bold: true,
+            color: {
+              argb:
+                cand.aiMatchScore >= 80
+                  ? "FF16A34A" // Green
+                  : cand.aiMatchScore >= 60
+                  ? "FFD97706" // Amber
+                  : "FFDC2626", // Red
+            },
+          };
         }
       });
     });

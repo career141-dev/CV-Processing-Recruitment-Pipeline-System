@@ -654,9 +654,6 @@ export default defineSchema({
     currentSalary: v.optional(v.number()),
     currentSalaryCurrency: v.optional(v.string()),
     noticePeriodDays: v.optional(v.number()),
-    currentRemunerationText: v.optional(v.string()),
-    expectedRemunerationText: v.optional(v.string()),
-    executiveSummary: v.optional(v.string()),
     availability: v.optional(v.string()),
     firstSourceChannel: v.optional(
       v.union(
@@ -799,10 +796,6 @@ export default defineSchema({
     candidateCurrentSalary: v.optional(v.number()),
     candidateExpectedSalary: v.optional(v.number()),
     candidateNoticePeriodDays: v.optional(v.number()),
-    candidateCurrentRemunerationText: v.optional(v.string()),
-    candidateExpectedRemunerationText: v.optional(v.string()),
-    candidateNoticePeriodText: v.optional(v.string()),
-    executiveSummary: v.optional(v.string()),
 
     currentStage: v.union(
       v.literal("new_cvs"),

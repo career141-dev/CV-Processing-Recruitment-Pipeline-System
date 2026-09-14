@@ -3414,32 +3414,15 @@ export default function JobDetailPage() {
                     type="button"
                     onClick={handleDirectDownloadShortlist}
                     disabled={isExportingMs365 || currentItems.length === 0}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-container border border-border text-text-primary transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
-                    title="Download client-ready 8-column TA Shortlist Excel sheet (.xlsx)"
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-container border border-border text-text-secondary hover:text-text-primary transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                    title="Download candidate shortlist as .xlsx"
                   >
                     {isExportingMs365 ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Download className="w-3.5 h-3.5 text-emerald-600" />
+                      <Download className="w-3.5 h-3.5" />
                     )}
-                    <span>Export Shortlist (.xlsx)</span>
-                    {selectedCandidates.length > 0 && (
-                      <span className="bg-emerald-600 text-white px-1.5 py-0.2 rounded-full text-[10px]">
-                        {selectedCandidates.length}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Open in Microsoft 365 Viewer */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenInMs365('office_online')}
-                    disabled={isExportingMs365 || currentItems.length === 0}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-container border border-border text-text-secondary hover:text-text-primary transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                    title="Preview formatted shortlist in Microsoft 365 / Office Online"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Office 365</span>
+                    <span>.xlsx</span>
                   </button>
 
                   {activeFollowUpTab === 'active' && selectedCandidates.length > 0 && (

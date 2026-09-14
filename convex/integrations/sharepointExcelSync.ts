@@ -170,20 +170,20 @@ export const syncShortlistToSharePointExcel = action({
 
         // Filter candidates that are not already in the table
         const newCandidateRows = [];
-        for (let i = 0; i < data.candidates.length; i++) {
-          const c = data.candidates[i];
-          const name = (c.candidateName || "").toLowerCase().trim();
-          const email = (c.email || "").toLowerCase().trim();
-          if ((!existingEmails.has(email) && !existingEmails.has(name)) || email === "n/a" || !email) {
+        for (const c of data.candidates) {
+          const email = c.email.toLowerCase().trim();
+          if (!existingEmails.has(email) || email === "n/a") {
             newCandidateRows.push([
-              c.no ?? (existingRows.length + newCandidateRows.length + 1),
+              c.dateShortlisted,
               c.candidateName,
-              c.notes || "",
-              c.notice || "—",
-              c.currentCompany || "—",
-              c.currentDesignation || c.role || "—",
-              c.currentRemuneration || "—",
-              c.expectedRemuneration || "—",
+              c.role,
+              c.email,
+              c.phone,
+              c.experienceYears,
+              c.matchScore,
+              c.stage,
+              c.shortlistedBy,
+              c.notes,
             ]);
             syncedAppIds.push(c.applicationId);
           } else {
@@ -276,31 +276,33 @@ export const syncShortlistToSharePointExcel = action({
         // If sheet is completely empty, insert header row first
         if (startRow === 1) {
           rowsToWrite.push([
-            "NO",
-            "NAME",
-            "NOTES",
-            "NOTICE",
-            "CURRENT COMPANY",
-            "CURRENT DESIGNATION",
-            "CURRENT REMUNERATION",
-            "EXPECTED REMUNERATION",
+            "Date Shortlisted",
+            "Candidate Name",
+            "Applied Role",
+            "Email",
+            "Phone",
+            "Experience",
+            "Match Score",
+            "Status",
+            "Shortlisted By",
+            "Recruiter Notes",
           ]);
         }
 
-        for (let i = 0; i < data.candidates.length; i++) {
-          const c = data.candidates[i];
-          const name = (c.candidateName || "").toLowerCase().trim();
-          const email = (c.email || "").toLowerCase().trim();
-          if ((!existingEmails.has(email) && !existingEmails.has(name)) || email === "n/a" || !email) {
+        for (const c of data.candidates) {
+          const email = c.email.toLowerCase().trim();
+          if (!existingEmails.has(email) || email === "n/a") {
             rowsToWrite.push([
-              c.no ?? (startRow === 1 ? rowsToWrite.length : startRow - 1 + rowsToWrite.length),
+              c.dateShortlisted,
               c.candidateName,
-              c.notes || "",
-              c.notice || "—",
-              c.currentCompany || "—",
-              c.currentDesignation || c.role || "—",
-              c.currentRemuneration || "—",
-              c.expectedRemuneration || "—",
+              c.role,
+              c.email,
+              c.phone,
+              c.experienceYears,
+              c.matchScore,
+              c.stage,
+              c.shortlistedBy,
+              c.notes,
             ]);
             syncedAppIds.push(c.applicationId);
           } else {
@@ -310,7 +312,7 @@ export const syncShortlistToSharePointExcel = action({
 
         if (rowsToWrite.length > 0) {
           const endRow = startRow + rowsToWrite.length - 1;
-          const rangeAddress = `A${startRow}:H${endRow}`;
+          const rangeAddress = `A${startRow}:J${endRow}`;
 
           await graphFetch(
             `${workbookUrl}/worksheets/${sheetId}/range(address='${rangeAddress}')`,
