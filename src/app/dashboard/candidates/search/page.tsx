@@ -121,7 +121,7 @@ export default function CandidatesSearchPage() {
 
   const [messageCandidate, setMessageCandidate] = useState<{ id: string; name: string; initials: string; role: string } | null>(null);
   const [deletingCandidateId, setDeletingCandidateId] = useState<string | null>(null);
-  const [cvPreviewCandidate, setCvPreviewCandidate] = useState<{ id: string; name: string } | null>(null);
+  const [cvPreviewCandidate, setCvPreviewCandidate] = useState<{ id: string; candidateId?: string; name: string } | null>(null);
   const [isRestored, setIsRestored] = useState(false);
 
   // Restore Session
@@ -535,7 +535,8 @@ export default function CandidatesSearchPage() {
                         onToggle={() => handleToggleCandidate(cand._id)}
                         onMessage={() => setMessageCandidate({ id: cand._id, name: cand.fullName || "Candidate", initials, role })}
                         onDelete={() => setDeletingCandidateId(cand._id)}
-                        onShowCv={() => setCvPreviewCandidate({ id: cand.cvUploadId || cand._id, name: cand.fullName || "Candidate" })}
+                        onShowCv={() => setCvPreviewCandidate({ id: cand.cvUploadId || cand._id, candidateId: cand._id, name: cand.fullName || "Candidate" })}
+                        profileHref={`/dashboard/candidates/${cand._id}`}
                         matchReason={res.reason}
                         breakdown={res.breakdown}
                       />
@@ -612,6 +613,7 @@ export default function CandidatesSearchPage() {
           isOpen={!!cvPreviewCandidate}
           onClose={() => setCvPreviewCandidate(null)}
           candidateId={cvPreviewCandidate.id}
+          candidateProfileId={cvPreviewCandidate.candidateId}
           candidateName={cvPreviewCandidate.name}
         />
       )}

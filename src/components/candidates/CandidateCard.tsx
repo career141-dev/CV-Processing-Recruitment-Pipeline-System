@@ -52,12 +52,13 @@ export function CandidateCard({
   onMessage,
   onDelete,
   onShowCv,
-  profileHref = '/dashboard/candidates/kasun',
+  profileHref,
   matchReason,
   imageUrl,
   breakdown
 }: CandidateCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const targetProfileHref = profileHref || (id ? `/dashboard/candidates/${id}` : '#');
 
   return (
     <Card 
@@ -78,9 +79,11 @@ export function CandidateCard({
         
         <div className="flex-1 px-[1px] mr-4 min-w-0 flex flex-col justify-start">
           <div className="flex items-center self-stretch mb-1 gap-2 flex-wrap">
-            <span className="text-text-primary text-sm font-bold truncate">
-              {name}
-            </span>
+            <Link href={targetProfileHref} className="hover:underline">
+              <span className="text-text-primary text-sm font-bold truncate">
+                {name}
+              </span>
+            </Link>
             {score !== undefined && score !== null && (
               <button 
                 onClick={(e) => {
@@ -141,7 +144,7 @@ export function CandidateCard({
                 Message
               </button>
             )}
-            <Link href={profileHref} className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors no-underline">
+            <Link href={targetProfileHref} className="flex items-center justify-center bg-transparent py-1 px-3 rounded-md border border-solid border-border hover:bg-surface-container-high transition-colors no-underline">
               <span className="text-text-secondary text-xs font-bold">View Profile</span>
             </Link>
             {onDelete && (
