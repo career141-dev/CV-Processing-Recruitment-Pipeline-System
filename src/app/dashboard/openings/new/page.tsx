@@ -1098,26 +1098,6 @@ export default function CreateOpeningWizard() {
                       </span>
                     </div>
                   </div>
-
-                  <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-2 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-800">Checked Candidate Information</span>
-                      <span className="text-[11px] text-slate-500 font-medium">
-                        {maxFollowUpAttempts} attempts • {maxFollowUpDays} days timeout
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {['CV Document', 'Current Salary', 'Expected Salary', 'Notice Period', ...customQuestions].map((item) => (
-                        <span
-                          key={item}
-                          className="px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700 flex items-center gap-1.5"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>{item}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               ) : (
                 <div className="p-5 space-y-6 bg-slate-50/40 animate-in fade-in-50 duration-200">
