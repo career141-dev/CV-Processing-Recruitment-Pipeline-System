@@ -53,10 +53,10 @@ const fail = (invariant, detail) => failures.push({ invariant, detail });
     const mem = backend.match(/^\s*mem_limit:\s*([\d.]+)g\s*$/m);
     if (!mem) {
       fail("compose/mem-limit", "backend mem_limit not found, or not expressed in gigabytes");
-    } else if (Number(mem[1]) < 8.5) {
+    } else if (Number(mem[1]) < 6.8) {
       fail(
         "compose/mem-limit",
-        `backend mem_limit is ${mem[1]}g, must be >= 8.5g. Sized in 9dd1f80 for the 11GB VPS.`,
+        `backend mem_limit is ${mem[1]}g, must be >= 6.8g. Right-sized to prevent swap thrashing on 11GB VPS while leaving headroom for auxiliary containers.`,
       );
     }
 
