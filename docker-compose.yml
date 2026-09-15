@@ -75,8 +75,8 @@ services:
       start_period: 5m
       timeout: 10s
       retries: 18
-    # ── SCALE & STABILITY FIX: 8.5g limit provides ample headroom on 11GB VPS ──
-    mem_limit: 8.5g
+    # ── SCALE & STABILITY FIX: 6.8g limit provides ample headroom on 11GB VPS without swap thrashing ──
+    mem_limit: 6.8g
     mem_reservation: 2g
     # ── CRASH FIX 4: Log rotation prevents VPS disk from filling up ──
     logging:
@@ -107,7 +107,7 @@ services:
         -c wal_buffers=16MB
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    mem_limit: 1.8g
+    mem_limit: 1.5g
     mem_reservation: 512m
     logging:
       driver: "json-file"
@@ -131,7 +131,7 @@ services:
       backend:
         condition: service_healthy
     # ── CRASH FIX 2: Memory limit for dashboard ──
-    mem_limit: 512m
+    mem_limit: 256m
     logging:
       driver: "json-file"
       options:
@@ -148,8 +148,8 @@ services:
       - qdrant_storage:/qdrant/storage:z
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
-    mem_limit: 512m
-    mem_reservation: 128m
+    mem_limit: 256m
+    mem_reservation: 64m
     logging:
       driver: "json-file"
       options:
@@ -168,8 +168,8 @@ services:
       - "50000-50200:50000-50200/udp"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
-    mem_limit: 512m
-    mem_reservation: 128m
+    mem_limit: 256m
+    mem_reservation: 64m
     logging:
       driver: "json-file"
       options:
